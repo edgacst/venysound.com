@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>음원 업로드 - SoundWave</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #6a11cb;
+            --secondary: #2575fc;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        
+        .upload-container {
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+        }
+        
+        .upload-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .upload-icon {
+            font-size: 2.2rem;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+        
+        .upload-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        
+        .upload-subtitle {
+            color: #666;
+            font-size: 0.95rem;
+        }
+        
+        .form-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .form-control, .form-select {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.1);
+        }
+        
+        .file-upload-area {
+            border: 2px dashed #ddd;
+            border-radius: 10px;
+            padding: 20px 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #fafafa;
+            margin-bottom: 12px;
+        }
+        
+        .file-upload-area:hover {
+            border-color: var(--primary);
+            background: rgba(106, 17, 203, 0.02);
+        }
+        
+        .file-upload-area.dragover {
+            border-color: var(--primary);
+            background: rgba(106, 17, 203, 0.05);
+            transform: scale(1.01);
+        }
+        
+        .file-upload-icon {
+            font-size: 1.5rem;
+            color: var(--primary);
+            margin-bottom: 6px;
+        }
+        
+        .file-upload-text {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .file-upload-hint {
+            color: #666;
+            font-size: 0.8rem;
+        }
+        
+        .file-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+        
+        .file-preview.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .file-icon {
+            font-size: 2rem;
+            color: var(--primary);
+        }
+        
+        .file-details {
+            flex: 1;
+        }
+        
+        .file-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .file-size {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .btn-upload {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            width: 100%;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .btn-upload:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(106, 17, 203, 0.3);
+        }
+        
+        .btn-upload:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .alert {
+            border-radius: 10px;
+            border: none;
+            padding: 15px 20px;
+            margin-bottom: 25px;
+            animation: slideDown 0.3s ease;
+        }
+        
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .alert-success {
+            background: rgba(40, 167, 69, 0.1);
+            color: #28a745;
+            border-left: 4px solid #28a745;
+        }
+        
+        .alert-error {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+            border-left: 4px solid #dc3545;
+        }
+        
+        .alert-info {
+            background: rgba(23, 162, 184, 0.1);
+            color: #17a2b8;
+            border-left: 4px solid #17a2b8;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 500;
+            margin-top: 20px;
+            transition: color 0.3s ease;
+        }
+        
+        .back-link:hover {
+            color: var(--secondary);
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .progress {
+            height: 10px;
+            border-radius: 5px;
+            background: #e9ecef;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            transition: width 0.3s ease;
+        }
+        
+        @media (max-width: 768px) {
+            .upload-icon {
+                font-size: 1.2rem;
+            }
+            .upload-title {
+                font-size: 1.1rem;
+            }
+            .upload-container {
+                margin: 20px;
+                padding: 25px;
+            }
+            .upload-icon {
+                font-size: 3rem;
+            }
+            .upload-title {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-container">
+        <!-- 헤더 -->
+        <div class="upload-header">
+            <div class="upload-icon">
+                <i class="fas fa-cloud-upload-alt"></i>
+            </div>
+            <h1 class="upload-title">음원 업로드</h1>
+            <p class="upload-subtitle">당신의 음악을 SoundWave와 공유하세요</p>
+        </div>
+
+        <!-- 알림 메시지 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    {% if category == 'error' %}
+                        <div class="alert alert-error">
+                            <i class="fas fa-exclamation-circle me-2"></i>{{ message }}
+                        </div>
+                    {% elif category == 'success' %}
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>{{ message }}
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>{{ message }}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- 업로드 폼 -->
+        <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
+            <!-- 음원 제목 -->
+            <div class="mb-4">
+                <label for="title" class="form-label">
+                    <i class="fas fa-heading me-2"></i>음원 제목
+                </label>
+                <input type="text" 
+                       class="form-control" 
+                       id="title" 
+                       name="title" 
+                       placeholder="예: 내 첫 번째 곡" 
+                       required
+                       maxlength="100">
+                <div class="form-text">음원의 제목을 입력해주세요 (최대 100자)</div>
+            </div>
+
+            <!-- 아티스트 이름 -->
+            <div class="mb-4">
+                <label for="artist" class="form-label">
+                    <i class="fas fa-user me-2"></i>아티스트 이름
+                </label>
+                <input type="text" 
+                       class="form-control" 
+                       id="artist" 
+                       name="artist" 
+                       placeholder="예: 본인 이름 또는 예명">
+                <div class="form-text">본인의 이름이나 예명을 입력해주세요</div>
+            </div>
+
+            <!-- 장르 선택 -->
+            <div class="mb-4">
+                <label class="form-label"><i class="fas fa-tags me-2"></i>장르</label>
+                <div class="row g-2">
+                    <div class="col-sm-6">
+                        <select class="form-select" id="main_genre">
+                            <option value="">대분류 선택</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-6" id="sub_genre_wrapper" style="display: none;">
+                        <select class="form-select" id="sub_genre">
+                            <option value="">소분류 선택</option>
+                        </select>
+                    </div>
+                </div>
+                <input type="hidden" name="genre" id="genre_hidden">
+
+                <!-- 태그 입력 -->
+                <div class="mb-4">
+                    <label for="tags" class="form-label">
+                        <i class="fas fa-hashtag me-2"></i>태그 (쉼표로 구분)
+                    </label>
+                    <input type="text" class="form-control" id="tags" name="tags" placeholder="예: 발라드, 겨울, 감성">
+                    <div class="form-text">관련 키워드나 분위기를 쉼표(,)로 구분해 입력하세요.</div>
+                </div>
+            </div>
+
+            <!-- 앨범 커버 이미지 -->
+            <div class="mb-4">
+                <label for="image" class="form-label">
+                    <i class="fas fa-image me-2"></i>앨범 커버 (선택)
+                </label>
+                <input type="file" class="form-control" id="image" name="image" accept=".png,.jpg,.jpeg,.gif">
+            </div>
+
+            <!-- 파일 업로드 영역 -->
+            <div class="mb-4">
+                <label class="form-label">
+                    <i class="fas fa-music me-2"></i>음원 파일
+                </label>
+                
+                <div class="file-upload-area" id="fileDropArea">
+                    <div class="file-upload-icon">
+                        <i class="fas fa-file-audio"></i>
+                    </div>
+                    <div class="file-upload-text">
+                        파일을 여기에 드래그하거나 클릭하세요
+                    </div>
+                    <div class="file-upload-hint">
+                        MP3, WAV, OGG 형식, 최대 50MB
+                    </div>
+                    <input type="file" 
+                           id="musicFile" 
+                           name="music" 
+                           class="d-none" 
+                           accept=".mp3,.wav,.ogg" 
+                           required>
+                </div>
+
+                <!-- 파일 미리보기 -->
+                <div class="file-preview" id="filePreview">
+                    <div class="file-info">
+                        <div class="file-icon">
+                            <i class="fas fa-file-audio"></i>
+                        </div>
+                        <div class="file-details">
+                            <div class="file-name" id="fileName">파일명이 여기에 표시됩니다</div>
+                            <div class="file-size" id="fileSize">파일 크기가 여기에 표시됩니다</div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
+                            <i class="fas fa-times"></i> 제거
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 진행상황 표시기 -->
+            <div class="progress-container" id="progressContainer">
+                <div class="d-flex justify-content-between mb-2">
+                    <small>업로드 중...</small>
+                    <small id="progressPercent">0%</small>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+                <!-- AI 음원 체크박스 -->
+                <div class="mb-4 form-check">
+                    <input class="form-check-input" type="checkbox" id="is_ai" name="is_ai">
+                    <label class="form-check-label" for="is_ai">
+                        AI로 만든 음원입니다
+                    </label>
+                </div>
+
+            <!-- 업로드 버튼 -->
+            <button type="submit" class="btn-upload" id="uploadBtn">
+                <i class="fas fa-upload me-2"></i>음원 업로드
+            </button>
+        </form>
+
+        <!-- 돌아가기 링크 -->
+        <a href="/" class="back-link">
+            <i class="fas fa-arrow-left me-2"></i>홈으로 돌아가기
+        </a>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('musicFile');
+            const fileDropArea = document.getElementById('fileDropArea');
+            const filePreview = document.getElementById('filePreview');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            const removeFileBtn = document.getElementById('removeFile');
+            const uploadForm = document.getElementById('uploadForm');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+
+            // 파일 선택 영역 클릭 시 파일 선택창 열기
+            fileDropArea.addEventListener('click', () => fileInput.click());
+
+            // 드래그 앤 드롭 기능
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                fileDropArea.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                fileDropArea.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                fileDropArea.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight() {
+                fileDropArea.classList.add('dragover');
+            }
+
+            function unhighlight() {
+                fileDropArea.classList.remove('dragover');
+            }
+
+            // 파일 드롭 처리
+            fileDropArea.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                fileInput.files = files;
+                handleFiles(files);
+            }
+
+            // 파일 선택 처리
+            fileInput.addEventListener('change', function() {
+                handleFiles(this.files);
+            });
+
+            function handleFiles(files) {
+                if (files.length > 0) {
+                    const file = files[0];
+                    
+                    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/x-wav'];
+                    const maxSize = 50 * 1024 * 1024; // 50MB
+                    
+                    if (!validTypes.includes(file.type) && !file.name.match(/\.(mp3|wav|ogg)$/i)) {
+                        alert('MP3, WAV, OGG 파일만 업로드 가능합니다.');
+                        return;
+                    }
+                    
+                    if (file.size > maxSize) {
+                        alert('파일 크기는 50MB를 초과할 수 없습니다.');
+                        return;
+                    }
+                    
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    filePreview.classList.add('show');
+                }
+            }
+
+            // 파일 제거 버튼
+            removeFileBtn.addEventListener('click', function() {
+                fileInput.value = '';
+                filePreview.classList.remove('show');
+            });
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            // 폼 제출 처리
+            uploadForm.addEventListener('submit', function(e) {
+                const title = document.getElementById('title').value.trim();
+                const file = fileInput.files[0];
+                const genre = document.getElementById('genre_hidden').value;
+
+                if (!title) {
+                    e.preventDefault();
+                    alert('음원 제목을 입력해주세요.');
+                    return;
+                }
+                
+                if (!file) {
+                    e.preventDefault();
+                    alert('음원 파일을 선택해주세요.');
+                    return;
+                }
+
+                if (!genre) {
+                    e.preventDefault();
+                    alert('장르를 선택해주세요.');
+                    return;
+                }
+                
+                uploadBtn.disabled = true;
+                uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>업로드 중...';
+                progressContainer.style.display = 'block';
+                
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 10;
+                    if (progress > 90) {
+                        clearInterval(interval);
+                    }
+                    progressBar.style.width = progress + '%';
+                    progressPercent.textContent = progress + '%';
+                }, 200);
+            });
+
+            // 알림 메시지 자동 숨기기
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                setTimeout(() => {
+                    alert.style.opacity = '0';
+                    alert.style.transition = 'opacity 0.5s';
+                    setTimeout(() => alert.remove(), 500);
+                }, 5000);
+            });
+
+            // Genre selection logic
+            const mainGenreSelect = document.getElementById('main_genre');
+            const subGenreSelect = document.getElementById('sub_genre');
+            const subGenreWrapper = document.getElementById('sub_genre_wrapper');
+            const hiddenGenreInput = document.getElementById('genre_hidden');
+
+            const genres = {
+                "팝뮤직": ["팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
+                "국내가요": ["케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요"],
+                "월드뮤직": ["라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악", "아프리카전통"],
+                "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "연인과듣고싶은곡", "비오는날듣기좋은곡", "겨울에 어울리는곡"],
+                "기타": []
+            };
+
+            Object.keys(genres).forEach(genre => {
+                const option = document.createElement('option');
+                option.value = genre;
+                option.textContent = genre;
+                mainGenreSelect.appendChild(option);
+            });
+            mainGenreSelect.insertAdjacentHTML('afterbegin', '<option value="" selected>-- 대분류 선택 --</option>');
+
+            mainGenreSelect.addEventListener('change', function() {
+                const selectedMainGenre = this.value;
+                const subGenres = genres[selectedMainGenre] || [];
+                
+                subGenreSelect.innerHTML = '<option value="">-- 소분류 선택 --</option>';
+                
+                if (selectedMainGenre && subGenres.length > 0) {
+                    subGenres.forEach(subGenre => {
+                        const option = document.createElement('option');
+                        option.value = subGenre;
+                        option.textContent = subGenre;
+                        subGenreSelect.appendChild(option);
+                    });
+                    subGenreWrapper.style.display = 'block';
+                } else {
+                    subGenreWrapper.style.display = 'none';
+                }
+                updateHiddenGenre();
+            });
+
+            subGenreSelect.addEventListener('change', updateHiddenGenre);
+
+            function updateHiddenGenre() {
+                const mainGenre = mainGenreSelect.value;
+                const subGenre = subGenreSelect.value;
+
+                if (mainGenre && mainGenre !== '-- 대분류 선택 --') {
+                    if (subGenre && genres[mainGenre] && genres[mainGenre].length > 0) {
+                        hiddenGenreInput.value = `${mainGenre} - ${subGenre}`;
+                    } else if (genres[mainGenre] && genres[mainGenre].length === 0) {
+                        hiddenGenreInput.value = mainGenre;
+                    } else {
+                        hiddenGenreInput.value = ''; // 소분류가 있는데 선택 안한 경우
+                    }
+                } else {
+                    hiddenGenreInput.value = '';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

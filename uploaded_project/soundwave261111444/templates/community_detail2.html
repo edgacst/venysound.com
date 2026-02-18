@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4" style="max-width: 700px;">
+  <h2 class="fw-bold mb-3">{{ post.title }}</h2>
+  <div class="mb-2 text-muted">
+    <span><i class="fas fa-user"></i> {{ post.user.username }}</span>
+    <span class="ms-3"><i class="far fa-clock"></i> {{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+  </div>
+  <hr>
+  <div class="mb-4" style="white-space: pre-line;">{{ post.content }}</div>
+
+  <!-- 댓글 목록 -->
+  <div class="card mb-3">
+    <div class="card-header bg-light fw-bold">댓글 ({{ post.comments|length }})</div>
+    <div class="card-body p-2">
+      {% for comment in post.comments %}
+        <div class="border-bottom py-2 d-flex justify-content-between align-items-center">
+          <div>
+            <span class="fw-semibold">{{ comment.user.username }}</span>
+            <span class="text-muted small ms-2">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            <div style="white-space: pre-line;">{{ comment.content }}</div>
+          </div>
+          {% if current_user.is_authenticated and current_user.id == comment.user_id %}
+            <form action="{{ url_for('delete_post_comment', post_id=post.id, comment_id=comment.id) }}" method="post" class="ms-2" onsubmit="return confirm('댓글을 삭제하시겠습니까?');">
+              <button type="submit" class="btn btn-sm btn-link text-danger">삭제</button>
+            </form>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="text-muted text-center py-3">댓글이 없습니다.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- 댓글 작성 버튼 및 폼 (로그인 사용자만) -->
+  {% if current_user.is_authenticated %}
+    <div class="mb-3 text-end">
+      <button class="btn btn-outline-primary" type="button" id="toggleCommentFormBtn">댓글 작성</button>
+    </div>
+    <form action="{{ url_for('community_detail', post_id=post.id) }}" method="post" id="commentForm" style="display:none;">
+      <div class="mb-3">
+        <textarea class="form-control" name="comment_content" rows="3" placeholder="댓글을 입력하세요" required></textarea>
+      </div>
+      <div class="text-end">
+        <button type="submit" class="btn btn-primary">댓글 등록</button>
+      </div>
+    </form>
+    <script>
+      const toggleBtn = document.getElementById('toggleCommentFormBtn');
+      const commentForm = document.getElementById('commentForm');
+      toggleBtn.onclick = function() {
+        if (commentForm.style.display === 'none') {
+          commentForm.style.display = 'block';
+          toggleBtn.textContent = '닫기';
+        } else {
+          commentForm.style.display = 'none';
+          toggleBtn.textContent = '댓글 작성';
+        }
+      };
+    </script>
+  {% else %}
+    <div class="alert alert-info text-center">댓글을 작성하려면 <a href="#" data-bs-toggle="modal" data-bs-target="#loginModal">로그인</a>이 필요합니다.</div>
+  {% endif %}
+</div>
+{% endblock %}

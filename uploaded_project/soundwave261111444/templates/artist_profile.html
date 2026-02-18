@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+  <div class="text-center">
+    <img src="{{ url_for('static', filename='uploads/' + artist.img) }}" class="rounded-circle mb-3" style="width:120px; height:120px; object-fit:cover; border:3px solid #eee;">
+    <h2 class="fw-bold">{{ artist.name }}</h2>
+    <div class="text-secondary mb-2" style="font-size:1.1rem;">{{ artist.genre }}</div>
+    <p class="mb-3">{{ artist.bio }}</p>
+    <button class="btn btn-primary btn-sm mb-3">팔로우</button>
+  </div>
+  <hr>
+  <h5 class="fw-bold mb-3">대표곡/업로드</h5>
+  <ul class="list-group mb-4">
+    {% for song in artist.songs %}
+      <li class="list-group-item d-flex align-items-center justify-content-between">
+        <span class="fw-bold me-2">{{ song.title }}</span>
+        <span class="text-secondary me-2">| {{ song.artist }}</span>
+        <span class="text-muted me-2">| 업로드: {{ song.uploader }}</span>
+        <audio src="{{ song.url }}" controls style="height:28px; margin-left:12px;"></audio>
+      </li>
+    {% endfor %}
+  </ul>
+  <div class="text-end">
+    <a href="/artists" class="btn btn-link">아티스트 전체 보기 &rarr;</a>
+  </div>
+</div>
+{% endblock %}

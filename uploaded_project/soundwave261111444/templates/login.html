@@ -1,0 +1,50 @@
+﻿<div class="text-center mb-4">
+    <h2 class="fw-bold text-primary">로그인</h2>
+    <p class="text-muted">SoundWave에 오신 것을 환영합니다</p>
+</div>
+
+<form id="loginForm">
+    <div class="mb-3">
+        <label for="username" class="form-label fw-bold">아이디</label>
+        <input type="text" class="form-control form-control-lg" id="username" placeholder="아이디를 입력하세요" required>
+    </div>
+    <div class="mb-4">
+        <label for="password" class="form-label fw-bold">비밀번호</label>
+        <input type="password" class="form-control form-control-lg" id="password" placeholder="비밀번호를 입력하세요" required>
+    </div>
+    <button type="submit" class="btn btn-primary w-100 btn-lg rounded-pill fw-bold mb-3">로그인</button>
+</form>
+
+<div class="text-center">
+    <span class="text-muted">계정이 없으신가요?</span>
+    <a href="/register" class="text-decoration-none fw-bold ms-1">회원가입</a>
+</div>
+
+<script>
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+
+    try {
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            if (window.handleModalFormSuccess) {
+                 window.handleModalFormSuccess('loginModal');
+            } else {
+                 window.location.href = '/';
+            }
+        } else {
+            alert(data.error || '로그인 실패');
+        }
+    } catch (err) {
+        alert('서버 통신 오류가 발생했습니다.');
+    }
+});
+</script>

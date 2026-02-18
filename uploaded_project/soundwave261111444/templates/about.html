@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <!-- 히어로 섹션 -->
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold mb-3">SoundWave Story</h1>
+        <p class="lead text-muted">음악으로 세상을 연결하는 우리의 여정</p>
+    </div>
+
+    <!-- 미션 & 비전 -->
+    <div class="row align-items-center mb-5">
+        <div class="col-md-6">
+            <img src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" alt="Music Studio" class="img-fluid rounded-4 shadow-sm">
+        </div>
+        <div class="col-md-6 ps-md-5 mt-4 mt-md-0">
+            <h2 class="fw-bold mb-3 text-primary">Our Mission</h2>
+            <p class="fs-5 text-muted mb-4">
+                "모든 목소리는 들을 가치가 있습니다."
+            </p>
+            <p>
+                SoundWave는 누구나 자신의 음악을 세상에 공유하고, 국경과 언어를 넘어 음악으로 소통할 수 있는 플랫폼을 만들기 위해 시작되었습니다. 우리는 아티스트에게는 기회를, 리스너에게는 새로운 영감을 제공합니다.
+            </p>
+            <div class="row mt-4">
+                <div class="col-6">
+                    <h3 class="fw-bold">10K+</h3>
+                    <p class="text-muted">등록된 아티스트</p>
+                </div>
+                <div class="col-6">
+                    <h3 class="fw-bold">50K+</h3>
+                    <p class="text-muted">공유된 트랙</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-5">
+
+    <!-- 핵심 가치 -->
+    <div class="text-center mb-5">
+        <h2 class="fw-bold mb-5">Core Values</h2>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm p-4">
+                    <div class="text-primary fs-1 mb-3"><i class="fas fa-lightbulb"></i></div>
+                    <h4 class="fw-bold">Creativity</h4>
+                    <p class="text-muted">우리는 창의성이 세상을 바꿀 수 있다고 믿습니다. 모든 형태의 음악적 시도를 존중하고 응원합니다.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm p-4">
+                    <div class="text-success fs-1 mb-3"><i class="fas fa-users"></i></div>
+                    <h4 class="fw-bold">Community</h4>
+                    <p class="text-muted">음악은 혼자 듣는 것보다 함께 나눌 때 더 아름답습니다. 건강하고 열린 커뮤니티를 지향합니다.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm p-4">
+                    <div class="text-warning fs-1 mb-3"><i class="fas fa-shield-alt"></i></div>
+                    <h4 class="fw-bold">Trust</h4>
+                    <p class="text-muted">아티스트의 저작권을 보호하고, 투명하고 공정한 플랫폼 운영을 약속합니다.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 연락처 -->
+    <div class="bg-light rounded-4 p-5 text-center mt-5">
+        <h2 class="fw-bold mb-3">Contact Us</h2>
+        <p class="text-muted mb-4">SoundWave에 대해 더 궁금한 점이 있으신가요? 언제든 연락주세요.</p>
+        <div class="row justify-content-center">
+            <div class="col-md-auto mb-3 mb-md-0">
+                <i class="fas fa-envelope me-2 text-primary"></i> support@soundwave.com
+            </div>
+            <div class="col-md-auto mb-3 mb-md-0">
+                <i class="fas fa-phone me-2 text-primary"></i> 02-1234-5678
+            </div>
+            <div class="col-md-auto">
+                <i class="fas fa-map-marker-alt me-2 text-primary"></i> 서울특별시 강남구 테헤란로 123
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,192 @@
+body {
+    background: #f7f8fa;
+}
+.hero-section {
+    background: url('https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80') left center/55% 100% no-repeat,
+                url('https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=800&q=80') right center/45% 100% no-repeat,
+                linear-gradient(to right, rgba(60, 60, 60, 0.7) 0%, rgba(60, 60, 60, 0.5) 60%, rgba(255,255,255,0.0) 100%);
+    color: white;
+    border-radius: 20px;
+    padding: 3.5rem 2rem 2.5rem 2rem;
+    margin-bottom: 2.5rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+    position: relative;
+    overflow: hidden;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+}
+.hero-section .display-4 {
+    font-weight: 800;
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+}
+.hero-section .lead {
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-shadow: 1px 1px 6px rgba(0,0,0,0.4);
+}
+.hero-section .hero-main-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 6px rgba(0,0,0,0.4);
+}
+.hero-section .hero-count-text {
+    font-size: 1.15rem;
+    font-weight: 600;
+    text-shadow: 1px 1px 6px rgba(0,0,0,0.4);
+}
+.genre-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 140px;
+    height: 110px;
+    margin: 0 12px 18px 12px;
+    background: #fff;
+    border-radius: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+.genre-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    transform: translateY(-4px) scale(1.04);
+}
+    justify-content: center;
+    width: 90px;
+    height: 90px;
+    margin: 0 4px 12px 4px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+.section-title {
+    position: relative;
+    display: inline-block;
+    margin-bottom: 2rem;
+    font-weight: 700;
+    color: #2d3748;
+}
+.music-card {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    padding: 1.2rem 1rem 1rem 1rem;
+    margin-bottom: 1.2rem;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+.music-card .card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+    color: #222;
+}
+.music-card .card-text {
+    font-size: 0.92rem;
+    color: #666;
+}
+.music-card .badge {
+    font-size: 0.75rem;
+    padding: 0.2em 0.7em;
+        .genre-card {
+            width: 32% !important;
+            margin: 1% 1% 12px 1% !important;
+            height: 90px;
+            font-size: 0.95rem;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+    border-radius: 12px;
+}
+.music-card .rounded-circle {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    margin-bottom: 0.5rem;
+}
+
+/* 모바일 반응형 최적화 */
+@media (max-width: 768px) {
+    body {
+        font-size: 15px;
+    }
+    .container, .container-fluid {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+    .hero-section {
+        padding: 1.2rem 0.5rem 1.2rem 0.5rem;
+        min-height: 180px;
+        border-radius: 12px;
+        font-size: 1rem;
+        background-size: cover !important;
+        flex-direction: column;
+        align-items: center;
+    }
+    .genre-card {
+        width: 32%;
+        height: 90px;
+        margin: 1% 1% 12px 1%;
+        font-size: 0.95rem;
+        border-radius: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    .genre-icon {
+        font-size: 1.5rem;
+        margin-bottom: 6px;
+    }
+    .music-card {
+        padding: 0.7rem 0.5rem 0.7rem 0.5rem;
+        min-height: 120px;
+        border-radius: 12px;
+    }
+    .music-card .card-title {
+        font-size: 0.95rem;
+    }
+    .music-card .card-text {
+        font-size: 0.85rem;
+    }
+    .navbar {
+        padding: 0.3rem 0.5rem;
+    }
+    .navbar-brand {
+        font-size: 1.1rem;
+    }
+    .nav-link {
+        font-size: 0.95rem;
+        padding: 0.4rem 0.7rem;
+    }
+    footer {
+        padding: 1.2rem 0.5rem !important;
+        font-size: 0.9rem;
+    }
+    .modal-content {
+        padding: 0.5rem;
+    }
+    h1, h2, h3, h4, h5 {
+        font-size: 1.1em !important;
+    }
+    input, button, select, textarea {
+        font-size: 1em !important;
+    }
+    .form-control, .btn {
+        font-size: 1em !important;
+    }
+    .rounded-circle {
+        width: 32px !important;
+        height: 32px !important;
+    }
+}

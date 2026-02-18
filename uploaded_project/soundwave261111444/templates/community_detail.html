@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block content %}
+<div style="color:red;font-weight:bold;">[DEBUG: 이 템플릿이 적용됨]</div>
+<div class="container py-4" style="max-width: 700px;">
+  <h2 class="fw-bold mb-3">{{ post.title }}</h2>
+  <div class="mb-2 text-muted">
+    <span><i class="fas fa-user"></i> {{ post.user.username }}</span>
+    <span class="ms-3"><i class="far fa-clock"></i> {{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+  </div>
+  <hr>
+  <div class="mb-4" style="white-space: pre-line;">{{ post.content }}</div>
+  <div class="d-flex justify-content-between mb-4">
+    <a href="{{ url_for('community_list') }}" class="btn btn-secondary">목록</a>
+    {% if current_user.is_authenticated and current_user.id == post.user_id %}
+      <div>
+        <a href="{{ url_for('community_edit', post_id=post.id) }}" class="btn btn-outline-primary">수정</a>
+        <form action="{{ url_for('community_delete', post_id=post.id) }}" method="post" class="d-inline" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+          <button type="submit" class="btn btn-outline-danger">삭제</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+  <div class="mb-2 text-muted">
+    <span><i class="fas fa-user"></i> {{ post.user.username }}</span>
+    <span class="ms-3"><i class="far fa-clock"></i> {{ post.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    {% if post.category %}<span class="ms-3"><i class="fas fa-tag"></i> {{ post.category }}</span>{% endif %}
+  </div>
+  {% if post.attachment %}
+    <div class="mb-2">
+      <a href="{{ url_for('uploaded_file', filename=post.attachment) }}" target="_blank" class="btn btn-sm btn-outline-secondary">첨부파일 다운로드</a>
+    </div>
+  {% endif %}
+  <hr>
+  <div class="mb-4" style="white-space: pre-line;">{{ post.content }}</div>
+
+    <!-- 댓글 목록 -->
+    <div class="card mb-3">
+      <div class="card-header bg-light fw-bold">댓글 ({{ post.comments|length }})</div>
+      <div class="card-body p-2">
+        {% for comment in post.comments %}
+          <div class="border-bottom py-2 d-flex justify-content-between align-items-center">
+            <div>
+              <span class="fw-semibold">{{ comment.user.username }}</span>
+              <span class="text-muted small ms-2">{{ comment.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+              <div style="white-space: pre-line;">{{ comment.content }}</div>
+            </div>
+            {% if current_user.is_authenticated and current_user.id == comment.user_id %}
+              <form action="{{ url_for('delete_post_comment', post_id=post.id, comment_id=comment.id) }}" method="post" class="ms-2" onsubmit="return confirm('댓글을 삭제하시겠습니까?');">
+                <button type="submit" class="btn btn-sm btn-link text-danger">삭제</button>
+              </form>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="text-muted text-center py-3">댓글이 없습니다.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 댓글 작성 폼 (토글 버튼) -->
+    {% if current_user.is_authenticated %}
+      <button id="show-comment-btn" class="btn btn-outline-primary mb-2" type="button">댓글</button>
+      <form id="comment-form" method="post" class="mb-4 d-none">
+        <div class="input-group">
+          <textarea name="comment_content" class="form-control" rows="2" placeholder="댓글을 입력하세요" required></textarea>
+          <button type="submit" class="btn btn-primary">댓글 등록</button>
+        </div>
+      </form>
+      <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          var btn = document.getElementById('show-comment-btn');
+          var form = document.getElementById('comment-form');
+          if(btn && form) {
+            btn.addEventListener('click', function() {
+              form.classList.toggle('d-none');
+            });
+          }
+        });
+      </script>
+    {% else %}
+      <div class="alert alert-info">댓글을 작성하려면 <a href="{{ url_for('login_page') }}">로그인</a>이 필요합니다.</div>
+    {% endif %}
+</div>
+{% endblock %}

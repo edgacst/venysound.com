@@ -1,0 +1,169 @@
+                                <h5 class="text-dark fw-bold mt-4">4. AI 음원과 저작권 유의사항</h5>
+                                <ul>
+                                    <li>최근 AI 음원이 활발히 발표되고 있습니다. AI 음원을 등록할 시에는 관련 사항을 엄밀히 검토하여 저작권에 위배되지 않도록 하여야 합니다.</li>
+                                </ul>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <h1 class="fw-bold mb-4 text-center">법적 고지 및 정책</h1>
+    
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <div class="card shadow-sm border-0 rounded-4">
+                <div class="card-header bg-white border-bottom-0 pt-4 px-4">
+                    <ul class="nav nav-tabs card-header-tabs" id="legalTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active fw-bold text-dark" id="terms-tab" data-bs-toggle="tab" data-bs-target="#terms" type="button" role="tab">이용약관</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold text-dark" id="privacy-tab" data-bs-toggle="tab" data-bs-target="#privacy" type="button" role="tab">개인정보처리방침</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link fw-bold text-dark" id="copyright-tab" data-bs-toggle="tab" data-bs-target="#copyright" type="button" role="tab">저작권 안내</button>
+                        </li>
+                </div>
+                <div class="card-body p-4 p-md-5" style="min-height: 500px;">
+                    <div class="tab-content" id="legalTabsContent">
+                                                <!-- 저작권 안내 탭 -->
+                                                <div class="tab-pane fade" id="copyright" role="tabpanel">
+                                                    <h3 class="fw-bold mb-4">저작권법 및 국제저작권 협약 안내</h3>
+                                                    <div class="legal-content" style="line-height:1.8; color:#495057;">
+                                                        <h5 class="text-dark fw-bold mt-4">1. 대한민국 저작권법 주요 내용</h5>
+                                                        <ul>
+                                                            <li>저작물(음악, 문학, 미술, 사진 등)은 창작과 동시에 저작권 보호를 받습니다.</li>
+                                                            <li>저작권자는 복제, 공연, 전시, 배포, 2차적 저작물 작성 등 다양한 권리를 가집니다.</li>
+                                                            <li>저작권 보호기간: 창작자 사후 70년(음악 등 대부분).</li>
+                                                            <li>타인의 저작물을 허락 없이 사용, 복제, 배포, 공유하면 법적 책임이 발생할 수 있습니다.</li>
+                                                            <li>공정이용(비영리 교육, 인용 등) 범위 내에서는 제한적으로 사용이 허용됩니다.</li>
+                                                        </ul>
+                                                        <h5 class="text-dark fw-bold mt-4">2. 국제저작권 협약(베른협약 등) 주요 내용</h5>
+                                                        <ul>
+                                                            <li>회원국(한국 포함)에서 창작된 저작물은 다른 회원국에서도 동일하게 보호됩니다.</li>
+                                                            <li>저작권 보호 최소기간: 저작자 사후 50년 이상(한국은 70년).</li>
+                                                            <li>저작권 등록 없이도 자동 보호(창작과 동시에).</li>
+                                                            <li>저작권 침해 시, 각국 법률에 따라 민·형사상 책임이 발생할 수 있습니다.</li>
+                                                        </ul>
+                                                        <h5 class="text-dark fw-bold mt-4">3. WIPO 저작권조약(WCT)</h5>
+                                                        <ul>
+                                                            <li>디지털 환경에서의 저작권 보호를 강화합니다.</li>
+                                                            <li>인터넷, 온라인 전송, 디지털 복제 등도 보호 대상에 포함됩니다.</li>
+                                                        </ul>
+                                                        <h5 class="text-dark fw-bold mt-4">4. AI 음원과 저작권 유의사항</h5>
+                                                        <ul>
+                                                            <li>최근 AI 음원이 활발히 발표되고 있습니다. AI 음원을 등록할 시에는 관련 사항을 엄밀히 검토하여 저작권에 위배되지 않도록 하여야 합니다.</li>
+                                                        </ul>
+                                                        <p class="text-muted" style="font-size:0.95em;">자세한 내용은 <a href="https://www.law.go.kr/법령/저작권법" target="_blank">저작권법(국가법령정보센터)</a> 및 <a href="https://www.wipo.int/treaties/ko/ip/berne.html" target="_blank">WIPO 베른협약</a>을 참고하세요.</p>
+                                                    </div>
+                                                </div>
+                        <!-- 이용약관 -->
+                        <div class="tab-pane fade show active" id="terms" role="tabpanel">
+                            <h3 class="fw-bold mb-4">서비스 이용약관</h3>
+                            <div class="legal-content" style="line-height: 1.8; color: #495057;">
+                                <h5 class="text-dark fw-bold mt-4">제1조 (목적)</h5>
+                                <p>본 약관은 SoundWave(이하 "회사")가 제공하는 음원 공유 서비스 및 관련 제반 서비스(이하 "서비스")의 이용과 관련하여 회사와 회원 간의 권리, 의무 및 책임사항, 기타 필요한 사항을 규정함을 목적으로 합니다.</p>
+                                
+                                <h5 class="text-dark fw-bold mt-4">제2조 (용어의 정의)</h5>
+                                <p>1. "서비스"라 함은 구현되는 단말기(PC, TV, 휴대형단말기 등의 각종 유무선 장치를 포함)와 상관없이 회원이 이용할 수 있는 SoundWave 및 관련 제반 서비스를 의미합니다.<br>
+                                2. "회원"이라 함은 회사의 서비스에 접속하여 본 약관에 따라 회사와 이용계약을 체결하고 회사가 제공하는 서비스를 이용하는 고객을 말합니다.</p>
+
+                                <h5 class="text-dark fw-bold mt-4">제3조 (약관의 게시와 개정)</h5>
+                                <p>회사는 본 약관의 내용을 회원이 쉽게 알 수 있도록 서비스 초기 화면에 게시합니다. 회사는 "약관의 규제에 관한 법률", "정보통신망 이용촉진 및 정보보호 등에 관한 법률" 등 관련법을 위배하지 않는 범위에서 본 약관을 개정할 수 있습니다.</p>
+
+                                <h5 class="text-dark fw-bold mt-4">제4조 (저작권의 귀속 및 이용제한)</h5>
+                                <p>1. 회원이 서비스 내에 게시한 게시물의 저작권은 해당 게시물의 저작자에게 귀속됩니다.<br>
+                                2. 회원은 서비스를 이용함으로써 얻은 정보를 회사의 사전 승낙 없이 복제, 송신, 출판, 배포, 방송 기타 방법에 의하여 영리목적으로 이용하거나 제3자에게 이용하게 하여서는 안 됩니다.</p>
+                                
+                                <h5 class="text-dark fw-bold mt-4">제5조 (서비스의 중단)</h5>
+                                <p>회사는 컴퓨터 등 정보통신설비의 보수점검, 교체 및 고장, 통신두절 등의 사유가 발생한 경우에는 서비스의 제공을 일시적으로 중단할 수 있습니다.</p>
+                            </div>
+                        </div>
+
+                        <!-- 개인정보처리방침 -->
+                        <div class="tab-pane fade" id="privacy" role="tabpanel">
+                            <h3 class="fw-bold mb-4">개인정보처리방침</h3>
+                            <div class="legal-content" style="line-height: 1.8; color: #495057;">
+                                <div class="alert alert-light border mb-4">
+                                    SoundWave는 정보통신망 이용촉진 및 정보보호 등에 관한 법률, 개인정보보호법 등 관련 법령에 따라 이용자의 개인정보를 보호하고 이와 관련한 고충을 신속하고 원활하게 처리할 수 있도록 하기 위하여 다음과 같이 개인정보처리방침을 수립·공개합니다.
+                                </div>
+
+                                <h5 class="text-dark fw-bold mt-4">1. 개인정보의 처리 목적</h5>
+                                <p>회사는 다음의 목적을 위하여 개인정보를 처리합니다. 처리하고 있는 개인정보는 다음의 목적 이외의 용도로는 이용되지 않으며 이용 목적이 변경되는 경우에는 별도의 동의를 받는 등 필요한 조치를 이행할 예정입니다.<br>
+                                - 회원 가입 의사 확인, 회원제 서비스 제공에 따른 본인 식별·인증, 회원자격 유지·관리, 서비스 부정이용 방지</p>
+
+                                <h5 class="text-dark fw-bold mt-4">2. 수집하는 개인정보의 항목</h5>
+                                <p>회사는 회원가입, 상담, 서비스 신청 등을 위해 아래와 같은 개인정보를 수집하고 있습니다.<br>
+                                - 필수항목: 아이디, 비밀번호, 이메일 주소<br>
+                                - 선택항목: 프로필 이미지, 자기소개<br>
+                                - 서비스 이용 과정에서 생성되는 정보: 접속 로그, 쿠키, 접속 IP 정보</p>
+
+                                <h5 class="text-dark fw-bold mt-4">3. 개인정보의 보유 및 이용기간</h5>
+                                <p>회사는 법령에 따른 개인정보 보유·이용기간 또는 정보주체로부터 개인정보를 수집 시에 동의 받은 개인정보 보유·이용기간 내에서 개인정보를 처리·보유합니다.<br>
+                                - 회원 가입 정보: 회원 탈퇴 시까지 (단, 관계 법령 위반에 따른 수사·조사 등이 진행 중인 경우에는 해당 수사·조사 종료 시까지)</p>
+
+                                <h5 class="text-dark fw-bold mt-4">4. 개인정보의 파기절차 및 방법</h5>
+                                <p>회사는 원칙적으로 개인정보 처리목적이 달성된 경우에는 지체 없이 해당 개인정보를 파기합니다. 전자적 파일 형태의 정보는 기록을 재생할 수 없는 기술적 방법을 사용합니다.</p>
+                                
+                                <h5 class="text-dark fw-bold mt-4">5. 개인정보 보호책임자</h5>
+                                <p>회사는 개인정보 처리에 관한 업무를 총괄해서 책임지고, 개인정보 처리와 관련한 정보주체의 불만처리 및 피해구제 등을 위하여 아래와 같이 개인정보 보호책임자를 지정하고 있습니다.<br>
+                                - 성명: 홍길동<br>
+                                - 직책: 개인정보보호팀장<br>
+                                - 연락처: privacy@soundwave.com</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-light text-center py-3 border-top-0">
+                    <small class="text-muted">본 약관 및 정책은 2024년 1월 1일부터 시행됩니다.</small>
+                </div>
+
+                <!-- 저작권 표준 준수사항 안내 -->
+                <div class="mt-4">
+                    <h5 class="fw-bold text-dark">저작권 준수 및 안내</h5>
+                    <div class="legal-content" style="line-height:1.8; color:#495057;">
+                        <ul>
+                            <li>SoundWave는 모든 음원, 이미지, 텍스트 등 게시물의 저작권을 존중합니다.</li>
+                            <li>회원은 타인의 저작권, 초상권 등 권리를 침해하지 않는 콘텐츠만 업로드해야 하며, 저작권법 등 관련 법령을 준수해야 합니다.</li>
+                            <li>저작권 침해 신고가 접수될 경우, 회사는 해당 게시물의 임시 차단, 삭제, 회원 자격 제한 등 필요한 조치를 취할 수 있습니다.</li>
+                            <li>저작권 관련 문의 및 신고는 <a href="mailto:copyright@soundwave.com">copyright@soundwave.com</a> 으로 접수해 주시기 바랍니다.</li>
+                            <li>SoundWave는 저작권 보호를 위해 최선을 다하며, 이용자 여러분의 적극적인 협조를 부탁드립니다.</li>
+                        </ul>
+                        <p class="text-muted" style="font-size:0.95em;">본 사이트는 대한민국 저작권법 및 국제 저작권 협약을 준수합니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 탭 스타일 커스텀 */
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        padding: 1rem 1.5rem;
+        color: #6c757d;
+        transition: all 0.3s ease;
+    }
+    
+    .nav-tabs .nav-link:hover {
+        color: #0d6efd;
+        border-color: transparent;
+    }
+    
+    .nav-tabs .nav-link.active {
+        color: #0d6efd !important;
+        background: transparent;
+        border-bottom: 3px solid #0d6efd;
+    }
+
+    .legal-content h5 {
+        margin-bottom: 10px;
+    }
+    
+    .legal-content p {
+        margin-bottom: 20px;
+        text-align: justify;
+    }
+</style>
+{% endblock %}

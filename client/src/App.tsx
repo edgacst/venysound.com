@@ -1,0 +1,84 @@
+import { Switch, Route, useLocation } from "wouter";
+import { useEffect } from "react";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { GlobalAudioPlayer } from "@/components/AudioPlayer";
+
+function ScrollToTop() {
+  const [location] = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location]);
+  return null;
+}
+
+import Home from "@/pages/Home";
+import Explore from "@/pages/Explore";
+import Popular from "@/pages/Popular";
+import Community from "@/pages/Community";
+import Upload from "@/pages/Upload";
+import BulkUpload from "@/pages/BulkUpload";
+import Profile from "@/pages/Profile";
+import About from "@/pages/About";
+import Legal from "@/pages/Legal";
+import FAQ from "@/pages/FAQ";
+import Login from "@/pages/Login";
+import Admin from "@/pages/Admin";
+import Pricing from "@/pages/Pricing";
+import Credits from "@/pages/Credits";
+import PostDetail from "@/pages/PostDetail";
+import ValueDetail from "@/pages/ValueDetail";
+import Notifications from "@/pages/Notifications";
+import Guide from "@/pages/Guide";
+import MusicDetail from "@/pages/MusicDetail";
+import Dashboard from "@/pages/Dashboard";
+import Messages from "@/pages/Messages";
+import NotFound from "@/pages/not-found";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route path="/music/:id" component={MusicDetail} />
+      <Route path="/music" component={Explore} />
+      <Route path="/explore" component={Explore} />
+      <Route path="/popular" component={Popular} />
+      <Route path="/community" component={Community} />
+      <Route path="/community/:id" component={PostDetail} />
+      <Route path="/upload" component={Upload} />
+      <Route path="/bulk-upload" component={BulkUpload} />
+      <Route path="/profile/:id" component={Profile} />
+      <Route path="/about" component={About} />
+      <Route path="/about/values/:slug" component={ValueDetail} />
+      <Route path="/legal" component={Legal} />
+      <Route path="/faq" component={FAQ} />
+      <Route path="/login" component={Login} />
+      <Route path="/admin" component={Admin} />
+      <Route path="/pricing" component={Pricing} />
+      <Route path="/credits" component={Credits} />
+      <Route path="/notifications" component={Notifications} />
+      <Route path="/guide" component={Guide} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/messages" component={Messages} />
+      <Route path="/messages/:userId" component={Messages} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ScrollToTop />
+        <Router />
+        <GlobalAudioPlayer />
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

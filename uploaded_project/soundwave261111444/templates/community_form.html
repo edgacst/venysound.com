@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container py-4" style="max-width: 600px;">
+  <h2 class="fw-bold mb-4">{{ post and '게시글 수정' or '새 글 작성' }}</h2>
+  <!-- 중복 폼 제거, 아래 폼만 남김 -->
+    <form method="post" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="title" class="form-label">제목</label>
+        <input type="text" class="form-control" id="title" name="title" value="{{ post.title if post else '' }}" required>
+      </div>
+      <div class="mb-3">
+        <label for="category" class="form-label">카테고리</label>
+        <input type="text" class="form-control" id="category" name="category" value="{{ post.category if post else '' }}" list="category-list">
+        <datalist id="category-list">
+          {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="mb-3">
+        <label for="content" class="form-label">내용</label>
+        <textarea class="form-control" id="content" name="content" rows="8" required>{{ post.content if post else '' }}</textarea>
+      </div>
+      <div class="mb-3">
+        <label for="attachment" class="form-label">파일 첨부</label>
+        <input type="file" class="form-control" id="attachment" name="attachment">
+        {% if post and post.attachment %}
+          <div class="mt-2">
+            <a href="{{ url_for('uploaded_file', filename=post.attachment) }}" target="_blank">기존 첨부파일 보기</a>
+          </div>
+        {% endif %}
+      </div>
+      <div class="text-end">
+        <a href="{{ url_for('community_list') }}" class="btn btn-secondary">취소</a>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+</div>
+{% endblock %}

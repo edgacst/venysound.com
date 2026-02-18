@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">🔥 인기 음원 TOP 10</h2>
+<div class="list-group">
+    {% for music in music_list %}
+    <div class="list-group-item d-flex align-items-center">
+        <div class="me-3" style="width:48px;">
+            <span class="badge bg-danger fs-5">{{ loop.index }}</span>
+        </div>
+        {% if music.image_filename %}
+        <img src="{{ url_for('uploaded_file', filename=music.image_filename) }}" alt="Album Art" class="rounded me-3" style="width: 60px; height: 60px; object-fit: cover;">
+        {% else %}
+        <div class="rounded me-3 bg-secondary d-flex align-items-center justify-content-center text-white" style="width: 60px; height: 60px;">
+            <i class="fas fa-music"></i>
+        </div>
+        {% endif %}
+        <div class="flex-grow-1">
+            <h5 class="mb-1"><a href="/music/{{ music.id }}" class="text-decoration-none text-dark">{{ music.title }}</a></h5>
+            <div class="text-muted small">{{ music.artist }} | {{ music.genre or '기타' }}</div>
+        </div>
+        <div class="ms-3 text-danger">
+            <i class="fas fa-heart me-1"></i>{{ music.liked_by.count() }}
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">아직 인기 음원이 없습니다.</div>
+    {% endfor %}
+</div>
+{% endblock %}

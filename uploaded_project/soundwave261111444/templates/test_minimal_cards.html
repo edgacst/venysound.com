@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>카드 없는 미니멀 테스트</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      background: #f8f9fa;
+      margin: 0;
+      padding: 0;
+    }
+    .genre-bar {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin: 48px 0;
+    }
+    .genre-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      text-decoration: none;
+      color: #222;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+    .genre-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 2px;
+    }
+    .genre-pop { background: rgba(220,53,69,0.1); color: #dc3545; }
+    .genre-kpop { background: rgba(13,110,253,0.1); color: #0d6efd; }
+    .genre-world { background: rgba(25,135,84,0.1); color: #198754; }
+    .genre-instrumental { background: rgba(13,202,240,0.1); color: #0dcaf0; }
+    .genre-techno { background: rgba(33,37,41,0.1); color: #212529; }
+    .genre-label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="genre-bar">
+    <a href="#" class="genre-item">
+      <span class="genre-icon genre-pop"><i class="fas fa-music"></i></span>
+      <span class="genre-label">팝뮤직</span>
+    </a>
+    <a href="#" class="genre-item">
+      <span class="genre-icon genre-kpop"><i class="fas fa-star"></i></span>
+      <span class="genre-label">국내가요</span>
+    </a>
+    <a href="#" class="genre-item">
+      <span class="genre-icon genre-world"><i class="fas fa-globe"></i></span>
+      <span class="genre-label">월드뮤직</span>
+    </a>
+    <a href="#" class="genre-item">
+      <span class="genre-icon genre-instrumental"><i class="fas fa-drum"></i></span>
+      <span class="genre-label">경음악</span>
+    </a>
+    <a href="#" class="genre-item">
+      <span class="genre-icon genre-techno"><i class="fas fa-headphones-alt"></i></span>
+      <span class="genre-label">테크노</span>
+    </a>
+  </div>
+</body>
+</html>

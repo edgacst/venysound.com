@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-4">팔로우한 유저들의 최신 업로드</h2>
+<div class="list-group">
+    {% for music in uploads %}
+    <div class="list-group-item d-flex align-items-center">
+        {% if music.image_filename %}
+        <img src="{{ url_for('uploaded_file', filename=music.image_filename) }}" alt="Album Art" class="rounded me-3" style="width: 60px; height: 60px; object-fit: cover;">
+        {% else %}
+        <div class="rounded me-3 bg-secondary d-flex align-items-center justify-content-center text-white" style="width: 60px; height: 60px;">
+            <i class="fas fa-music"></i>
+        </div>
+        {% endif %}
+        <div class="flex-grow-1">
+            <h5 class="mb-1"><a href="/music/{{ music.id }}" class="text-decoration-none text-dark">{{ music.title }}</a></h5>
+            <div class="text-muted small">{{ music.artist }} | {{ music.genre or '기타' }}</div>
+        </div>
+        <div class="ms-3 text-muted small">
+            업로더: <a href="/profile?user_id={{ music.user_id }}">{{ music.uploader.username }}</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">팔로우한 유저의 업로드가 없습니다.</div>
+    {% endfor %}
+</div>
+{% endblock %}

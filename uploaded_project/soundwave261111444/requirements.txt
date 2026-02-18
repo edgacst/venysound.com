@@ -1,0 +1,10 @@
+flask_socketio
+flask
+gunicorn
+sqlalchemy
+flask_sqlalchemy
+flask_migrate
+flask_login
+werkzeug
+requests
+jinja2

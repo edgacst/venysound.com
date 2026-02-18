@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <!-- 음악 정보 카드 -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center mb-4">
+                    {% if music.image_filename %}
+                    <img src="{{ url_for('uploaded_file', filename=music.image_filename, t=music.created_at.timestamp()) }}" class="rounded shadow-sm me-4" style="width: 120px; height: 120px; object-fit: cover;">
+                    {% else %}
+                    <div class="rounded shadow-sm me-4 bg-secondary d-flex align-items-center justify-content-center text-white" style="width: 120px; height: 120px; font-size: 3rem;">
+                        <i class="fas fa-music"></i>
+                    </div>
+                    {% endif %}
+                    
+                    <div>
+                        <span class="badge bg-primary mb-2">{{ music.genre or '기타' }}</span>
+                        <h2 class="fw-bold mb-1">{{ music.title }}</h2>
+                        <p class="text-muted fs-5 mb-2">
+                            <i class="fas fa-user-circle me-2"></i>{{ music.artist }}
+                            {% if current_user.is_authenticated and current_user.id != music.user_id %}
+                                {% if current_user.is_following(music.uploader) %}
+                                <form action="/unfollow/{{ music.user_id }}" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary ms-2">언팔로우</button>
+                                </form>
+                                {% else %}
+                                <form action="/follow/{{ music.user_id }}" method="POST" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary ms-2">팔로우</button>
+                                </form>
+                                {% endif %}
+                            {% endif %}
+                        </p>
+                        <small class="text-muted">{{ music.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                    </div>
+                </div>
+
+                <audio controls class="w-100 mb-3">
+                    <source src="{{ url_for('uploaded_file', filename=music.filename) }}" type="audio/mpeg">
+                </audio>
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <button class="btn btn-outline-danger rounded-pill px-4 like-btn" data-id="{{ music.id }}">
+                        <i class="{{ 'fas' if current_user.is_authenticated and current_user in music.liked_by else 'far' }} fa-heart me-2"></i>좋아요 <span class="like-count-{{ music.id }}">{{ music.liked_by.count() }}</span>
+                    </button>
+                    
+                    {% if current_user.is_authenticated and current_user.id == music.user_id %}
+                    <form action="{{ url_for('delete_file', filename=music.filename) }}" method="POST" class="d-inline" onsubmit="return confirm('정말 삭제하시겠습니까?');">
+                        <button type="submit" class="btn btn-outline-secondary btn-sm">삭제하기</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 리뷰 섹션 -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold"><i class="far fa-comments me-2"></i>리뷰 ({{ music.reviews|length }})</h5>
+            </div>
+            <div class="card-body">
+                <!-- 리뷰 작성 폼 -->
+                {% if current_user.is_authenticated %}
+                <form action="/music/{{ music.id }}/review" method="POST" class="mb-4">
+                    <div class="input-group">
+                        <input type="text" name="content" class="form-control" placeholder="이 음악에 대한 감상평을 남겨주세요" required>
+                        <button class="btn btn-primary" type="submit">등록</button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-light text-center mb-4">
+                    리뷰를 작성하려면 <a href="/login">로그인</a>이 필요합니다.
+                </div>
+                {% endif %}
+
+                <!-- 리뷰 목록 -->
+                <div class="list-group list-group-flush">
+                    {% for review in music.reviews|reverse %}
+                    <div class="list-group-item px-0">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <h6 class="fw-bold mb-0">{{ review.user.username }}</h6>
+                            <small class="text-muted">{{ review.created_at.strftime('%Y-%m-%d') }}</small>
+                        </div>
+                        <p class="mb-0 text-dark">{{ review.content }}</p>
+                    </div>
+                    {% else %}
+                    <p class="text-center text-muted py-3">아직 작성된 리뷰가 없습니다. 첫 번째 리뷰를 남겨보세요!</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.querySelector('.like-btn').addEventListener('click', async function() {
+    {% if not current_user.is_authenticated %}
+        alert('로그인이 필요한 기능입니다.');
+        window.location.href = '/login';
+        return;
+    {% endif %}
+    
+    const musicId = this.dataset.id;
+    const res = await fetch(`/api/music/${musicId}/like`, {method: 'POST'});
+    const data = await res.json();
+    
+    const icon = this.querySelector('i');
+    icon.className = data.liked ? 'fas fa-heart me-2' : 'far fa-heart me-2';
+    document.querySelector(`.like-count-${musicId}`).textContent = data.count;
+});
+</script>
+{% endblock %}

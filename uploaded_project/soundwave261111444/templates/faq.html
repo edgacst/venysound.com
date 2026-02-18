@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-5">
+    <h1 class="fw-bold mb-4 text-center">자주 묻는 질문(FAQ)</h1>
+    <div class="accordion" id="faqAccordion">
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="faq1">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse1" aria-expanded="true" aria-controls="collapse1">
+                    Q. 회원가입이 안 돼요!
+                </button>
+            </h2>
+            <div id="collapse1" class="accordion-collapse collapse show" aria-labelledby="faq1" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    이메일, 아이디 중복 여부를 확인하고, 비밀번호는 8자 이상으로 입력해 주세요. 문제가 계속되면 <a href="mailto:support@soundwave.com">고객센터</a>로 문의해 주세요.
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="faq2">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse2" aria-expanded="false" aria-controls="collapse2">
+                    Q. 음원 업로드가 실패합니다.
+                </button>
+            </h2>
+            <div id="collapse2" class="accordion-collapse collapse" aria-labelledby="faq2" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    지원되는 파일 형식(MP3, WAV, OGG)과 50MB 이하 용량인지 확인해 주세요. 네트워크 문제나 서버 점검 시 일시적으로 업로드가 제한될 수 있습니다.
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="faq3">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse3" aria-expanded="false" aria-controls="collapse3">
+                    Q. AI 음원도 업로드할 수 있나요?
+                </button>
+            </h2>
+            <div id="collapse3" class="accordion-collapse collapse" aria-labelledby="faq3" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    네, AI로 제작한 음원도 업로드할 수 있습니다. 단, 저작권 침해 여부를 반드시 확인하고, 타인의 권리를 침해하지 않도록 주의해 주세요.
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="faq4">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse4" aria-expanded="false" aria-controls="collapse4">
+                    Q. 저작권 침해 신고는 어떻게 하나요?
+                </button>
+            </h2>
+            <div id="collapse4" class="accordion-collapse collapse" aria-labelledby="faq4" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    신고하고자 하는 음원 상세페이지에서 신고 버튼을 클릭하거나, <a href="mailto:copyright@soundwave.com">copyright@soundwave.com</a>으로 신고 내용을 보내주세요.
+                </div>
+            </div>
+        </div>
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="faq5">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse5" aria-expanded="false" aria-controls="collapse5">
+                    Q. 개인정보는 안전하게 보호되나요?
+                </button>
+            </h2>
+            <div id="collapse5" class="accordion-collapse collapse" aria-labelledby="faq5" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    네, SoundWave는 개인정보보호법 등 관련 법령을 준수하며, 회원님의 정보를 안전하게 보호합니다. 자세한 내용은 <a href="/legal#privacy">개인정보처리방침</a>을 참고해 주세요.
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-5 text-center">
+        <p class="text-muted">추가 문의는 <a href="mailto:support@soundwave.com">support@soundwave.com</a>으로 연락해 주세요.</p>
+    </div>
+</div>
+{% endblock %}

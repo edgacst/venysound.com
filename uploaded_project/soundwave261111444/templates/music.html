@@ -1,0 +1,123 @@
+﻿{% extends "base.html" %}
+{% block head %}
+{{ super() }}
+<style>
+.play-visual { display:inline-block; vertical-align:middle; height:24px; }
+.bar { display:inline-block; width:3px; margin:0 1px; background:#007bff; border-radius:2px; animation: barAnim 1s infinite; }
+.bar1 { height:10px; animation-delay:0s; }
+.bar2 { height:16px; animation-delay:0.2s; }
+.bar3 { height:22px; animation-delay:0.4s; }
+.bar4 { height:16px; animation-delay:0.6s; }
+.bar5 { height:10px; animation-delay:0.8s; }
+@keyframes barAnim {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(2.2); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 장르/전체/전체재생 필터 영역 -->
+<div class="d-flex align-items-center justify-content-between flex-wrap mb-3" style="gap:12px;">
+    <div class="d-flex flex-wrap align-items-center" style="gap:8px;">
+        <a href="{{ url_for('music_page') }}" class="btn btn-primary{% if not current_genre %} active{% endif %}">전체</a>
+        {% for genre in genres %}
+            <a href="{{ url_for('music_page', genre=genre) }}" class="btn btn-outline-primary{% if current_genre == genre %} active{% endif %}">{{ genre }}</a>
+        {% endfor %}
+    </div>
+    <button id="playAllBtn" class="btn btn-outline-primary" style="white-space:nowrap;" type="button"><i class="fas fa-play me-1"></i>음원 전체재생</button>
+</div>
+<h2>🎵 음원 목록</h2>
+<div class="list-group">
+    {% for music in music_list %}
+    <div class="list-group-item">
+        <div class="d-flex align-items-center flex-wrap justify-content-between">
+            <div class="d-flex align-items-center flex-wrap">
+                {% if music.image_filename %}
+                    <img src="{{ url_for('uploaded_file', filename=music.image_filename) }}" alt="Album Art" class="me-3" style="width:28.8px; height:28.8px; object-fit:cover; border-radius:50%; border:2px solid #eee;">
+                {% else %}
+                    <div class="me-3 bg-secondary d-flex align-items-center justify-content-center text-white" style="width:28.8px; height:28.8px; border-radius:50%; border:2px solid #eee;">
+                        <i class="fas fa-music" style="font-size:1em;"></i>
+                    </div>
+                {% endif %}
+                <span class="fw-bold me-2">{{ music.title }}</span>
+                <span class="text-secondary me-2">| {{ music.artist }}</span>
+                <audio controls style="height:28px; margin-left:12px; max-width:180px;">
+                    <source src="{{ url_for('uploaded_file', filename=music.filename) }}" type="audio/mpeg">
+                    브라우저가 오디오 태그를 지원하지 않습니다.
+                </audio>
+                <span class="text-muted ms-2">| 업로드: {{ music.uploader.username if music.uploader else '알 수 없음' }}</span>
+            </div>
+            <div class="d-flex align-items-center ms-auto" style="gap:8px;">
+                <button class="btn btn-outline-danger like-btn p-0" data-id="{{ music.id }}" style="background:transparent; border:none; padding:0;">
+                    <i class="{{ 'fas' if current_user.is_authenticated and current_user in music.liked_by else 'far' }} fa-heart" style="font-size:1em;"></i>
+                </button>
+                <span class="text-muted like-count-{{ music.id }}">{{ music.liked_by.count() }}</span>
+                <small class="text-muted">{{ music.created_at.strftime('%Y-%m-%d') }}</small>
+                <a href="/music/{{ music.id }}" class="btn btn-link p-0 text-decoration-none" style="font-size:1em; color:#007bff;">
+                    <i class="far fa-comment-dots me-1"></i>리뷰 {{ music.reviews|length }}개 보기
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% block scripts %}
+<script>
+// 모든 곡 정보 JS로 전달
+const allMusics = [
+    {% for music in music_list %}
+    {
+        url: "{{ url_for('uploaded_file', filename=music.filename) }}",
+        title: `{{ music.title|e }}`,
+        artist: `{{ music.artist|e }}`
+    }{% if not loop.last %},{% endif %}
+    {% endfor %}
+];
+const playAllBtn = document.getElementById('playAllBtn');
+playAllBtn.onclick = function() {
+    if (allMusics.length === 0) return;
+    // 팝업 플레이어에 곡 리스트 전달
+    window.__popupTracks = allMusics;
+    window.open('/player_popup', 'player_popup', 'width=480,height=420,menubar=no,toolbar=no,location=no,status=no');
+};
+
+// 좋아요 버튼 AJAX 기능
+document.querySelectorAll('.like-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        const musicId = btn.getAttribute('data-id');
+        fetch(`/api/music/${musicId}/like`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // 하트 아이콘 상태 변경
+                const icon = btn.querySelector('i');
+                if (data.liked) {
+                    icon.classList.remove('far');
+                    icon.classList.add('fas', 'text-danger');
+                } else {
+                    icon.classList.remove('fas', 'text-danger');
+                    icon.classList.add('far');
+                }
+                // 좋아요 수 갱신
+                const countSpan = document.querySelector('.like-count-' + musicId);
+                if (countSpan) countSpan.textContent = data.count;
+            } else {
+                alert('좋아요 처리에 실패했습니다.');
+            }
+        })
+        .catch(() => alert('로그인이 필요합니다.'));
+    });
+});
+</script>
+{% endblock %}
+{% endblock %}
