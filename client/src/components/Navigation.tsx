@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useLoginModalStore } from "@/stores/login-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -21,7 +22,8 @@ import {
   Coins,
   BarChart3,
   MessageSquare,
-  Globe
+  Globe,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -40,7 +42,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export function Navigation() {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const { data: notifications } = useNotifications();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
@@ -55,6 +57,8 @@ export function Navigation() {
 
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
 
+  const openLoginModal = useLoginModalStore((s) => s.open);
+  const openRegisterModal = useLoginModalStore((s) => s.openRegister);
   const { data: unreadMsgData } = useQuery<{ count: number }>({
     queryKey: ["/api/messages/unread-count"],
     enabled: !!user,
@@ -138,16 +142,20 @@ export function Navigation() {
                 </div>
               </Link>
 
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => i18n.changeLanguage(i18n.language === 'ko' ? 'en' : 'ko')}
-                className="gap-1 text-muted-foreground"
-                data-testid="button-language-toggle"
-              >
-                <Globe size={16} />
-                {i18n.language === 'ko' ? 'EN' : 'KO'}
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" data-testid="button-language-toggle">
+                    <Globe size={16} />
+                    {i18n.language === 'ko' ? 'KO' : i18n.language === 'en' ? 'EN' : i18n.language === 'zh' ? 'ZH' : 'JA'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -171,18 +179,23 @@ export function Navigation() {
                     </div>
                   </div>
                   <DropdownMenuSeparator className="bg-white/10" />
-                  <DropdownMenuItem asChild>
-                    <Link href={`/profile/${user.id}`}>
-                      <div className="flex items-center gap-2 cursor-pointer w-full" data-testid="link-mypage">
-                        <User size={16} /> {t('nav.myPage')}
-                      </div>
-                    </Link>
+                  <DropdownMenuItem onClick={() => setLocation(`/profile/${user.id}`)} className="cursor-pointer">
+                    <div className="flex items-center gap-2 w-full" data-testid="link-mypage">
+                      <User size={16} /> {t('nav.myPage')}
+                    </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/credits">
                       <div className="flex items-center justify-between cursor-pointer w-full" data-testid="link-credits">
                         <span className="flex items-center gap-2"><Coins size={16} /> {t('nav.credits')}</span>
                         <span className="text-xs font-medium text-primary" data-testid="text-nav-credits">{(creditsData?.credits || 0).toLocaleString()}C</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/my-library">
+                      <div className="flex items-center gap-2 cursor-pointer w-full" data-testid="link-my-library">
+                        <Download size={16} /> {t('nav.myLibrary', '내 라이브러리')}
                       </div>
                     </Link>
                   </DropdownMenuItem>
@@ -210,19 +223,22 @@ export function Navigation() {
             </>
           ) : (
             <>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => i18n.changeLanguage(i18n.language === 'ko' ? 'en' : 'ko')}
-                className="gap-1 text-muted-foreground"
-                data-testid="button-language-toggle"
-              >
-                <Globe size={16} />
-                {i18n.language === 'ko' ? 'EN' : 'KO'}
-              </Button>
-              <Link href="/login">
-                <Button data-testid="button-login">{t('nav.login')}</Button>
-              </Link>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" data-testid="button-language-toggle">
+                    <Globe size={16} />
+                    {i18n.language === 'ko' ? 'KO' : i18n.language === 'en' ? 'EN' : i18n.language === 'zh' ? 'ZH' : 'JA'}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button variant="ghost" size="sm" onClick={openRegisterModal} className="text-muted-foreground hover:text-foreground">{t('login.register', '회원가입')}</Button>
+              <Button onClick={openLoginModal} data-testid="button-login">{t('nav.login')}</Button>
             </>
           )}
         </div>
@@ -277,20 +293,25 @@ export function Navigation() {
                     </div>
                   </Link>
                   <NavLink href={`/profile/${user.id}`} icon={User}>{t('nav.myPage')}</NavLink>
+                  <NavLink href="/my-library" icon={Download}>{t('nav.myLibrary', '내 라이브러리')}</NavLink>
                   <NavLink href="/dashboard" icon={BarChart3}>{t('nav.dashboard')}</NavLink>
                   {adminCheck?.isAdmin && (
                     <NavLink href="/admin" icon={ShieldCheck}>{t('nav.admin')}</NavLink>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => i18n.changeLanguage(i18n.language === 'ko' ? 'en' : 'ko')}
-                    className="gap-1 text-muted-foreground justify-start"
-                    data-testid="button-language-toggle"
-                  >
-                    <Globe size={16} />
-                    {i18n.language === 'ko' ? 'EN' : 'KO'}
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle">
+                        <Globe size={16} />
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'en'}`)}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <div 
                     onClick={() => logout()} 
                     className="flex items-center gap-2 px-4 py-2 text-red-400 cursor-pointer"
@@ -301,12 +322,36 @@ export function Navigation() {
                 </>
               )}
               {!user && (
-                <Link href="/login">
-                  <div className="flex items-center gap-2 px-4 py-2 text-primary cursor-pointer">
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle-guest">
+                        <Globe size={16} />
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'en'}`)}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div
+                    onClick={openRegisterModal}
+                    className="flex items-center gap-2 px-4 py-2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <User size={18} />
+                    <span>{t('login.register', '회원가입')}</span>
+                  </div>
+                  <div
+                    onClick={openLoginModal}
+                    className="flex items-center gap-2 px-4 py-2 text-primary cursor-pointer"
+                  >
                     <User size={18} />
                     <span>{t('nav.login')}</span>
                   </div>
-                </Link>
+                </>
               )}
             </div>
           </motion.div>

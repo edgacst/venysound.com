@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -48,7 +49,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await seedDatabase();
+  try {
+    await seedDatabase();
+  } catch (err) {
+    console.error("[seed] Error seeding database:", err);
+    console.error("[seed] DB 연결 실패 시 .env의 DATABASE_URL 비밀번호를 확인하세요.");
+  }
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
@@ -75,8 +81,8 @@ app.use((req, res, next) => {
   httpServer.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host: process.platform === "win32" ? "127.0.0.1" : "0.0.0.0",
+      ...(process.platform !== "win32" && { reusePort: true }),
     },
     () => {
       log(`serving on port ${port}`);

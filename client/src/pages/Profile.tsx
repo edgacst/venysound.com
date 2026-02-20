@@ -16,7 +16,7 @@ import {
   Loader2, UserPlus, UserCheck, Upload as UploadIcon, Heart, 
   MessageSquare, ListMusic, Music, Users, Bell, BellOff, 
   Plus, Trash2, X, Flag, Clock, Search, CheckCircle, XCircle, Crown,
-  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins
+  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins, Play
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePlaylists, useCreatePlaylist, usePlaylist } from "@/hooks/use-playlists";
@@ -358,6 +358,9 @@ function NotificationsSection() {
 
   return (
     <div>
+      <p className="text-xs text-muted-foreground mb-3" data-testid="text-notifications-limit-notice">
+        {t('profile.notificationsLimitNotice', '알림목록은 20개까지만 보여집니다.')}
+      </p>
       {unreadCount > 0 && (
         <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
           <span className="text-sm text-muted-foreground">{t('profile.unreadNotifications', '읽지 않은 알림')} {unreadCount}{t('profile.countUnit', '개')}</span>
@@ -821,14 +824,14 @@ export default function Profile() {
   const { t } = useTranslation();
   const [, params] = useRoute("/profile/:id");
   const userId = params?.id;
-  const { data, isLoading } = useUserProfile(userId || "");
+  const { data, isLoading, isError } = useUserProfile(userId || "");
   const { user: currentUser } = useAuth();
   const { mutate: followUser } = useFollowUser();
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
 
-  const { data: streamingStats } = useQuery<{ 
-    totalSeconds: number; 
+  const { data: streamingStats } = useQuery<{
+    totalSeconds: number;
     totalPlays: number;
     tracks: Array<{ musicId: number; title: string; artist: string; image: string; totalSeconds: number; playCount: number }>;
   }>({
@@ -841,6 +844,8 @@ export default function Profile() {
     enabled: !!userId,
   });
 
+  const { playMusic, setPlaylist } = usePlayerStore();
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -849,7 +854,7 @@ export default function Profile() {
     );
   }
 
-  if (!data) return (
+  if (!data || isError) return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navigation />
       <div className="text-center py-20 text-muted-foreground">{t('profile.notFound', '프로필을 찾을 수 없습니다.')}</div>
@@ -858,6 +863,13 @@ export default function Profile() {
 
   const { user, uploadedMusic, likedMusic, followerCount, followingCount, playlists: userPlaylists, posts: userPosts, followers, following, isFollowing } = data;
   const isOwnProfile = currentUser?.id === user.id;
+
+  const handlePlayAllTracks = (list: { id: number }[]) => {
+    if (!list?.length) return;
+    const ids = list.map((m) => m.id);
+    setPlaylist(ids);
+    playMusic(ids[0]);
+  };
 
   return (
     <PageTransition>
@@ -1019,6 +1031,13 @@ export default function Profile() {
             </TabsList>
             
             <TabsContent value="uploaded">
+              {(uploadedMusic?.length || 0) > 0 && (
+                <div className="flex justify-end mb-4">
+                  <Button variant="outline" size="sm" className="gap-2 border-white/10" onClick={() => handlePlayAllTracks(uploadedMusic)} data-testid="button-play-all-uploaded">
+                    <Play size={16} /> {t('profile.playAll', '전체 재생')}
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {uploadedMusic?.map(music => (
                   <MusicCard key={music.id} music={music} />
@@ -1040,6 +1059,13 @@ export default function Profile() {
             </TabsContent>
             
             <TabsContent value="liked">
+              {(likedMusic?.length || 0) > 0 && (
+                <div className="flex justify-end mb-4">
+                  <Button variant="outline" size="sm" className="gap-2 border-white/10" onClick={() => handlePlayAllTracks(likedMusic)} data-testid="button-play-all-liked">
+                    <Play size={16} /> {t('profile.playAll', '전체 재생')}
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {likedMusic?.map(music => (
                   <MusicCard key={music.id} music={music} />

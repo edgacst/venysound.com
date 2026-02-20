@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -17,12 +17,18 @@ import {
   Shield,
   Loader2,
   Zap,
-  CreditCard,
+  Landmark,
   XCircle,
   Calendar,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function Pricing() {
   const { t } = useTranslation();
@@ -30,7 +36,6 @@ export default function Pricing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
-  const [isRegistering, setIsRegistering] = useState(false);
 
   const FREE_FEATURES = [
     { icon: Music, text: t('pricing.freeFeature1', '기본 음원 스트리밍') },
@@ -48,62 +53,57 @@ export default function Pricing() {
     { icon: Crown, text: t('pricing.premiumFeature6', '프리미엄 배지') },
   ];
 
-  const searchParams = new URLSearchParams(window.location.search);
-  const billingSuccess = searchParams.get("billing");
-  const authKeyParam = searchParams.get("authKey");
-  const customerKeyParam = searchParams.get("customerKey");
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [bankRequestResult, setBankRequestResult] = useState<{
+    bankInfo: { bankName: string; bankAccount: string; bankHolder: string };
+    amount: number;
+    billingPeriod: string;
+    orderId: string;
+    message: string;
+  } | null>(null);
 
   const { data: subscriptionData, isLoading: loadingSub } = useQuery<{
     tier: string;
     plan?: string;
     expiresAt?: string;
-    hasBillingKey?: boolean;
   }>({
     queryKey: ["/api/toss/subscription"],
     enabled: !!user,
   });
 
-  const { data: clientKeyData } = useQuery<{ clientKey: string }>({
-    queryKey: ["/api/toss/client-key"],
+  const { data: bankInfo } = useQuery<{
+    bankName: string;
+    bankAccount: string;
+    bankHolder: string;
+    amountMonthly: number;
+    amountYearly: number;
+  }>({
+    queryKey: ["/api/subscription/bank-info"],
+    enabled: bankModalOpen,
   });
 
-  const handleBillingSuccess = useCallback(async () => {
-    if (billingSuccess === "true" && authKeyParam && customerKeyParam && user) {
-      try {
-        const res = await fetch(
-          `/api/toss/billing/success?authKey=${encodeURIComponent(authKeyParam)}&customerKey=${encodeURIComponent(customerKeyParam)}`,
-          { credentials: "include" }
-        );
-        const data = await res.json();
-        if (res.ok && data.success) {
-          toast({ title: t('pricing.cardRegistered', '카드 등록 완료!'), description: t('pricing.cardRegisteredDesc', '이제 구독을 시작할 수 있습니다') });
-          queryClient.invalidateQueries({ queryKey: ["/api/toss/subscription"] });
-        } else {
-          toast({ title: t('pricing.cardRegisterFailed', '카드 등록 실패'), description: data.message, variant: "destructive" });
-        }
-      } catch {
-        toast({ title: t('pricing.cardRegisterError', '카드 등록 오류'), variant: "destructive" });
+  const requestBankMutation = useMutation({
+    mutationFn: async (period: "monthly" | "yearly") => {
+      const res = await apiRequest("POST", "/api/subscription/request-bank", { billingPeriod: period });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "입금 신청에 실패했습니다");
       }
-      window.history.replaceState({}, "", "/pricing");
-    }
-  }, [billingSuccess, authKeyParam, customerKeyParam, user]);
-
-  useEffect(() => {
-    handleBillingSuccess();
-  }, [handleBillingSuccess]);
-
-  const subscribeMutation = useMutation({
-    mutationFn: async (period: string) => {
-      const res = await apiRequest("POST", "/api/toss/subscribe", { billingPeriod: period });
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: t('pricing.subscribeSuccess', '구독 완료!'), description: `Veny Sound Premium ${data.plan === 'monthly' ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')} ${t('pricing.subscriptionStarted', '구독이 시작되었습니다')}` });
+      setBankRequestResult({
+        bankInfo: data.bankInfo,
+        amount: data.amount,
+        billingPeriod: data.billingPeriod,
+        orderId: data.orderId,
+        message: data.message,
+      });
+      toast({ title: t('pricing.bankRequestSubmitted', '입금 신청 완료'), description: data.message });
       queryClient.invalidateQueries({ queryKey: ["/api/toss/subscription"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     },
     onError: (error: Error) => {
-      toast({ title: t('pricing.subscribeFailed', '구독 실패'), description: error.message, variant: "destructive" });
+      toast({ title: t('pricing.bankRequestFailed', '입금 신청 실패'), description: error.message, variant: "destructive" });
     },
   });
 
@@ -122,51 +122,18 @@ export default function Pricing() {
     },
   });
 
-  const handleRegisterCard = async () => {
+  const handleBankTransferClick = () => {
     if (!user) {
       toast({ title: t('pricing.loginRequired', '로그인이 필요합니다'), description: t('pricing.loginRequiredDesc', '프리미엄 구독을 위해 먼저 로그인해주세요'), variant: "destructive" });
+      window.location.href = "/login";
       return;
     }
-
-    if (!clientKeyData?.clientKey) {
-      toast({ title: t('pricing.paymentServiceError', '결제 서비스 오류'), description: t('pricing.paymentServiceErrorDesc', '결제 서비스에 연결할 수 없습니다'), variant: "destructive" });
-      return;
-    }
-
-    setIsRegistering(true);
-    try {
-      const customerKey = `cust_${user.id.replace(/[^a-zA-Z0-9_\-=.@]/g, '_').substring(0, 50)}`;
-      const baseUrl = window.location.origin;
-
-      const { loadTossPayments } = await import("@tosspayments/tosspayments-sdk");
-      const tossPayments = await loadTossPayments(clientKeyData.clientKey);
-      if (!tossPayments) throw new Error(t('pricing.tossLoadFailed', '토스페이먼츠 로드 실패'));
-      const billing = tossPayments.payment({ customerKey });
-
-      await billing.requestBillingAuth({
-        method: "CARD",
-        successUrl: `${baseUrl}/pricing?billing=true`,
-        failUrl: `${baseUrl}/pricing?billing=fail`,
-      });
-    } catch (err: any) {
-      if (err?.code !== "USER_CANCEL") {
-        toast({ title: t('pricing.cardRegisterError', '카드 등록 오류'), description: err?.message || t('pricing.tryAgain', '다시 시도해주세요'), variant: "destructive" });
-      }
-    } finally {
-      setIsRegistering(false);
-    }
+    setBankRequestResult(null);
+    setBankModalOpen(true);
   };
 
-  const handleSubscribe = () => {
-    if (!user) {
-      toast({ title: t('pricing.loginRequired', '로그인이 필요합니다'), variant: "destructive" });
-      return;
-    }
-    if (!subscriptionData?.hasBillingKey) {
-      handleRegisterCard();
-      return;
-    }
-    subscribeMutation.mutate(billingPeriod);
+  const handleBankRequestSubmit = () => {
+    requestBankMutation.mutate(billingPeriod);
   };
 
   const isPremium = subscriptionData?.tier === "premium";
@@ -310,34 +277,62 @@ export default function Pricing() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {subscriptionData?.hasBillingKey ? (
-                      <Button
-                        className="w-full bg-primary"
-                        onClick={handleSubscribe}
-                        disabled={subscribeMutation.isPending}
-                        data-testid="button-subscribe"
-                      >
-                        <Zap size={16} className="mr-2" />
-                        {subscribeMutation.isPending ? t('pricing.paymentProcessing', '결제 진행 중...') : t('pricing.startPremium', '프리미엄 시작하기')}
-                      </Button>
-                    ) : (
-                      <Button
-                        className="w-full bg-primary"
-                        onClick={handleRegisterCard}
-                        disabled={isRegistering}
-                        data-testid="button-register-card"
-                      >
-                        <CreditCard size={16} className="mr-2" />
-                        {isRegistering ? t('pricing.openingCardRegister', '카드 등록 창 열기...') : t('pricing.registerAndSubscribe', '카드 등록 후 구독하기')}
-                      </Button>
-                    )}
-                  </div>
+                  <Button
+                    className="w-full bg-primary"
+                    onClick={handleBankTransferClick}
+                    data-testid="button-bank-subscribe"
+                  >
+                    <Landmark size={16} className="mr-2" />
+                    {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
+                  </Button>
                 )}
               </Card>
             </div>
           </>
         )}
+
+        <Dialog open={bankModalOpen} onOpenChange={setBankModalOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('pricing.bankTransferTitle', '계좌이체로 프리미엄 구독')}</DialogTitle>
+            </DialogHeader>
+            {bankRequestResult ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">{bankRequestResult.message}</p>
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                  <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankRequestResult.bankInfo.bankName}</p>
+                  <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankRequestResult.bankInfo.bankAccount}</p>
+                  <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankRequestResult.bankInfo.bankHolder}</p>
+                  <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {bankRequestResult.amount.toLocaleString("ko-KR")}{t('pricing.won', '원')} ({bankRequestResult.billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')})</p>
+                  <p className="text-xs text-muted-foreground">{t('pricing.orderId', '신청 번호')}: {bankRequestResult.orderId}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {billingPeriod === "monthly"
+                  ? t('pricing.bankTransferMonthly', '월간 6,600원을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.')
+                  : `${t('pricing.yearly', '연간')} ${displayPrice.toLocaleString("ko-KR")}${t('pricing.won', '원')}${t('pricing.bankTransferSuffix', '을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.')}`}
+                </p>
+                {bankInfo && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                    <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankInfo.bankName}</p>
+                    <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
+                    <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
+                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}</p>
+                  </div>
+                )}
+                <Button
+                  className="w-full"
+                  onClick={handleBankRequestSubmit}
+                  disabled={requestBankMutation.isPending}
+                >
+                  {requestBankMutation.isPending ? t('pricing.processing', '처리 중...') : t('pricing.submitBankRequest', '입금 신청하기')}
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
 
         <div className="mt-16 text-center">
           <h2 className="text-2xl font-bold mb-6">{t('pricing.faqTitle', '자주 묻는 질문')}</h2>
@@ -348,7 +343,7 @@ export default function Pricing() {
             </Card>
             <Card className="p-6">
               <h3 className="font-semibold mb-2">{t('pricing.faq2Title', '결제 방법은 무엇인가요?')}</h3>
-              <p className="text-sm text-muted-foreground">{t('pricing.faq2Answer', '토스페이먼츠를 통한 안전한 카드 결제를 지원합니다. 국내 모든 신용/체크카드를 사용할 수 있습니다.')}</p>
+              <p className="text-sm text-muted-foreground">{t('pricing.faq2Answer', '계좌이체(무통장 입금)로 결제할 수 있습니다. 구독하기에서 입금 신청 후 안내된 계좌로 입금해 주시면 1~2일 내 확인 후 프리미엄이 적용됩니다.')}</p>
             </Card>
             <Card className="p-6">
               <h3 className="font-semibold mb-2">{t('pricing.faq3Title', '연간 플랜은 어떤 혜택이 있나요?')}</h3>

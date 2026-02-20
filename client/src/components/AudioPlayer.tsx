@@ -460,6 +460,9 @@ export function GlobalAudioPlayer() {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
+  const lastTimeUpdateRef = useRef<number>(0);
+  const THROTTLE_MS = 250;
+  const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -476,9 +479,11 @@ export function GlobalAudioPlayer() {
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
 
+  if (activeMusicId) {
+    lastAudioUrlRef.current = `/api/music/${activeMusicId}/stream`;
+  }
   if (music) {
     lastMusicRef.current = music;
-    lastAudioUrlRef.current = resolveStorageUrl(music.filename);
     lastImageUrlRef.current = music.imageFilename
       ? resolveStorageUrl(music.imageFilename)
       : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=150&h=150&fit=crop";
@@ -638,7 +643,7 @@ export function GlobalAudioPlayer() {
     if (playPromise) {
       playPromise.catch(() => {});
     }
-  }, [audioUrl]);
+  }, [audioUrl, activeMusicId]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -659,7 +664,11 @@ export function GlobalAudioPlayer() {
 
     const onTimeUpdate = () => {
       if (!isSeeking) {
-        setCurrentTime(audio.currentTime);
+        const now = Date.now();
+        if (now - lastTimeUpdateRef.current >= THROTTLE_MS) {
+          lastTimeUpdateRef.current = now;
+          setCurrentTime(audio.currentTime);
+        }
       }
     };
     const onLoadedMetadata = () => {
@@ -677,6 +686,16 @@ export function GlobalAudioPlayer() {
         tracker.onEnded();
       }
     };
+    const onError = () => {
+      setIsPlaying(false);
+      if (displayMusic?.title) {
+        toast({
+          variant: "destructive",
+          title: "재생 실패",
+          description: `"${displayMusic.title}" 음원 파일을 불러올 수 없습니다. /file-guide 에서 필요한 파일 목록을 확인해 주세요.`,
+        });
+      }
+    };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
@@ -684,6 +703,7 @@ export function GlobalAudioPlayer() {
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('error', onError);
 
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
@@ -692,8 +712,20 @@ export function GlobalAudioPlayer() {
       audio.removeEventListener('play', onPlay);
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('error', onError);
     };
-  }, [isSeeking, tracker, playNext, user]);
+  }, [isSeeking, tracker, playNext, user, toast, displayMusic?.title]);
+
+  useEffect(() => {
+    const bar = progressRef.current;
+    if (!bar) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      setProgressBarWidth(w);
+    });
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [activeMusicId]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -755,6 +787,11 @@ export function GlobalAudioPlayer() {
     };
 
     const onEnd = () => {
+      const audio = audioRef.current;
+      if (audio) {
+        lastTimeUpdateRef.current = 0;
+        setCurrentTime(audio.currentTime);
+      }
       setIsSeeking(false);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onEnd);
@@ -859,8 +896,6 @@ export function GlobalAudioPlayer() {
     }
   }, [showEqPanel, initEqualizer]);
 
-  if (!activeMusicId || !displayMusic) return null;
-
   const repeatIcon = repeatMode === 'one' ? (
     <Repeat1 size={16} />
   ) : (
@@ -870,12 +905,12 @@ export function GlobalAudioPlayer() {
   return (
     <>
       <audio ref={audioRef} preload="auto" crossOrigin="anonymous" />
-      <AnimatePresence>
+      {activeMusicId && displayMusic && <AnimatePresence>
         <motion.div
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl"
+          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl pb-[env(safe-area-inset-bottom)] [contain:layout]"
         >
           <div
             ref={progressRef}
@@ -886,20 +921,25 @@ export function GlobalAudioPlayer() {
             data-testid="progress-bar"
           >
             <div className="h-6 flex items-center">
-              <div className="w-full h-1.5 bg-muted rounded-full relative">
+              <div className="w-full h-1.5 bg-muted rounded-full relative overflow-hidden">
                 <div
-                  className="h-full bg-primary rounded-full transition-none"
-                  style={{ width: `${progress}%` }}
+                  className="h-full w-full bg-primary rounded-full transition-none origin-left"
+                  style={{ transform: `scaleX(${progress / 100})` }}
                 />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md"
-                  style={{ left: `${progress}%`, transform: `translate(-50%, -50%)` }}
+                  className="absolute top-1/2 w-4 h-4 bg-primary rounded-full sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md pointer-events-none"
+                  style={{
+                    left: 0,
+                    transform: progressBarWidth
+                      ? `translate(calc(-50% + ${(progress / 100) * progressBarWidth}px), -50%)`
+                      : 'translate(-50%, -50%)',
+                  }}
                 />
               </div>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-4">
+          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-4 min-h-14">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 max-w-[35%] sm:max-w-[25%]">
               <img 
                 src={imageUrl} 
@@ -964,9 +1004,11 @@ export function GlobalAudioPlayer() {
             </div>
 
             {displayMusic?.lyrics ? (
-              <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
+              <div className="flex-1 min-w-0 min-h-10 flex items-center">
+                <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
+              </div>
             ) : (
-              <div className="flex-1" />
+              <div className="flex-1 min-h-10" />
             )}
 
             <div className="hidden sm:flex items-center gap-1 shrink-0">
@@ -1103,7 +1145,7 @@ export function GlobalAudioPlayer() {
             )}
           </AnimatePresence>
         </motion.div>
-      </AnimatePresence>
+      </AnimatePresence>}
     </>
   );
 }

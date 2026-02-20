@@ -8,14 +8,15 @@ import {
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
 } from "@shared/schema";
 import { eq, desc, and, ilike, inArray, sql, count } from "drizzle-orm";
+import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
 export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic): Promise<Music>;
-  getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: Music[]; total: number }>;
+  getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
   getMusicById(id: number): Promise<Music | undefined>;
-  getMusicByUser(userId: string): Promise<Music[]>;
+  getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]>;
   
   updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean }): Promise<Music | undefined>;
   deleteMusic(id: number): Promise<void>;
@@ -181,12 +182,45 @@ export class DatabaseStorage implements IStorage {
     const total = Number(countResult[0]?.count || 0);
 
     const offset = (page - 1) * limit;
-    let query = db.select().from(music).orderBy(desc(music.createdAt)).limit(limit).offset(offset);
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+    let query = db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .orderBy(desc(music.createdAt))
+      .limit(limit)
+      .offset(offset);
     if (whereClause) {
       // @ts-ignore
       query = query.where(whereClause);
     }
-    const data = await query;
+    const rows = await query;
+    const now = new Date();
+    const data: MusicWithUploaderTier[] = rows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null };
+      const isPremium =
+        _uploaderTier === "premium" &&
+        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free" } as MusicWithUploaderTier;
+    });
 
     return { data, total };
   }
@@ -196,8 +230,40 @@ export class DatabaseStorage implements IStorage {
     return found;
   }
 
-  async getMusicByUser(userId: string): Promise<Music[]> {
-    return await db.select().from(music).where(eq(music.userId, userId)).orderBy(desc(music.createdAt));
+  async getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]> {
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+    const rows = await db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(eq(music.userId, userId))
+      .orderBy(desc(music.createdAt));
+    const now = new Date();
+    return rows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null };
+      const isPremium =
+        _uploaderTier === "premium" &&
+        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free" } as MusicWithUploaderTier;
+    });
   }
 
   async updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean }): Promise<Music | undefined> {
@@ -271,18 +337,18 @@ export class DatabaseStorage implements IStorage {
 
   // Follows
   async toggleFollow(followerId: string, followedId: string): Promise<boolean> {
-    if (followerId === followedId) return false;
+    if (!followerId || !followedId || followerId === followedId) return false;
 
     const [existing] = await db.select().from(follows)
       .where(and(eq(follows.followerId, followerId), eq(follows.followedId, followedId)));
-    
+
     if (existing) {
       await db.delete(follows).where(and(eq(follows.followerId, followerId), eq(follows.followedId, followedId)));
       return false;
-    } else {
-      await db.insert(follows).values({ followerId, followedId });
-      return true;
     }
+
+    const [inserted] = await db.insert(follows).values({ followerId, followedId }).returning();
+    return !!inserted;
   }
 
   async getFollowers(userId: string): Promise<UserType[]> {
@@ -424,13 +490,30 @@ export class DatabaseStorage implements IStorage {
   // Notifications
   async createNotification(notifData: { userId: string, type: string, message: string, url?: string }): Promise<any> {
     const [notif] = await db.insert(notifications).values(notifData).returning();
+    await this.pruneNotificationsForUser(notifData.userId, 20);
     return notif;
   }
 
-  async getNotifications(userId: string): Promise<any[]> {
+  async getNotifications(userId: string, limit = 20): Promise<any[]> {
     return await db.select().from(notifications)
       .where(eq(notifications.userId, userId))
-      .orderBy(desc(notifications.createdAt));
+      .orderBy(desc(notifications.createdAt))
+      .limit(limit);
+  }
+
+  /** 사용자당 알림을 최대 keepCount개만 유지하고 나머지 삭제 */
+  async pruneNotificationsForUser(userId: string, keepCount = 20): Promise<void> {
+    const idsToKeep = await db.select({ id: notifications.id })
+      .from(notifications)
+      .where(eq(notifications.userId, userId))
+      .orderBy(desc(notifications.createdAt))
+      .limit(keepCount);
+    const keepSet = new Set(idsToKeep.map((r) => r.id));
+    const all = await db.select({ id: notifications.id }).from(notifications).where(eq(notifications.userId, userId));
+    const toDelete = all.filter((r) => !keepSet.has(r.id)).map((r) => r.id);
+    if (toDelete.length > 0) {
+      await db.delete(notifications).where(inArray(notifications.id, toDelete));
+    }
   }
 
   async markNotificationRead(id: number): Promise<void> {
@@ -529,6 +612,44 @@ export class DatabaseStorage implements IStorage {
     await db.delete(posts).where(eq(posts.userId, id));
 
     const userMusicIds = await db.select({ id: music.id }).from(music).where(eq(music.userId, id));
+    const userMusicIdList = userMusicIds.map((m) => m.id);
+
+    const userStoryIds = await db.select({ id: musicStories.id }).from(musicStories).where(eq(musicStories.userId, id));
+    for (const s of userStoryIds) {
+      await db.delete(storyComments).where(eq(storyComments.storyId, s.id));
+    }
+    await db.delete(storyComments).where(eq(storyComments.userId, id));
+    await db.delete(musicStories).where(eq(musicStories.userId, id));
+
+    if (userMusicIdList.length > 0) {
+      await db.delete(copyrightReports).where(inArray(copyrightReports.musicId, userMusicIdList));
+      await db.delete(tips).where(inArray(tips.musicId, userMusicIdList));
+      await db.delete(purchases).where(inArray(purchases.musicId, userMusicIdList));
+    }
+    await db.delete(copyrightReports).where(eq(copyrightReports.reporterId, id));
+    await db.delete(tips).where(eq(tips.fromUserId, id));
+    await db.delete(tips).where(eq(tips.toUserId, id));
+    await db.delete(purchases).where(eq(purchases.buyerId, id));
+    await db.delete(purchases).where(eq(purchases.sellerId, id));
+    await db.delete(streamingLogs).where(eq(streamingLogs.userId, id));
+    await db.delete(creditTransactions).where(eq(creditTransactions.userId, id));
+    await db.delete(withdrawals).where(eq(withdrawals.userId, id));
+
+    const userConvoIds = await db.select({ id: conversations.id }).from(conversations)
+      .where(eq(conversations.user1Id, id));
+    const userConvoIds2 = await db.select({ id: conversations.id }).from(conversations)
+      .where(eq(conversations.user2Id, id));
+    const allConvoIds = [...userConvoIds, ...userConvoIds2].map((c) => c.id);
+    if (allConvoIds.length > 0) {
+      await db.delete(directMessages).where(inArray(directMessages.conversationId, allConvoIds));
+    }
+    await db.delete(directMessages).where(eq(directMessages.senderId, id));
+    await db.delete(conversations).where(eq(conversations.user1Id, id));
+    await db.delete(conversations).where(eq(conversations.user2Id, id));
+
+    if (userMusicIdList.length > 0) {
+      await db.delete(streamingLogs).where(inArray(streamingLogs.musicId, userMusicIdList));
+    }
     for (const m of userMusicIds) {
       await db.delete(likes).where(eq(likes.musicId, m.id));
       await db.delete(reviews).where(eq(reviews.musicId, m.id));

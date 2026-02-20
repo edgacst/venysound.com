@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Navigation } from "@/components/Navigation";
@@ -34,9 +34,9 @@ import {
   Clock,
   Search,
   Banknote,
-  ArrowDownToLine,
   Database,
-  Download,
+  HardDrive,
+  Landmark,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -64,6 +64,13 @@ export default function Admin() {
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
   const [adminNotes, setAdminNotes] = useState<Record<number, string>>({});
+  const [savingLocal, setSavingLocal] = useState(false);
+  const [savingServer, setSavingServer] = useState(false);
+  const [backupPwOpen, setBackupPwOpen] = useState(false);
+  const [backupPw, setBackupPw] = useState("");
+  const [backupPwError, setBackupPwError] = useState("");
+  const [showBackupPw, setShowBackupPw] = useState(false);
+  const backupPwRef = useRef<HTMLInputElement>(null);
   const [withdrawalNotes, setWithdrawalNotes] = useState<Record<number, string>>({});
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
@@ -99,7 +106,7 @@ export default function Admin() {
 
   const deletePostMutation = useMutation({
     mutationFn: async (postId: number) => {
-      await apiRequest("DELETE", `/api/admin/posts/${postId}`);
+      await apiRequest("DELETE", "/api/admin/posts/" + postId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/posts"] });
@@ -110,7 +117,7 @@ export default function Admin() {
 
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      await apiRequest("DELETE", `/api/admin/users/${userId}`);
+      await apiRequest("DELETE", "/api/admin/users/" + userId, undefined, { timeoutMs: 120000 });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -124,7 +131,7 @@ export default function Admin() {
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      await apiRequest("PATCH", `/api/admin/users/${userId}/role`, { role });
+      await apiRequest("PATCH", "/api/admin/users/" + userId + "/role", { role });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -137,7 +144,7 @@ export default function Admin() {
 
   const updateSubscriptionMutation = useMutation({
     mutationFn: async ({ userId, tier }: { userId: string; tier: string }) => {
-      await apiRequest("PATCH", `/api/admin/users/${userId}/subscription`, { tier });
+      await apiRequest("PATCH", "/api/admin/users/" + userId + "/subscription", { tier });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -163,7 +170,7 @@ export default function Admin() {
 
   const updateReportMutation = useMutation({
     mutationFn: async ({ id, status, adminNote }: { id: number; status: string; adminNote?: string }) => {
-      await apiRequest("PATCH", `/api/admin/copyright-reports/${id}`, { status, adminNote });
+      await apiRequest("PATCH", "/api/admin/copyright-reports/" + id, { status, adminNote });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/copyright-reports"] });
@@ -189,11 +196,34 @@ export default function Admin() {
 
   const updateWithdrawalMutation = useMutation({
     mutationFn: async ({ id, status, adminNote }: { id: number; status: string; adminNote?: string }) => {
-      await apiRequest("PATCH", `/api/admin/withdrawals/${id}`, { status, adminNote });
+      await apiRequest("PATCH", "/api/admin/withdrawals/" + id, { status, adminNote });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/withdrawals"] });
       toast({ title: t('admin.withdrawalUpdated', '출금 상태가 업데이트되었습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t('admin.updateFailed', '업데이트에 실패했습니다'), variant: "destructive" });
+    },
+  });
+
+  const { data: pendingBankPayments, isLoading: loadingPendingBank } = useQuery<any[]>({
+    queryKey: ["/api/admin/pending-bank-payments"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/pending-bank-payments", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const confirmBankMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      await apiRequest("POST", `/api/admin/payments/${paymentId}/confirm-bank`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
+      toast({ title: t('admin.bankPaymentConfirmed', '입금 확인 처리되었습니다') });
     },
     onError: (err: any) => {
       toast({ title: err?.message || t('admin.updateFailed', '업데이트에 실패했습니다'), variant: "destructive" });
@@ -621,6 +651,54 @@ export default function Admin() {
           </div>
         </Card>
 
+        <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-pending-bank-payments">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Landmark size={20} className="text-primary" /> {t('admin.pendingBankPayments', '계좌이체 입금 대기')}
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left p-3 font-medium">{t('admin.requester', '요청자')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.orderId', '주문번호')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.amount', '금액')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.plan', '플랜')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.requestDate', '요청일')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.manage', '관리')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingPendingBank ? (
+                  <tr><td colSpan={6} className="text-center p-8"><Loader2 className="animate-spin mx-auto text-primary" size={20} /></td></tr>
+                ) : pendingBankPayments && pendingBankPayments.length > 0 ? (
+                  pendingBankPayments.map((p: any) => (
+                    <tr key={p.id} className="border-b border-white/5">
+                      <td className="p-3">{p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.email || p.userId}</td>
+                      <td className="p-3 text-xs font-mono">{p.orderId}</td>
+                      <td className="p-3 font-medium">{p.amount?.toLocaleString()}{t('common.won', '원')}</td>
+                      <td className="p-3">{p.billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')}</td>
+                      <td className="p-3 text-xs text-muted-foreground">{p.createdAt ? new Date(p.createdAt).toLocaleString("ko-KR") : ""}</td>
+                      <td className="p-3">
+                        <Button
+                          size="sm"
+                          onClick={() => confirmBankMutation.mutate(p.id)}
+                          disabled={confirmBankMutation.isPending}
+                        >
+                          <CheckCircle size={12} className="mr-1" /> {t('admin.confirmPayment', '입금 확인')}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="text-center p-8 text-muted-foreground">{t('admin.noPendingBankPayments', '입금 대기 건이 없습니다')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-withdrawal-management">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-withdrawal-management-title">
             <Banknote size={20} className="text-primary" /> {t('admin.withdrawalManagement', '출금 관리')}
@@ -723,26 +801,157 @@ export default function Admin() {
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-backup-title">
             <Database className="w-5 h-5 text-emerald-400" />
-            {t('admin.databaseBackup', '데이터베이스 백업')}
+            {t('admin.databaseBackup', '백업')}
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            {t('admin.backupDesc', '현재 데이터베이스의 전체 데이터를 SQL 파일로 다운로드합니다. 백업 파일은 pg_dump 형식으로 생성됩니다.')}
+            DB백업, 소스코드, 음원파일 3개를 한 번에 <strong className="text-foreground">E:\뉴베니사운드백업폴더</strong>에 저장합니다.<br />
+            <span className="text-xs">베니사운드_DB백업_날짜.sql · 베니사운드_소스코드_날짜.zip · 베니사운드_음원파일_날짜.zip</span>
+            <br />
+            <span className="text-xs text-amber-600 dark:text-amber-400">※ Windows 로컬 PC에서만 사용하세요. 서버(VPS)에서는 실행되지 않습니다.</span>
           </p>
-          <Button
-            onClick={() => {
-              const link = document.createElement("a");
-              link.href = "/api/admin/backup";
-              link.download = "";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              toast({ title: t('admin.backupStarted', '백업 다운로드가 시작되었습니다') });
-            }}
-            data-testid="button-download-backup"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            {t('admin.downloadBackup', 'SQL 백업 다운로드')}
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={savingLocal}
+              onClick={() => {
+                setBackupPw("");
+                setBackupPwError("");
+                setShowBackupPw(false);
+                setBackupPwOpen(true);
+                setTimeout(() => backupPwRef.current?.focus(), 100);
+              }}
+              data-testid="button-save-local"
+            >
+              {savingLocal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <HardDrive className="w-4 h-4 mr-2" />}
+              {savingLocal ? "저장 중..." : "전체 백업 저장 (E드라이브)"}
+            </Button>
+            <Button
+              variant="outline"
+              className="border-emerald-500/50 text-emerald-500"
+              disabled={savingServer}
+              onClick={async () => {
+                setSavingServer(true);
+                try {
+                  const res = await fetch("/api/admin/server-backup", {
+                    method: "POST",
+                    credentials: "include",
+                  });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    throw new Error(data?.message || "서버 백업 생성에 실패했습니다");
+                  }
+                  toast({
+                    title: "서버 백업 생성 완료",
+                    description:
+                      "원격 서버 /var/www/venysound 경로에 백업 파일 3개가 생성되었습니다.\n" +
+                      [data.files?.db, data.files?.code, data.files?.uploads]
+                        .filter(Boolean)
+                        .map((f: string) => f.split("/").pop())
+                        .join("\n"),
+                  });
+                } catch (e: any) {
+                  toast({
+                    title: "서버 백업 실패",
+                    description: e?.message || "원격 서버에 백업 파일을 생성하지 못했습니다.",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setSavingServer(false);
+                }
+              }}
+            >
+              {savingServer ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
+              {savingServer ? "서버 백업 생성 중..." : "원격 서버에 백업 파일 생성"}
+            </Button>
+          </div>
+
+          {/* 비밀번호 확인 다이얼로그 */}
+          {backupPwOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+              <div className="bg-background border border-border rounded-xl shadow-2xl p-6 w-80">
+                <div className="flex items-center gap-2 mb-4">
+                  <HardDrive className="w-5 h-5 text-emerald-400" />
+                  <h3 className="font-bold text-base">백업 비밀번호 확인</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">전체 백업을 실행하려면 비밀번호를 입력하세요.</p>
+                <div className="relative mb-2">
+                  <Input
+                    ref={backupPwRef}
+                    type={showBackupPw ? "text" : "password"}
+                    placeholder="비밀번호"
+                    value={backupPw}
+                    onChange={(e) => { setBackupPw(e.target.value); setBackupPwError(""); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") document.getElementById("backup-pw-confirm")?.click();
+                      if (e.key === "Escape") setBackupPwOpen(false);
+                    }}
+                    className={backupPwError ? "border-red-500 pr-10" : "pr-10"}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowBackupPw(!showBackupPw)}
+                  >
+                    {showBackupPw ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    )}
+                  </button>
+                </div>
+                {backupPwError && <p className="text-xs text-red-500 mb-3">{backupPwError}</p>}
+                <div className="flex gap-2 mt-4">
+                  <Button variant="outline" className="flex-1" onClick={() => setBackupPwOpen(false)}>취소</Button>
+                  <Button
+                    id="backup-pw-confirm"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={async () => {
+                      const expectedPw = import.meta.env.VITE_BACKUP_PASSWORD || "kim1324";
+                      if (backupPw !== expectedPw) {
+                        setBackupPwError("비밀번호가 틀렸습니다.");
+                        backupPwRef.current?.focus();
+                        return;
+                      }
+                      setBackupPwOpen(false);
+                      setSavingLocal(true);
+                      try {
+                        const res = await fetch("/api/admin/save-to-local", { method: "POST", credentials: "include" });
+                        const text = await res.text();
+                        let data: { message?: string; results?: any[] } = {};
+                        try {
+                          data = text ? JSON.parse(text) : {};
+                        } catch {
+                          throw new Error(res.ok ? "응답 파싱 실패" : "서버 오류가 발생했습니다. 로그인 상태와 관리자 권한을 확인해주세요.");
+                        }
+                        if (!res.ok) throw new Error(data.message || "저장 실패");
+                        const succeeded = data.results.filter((r: any) => r.success);
+                        const failed = data.results.filter((r: any) => !r.success);
+                        if (succeeded.length > 0) {
+                          toast({
+                            title: `${succeeded.length}개 저장 완료`,
+                            description: succeeded.map((r: any) => `${r.type}: ${r.file.split("\\").pop()}`).join("\n"),
+                          });
+                        }
+                        if (failed.length > 0) {
+                          toast({
+                            title: `${failed.length}개 저장 실패`,
+                            description: failed.map((r: any) => `${r.type}: ${r.error}`).join("\n"),
+                            variant: "destructive",
+                          });
+                        }
+                      } catch (e: any) {
+                        toast({ title: "저장 실패", description: e?.message, variant: "destructive" });
+                      } finally {
+                        setSavingLocal(false);
+                      }
+                    }}
+                  >
+                    확인
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
       </div>

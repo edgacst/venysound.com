@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 
@@ -18,6 +19,7 @@ export function useUserProfile(id: string) {
 export function useFollowUser() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation();
 
   return useMutation({
     mutationFn: async (id: string) => {
@@ -29,15 +31,16 @@ export function useFollowUser() {
       if (!res.ok) throw new Error("Failed to follow user");
       return api.users.follow.responses[200].parse(await res.json());
     },
-    onSuccess: (data) => {
+    onSuccess: (data, userId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/users/profile"] });
-      toast({ 
-        title: data.following ? "팔로우" : "언팔로우", 
-        description: data.following ? "팔로우하기 시작했습니다" : "팔로우를 취소했습니다" 
+      queryClient.invalidateQueries({ queryKey: ["/api/users", userId, "profile"] });
+      toast({
+        title: data.following ? t("toast.followed") : t("toast.unfollowed"),
+        description: data.following ? t("toast.followedDesc") : t("toast.unfollowedDesc"),
       });
     },
-    onError: (error) => {
-      toast({ title: "오류", description: "팔로우 처리에 실패했습니다", variant: "destructive" });
+    onError: () => {
+      toast({ title: t("toast.error"), description: t("toast.followFailed"), variant: "destructive" });
     },
   });
 }

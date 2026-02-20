@@ -69,6 +69,9 @@ export default function Notifications() {
             </Button>
           )}
         </div>
+        <p className="text-xs text-muted-foreground mb-4" data-testid="text-notifications-limit-notice">
+          {t('notifications.limitNotice', '알림목록은 20개까지만 보여집니다.')}
+        </p>
 
         {isLoading ? (
           <div className="flex justify-center py-20">

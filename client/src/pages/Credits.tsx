@@ -178,9 +178,7 @@ export default function Credits() {
                 <Button variant="outline" onClick={() => setSelectedPackage(null)}>{t('credits.cancel', '취소')}</Button>
                 <Button
                   onClick={() => {
-                    const pkg = CREDIT_PACKAGES.find(p => p.amount === selectedPackage);
-                    const totalAmount = selectedPackage + (pkg?.bonus || 0);
-                    chargeMutation.mutate(totalAmount);
+                    toast({ title: t('credits.comingSoon', '준비중'), description: t('credits.comingSoonDesc', '크레딧 충전 기능은 준비 중입니다.') });
                   }}
                   disabled={chargeMutation.isPending}
                   data-testid="button-charge"

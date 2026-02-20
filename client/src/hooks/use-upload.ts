@@ -117,11 +117,27 @@ export function useUpload(options: UseUploadOptions = {}) {
       setProgress(0);
 
       try {
-        // Step 1: Request presigned URL (send metadata as JSON)
         setProgress(10);
         const uploadResponse = await requestUploadUrl(file);
 
-        // Step 2: Upload file directly to presigned URL
+        if ((uploadResponse as any).localMode) {
+          setProgress(30);
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch((uploadResponse as any).uploadEndpoint || "/api/uploads/local", {
+            method: "POST",
+            body: formData,
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || "로컬 업로드 실패");
+          }
+          const data = await res.json();
+          setProgress(100);
+          options.onSuccess?.(data);
+          return data;
+        }
+
         setProgress(30);
         await uploadToPresignedUrl(file, uploadResponse.uploadURL);
 

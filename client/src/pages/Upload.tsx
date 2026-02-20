@@ -23,7 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, Sparkles, ImagePlus, DollarSign, Download, AlertCircle, Crown } from "lucide-react";
+import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, ImagePlus, DollarSign, Download, AlertCircle, Crown } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -106,15 +106,6 @@ export default function Upload() {
   const handleSubGenreChange = (value: string) => {
     setSelectedSubGenre(value);
     form.setValue("genre", value);
-  };
-
-  const handleGenerateAiCover = () => {
-    if ((user as any)?.subscriptionTier !== "premium") {
-      toast({ title: t('upload.premiumOnly', '프리미엄 전용 기능'), description: t('upload.premiumAiCoverDesc', 'AI 커버 생성은 프리미엄 멤버십 구독 후 이용 가능합니다.') });
-      setLocation("/pricing");
-      return;
-    }
-    toast({ title: t('upload.aiCoverGenerating', 'AI 커버 생성 중...'), description: t('upload.pleaseWait', '잠시만 기다려주세요.') });
   };
 
   const handleFetchUnsplash = async () => {
@@ -317,17 +308,6 @@ export default function Upload() {
                               {t('upload.fetchRandomCover', '랜덤 커버 가져오기')}
                             </>
                           )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={handleGenerateAiCover}
-                          data-testid="button-generate-ai-cover"
-                        >
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          {t('upload.aiCoverGenerate', 'AI 커버 자동 생성')}
                         </Button>
                       </div>
                     )}

@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
+import { LoginModal } from "@/components/LoginModal";
 
 function ScrollToTop() {
   const [location] = useLocation();
@@ -23,18 +24,23 @@ import BulkUpload from "@/pages/BulkUpload";
 import Profile from "@/pages/Profile";
 import About from "@/pages/About";
 import Legal from "@/pages/Legal";
+import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import FAQ from "@/pages/FAQ";
 import Login from "@/pages/Login";
+import Register from "@/pages/Register";
 import Admin from "@/pages/Admin";
 import Pricing from "@/pages/Pricing";
 import Credits from "@/pages/Credits";
+import MyLibrary from "@/pages/MyLibrary";
 import PostDetail from "@/pages/PostDetail";
 import ValueDetail from "@/pages/ValueDetail";
 import Notifications from "@/pages/Notifications";
 import Guide from "@/pages/Guide";
+import FileGuide from "@/pages/FileGuide";
 import MusicDetail from "@/pages/MusicDetail";
 import Dashboard from "@/pages/Dashboard";
 import Messages from "@/pages/Messages";
+import SunoGuide from "@/pages/SunoGuide";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -53,16 +59,21 @@ function Router() {
       <Route path="/about" component={About} />
       <Route path="/about/values/:slug" component={ValueDetail} />
       <Route path="/legal" component={Legal} />
+      <Route path="/privacy-policy" component={PrivacyPolicy} />
       <Route path="/faq" component={FAQ} />
       <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
       <Route path="/admin" component={Admin} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/credits" component={Credits} />
+      <Route path="/my-library" component={MyLibrary} />
       <Route path="/notifications" component={Notifications} />
       <Route path="/guide" component={Guide} />
+      <Route path="/file-guide" component={FileGuide} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/messages" component={Messages} />
       <Route path="/messages/:userId" component={Messages} />
+      <Route path="/suno-guide" component={SunoGuide} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -75,6 +86,7 @@ function App() {
         <ScrollToTop />
         <Router />
         <GlobalAudioPlayer />
+        <LoginModal />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

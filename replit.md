@@ -1,5 +1,7 @@
 # Veny Sound - 한국어 음악 스트리밍 플랫폼
 
+> **로컬 개발**: Cursor 등에서 `npm run dev` 실행 후 http://localhost:5000 접속. Replit 미사용.
+
 ## Overview
 Veny Sound는 한국어 UI 기반의 음악 스트리밍/공유 플랫폼입니다. Veny는 Venue(장소)를 연상시켜 "음악이 머무는 공간"이라는 의미를 가지며, Sound를 붙여 오디오/음악 공유 플랫폼임을 나타냅니다. 사용자가 음원을 업로드하고, 스트리밍하며, 커뮤니티에서 소통할 수 있습니다.
 
@@ -8,7 +10,7 @@ Veny Sound는 한국어 UI 기반의 음악 스트리밍/공유 플랫폼입니�
 - **Backend**: Node.js + Express
 - **Database**: PostgreSQL (Drizzle ORM)
 - **Auth**: Google OAuth 2.0 (Passport.js) - 네이버/카카오/페이스북 추가 예정
-- **Storage**: Replit Object Storage (Google Cloud)
+- **Storage**: 로컬 `local-uploads/` 또는 Google Cloud (배포 시)
 - **Audio**: 커스텀 네이티브 오디오 플레이어 (Media Session API)
 
 ## Project Architecture
@@ -68,6 +70,11 @@ shared/
 - DM Sans + Outfit 폰트
 
 ## Recent Changes
+- 2026-02-18: Replit 이탈 및 로컬 개발 정리
+  - .replit 삭제, Replit Vite 플러그인 제거
+  - 음원 스트리밍: GET /api/music/:id/stream (DB filename 형식 유연 지원)
+  - local-uploads/uploads/ 에 MP3/WAV/OGG 저장 시 재생
+  - /file-guide: DB에 등록된 곡 중 파일 누락 목록 안내
 - 2026-02-17: 창작 히스토리(Creative Story) 기능 추가
   - DB: music_stories (히스토리), story_comments (댓글) 테이블
   - 업로더만 자기 음원에 창작 배경/영감/제작 과정 글 작성 가능

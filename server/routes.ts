@@ -1,12 +1,16 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import path from "path";
+import { execSync } from "child_process";
+import { existsSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import archiver from "archiver";
 import { storage } from "./storage";
 import { api, errorSchemas } from "@shared/routes";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replit_integrations/auth";
 import { registerAuthRoutes } from "./replit_integrations/auth";
 import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
+import { ObjectStorageService, ObjectNotFoundError } from "./replit_integrations/object_storage/objectStorage";
 import { generateImageBuffer } from "./replit_integrations/image/client";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments } from "@shared/models/auth";
@@ -18,6 +22,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // local-uploads 폴더 자동 생성
+  const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+  mkdirSync(uploadsDir, { recursive: true });
+
   // Setup Auth
   await setupAuth(app);
   registerAuthRoutes(app);
@@ -109,10 +117,13 @@ export async function registerRoutes(
       const result = await db.execute(sql`
         SELECT 
           m.*,
+          u.subscription_tier as uploader_subscription_tier,
+          u.subscription_expires_at as uploader_subscription_expires_at,
           COALESCE(l.like_count, 0) as like_count,
           COALESCE(s.stream_seconds, 0) as stream_seconds,
           (COALESCE(l.like_count, 0) * 100 + COALESCE(s.stream_seconds, 0)) as popularity_score
         FROM music m
+        LEFT JOIN users u ON u.id = m.user_id
         LEFT JOIN (
           SELECT music_id, COUNT(*) as like_count FROM likes GROUP BY music_id
         ) l ON l.music_id = m.id
@@ -122,22 +133,31 @@ export async function registerRoutes(
         ORDER BY popularity_score DESC
         LIMIT 20
       `);
-      const rows = (result.rows as any[]).map(r => ({
-        id: Number(r.id),
-        title: r.title,
-        artist: r.artist,
-        filename: r.filename,
-        imageFilename: r.image_filename,
-        genre: r.genre,
-        tags: r.tags,
-        isAi: r.is_ai,
-        price: Number(r.price || 0),
-        isDownloadable: r.is_downloadable,
-        userId: r.user_id,
-        createdAt: r.created_at,
-        likeCount: Number(r.like_count || 0),
-        streamSeconds: Number(r.stream_seconds || 0),
-      }));
+      const now = new Date();
+      const rows = (result.rows as any[]).map(r => {
+        const tier = r.uploader_subscription_tier;
+        const expiresAt = r.uploader_subscription_expires_at;
+        const isPremium =
+          tier === "premium" &&
+          (expiresAt == null || new Date(expiresAt) > now);
+        return {
+          id: Number(r.id),
+          title: r.title,
+          artist: r.artist,
+          filename: r.filename,
+          imageFilename: r.image_filename,
+          genre: r.genre,
+          tags: r.tags,
+          isAi: r.is_ai,
+          price: Number(r.price || 0),
+          isDownloadable: r.is_downloadable,
+          userId: r.user_id,
+          createdAt: r.created_at,
+          uploaderSubscriptionTier: isPremium ? "premium" : "free",
+          likeCount: Number(r.like_count || 0),
+          streamSeconds: Number(r.stream_seconds || 0),
+        };
+      });
       res.json(rows);
     } catch (error) {
       res.status(500).json({ message: "인기 음원을 불러올 수 없습니다" });
@@ -173,13 +193,138 @@ export async function registerRoutes(
     }
   });
 
+  /** 음원 스트리밍 (더 구체적인 경로이므로 api.music.get보다 먼저 등록) */
+  app.get("/api/music/:id/stream", async (req, res) => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const music = await storage.getMusicById(Number(id));
+    if (!music) {
+      return res.status(404).json({ error: "Music not found" });
+    }
+    const fn = music.filename || "";
+    let fileId = "";
+    const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+    if (objMatch) {
+      fileId = objMatch[1];
+    } else if (fn.startsWith("uploads/")) {
+      fileId = fn.replace(/^uploads\//, "");
+    } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+      fileId = fn.trim();
+    } else if (fn.includes("/")) {
+      fileId = fn.split("/").pop() || "";
+    } else {
+      fileId = fn;
+    }
+    fileId = fileId.replace(/^\//, "");
+    if (!fileId) {
+      return res.status(404).json({
+        error: "파일 경로를 찾을 수 없습니다",
+        hint: "DB의 filename 형식을 확인해 주세요. /file-guide 에서 연결 방법을 안내합니다.",
+      });
+    }
+    const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+    const candidates = [
+      path.join(uploadsDir, fileId),
+      path.join(uploadsDir, `${baseId}.mp3`),
+      path.join(uploadsDir, `${baseId}.wav`),
+      path.join(uploadsDir, `${baseId}.ogg`),
+    ];
+    const localPath = candidates.find((p) => existsSync(p));
+    if (!localPath) {
+      return res.status(404).json({
+        error: "음원 파일을 찾을 수 없습니다",
+        hint: `local-uploads/uploads/ 에 ${baseId}.mp3 (또는 .wav, .ogg) 파일을 넣어 주세요. /file-guide 에서 전체 목록을 확인할 수 있습니다.`,
+      });
+    }
+    const ext = path.extname(localPath).toLowerCase();
+    const mime: Record<string, string> = {
+      ".mp3": "audio/mpeg",
+      ".wav": "audio/wav",
+      ".ogg": "audio/ogg",
+    };
+    const contentType = mime[ext] || "audio/mpeg";
+    const stat = statSync(localPath);
+    const fileSize = stat.size;
+    const rangeHeader = req.headers.range;
+
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Type", contentType);
+
+    if (rangeHeader) {
+      const parts = rangeHeader.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkSize = end - start + 1;
+
+      res.status(206);
+      res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+      res.set("Content-Length", String(chunkSize));
+      createReadStream(localPath, { start, end }).pipe(res);
+    } else {
+      res.set("Content-Length", String(fileSize));
+      createReadStream(localPath).pipe(res);
+    }
+  });
+
   app.get(api.music.get.path, async (req, res) => {
     const music = await storage.getMusicById(Number(req.params.id));
     if (!music) {
       return res.status(404).json({ message: "Music not found" });
     }
     const uploader = await storage.getUserById(music.userId);
-    res.json({ ...music, uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email } : null });
+    const now = new Date();
+    const uploaderIsPremium =
+      uploader?.subscriptionTier === "premium" &&
+      (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+    res.json({
+      ...music,
+      uploaderSubscriptionTier: uploaderIsPremium ? "premium" : "free",
+      uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
+    });
+  });
+
+  app.get("/api/music/missing-files", async (_req, res) => {
+    try {
+      const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+      const extractFileId = (fn: string): string => {
+        if (!fn) return "";
+        const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+        if (objMatch) return objMatch[1];
+        if (fn.startsWith("uploads/")) return fn.replace(/^uploads\//, "");
+        if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) return fn.trim();
+        if (fn.includes("/")) return fn.split("/").pop() || "";
+        return fn.replace(/^\//, "");
+      };
+      const all = await db.select({ id: music.id, title: music.title, artist: music.artist, filename: music.filename }).from(music);
+      const missing = all.filter((m) => {
+        const fileId = extractFileId(m.filename || "");
+        if (!fileId) return true;
+        const candidates = [
+          path.join(uploadsDir, fileId),
+          path.join(uploadsDir, `${fileId}.mp3`),
+          path.join(uploadsDir, fileId.replace(/\.(mp3|wav|ogg)$/i, "")),
+          path.join(uploadsDir, fileId.replace(/\.(mp3|wav|ogg)$/i, "") + ".mp3"),
+        ];
+        return !candidates.some((p) => existsSync(p));
+      });
+      res.json({
+        total: all.length,
+        missing: missing.length,
+        list: missing.map((m) => {
+          const fileId = extractFileId(m.filename || "");
+          const hasExt = /\.(mp3|wav|ogg)$/i.test(fileId);
+          return {
+            id: m.id,
+            title: m.title,
+            artist: m.artist,
+            fileId,
+            saveAs: hasExt ? fileId : `${fileId.replace(/\.(mp3|wav|ogg)$/i, "")}.mp3`,
+          };
+        }),
+      });
+    } catch (err) {
+      console.error("Missing files check:", err);
+      res.status(500).json({ error: "조회 실패" });
+    }
   });
 
   app.get("/api/upload-limit", isAuthenticated, async (req, res) => {
@@ -568,37 +713,52 @@ export async function registerRoutes(
 
   // === User Routes ===
   app.post(api.users.follow.path, isAuthenticated, async (req, res) => {
-    // @ts-ignore
-    const followerId = req.user.claims.sub;
-    const followedId = req.params.id;
+    try {
+      // @ts-ignore
+      const followerId = req.user?.claims?.sub;
+      const followedId = req.params?.id;
 
-    if (followerId === followedId) {
-      return res.status(400).json({ message: "자기 자신을 팔로우할 수 없습니다" });
+      if (!followerId || !followedId) {
+        return res.status(400).json({ message: "잘못된 요청입니다." });
+      }
+      if (followerId === followedId) {
+        return res.status(400).json({ message: "자기 자신을 팔로우할 수 없습니다" });
+      }
+
+      const following = await storage.toggleFollow(followerId, followedId);
+
+      if (following) {
+        // @ts-ignore
+        const followerName = req.user.claims.first_name || "사용자";
+        await storage.createNotification({
+          userId: followedId,
+          type: "follow",
+          message: `${followerName}님이 팔로우하기 시작했습니다`,
+          url: `/profile/${followerId}`
+        });
+      }
+
+      return res.json({ following });
+    } catch (err) {
+      console.error("[follow] Error:", err);
+      return res.status(500).json({ message: err instanceof Error ? err.message : "팔로우 처리에 실패했습니다." });
     }
-
-    const following = await storage.toggleFollow(followerId, followedId);
-    
-    if (following) {
-       // @ts-ignore
-      const followerName = req.user.claims.first_name || "사용자";
-      await storage.createNotification({
-        userId: followedId,
-        type: "follow",
-        message: `${followerName}님이 팔로우하기 시작했습니다`,
-        url: `/profile/${followerId}`
-      });
-    }
-
-    res.json({ following });
   });
 
   app.get(api.users.getProfile.path, async (req, res) => {
     const userId = req.params.id;
+    if (!userId) {
+      return res.status(404).json({ message: "프로필을 찾을 수 없습니다." });
+    }
     // @ts-ignore
     const currentUserId = req.user?.claims?.sub;
-    
-    const [user, uploadedMusic, likedMusic, followerCount, followingCount, userPlaylists, userPosts, followers, following] = await Promise.all([
-      storage.getUserById(userId),
+
+    const user = await storage.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "프로필을 찾을 수 없습니다." });
+    }
+
+    const [uploadedMusic, likedMusic, followerCount, followingCount, userPlaylists, userPosts, followers, following] = await Promise.all([
       storage.getMusicByUser(userId),
       storage.getLikedMusic(userId),
       storage.getFollowerCount(userId),
@@ -615,7 +775,7 @@ export async function registerRoutes(
     }
 
     res.json({
-      user: user || { id: userId },
+      user,
       uploadedMusic,
       likedMusic,
       followerCount,
@@ -710,13 +870,18 @@ export async function registerRoutes(
   });
 
   app.delete("/api/admin/users/:id", isAuthenticated, isAdmin, async (req, res) => {
-    const targetId = req.params.id;
-    // @ts-ignore
-    if (targetId === req.user.claims.sub) {
-      return res.status(400).json({ message: "자기 자신은 삭제할 수 없습니다" });
+    try {
+      const targetId = req.params.id;
+      // @ts-ignore
+      if (targetId === req.user.claims.sub) {
+        return res.status(400).json({ message: "자기 자신은 삭제할 수 없습니다" });
+      }
+      await storage.deleteUser(targetId);
+      return res.json({ success: true });
+    } catch (err: any) {
+      console.error("[admin deleteUser]", err);
+      return res.status(500).json({ message: err?.message || "회원 삭제에 실패했습니다." });
     }
-    await storage.deleteUser(targetId);
-    res.json({ success: true });
   });
 
   app.patch("/api/admin/users/:id/role", isAuthenticated, isAdmin, async (req, res) => {
@@ -1043,6 +1208,130 @@ export async function registerRoutes(
     }
   });
 
+  // === 계좌이체 구독 (Bank Transfer Subscription) ===
+  app.get("/api/subscription/bank-info", async (_req, res) => {
+    const bankName = process.env.BANK_NAME || "입력된 은행명 없음";
+    const bankAccount = process.env.BANK_ACCOUNT || "";
+    const bankHolder = process.env.BANK_HOLDER || "";
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
+    const amountMonthly = plan?.monthlyPrice ?? 6600;
+    const amountYearly = plan?.yearlyPrice ?? 60000;
+    res.json({
+      bankName,
+      bankAccount,
+      bankHolder,
+      amountMonthly,
+      amountYearly,
+    });
+  });
+
+  app.post("/api/subscription/request-bank", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const { billingPeriod } = req.body;
+      if (!billingPeriod || !["monthly", "yearly"].includes(billingPeriod)) {
+        return res.status(400).json({ message: "결제 주기를 선택해주세요" });
+      }
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
+
+      let amount: number;
+      try {
+        const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
+        amount = plan ? (billingPeriod === "monthly" ? plan.monthlyPrice : plan.yearlyPrice) : (billingPeriod === "monthly" ? 6600 : 60000);
+      } catch {
+        amount = billingPeriod === "monthly" ? 6600 : 60000;
+      }
+      const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
+
+      await db.insert(payments).values({
+        userId,
+        orderId,
+        paymentKey: "bank_transfer",
+        amount,
+        status: "pending",
+        plan: "premium",
+        billingPeriod,
+      });
+
+      const bankName = process.env.BANK_NAME || "은행명";
+      const bankAccount = process.env.BANK_ACCOUNT || "";
+      const bankHolder = process.env.BANK_HOLDER || "";
+      res.json({
+        success: true,
+        orderId,
+        bankInfo: { bankName, bankAccount, bankHolder },
+        amount,
+        billingPeriod,
+        message: "입금 신청이 등록되었습니다. 월간 6,600원을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.",
+      });
+    } catch (err: any) {
+      console.error("Request bank subscription error:", err);
+      let message = err?.message || err?.code || "입금 신청에 실패했습니다";
+      if (typeof message === "string" && (message.includes("payments") || message.includes("subscription_plans")) && message.toLowerCase().includes("relation")) {
+        message = "결제 테이블이 없습니다. 로컬 개발 시 script/create-subscription-tables.sql 을 DB에 실행해주세요.";
+      }
+      res.status(500).json({ message: typeof message === "string" ? message : "입금 신청에 실패했습니다" });
+    }
+  });
+
+  app.post("/api/admin/payments/:id/confirm-bank", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = req.params.id;
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
+      if (payment.status !== "pending" || payment.paymentKey !== "bank_transfer") {
+        return res.status(400).json({ message: "계좌이체 대기 건만 확인할 수 있습니다" });
+      }
+
+      const now = new Date();
+      const expiresAt = new Date(now);
+      if (payment.billingPeriod === "monthly") {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      } else {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+
+      await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
+      await db.update(users).set({
+        subscriptionTier: "premium",
+        subscriptionPlan: payment.billingPeriod,
+        subscriptionExpiresAt: expiresAt,
+      }).where(eq(users.id, payment.userId));
+
+      res.json({ success: true, expiresAt });
+    } catch (err) {
+      console.error("Confirm bank payment error:", err);
+      res.status(500).json({ message: "입금 확인 처리에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/admin/pending-bank-payments", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await db
+        .select({
+          id: payments.id,
+          userId: payments.userId,
+          orderId: payments.orderId,
+          amount: payments.amount,
+          billingPeriod: payments.billingPeriod,
+          createdAt: payments.createdAt,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(payments)
+        .leftJoin(users, eq(payments.userId, users.id))
+        .where(and(eq(payments.status, "pending"), eq(payments.paymentKey, "bank_transfer")))
+        .orderBy(desc(payments.createdAt));
+      res.json(list);
+    } catch (err) {
+      console.error("Pending bank payments error:", err);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
+  });
+
   // === Credits (크레딧) Routes ===
   app.get("/api/credits", isAuthenticated, async (req, res) => {
     try {
@@ -1261,6 +1550,164 @@ export async function registerRoutes(
       res.json(purchasesList);
     } catch (err) {
       res.status(500).json({ message: "구매 내역을 불러올 수 없습니다" });
+    }
+  });
+
+  app.get("/api/music/:id/download", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const musicId = Number(req.params.id);
+
+      const purchased = await storage.hasPurchased(userId, musicId);
+      if (!purchased) {
+        return res.status(403).json({ message: "구매한 음원만 다운로드할 수 있습니다" });
+      }
+
+      const musicItem = await storage.getMusicById(musicId);
+      if (!musicItem) {
+        return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      }
+
+      const fn = musicItem.filename || "";
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) fileId = objMatch[1];
+      else if (fn.startsWith("uploads/")) fileId = fn.replace(/^uploads\//, "");
+      else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) fileId = fn.trim();
+      else if (fn.includes("/")) fileId = fn.split("/").pop() || "";
+      else fileId = fn;
+      fileId = fileId.replace(/^\//, "");
+
+      if (!fileId) {
+        return res.status(404).json({ message: "파일 경로를 찾을 수 없습니다" });
+      }
+
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDir, fileId),
+        path.join(uploadsDir, `${baseId}.mp3`),
+        path.join(uploadsDir, `${baseId}.wav`),
+        path.join(uploadsDir, `${baseId}.ogg`),
+      ];
+      const localPath = candidates.find((p) => existsSync(p));
+      const safeTitle = (musicItem.title || "music").replace(/[^\w\s가-힣-]/g, "").trim();
+      const extFromFileId = path.extname(fileId).toLowerCase() || ".mp3";
+
+      if (localPath) {
+        const ext = path.extname(localPath).toLowerCase();
+        const mime: Record<string, string> = {
+          ".mp3": "audio/mpeg",
+          ".wav": "audio/wav",
+          ".ogg": "audio/ogg",
+        };
+        res.set("Content-Type", mime[ext] || "audio/mpeg");
+        res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeTitle + ext)}`);
+        const fileStat = statSync(localPath);
+        res.set("Content-Length", String(fileStat.size));
+        createReadStream(localPath).pipe(res);
+        return;
+      }
+
+      // 로컬에 없으면 객체 스토리지에서 다운로드 시도 (배포 환경)
+      try {
+        const objectPath = `/objects/uploads/${fileId}`;
+        const objService = new ObjectStorageService();
+        const objectFile = await objService.getObjectEntityFile(objectPath);
+        await objService.downloadObject(objectFile, res, 3600, {
+          attachmentFilename: safeTitle + (extFromFileId || ".mp3"),
+        });
+      } catch (objErr) {
+        if (objErr instanceof ObjectNotFoundError) {
+          return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
+        }
+        console.error("Download from object storage failed:", objErr);
+        return res.status(500).json({ message: "다운로드에 실패했습니다" });
+      }
+    } catch (err) {
+      res.status(500).json({ message: "다운로드에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/music/:id/ringtone", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const musicId = Number(req.params.id);
+
+      const musicItem = await storage.getMusicById(musicId);
+      if (!musicItem) {
+        return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      }
+
+      const isOwner = String(musicItem.userId) === String(userId);
+      const purchased = await storage.hasPurchased(userId, musicId);
+      const canDownload =
+        isOwner ||
+        (musicItem.isDownloadable && (Number(musicItem.price || 0) === 0 || purchased));
+
+      if (!canDownload) {
+        return res.status(403).json({ message: "구매 또는 무료 다운로드가 가능한 음원만 벨소리로 다운로드할 수 있습니다" });
+      }
+
+      const fn = musicItem.filename || "";
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) fileId = objMatch[1];
+      else if (fn.startsWith("uploads/")) fileId = fn.replace(/^uploads\//, "");
+      else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) fileId = fn.trim();
+      else if (fn.includes("/")) fileId = fn.split("/").pop() || "";
+      else fileId = fn;
+      fileId = fileId.replace(/^\//, "");
+
+      if (!fileId) {
+        return res.status(404).json({ message: "파일 경로를 찾을 수 없습니다" });
+      }
+
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDir, fileId),
+        path.join(uploadsDir, `${baseId}.mp3`),
+        path.join(uploadsDir, `${baseId}.wav`),
+        path.join(uploadsDir, `${baseId}.ogg`),
+      ];
+      const localPath = candidates.find((p) => existsSync(p));
+      const safeTitle = (musicItem.title || "music").replace(/[^\w\s가-힣-]/g, "").trim();
+      const ringtoneBase = `${safeTitle}_벨소리`;
+      const extFromFileId = path.extname(fileId).toLowerCase() || ".mp3";
+
+      if (localPath) {
+        const ext = path.extname(localPath).toLowerCase();
+        const mime: Record<string, string> = {
+          ".mp3": "audio/mpeg",
+          ".wav": "audio/wav",
+          ".ogg": "audio/ogg",
+        };
+        res.set("Content-Type", mime[ext] || "audio/mpeg");
+        res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(ringtoneBase + ext)}`);
+        const fileStat = statSync(localPath);
+        res.set("Content-Length", String(fileStat.size));
+        createReadStream(localPath).pipe(res);
+        return;
+      }
+
+      // 로컬에 없으면 객체 스토리지에서 다운로드 시도 (배포 환경)
+      try {
+        const objectPath = `/objects/uploads/${fileId}`;
+        const objService = new ObjectStorageService();
+        const objectFile = await objService.getObjectEntityFile(objectPath);
+        await objService.downloadObject(objectFile, res, 3600, {
+          attachmentFilename: ringtoneBase + (extFromFileId || ".mp3"),
+        });
+      } catch (objErr) {
+        if (objErr instanceof ObjectNotFoundError) {
+          return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
+        }
+        console.error("Ringtone download from object storage failed:", objErr);
+        return res.status(500).json({ message: "다운로드에 실패했습니다" });
+      }
+    } catch (err) {
+      res.status(500).json({ message: "다운로드에 실패했습니다" });
     }
   });
 
@@ -1619,6 +2066,9 @@ export async function registerRoutes(
           isRead: false,
         }));
         await db.insert(notifications).values(notifValues);
+        for (const f of followerRows) {
+          await storage.pruneNotificationsForUser(f.followerId, 20);
+        }
       }
 
       res.json(announcement);
@@ -1778,23 +2228,265 @@ export async function registerRoutes(
   });
 
   // === Database Backup (Admin only) ===
-  app.get("/api/admin/backup", isAuthenticated, isAdmin, async (req, res) => {
+  app.get("/api/admin/code-download", isAuthenticated, isAdmin, (req, res) => {
     try {
-      const { execSync } = require("child_process");
-      const dbUrl = process.env.DATABASE_URL;
-      if (!dbUrl) {
-        return res.status(500).json({ message: "데이터베이스 설정을 찾을 수 없습니다" });
+      const projectRoot = process.cwd();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `베니사운드_소스코드_${timestamp}.zip`;
+
+      const EXCLUDE = new Set(["node_modules", ".git", "local-uploads", "dist", ".next"]);
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+      const archive = archiver("zip", { zlib: { level: 6 } });
+
+      archive.on("error", (err: any) => {
+        console.error("Archive error:", err);
+        if (!res.headersSent) res.status(500).end();
+      });
+
+      archive.pipe(res);
+
+      // 최상위 항목만 순회하여 제외 폴더 건너뜀
+      const entries = readdirSync(projectRoot);
+      for (const entry of entries) {
+        if (EXCLUDE.has(entry)) continue;
+        const fullPath = path.join(projectRoot, entry);
+        const stat = lstatSync(fullPath);
+        if (stat.isDirectory()) {
+          archive.directory(fullPath, entry);
+        } else {
+          archive.file(fullPath, { name: entry });
+        }
       }
-      const dump = execSync(`pg_dump "${dbUrl}" --no-owner --no-acl`, {
+
+      archive.finalize();
+    } catch (error: any) {
+      console.error("Code download error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "코드 다운로드 실패: " + (error?.message || "알 수 없는 오류") });
+      }
+    }
+  });
+
+  app.get("/api/admin/uploads-download", isAuthenticated, isAdmin, (req, res) => {
+    try {
+      const uploadsRoot = path.resolve(process.cwd(), "local-uploads");
+      if (!existsSync(uploadsRoot)) {
+        return res.status(404).json({ message: "local-uploads 폴더가 없습니다" });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `베니사운드_음원파일_${timestamp}.zip`;
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+      const archive = archiver("zip", { zlib: { level: 6 } });
+
+      archive.on("error", (err: any) => {
+        console.error("Uploads archive error:", err);
+        if (!res.headersSent) res.status(500).end();
+      });
+
+      archive.pipe(res);
+      archive.directory(uploadsRoot, "local-uploads");
+      archive.finalize();
+    } catch (error: any) {
+      console.error("Uploads download error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "음원 다운로드 실패: " + (error?.message || "알 수 없는 오류") });
+      }
+    }
+  });
+
+  // 서버가 직접 E:\뉴베니사운드백업폴더에 저장 (Windows 로컬 PC 전용 — VPS에서는 실행 불가)
+  app.post("/api/admin/save-to-local", isAuthenticated, isAdmin, async (req, res) => {
+    if (process.platform !== "win32") {
+      return res.status(400).json({
+        message: "전체 백업 저장(E드라이브)은 Windows 로컬 PC에서만 사용할 수 있습니다. 서버(VPS)에서는 실행되지 않습니다.",
+        results: [],
+      });
+    }
+    const results: { type: string; file: string; success: boolean; error?: string }[] = [];
+    try {
+      const LOCAL_BACKUP_DIR = "E:\\뉴베니사운드백업폴더";
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+
+      // 백업 폴더 생성
+      mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
+
+    // 1. DB 백업
+    try {
+      const dbUrl = process.env.DATABASE_URL;
+      if (!dbUrl) throw new Error("DATABASE_URL 없음");
+      const pgDumpCandidates = [
+        "pg_dump",
+        "C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe",
+        "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe",
+        "C:\\Program Files\\PostgreSQL\\16\\bin\\pg_dump.exe",
+        "C:\\Program Files\\PostgreSQL\\15\\bin\\pg_dump.exe",
+      ];
+      const pgDumpPath = pgDumpCandidates.find((p) => {
+        try { execSync(`"${p}" --version`, { stdio: "pipe" }); return true; } catch { return false; }
+      });
+      if (!pgDumpPath) throw new Error("pg_dump을 찾을 수 없음");
+      const dump = execSync(`"${pgDumpPath}" "${dbUrl}" --no-owner --no-acl`, {
         maxBuffer: 50 * 1024 * 1024,
         encoding: "utf-8",
       });
+      const dbFile = path.join(LOCAL_BACKUP_DIR, `베니사운드_DB백업_${timestamp}.sql`);
+      writeFileSync(dbFile, dump, "utf-8");
+      results.push({ type: "DB", file: dbFile, success: true });
+    } catch (e: any) {
+      results.push({ type: "DB", file: "", success: false, error: e?.message });
+    }
+
+    // 2. 소스코드 ZIP
+    try {
+      const projectRoot = process.cwd();
+      const EXCLUDE = new Set(["node_modules", ".git", "local-uploads", "dist", ".next", ".env"]);
+      const codeFile = path.join(LOCAL_BACKUP_DIR, `베니사운드_소스코드_${timestamp}.zip`);
+
+      await new Promise<void>((resolve, reject) => {
+        const output = createWriteStream(codeFile);
+        const archive = archiver("zip", { zlib: { level: 6 } });
+        archive.on("error", reject);
+        output.on("close", resolve);
+        archive.pipe(output);
+        const entries = readdirSync(projectRoot);
+        for (const entry of entries) {
+          if (EXCLUDE.has(entry)) continue;
+          const fullPath = path.join(projectRoot, entry);
+          const stat = lstatSync(fullPath);
+          if (stat.isDirectory()) archive.directory(fullPath, entry);
+          else archive.file(fullPath, { name: entry });
+        }
+        archive.finalize();
+      });
+      results.push({ type: "소스코드", file: codeFile, success: true });
+    } catch (e: any) {
+      results.push({ type: "소스코드", file: "", success: false, error: e?.message });
+    }
+
+    // 3. 음원파일 ZIP
+    try {
+      const uploadsRoot = path.resolve(process.cwd(), "local-uploads");
+      if (!existsSync(uploadsRoot)) throw new Error("local-uploads 폴더 없음");
+      const uploadsFile = path.join(LOCAL_BACKUP_DIR, `베니사운드_음원파일_${timestamp}.zip`);
+
+      await new Promise<void>((resolve, reject) => {
+        const output = createWriteStream(uploadsFile);
+        const archive = archiver("zip", { zlib: { level: 6 } });
+        archive.on("error", reject);
+        output.on("close", resolve);
+        archive.pipe(output);
+        archive.directory(uploadsRoot, "음원파일");
+        archive.finalize();
+      });
+      results.push({ type: "음원파일", file: uploadsFile, success: true });
+    } catch (e: any) {
+      results.push({ type: "음원파일", file: "", success: false, error: e?.message });
+    }
+
+      res.json({ dir: LOCAL_BACKUP_DIR, results });
+    } catch (err: any) {
+      console.error("[admin save-to-local]", err);
+      res.status(500).json({ message: err?.message || "백업 저장 실패", results: [] });
+    }
+  });
+
+  app.post("/api/admin/server-backup", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      if (process.platform === "win32") {
+        return res.status(400).json({ message: "이 백업 기능은 서버(VPS)에서만 사용할 수 있습니다." });
+      }
+
+      const projectRoot = process.cwd();
+      const serverRoot = path.resolve(projectRoot, "..");
+      const uploadsRoot = path.resolve(projectRoot, "local-uploads");
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const filename = `venysound_backup_${timestamp}.sql`;
-      res.setHeader("Content-Type", "application/sql");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-      res.send(dump);
+
+      const dbFilename = `베니사운드_DB백업_${timestamp}.sql`;
+      const codeFilename = `베니사운드_소스코드_${timestamp}.zip`;
+      const uploadsFilename = `베니사운드_음원파일_${timestamp}.zip`;
+
+      const dbPath = path.join(serverRoot, dbFilename);
+      const codePath = path.join(serverRoot, codeFilename);
+      const uploadsPath = path.join(serverRoot, uploadsFilename);
+
+      // 1) DB 덤프 생성 (pg_dump는 리눅스 서버에 설치되어 있다고 가정)
+      try {
+        execSync(`sudo -u postgres pg_dump venysounddb > "${dbPath}"`, {
+          maxBuffer: 50 * 1024 * 1024,
+          stdio: "ignore",
+          shell: "/bin/bash",
+        });
+      } catch (err: any) {
+        console.error("Server backup - DB dump error:", err?.message || err);
+        return res.status(500).json({ message: "DB 백업 생성에 실패했습니다. 서버의 pg_dump 설치를 확인해주세요." });
+      }
+
+      // 2) 소스코드 ZIP 생성
+      const EXCLUDE = new Set(["node_modules", ".git", "local-uploads", "dist", ".next", ".env"]);
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const output = createWriteStream(codePath);
+          const archive = archiver("zip", { zlib: { level: 6 } });
+          archive.on("error", reject);
+          output.on("close", resolve);
+          archive.pipe(output);
+
+          const entries = readdirSync(projectRoot);
+          for (const entry of entries) {
+            if (EXCLUDE.has(entry)) continue;
+            const fullPath = path.join(projectRoot, entry);
+            const stat = lstatSync(fullPath);
+            if (stat.isDirectory()) {
+              archive.directory(fullPath, entry);
+            } else {
+              archive.file(fullPath, { name: entry });
+            }
+          }
+
+          archive.finalize();
+        });
+      } catch (err: any) {
+        console.error("Server backup - code zip error:", err?.message || err);
+        return res.status(500).json({ message: "소스코드 압축 생성에 실패했습니다." });
+      }
+
+      // 3) 음원/업로드 ZIP 생성
+      try {
+        if (!existsSync(uploadsRoot)) {
+          console.warn("Server backup - uploads directory not found:", uploadsRoot);
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            const output = createWriteStream(uploadsPath);
+            const archive = archiver("zip", { zlib: { level: 6 } });
+            archive.on("error", reject);
+            output.on("close", resolve);
+            archive.pipe(output);
+            archive.directory(uploadsRoot, "local-uploads");
+            archive.finalize();
+          });
+        }
+      } catch (err: any) {
+        console.error("Server backup - uploads zip error:", err?.message || err);
+        return res.status(500).json({ message: "음원/업로드 파일 압축 생성에 실패했습니다." });
+      }
+
+      res.json({
+        message: "원격 서버에 백업 파일이 생성되었습니다.",
+        files: {
+          db: dbPath,
+          code: codePath,
+          uploads: uploadsPath,
+        },
+      });
     } catch (error: any) {
+      console.error("Server backup unexpected error:", error?.message || error);
       res.status(500).json({ message: "백업 생성 실패: " + (error?.message || "알 수 없는 오류") });
     }
   });

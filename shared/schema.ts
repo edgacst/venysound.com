@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, json } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -41,6 +41,13 @@ export const follows = pgTable("follows", {
 }, (t) => [
   primaryKey({ columns: [t.followerId, t.followedId] }),
 ]);
+
+// Express session store (connect-pg-simple). Defined here so db:push does not drop it.
+export const sessions = pgTable("sessions", {
+  sid: text("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire").notNull(),
+});
 
 // Reviews table
 export const reviews = pgTable("reviews", {
@@ -398,6 +405,7 @@ export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: tru
 // === EXPLICIT API CONTRACT TYPES ===
 
 export type Music = typeof music.$inferSelect;
+export type MusicWithUploaderTier = Music & { uploaderSubscriptionTier?: string | null };
 export type UserType = typeof users.$inferSelect;
 export type InsertMusic = z.infer<typeof insertMusicSchema>;
 

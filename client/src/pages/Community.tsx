@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MessageSquare, Heart, Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { ko } from "date-fns/locale";
+import { ko, ja, zhCN } from "date-fns/locale";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPostSchema } from "@shared/schema";
@@ -206,7 +206,7 @@ export default function Community() {
                       {post.user?.firstName || t('community.anonymous')}
                     </span>
                     <span className="hidden sm:inline">
-                      {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: i18n.language === 'ko' ? ko : undefined }) : ''}
+                      {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: i18n.language === 'ko' ? ko : i18n.language === 'ja' ? ja : i18n.language === 'zh' ? zhCN : undefined }) : ''}
                     </span>
                   </div>
                 </div>

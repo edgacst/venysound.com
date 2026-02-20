@@ -11,16 +11,30 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { timeoutMs?: number },
 ): Promise<Response> {
-  const res = await fetch(url, {
-    method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
-
-  await throwIfResNotOk(res);
-  return res;
+  const ctrl = options?.timeoutMs ? new AbortController() : undefined;
+  const timeoutId = ctrl
+    ? setTimeout(() => ctrl.abort(), options.timeoutMs)
+    : undefined;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: data ? { "Content-Type": "application/json" } : {},
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+      signal: ctrl?.signal,
+    });
+    if (timeoutId) clearTimeout(timeoutId);
+    await throwIfResNotOk(res);
+    return res;
+  } catch (e: any) {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (e?.name === "AbortError") {
+      throw new Error("요청 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    throw e;
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

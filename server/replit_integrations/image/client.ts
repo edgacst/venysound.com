@@ -2,10 +2,25 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+function getOpenAI(): OpenAI {
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "AI 이미지 생성 기능을 사용하려면 .env에 AI_INTEGRATIONS_OPENAI_API_KEY를 설정해주세요."
+    );
+  }
+  return new OpenAI({
+    apiKey,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+}
+
+/** OpenAI 클라이언트 (지연 초기화 - API 호출 시점에 생성) */
+export const openai = {
+  get images() {
+    return getOpenAI().images;
+  },
+};
 
 /**
  * Generate an image and return as Buffer.
@@ -15,7 +30,7 @@ export async function generateImageBuffer(
   prompt: string,
   size: "1024x1024" | "1024x1536" | "1536x1024" = "1024x1024"
 ): Promise<Buffer> {
-  const response = await openai.images.generate({
+  const response = await getOpenAI().images.generate({
     model: "gpt-image-1",
     prompt,
     size,
@@ -42,7 +57,7 @@ export async function editImages(
     )
   );
 
-  const response = await openai.images.edit({
+  const response = await getOpenAI().images.edit({
     model: "gpt-image-1",
     image: images,
     prompt,

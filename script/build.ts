@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile } from "fs/promises";
+import { join } from "path";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -58,6 +59,12 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // connect-pg-simple이 번들 안에서 __dirname=dist 로 table.sql을 찾으므로 복사
+  await copyFile(
+    join(process.cwd(), "node_modules/connect-pg-simple/table.sql"),
+    join(process.cwd(), "dist/table.sql")
+  );
 }
 
 buildAll().catch((err) => {

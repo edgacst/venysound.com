@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,13 @@ export default function Home() {
     { image: banner2, title: t('home.banner2Title'), subtitle: t('home.banner2Subtitle'), link: "/music", buttonText: t('home.banner2Button') },
     { image: banner3, title: t('home.banner3Title'), subtitle: t('home.banner3Subtitle'), link: "/pricing", buttonText: t('home.banner3Button') },
     { image: banner4, title: t('home.banner4Title'), subtitle: t('home.banner4Subtitle'), link: "/upload", buttonText: t('home.banner4Button') },
+    {
+      image: "https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=1200&q=80",
+      title: t('home.makeMusicTitle'),
+      subtitle: t('home.makeMusicSubtitle'),
+      link: "/suno-guide",
+      buttonText: t('home.makeMusicButton'),
+    },
   ];
 
   const [currentBanner, setCurrentBanner] = useState(0);
@@ -65,7 +72,7 @@ export default function Home() {
         <div className="absolute inset-0">
           <img 
             src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80" 
-            alt="음악 배경"
+            alt={t('home.heroImageAlt')}
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-black/60" />
@@ -148,6 +155,12 @@ export default function Home() {
               <Button size="lg" variant="outline" className="rounded-full px-8 border-yellow-400/30 text-yellow-300 bg-yellow-400/10 backdrop-blur-sm" data-testid="button-guide">
                 <HelpCircle size={18} className="mr-1" />
                 {t('home.newHere')}
+              </Button>
+            </Link>
+            <Link href="/suno-guide">
+              <Button size="lg" variant="outline" className="rounded-full px-8 border-pink-400/40 text-pink-300 bg-pink-500/10 backdrop-blur-sm hover:bg-pink-500/20">
+                <Wand2 size={18} className="mr-1" />
+                {t('home.makeMusicBtn', '음악 만들러 가기')}
               </Button>
             </Link>
           </motion.div>

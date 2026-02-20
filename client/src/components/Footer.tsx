@@ -1,7 +1,6 @@
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import logoImage from "@assets/image_3fb5572f_1771157735033.png";
-
 export function Footer() {
   const { t } = useTranslation();
   return (
@@ -26,7 +25,8 @@ export function Footer() {
               <li><Link href="/about"><span className="hover:text-foreground cursor-pointer">{t('nav.about')}</span></Link></li>
               <li><Link href="/music"><span className="hover:text-foreground cursor-pointer">{t('nav.musicList')}</span></Link></li>
               <li><Link href="/popular"><span className="hover:text-foreground cursor-pointer">{t('nav.popular')}</span></Link></li>
-              <li><Link href="/legal"><span className="hover:text-foreground cursor-pointer">{t('footer.termsAndPrivacy')}</span></Link></li>
+              <li><Link href="/legal"><span className="hover:text-foreground cursor-pointer">{t('footer.terms')}</span></Link></li>
+              <li><Link href="/privacy-policy"><span className="hover:text-foreground cursor-pointer">{t('footer.privacy')}</span></Link></li>
             </ul>
           </div>
           <div>

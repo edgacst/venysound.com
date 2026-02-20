@@ -255,12 +255,6 @@ export function MusicCard({ music }: MusicCardProps) {
   const [reportOriginalArtist, setReportOriginalArtist] = useState("");
   const [reportOriginalTitle, setReportOriginalTitle] = useState("");
   const [reportDetails, setReportDetails] = useState("");
-  const { data: subscriptionData } = useQuery<{ tier: string }>({
-    queryKey: ["/api/toss/subscription"],
-    enabled: !!user,
-  });
-  const isPremium = subscriptionData?.tier === "premium" || user?.role === "admin";
-
   const [tipOpen, setTipOpen] = useState(false);
   const [tipAmount, setTipAmount] = useState(1000);
   const [tipMessage, setTipMessage] = useState("");
@@ -290,7 +284,7 @@ export function MusicCard({ music }: MusicCardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "신고 실패");
+        throw new Error(err.message || t('music.reportFailed'));
       }
       return res.json();
     },
@@ -315,7 +309,7 @@ export function MusicCard({ music }: MusicCardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "후원 실패");
+        throw new Error(err.message || t('music.tipFailed'));
       }
       return res.json();
     },
@@ -340,7 +334,7 @@ export function MusicCard({ music }: MusicCardProps) {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "구매 실패");
+        throw new Error(err.message || t('music.buyFailed'));
       }
       return res.json();
     },
@@ -358,6 +352,8 @@ export function MusicCard({ music }: MusicCardProps) {
   const canEdit = isOwner;
   const canDelete = isOwner || isAdmin;
   const canReport = !!user && !isOwner;
+  const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
+  const uploaderIsPremium = uploaderTier === "premium";
 
   const isPlaying = activeMusicId === music.id;
   const isLiked = myLikes?.includes(music.id) ?? false;
@@ -528,7 +524,7 @@ export function MusicCard({ music }: MusicCardProps) {
           <div className="mt-3 pt-3 border-t border-white/5 space-y-2" onClick={(e) => e.stopPropagation()}>
             <div className="flex gap-1.5 flex-wrap items-center">
               <span className="text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground truncate max-w-full">{music.genre || t('music.other')}</span>
-              {music.isDownloadable && music.price && music.price > 0 && (
+              {uploaderIsPremium && music.isDownloadable && music.price && music.price > 0 && (
                 <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1" data-testid={`badge-price-${music.id}`}>
                   <DollarSign size={10} />{music.price.toLocaleString()}원
                 </span>
@@ -536,24 +532,24 @@ export function MusicCard({ music }: MusicCardProps) {
             </div>
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-0.5">
-                {!isOwner && user && (
+                {uploaderIsPremium && !isOwner && user && (
                   <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={(e) => { e.stopPropagation(); setTipOpen(true); }} 
                     data-testid={`button-tip-${music.id}`}
-                    title="후원하기"
+                    title={t('music.tipTitle')}
                   >
                     <Gift size={14} className="text-yellow-500" />
                   </Button>
                 )}
-                {!isOwner && user && music.isDownloadable && music.price && music.price > 0 && (
+                {uploaderIsPremium && !isOwner && user && music.isDownloadable && music.price && music.price > 0 && (
                   <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={(e) => { e.stopPropagation(); setBuyOpen(true); }} 
                     data-testid={`button-buy-${music.id}`}
-                    title="구매하기"
+                    title={t('music.buyTitle')}
                   >
                     <Download size={14} className="text-green-400" />
                   </Button>
@@ -574,7 +570,13 @@ export function MusicCard({ music }: MusicCardProps) {
               </div>
               <span className="flex items-center gap-1 text-xs text-muted-foreground truncate" data-testid={`text-uploader-${music.id}`}>
                 <UserIcon size={11} className="shrink-0" />
-                <span className="truncate">{music.userId}</span>
+                {music.userId != null ? (
+                  <Link href={`/profile/${music.userId}`} className="truncate hover:text-foreground hover:underline cursor-pointer">
+                    {music.artist || String(music.userId)}
+                  </Link>
+                ) : (
+                  <span className="truncate">{music.artist}</span>
+                )}
               </span>
             </div>
           </div>
@@ -638,7 +640,7 @@ export function MusicCard({ music }: MusicCardProps) {
               <div className="flex items-center gap-3 mt-2">
                 <img
                   src={editCoverUrl || imageUrl}
-                  alt="커버"
+                  alt={t('music.coverAlt')}
                   className="w-16 h-16 rounded-md object-cover border border-white/10"
                 />
                 <div className="flex flex-col gap-2">
@@ -689,7 +691,7 @@ export function MusicCard({ music }: MusicCardProps) {
             </DialogDescription>
           </DialogHeader>
           <LyricsSyncEditor
-            audioUrl={resolveStorageUrl(music.filename)}
+            audioUrl={`/api/music/${music.id}/stream`}
             plainLyrics={editLyrics.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]/g, "")}
             onSave={(lrc) => {
               setEditLyrics(lrc);

@@ -119,6 +119,7 @@ function StoryCommentsList({ storyId }: { storyId: number }) {
 export default function MusicDetail() {
   const { t } = useTranslation();
   const [, params] = useRoute("/music/:id");
+  const [, navigate] = useLocation();
   const musicId = Number(params?.id);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -137,16 +138,32 @@ export default function MusicDetail() {
 
   const { data: musicData, isLoading } = useQuery<any>({
     queryKey: ["/api/music", musicId],
+    queryFn: async () => {
+      const res = await fetch(`/api/music/${musicId}`);
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
     enabled: !!musicId,
   });
 
   const { data: reviews, isLoading: reviewsLoading } = useQuery<any[]>({
     queryKey: ["/api/music", musicId, "reviews"],
+    queryFn: async () => {
+      const res = await fetch(`/api/music/${musicId}/reviews`);
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: !!musicId,
   });
 
   const { data: followStatus } = useQuery<any>({
     queryKey: ["/api/users", musicData?.uploader?.id, "profile"],
+    queryFn: async () => {
+      if (!musicData?.uploader?.id) return null;
+      const res = await fetch(`/api/users/${musicData.uploader.id}/profile`);
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
     enabled: !!musicData?.uploader?.id && !!user,
   });
 
@@ -167,6 +184,16 @@ export default function MusicDetail() {
       return res.json();
     },
     enabled: !!musicData,
+  });
+
+  const { data: purchaseStatus } = useQuery<{ purchased: boolean }>({
+    queryKey: ["/api/purchases/check", musicId],
+    queryFn: async () => {
+      const res = await fetch(`/api/purchases/check/${musicId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
+    enabled: !!musicId && !!user,
   });
 
   const artistOtherTracks = useMemo(() => {
@@ -263,11 +290,19 @@ export default function MusicDetail() {
   const isLiked = myLikes?.includes(musicId);
   const likeCount = likeCounts?.[musicId] || 0;
   const isOwner = user?.id === musicData?.userId;
-  const isFollowingUploader = followStatus?.isFollowing;
+  const uploaderIsPremium = musicData?.uploaderSubscriptionTier === "premium";
+  const isFollowingUploader = followStatus?.isFollowing === true;
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [musicId]);
+
+  // 플레이어에서 곡이 끝나고 다음 곡으로 넘어가면 상세 페이지 URL도 함께 이동
+  useEffect(() => {
+    if (activeMusicId && activeMusicId !== musicId) {
+      navigate(`/music/${activeMusicId}`);
+    }
+  }, [activeMusicId, musicId, navigate]);
 
   if (isLoading) {
     return (
@@ -313,6 +348,11 @@ export default function MusicDetail() {
     : streamingMinutes > 0
       ? `${streamingMinutes}${t('musicDetail.minutes', '분')} ${streamingSeconds}${t('musicDetail.seconds', '초')}`
       : `${streamingSeconds}${t('musicDetail.seconds', '초')}`;
+
+  const canDownloadRingtone =
+    !!user &&
+    (isOwner ||
+      (musicData.isDownloadable && (musicData.price === 0 || purchaseStatus?.purchased)));
 
   return (
     <PageTransition>
@@ -361,7 +401,7 @@ export default function MusicDetail() {
                     AI
                   </Badge>
                 )}
-                {musicData.isDownloadable && musicData.price > 0 && (
+                {uploaderIsPremium && musicData.isDownloadable && musicData.price > 0 && (
                   <Badge variant="outline" className="text-xs border-green-500/30 text-green-400" data-testid="badge-price">
                     <DollarSign size={10} className="mr-0.5" />{musicData.price.toLocaleString()}{t('common.won', '원')}
                   </Badge>
@@ -423,6 +463,21 @@ export default function MusicDetail() {
                   {isCurrentlyPlaying ? t('musicDetail.pause', '일시정지') : t('musicDetail.play', '재생')}
                 </Button>
 
+                {canDownloadRingtone && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    asChild
+                    title={t('music.ringtoneHint', '다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요')}
+                    data-testid="button-ringtone-download"
+                  >
+                    <a href={`/api/music/${musicId}/ringtone`}>
+                      <Download size={16} className="mr-1" />
+                      {t('music.ringtoneDownload', '벨소리용 다운로드')}
+                    </a>
+                  </Button>
+                )}
+
                 {user && (
                   <Button
                     variant="outline"
@@ -440,9 +495,9 @@ export default function MusicDetail() {
 
                 {!isOwner && user && uploader && (
                   <Button
-                    variant={isFollowingUploader ? "secondary" : "outline"}
+                    variant={isFollowingUploader ? "default" : "outline"}
                     size="sm"
-                    className="rounded-full gap-1"
+                    className={`rounded-full gap-1 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
                     onClick={() => followUser(uploader.id)}
                     data-testid="button-follow-uploader"
                   >
@@ -783,7 +838,7 @@ export default function MusicDetail() {
                       <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-400 no-default-hover-elevate no-default-active-elevate">{t('musicDetail.aiGenerated', 'AI 생성')}</Badge>
                     </div>
                   )}
-                  {musicData.isDownloadable && (
+                  {uploaderIsPremium && musicData.isDownloadable && (
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t('musicDetail.infoDownload', '다운로드')}</span>
                       <span className="font-medium text-green-400">
@@ -813,9 +868,9 @@ export default function MusicDetail() {
                   </Link>
                   {!isOwner && user && (
                     <Button
-                      variant={isFollowingUploader ? "secondary" : "default"}
+                      variant="default"
                       size="sm"
-                      className="w-full mt-3 gap-2"
+                      className={`w-full mt-3 gap-2 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
                       onClick={() => followUser(uploader.id)}
                       data-testid="button-follow-sidebar"
                     >

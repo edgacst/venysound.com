@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useTranslation } from 'react-i18next';
+import { GUIDE_VIDEO_ID } from "@/lib/guideVideos";
 
 export default function Guide() {
   const { t } = useTranslation();
@@ -69,6 +70,30 @@ export default function Guide() {
               {t('guide.subtitle', 'Veny_Sound를 100% 활용하는 방법을 알아보세요')}
             </p>
           </div>
+
+          <section className="mb-10" data-testid="section-video-guide">
+            <h2 className="text-xl font-semibold mb-3 flex items-center gap-2">
+              <Play className="text-primary" size={20} />
+              {t('guide.videoTitle', '영상 가이드')}
+            </h2>
+            {GUIDE_VIDEO_ID ? (
+              <div className="w-full max-w-2xl mx-auto aspect-video rounded-lg overflow-hidden border border-border bg-muted">
+                <iframe
+                  title={t('guide.watchVideo', '영상 보기')}
+                  src={`https://www.youtube.com/embed/${GUIDE_VIDEO_ID}`}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <div className="w-full max-w-2xl mx-auto aspect-video rounded-lg border border-dashed border-border bg-muted/50 flex items-center justify-center">
+                <p className="text-muted-foreground text-sm">
+                  {t('guide.videoComingSoon', '가이드 영상을 준비 중입니다.')}
+                </p>
+              </div>
+            )}
+          </section>
 
           <div className="flex justify-center gap-2 mb-10">
             <Button
@@ -296,7 +321,7 @@ export default function Guide() {
                       <DollarSign className="text-green-400" size={22} />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-lg mb-1">{t('guide.monetization', '수익 창출')}</h3>
+                      <h3 className="font-semibold text-lg mb-1">{t('guide.monetization', '수익창출(프리미엄 구독자만 수익활동가능)')}</h3>
                       <p className="text-muted-foreground text-sm leading-relaxed">
                         {t('guide.monetizationDesc', '업로드 시 유료 다운로드를 설정하면 리스너가 크레딧으로 음원을 구매할 수 있습니다. 최소 100원부터 가격을 설정할 수 있으며, 리스너가 보내는 후원(팁)도 수익으로 연결됩니다. 마이페이지의 수익 탭에서 잔액, 후원 내역, 판매 내역을 확인하고 출금 요청을 할 수 있습니다. 출금 시 수수료 15%(부가세 별도)가 공제됩니다.')}
                       </p>
