@@ -266,7 +266,7 @@ function SyncedLyricsPanel({ lyrics, currentTime, duration }: { lyrics: string; 
   }, [activeIndex]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 pb-3 pt-1">
+    <div className="max-w-7xl mx-auto px-4 pb-3 pt-1 text-center">
       <div
         ref={containerRef}
         className="max-h-[200px] overflow-y-auto scrollbar-thin scroll-smooth"
@@ -277,7 +277,7 @@ function SyncedLyricsPanel({ lyrics, currentTime, duration }: { lyrics: string; 
             <div
               key={i}
               ref={i === activeIndex ? activeRef : undefined}
-              className={`px-2 py-1 rounded-md transition-all duration-300 text-sm leading-relaxed ${
+              className={`px-2 py-1 rounded-md transition-all duration-300 text-2xl leading-relaxed ${
                 i === activeIndex
                   ? "text-white font-semibold bg-primary/20 scale-[1.02]"
                   : i < activeIndex
