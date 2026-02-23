@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { ReactNode } from "react";
 
 interface PageTransitionProps {
@@ -6,15 +5,7 @@ interface PageTransitionProps {
   className?: string;
 }
 
+/** 애니메이션 없이 감싸기만 함 (탭 전환 시 페이지 움직임 방지) */
 export function PageTransition({ children, className = "" }: PageTransitionProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }

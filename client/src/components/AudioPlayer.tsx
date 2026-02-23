@@ -266,18 +266,18 @@ function SyncedLyricsPanel({ lyrics, currentTime, duration }: { lyrics: string; 
   }, [activeIndex]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 pb-3 pt-1 text-center">
+    <div className="max-w-7xl mx-auto px-4 pb-3 pt-1">
       <div
         ref={containerRef}
-        className="max-h-[200px] overflow-y-auto scrollbar-thin scroll-smooth"
+        className="max-h-[200px] overflow-y-auto scrollbar-thin scroll-smooth text-center"
         data-testid="text-player-lyrics"
       >
-        <div className="py-2 space-y-1">
+        <div className="py-2 space-y-2">
           {parsedLines.map((line, i) => (
             <div
               key={i}
               ref={i === activeIndex ? activeRef : undefined}
-              className={`px-2 py-1 rounded-md transition-all duration-300 text-2xl leading-relaxed ${
+              className={`px-2 py-1.5 rounded-md transition-all duration-300 text-base leading-relaxed ${
                 i === activeIndex
                   ? "text-white font-semibold bg-primary/20 scale-[1.02]"
                   : i < activeIndex
@@ -460,9 +460,6 @@ export function GlobalAudioPlayer() {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
-  const lastTimeUpdateRef = useRef<number>(0);
-  const THROTTLE_MS = 250;
-  const [progressBarWidth, setProgressBarWidth] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -478,6 +475,7 @@ export function GlobalAudioPlayer() {
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
+  const isClosingRef = useRef(false);
 
   if (activeMusicId) {
     lastAudioUrlRef.current = `/api/music/${activeMusicId}/stream`;
@@ -635,7 +633,7 @@ export function GlobalAudioPlayer() {
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !audioUrl) return;
+    if (!audio || !audioUrl || !activeMusicId) return;
 
     audio.src = audioUrl;
     audio.load();
@@ -664,11 +662,7 @@ export function GlobalAudioPlayer() {
 
     const onTimeUpdate = () => {
       if (!isSeeking) {
-        const now = Date.now();
-        if (now - lastTimeUpdateRef.current >= THROTTLE_MS) {
-          lastTimeUpdateRef.current = now;
-          setCurrentTime(audio.currentTime);
-        }
+        setCurrentTime(audio.currentTime);
       }
     };
     const onLoadedMetadata = () => {
@@ -687,6 +681,7 @@ export function GlobalAudioPlayer() {
       }
     };
     const onError = () => {
+      if (isClosingRef.current) return;
       setIsPlaying(false);
       if (displayMusic?.title) {
         toast({
@@ -715,17 +710,6 @@ export function GlobalAudioPlayer() {
       audio.removeEventListener('error', onError);
     };
   }, [isSeeking, tracker, playNext, user, toast, displayMusic?.title]);
-
-  useEffect(() => {
-    const bar = progressRef.current;
-    if (!bar) return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width ?? 0;
-      setProgressBarWidth(w);
-    });
-    ro.observe(bar);
-    return () => ro.disconnect();
-  }, [activeMusicId]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -787,11 +771,6 @@ export function GlobalAudioPlayer() {
     };
 
     const onEnd = () => {
-      const audio = audioRef.current;
-      if (audio) {
-        lastTimeUpdateRef.current = 0;
-        setCurrentTime(audio.currentTime);
-      }
       setIsSeeking(false);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onEnd);
@@ -806,11 +785,13 @@ export function GlobalAudioPlayer() {
   }, [duration, handleSeek]);
 
   const handleClose = useCallback(() => {
+    isClosingRef.current = true;
     tracker.onEnded();
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
       audio.src = '';
+      audio.load();
     }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
@@ -819,6 +800,7 @@ export function GlobalAudioPlayer() {
       eqFiltersRef.current = [];
     }
     closePlayer();
+    setTimeout(() => { isClosingRef.current = false; }, 300);
   }, [tracker, closePlayer]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -910,7 +892,7 @@ export function GlobalAudioPlayer() {
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl pb-[env(safe-area-inset-bottom)] [contain:layout]"
+          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl"
         >
           <div
             ref={progressRef}
@@ -921,25 +903,20 @@ export function GlobalAudioPlayer() {
             data-testid="progress-bar"
           >
             <div className="h-6 flex items-center">
-              <div className="w-full h-1.5 bg-muted rounded-full relative overflow-hidden">
+              <div className="w-full h-1.5 bg-muted rounded-full relative">
                 <div
-                  className="h-full w-full bg-primary rounded-full transition-none origin-left"
-                  style={{ transform: `scaleX(${progress / 100})` }}
+                  className="h-full bg-primary rounded-full transition-none"
+                  style={{ width: `${progress}%` }}
                 />
                 <div
-                  className="absolute top-1/2 w-4 h-4 bg-primary rounded-full sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md pointer-events-none"
-                  style={{
-                    left: 0,
-                    transform: progressBarWidth
-                      ? `translate(calc(-50% + ${(progress / 100) * progressBarWidth}px), -50%)`
-                      : 'translate(-50%, -50%)',
-                  }}
+                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md"
+                  style={{ left: `${progress}%`, transform: `translate(-50%, -50%)` }}
                 />
               </div>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-4 min-h-14">
+          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 max-w-[35%] sm:max-w-[25%]">
               <img 
                 src={imageUrl} 
@@ -1004,11 +981,9 @@ export function GlobalAudioPlayer() {
             </div>
 
             {displayMusic?.lyrics ? (
-              <div className="flex-1 min-w-0 min-h-10 flex items-center">
-                <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
-              </div>
+              <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
             ) : (
-              <div className="flex-1 min-h-10" />
+              <div className="flex-1" />
             )}
 
             <div className="hidden sm:flex items-center gap-1 shrink-0">

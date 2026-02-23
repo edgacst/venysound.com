@@ -63,7 +63,7 @@ export default function MyLibrary() {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: t('myLibrary.downloadComplete', '다운로드 완료'), description: `"${title}" ${t('myLibrary.downloadCompleteDesc', '파일이 다운로드되었습니다.')}` });
+      toast({ title: t('myLibrary.downloadComplete', '다운로드 완료'), description: t('myLibrary.downloadCompleteDesc', '{{title}} 파일이 다운로드되었습니다.', { title }) });
     } catch (err: any) {
       toast({ title: t('myLibrary.downloadFailed', '다운로드 실패'), description: err.message, variant: "destructive" });
     } finally {
@@ -151,13 +151,13 @@ export default function MyLibrary() {
                             </Badge>
                           )}
                           <span className="text-xs text-muted-foreground">
-                            {new Date(p.purchasedAt).toLocaleDateString("ko-KR")} {t('myLibrary.purchasedAt', '구매')}
+                            {new Date(p.purchasedAt).toLocaleDateString("ko-KR")} {t('myLibrary.purchased', '구매')}
                           </span>
                         </div>
                       </div>
                       <Button
                         size="sm"
-                        onClick={() => handleDownload(p.music.id, p.music?.title || t('myLibrary.unknownTrack', '알 수 없는 음원'))}
+                        onClick={() => handleDownload(p.music.id, p.music?.title || "music")}
                         disabled={downloadingId === p.music?.id}
                         className="shrink-0 gap-2"
                       >

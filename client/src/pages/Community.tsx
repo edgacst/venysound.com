@@ -180,7 +180,7 @@ export default function Community() {
         </div>
 
         <div className="space-y-2">
-          {paginatedPosts.map((post) => (
+          {(paginatedPosts as PostWithUser[]).map((post) => (
             <Link key={post.id} href={`/community/${post.id}`}>
               <Card className="border-white/5 bg-card/50 hover-elevate cursor-pointer px-4 py-3" data-testid={`card-post-${post.id}`}>
                 <div className="flex items-center gap-3">

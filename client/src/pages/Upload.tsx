@@ -108,6 +108,15 @@ export default function Upload() {
     form.setValue("genre", value);
   };
 
+  const handleGenerateAiCover = () => {
+    if ((user as any)?.subscriptionTier !== "premium") {
+      toast({ title: t('upload.premiumOnly', '프리미엄 전용 기능'), description: t('upload.premiumAiCoverDesc', 'AI 커버 생성은 프리미엄 멤버십 구독 후 이용 가능합니다.') });
+      setLocation("/pricing");
+      return;
+    }
+    toast({ title: t('upload.aiCoverGenerating', 'AI 커버 생성 중...'), description: t('upload.pleaseWait', '잠시만 기다려주세요.') });
+  };
+
   const handleFetchUnsplash = async () => {
     const title = form.getValues("title");
     const genre = form.getValues("genre");
@@ -139,6 +148,13 @@ export default function Upload() {
       return;
     }
 
+    const isPremium = (user as any)?.subscriptionTier === "premium";
+    const payload = {
+      ...values,
+      isDownloadable: isPremium ? values.isDownloadable : false,
+      price: isPremium ? (values.price ?? 0) : 0,
+    };
+
     try {
       const audioRes = await uploadAudio(audioFile);
       if (!audioRes) throw new Error(t('upload.audioUploadFailed', '음원 업로드 실패'));
@@ -150,7 +166,7 @@ export default function Upload() {
       }
 
       createMusic({
-        ...values,
+        ...payload,
         filename: audioRes.objectPath,
         imageFilename: imagePath,
       }, {
@@ -223,7 +239,14 @@ export default function Upload() {
                         type="file" 
                         accept=".mp3,.wav,.ogg" 
                         className="hidden" 
-                        onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAudioFile(file);
+                          if (file) {
+                            const titleFromName = file.name.replace(/\.[^/.]+$/, "");
+                            form.setValue("title", titleFromName);
+                          }
+                        }}
                       />
                       {audioFile ? (
                         <div className="text-primary flex flex-col items-center">
@@ -287,12 +310,11 @@ export default function Upload() {
                       )}
                     </div>
                     {!imageFile && !unsplashUrl && (
-                      <div className="flex gap-2">
+                      <div className="flex justify-center">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="flex-1"
                           onClick={handleFetchUnsplash}
                           disabled={isFetchingUnsplash}
                           data-testid="button-fetch-random-cover"
@@ -305,7 +327,7 @@ export default function Upload() {
                           ) : (
                             <>
                               <ImagePlus className="mr-2 h-4 w-4" />
-                              {t('upload.fetchRandomCover', '랜덤 커버 가져오기')}
+                              {t('upload.fetchRandomCover', '커버랜덤생성')}
                             </>
                           )}
                         </Button>
@@ -423,7 +445,7 @@ export default function Upload() {
                           data-testid="checkbox-ai"
                         />
                       </FormControl>
-                      <FormLabel className="font-normal">{t('upload.isAiMusic', 'AI로 만든 음원입니다')}</FormLabel>
+                      <FormLabel className="font-normal">{t('upload.isAi', 'AI로 만든 음원입니다')}</FormLabel>
                     </FormItem>
                   )}
                 />
@@ -432,31 +454,54 @@ export default function Upload() {
                   <div className="flex items-center gap-2 mb-4">
                     <DollarSign className="w-5 h-5 text-primary" />
                     <h3 className="font-semibold text-sm">{t('upload.monetization', '수익 창출 설정')}</h3>
+                    {(user as any)?.subscriptionTier === "premium" && (
+                      <span className="text-xs text-primary flex items-center gap-1 ml-auto">
+                        <Crown size={12} /> Premium
+                      </span>
+                    )}
                   </div>
                   <FormField
                     control={form.control}
                     name="isDownloadable"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center gap-3 space-y-0 mb-4">
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value || false}
-                            onCheckedChange={field.onChange}
-                            data-testid="checkbox-downloadable"
-                          />
-                        </FormControl>
-                        <div>
-                          <FormLabel className="font-normal flex items-center gap-1">
-                            <Download className="w-4 h-4" />
-                            {t('upload.paidDownload', '유료 다운로드 허용')}
-                          </FormLabel>
-                          <FormDescription className="text-xs">{t('upload.paidDownloadDesc', '리스너가 이 음원을 구매하여 다운로드할 수 있습니다')}</FormDescription>
-                        </div>
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const isPremium = (user as any)?.subscriptionTier === "premium";
+                      return (
+                        <FormItem className="flex flex-row items-center gap-3 space-y-0 mb-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={isPremium ? (field.value || false) : false}
+                              disabled={!isPremium}
+                              onCheckedChange={(checked) => {
+                                if (!isPremium) {
+                                  toast({
+                                    title: t('upload.premiumRequired', '프리미엄 회원 전용'),
+                                    description: t('upload.premiumRequiredDesc', '프리미엄회원에 한해 수익활동이 가능합니다'),
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                field.onChange(checked);
+                              }}
+                              data-testid="checkbox-downloadable"
+                            />
+                          </FormControl>
+                          <div className="flex-1">
+                            <FormLabel className="font-normal flex items-center gap-1">
+                              <Download className="w-4 h-4" />
+                              {t('upload.allowDownload', '유료 다운로드 허용')}
+                            </FormLabel>
+                            <FormDescription className="text-xs">
+                              {isPremium
+                                ? t('upload.downloadDesc', '리스너가 이 음원을 구매하여 다운로드할 수 있습니다')
+                                : t('upload.premiumRequiredDesc', '프리미엄회원에 한해 수익활동이 가능합니다')}
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      );
+                    }}
                   />
 
-                  {form.watch("isDownloadable") && (
+                  {form.watch("isDownloadable") && (user as any)?.subscriptionTier === "premium" && (
                     <FormField
                       control={form.control}
                       name="price"
@@ -495,7 +540,7 @@ export default function Upload() {
                       {t('upload.uploading', '업로드 중...')}
                     </>
                   ) : (
-                    t('upload.submit', '음원 업로드')
+                    t('upload.submitUpload', '음원 업로드')
                   )}
                 </Button>
               </form>

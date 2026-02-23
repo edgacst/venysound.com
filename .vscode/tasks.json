@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "서버 실행",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": { "NODE_ENV": "development" }
+      },
+      "group": "build",
+      "presentation": { "reveal": "always", "panel": "new" }
+    },
+    {
+      "label": "서버 재실행",
+      "type": "shell",
+      "command": "npm run restart",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": { "NODE_ENV": "development" }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": { "reveal": "always", "panel": "new" }
+    }
+  ]
+}

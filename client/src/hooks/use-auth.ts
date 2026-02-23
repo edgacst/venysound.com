@@ -1,47 +1,41 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { User } from "@shared/models/auth";
+import { useQuery } from "@tanstack/react-query";
 
-async function fetchUser(): Promise<User | null> {
-  const response = await fetch("/api/auth/user", {
-    credentials: "include",
-  });
-
-  if (response.status === 401) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(`${response.status}: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
-async function logout(): Promise<void> {
-  window.location.href = "/api/logout";
-}
+export type User = {
+  id: string;
+  username?: string | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  profileImageUrl?: string | null;
+  role?: string | null;
+  subscriptionTier?: string | null;
+  subscriptionPlan?: string | null;
+  subscriptionExpiresAt?: string | null;
+  // 세션 호환성
+  claims?: {
+    sub: string;
+    email: string | null;
+    first_name: string;
+    last_name: string;
+    profile_image_url: string;
+  };
+};
 
 export function useAuth() {
-  const queryClient = useQueryClient();
-  const { data: user, isLoading } = useQuery<User | null>({
-    queryKey: ["/api/auth/user"],
-    queryFn: fetchUser,
-    retry: false,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-
-  const logoutMutation = useMutation({
-    mutationFn: logout,
-    onSuccess: () => {
-      queryClient.setQueryData(["/api/auth/user"], null);
+  const { data: user, isLoading } = useQuery({
+    queryKey: ["/api/auth/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/me", { credentials: "include" });
+      if (res.status === 401) return null;
+      if (!res.ok) throw new Error("auth failed");
+      return res.json();
     },
+    retry: false,
   });
-
   return {
-    user,
+    user: user ?? null,
     isLoading,
     isAuthenticated: !!user,
-    logout: logoutMutation.mutate,
-    isLoggingOut: logoutMutation.isPending,
+    logout: () => { window.location.href = "/api/logout"; },
   };
 }

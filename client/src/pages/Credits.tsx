@@ -5,21 +5,28 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Plus, ArrowDown, ArrowUp, Gift, Download, Loader2, Clock, CreditCard } from "lucide-react";
+import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark } from "lucide-react";
 import { Link } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { apiRequest } from "@/lib/queryClient";
 
 const CREDIT_PACKAGES = [
-  { amount: 1000, label: "1,000", bonus: 0 },
-  { amount: 3000, label: "3,000", bonus: 0 },
-  { amount: 5000, label: "5,000", bonus: 250, popular: false },
-  { amount: 10000, label: "10,000", bonus: 500, popular: true },
-  { amount: 30000, label: "30,000", bonus: 2000 },
-  { amount: 50000, label: "50,000", bonus: 5000 },
+  { amount: 1000, label: "1,000" },
+  { amount: 3000, label: "3,000" },
+  { amount: 5000, label: "5,000" },
+  { amount: 10000, label: "10,000" },
+  { amount: 30000, label: "30,000" },
+  { amount: 50000, label: "50,000" },
 ];
+
+/** 충전금 + 부가세 10% = 총결재금액 */
+function totalWithVat(chargeAmount: number) {
+  return Math.round(chargeAmount * 1.1);
+}
 
 export default function Credits() {
   const { t } = useTranslation();
@@ -27,6 +34,13 @@ export default function Credits() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [bankModalOpen, setBankModalOpen] = useState(false);
+  const [bankRequestResult, setBankRequestResult] = useState<{
+    bankInfo: { bankName: string; bankAccount: string; bankHolder: string };
+    amount: number;
+    orderId: string;
+    message: string;
+  } | null>(null);
 
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
@@ -36,6 +50,36 @@ export default function Credits() {
   const { data: transactions, isLoading: isLoadingTx } = useQuery<any[]>({
     queryKey: ["/api/credits/transactions"],
     enabled: !!user,
+  });
+
+  const { data: bankInfo } = useQuery<{ bankName: string; bankAccount: string; bankHolder: string }>({
+    queryKey: ["/api/subscription/bank-info"],
+    enabled: !!user || bankModalOpen,
+  });
+
+  const requestBankMutation = useMutation({
+    mutationFn: async (totalPayment: number) => {
+      const res = await apiRequest("POST", "/api/credits/request-bank", { amount: totalPayment });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "입금 신청에 실패했습니다");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setBankRequestResult({
+        bankInfo: data.bankInfo,
+        amount: data.amount,
+        orderId: data.orderId,
+        message: data.message,
+      });
+      toast({ title: t('credits.bankRequestSubmitted', '입금 신청 완료'), description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('credits.bankRequestFailed', '입금 신청 실패'), description: error.message, variant: "destructive" });
+    },
   });
 
   const chargeMutation = useMutation({
@@ -107,6 +151,7 @@ export default function Credits() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2" data-testid="text-credits-title">{t('credits.title', '크레딧 충전')}</h1>
           <p className="text-muted-foreground">{t('credits.subtitle', '크레딧을 충전하여 아티스트를 후원하고 음원을 구매하세요')}</p>
+          <p className="text-xs text-muted-foreground mt-1">{t('credits.vatNotice', '부가세 별도, 현금 영수증 발행')}</p>
         </div>
 
         <Card className="p-6 mb-8">
@@ -142,20 +187,12 @@ export default function Credits() {
                 onClick={() => setSelectedPackage(pkg.amount)}
                 data-testid={`card-package-${pkg.amount}`}
               >
-                {pkg.popular && (
-                  <Badge className="absolute -top-2 -right-2 bg-primary text-primary-foreground text-xs">
-                    {t('credits.popular', '인기')}
-                  </Badge>
-                )}
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-1 mb-2">
                     <Coins size={18} className="text-primary" />
                     <span className="text-2xl font-bold">{pkg.label}</span>
                   </div>
                   <p className="text-sm text-muted-foreground">{pkg.amount.toLocaleString()}{t('credits.won', '원')}</p>
-                  {pkg.bonus > 0 && (
-                    <p className="text-xs text-green-400 mt-1">+{pkg.bonus.toLocaleString()} {t('credits.bonus', '보너스')}</p>
-                  )}
                 </div>
               </Card>
             ))}
@@ -168,31 +205,73 @@ export default function Credits() {
               <div>
                 <p className="text-sm text-muted-foreground">{t('credits.selectedPackage', '선택한 패키지')}</p>
                 <p className="text-xl font-bold">{selectedPackage.toLocaleString()} {t('credits.creditUnit', '크레딧')}</p>
-                {CREDIT_PACKAGES.find(p => p.amount === selectedPackage)?.bonus ? (
-                  <p className="text-sm text-green-400">
-                    +{CREDIT_PACKAGES.find(p => p.amount === selectedPackage)!.bonus.toLocaleString()} {t('credits.bonusCredits', '보너스 크레딧')}
-                  </p>
-                ) : null}
+                <p className="text-sm text-muted-foreground mt-1">
+                  {t('credits.totalPaymentLine', { charge: selectedPackage.toLocaleString(), total: totalWithVat(selectedPackage).toLocaleString(), defaultValue: `충전금 ${selectedPackage.toLocaleString()}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString()}원` })}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setSelectedPackage(null)}>{t('credits.cancel', '취소')}</Button>
                 <Button
                   onClick={() => {
-                    toast({ title: t('credits.comingSoon', '준비중'), description: t('credits.comingSoonDesc', '크레딧 충전 기능은 준비 중입니다.') });
+                    setBankRequestResult(null);
+                    setBankModalOpen(true);
                   }}
-                  disabled={chargeMutation.isPending}
                   data-testid="button-charge"
                 >
-                  <CreditCard size={16} className="mr-2" />
-                  {chargeMutation.isPending ? t('credits.processing', '처리 중...') : `${selectedPackage.toLocaleString()}${t('credits.wonPayment', '원 결제')}`}
+                  <Landmark size={16} className="mr-2" />
+                  {t('credits.bankTransferCharge', '계좌이체로 충전 신청')}
                 </Button>
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-3">
-              {t('credits.testModeNotice', '* 토스페이먼츠 연동 시 실제 결제가 진행됩니다. 현재는 테스트 모드로 바로 충전됩니다.')}
+              {t('credits.tosPaymentNotice', '현재 토스결제는 준비중에 있습니다. 지금은 계좌 이체만 가능합니다.')}
+              {bankInfo && (
+                <span className="block mt-1 font-medium"> {bankInfo.bankName} {bankInfo.bankAccount} {bankInfo.bankHolder}</span>
+              )}
             </p>
           </Card>
         )}
+
+        <Dialog open={bankModalOpen} onOpenChange={setBankModalOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t('credits.bankTransferTitle', '계좌이체로 크레딧 충전')}</DialogTitle>
+            </DialogHeader>
+            {bankRequestResult ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">{bankRequestResult.message}</p>
+                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                  <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankRequestResult.bankInfo.bankName}</p>
+                  <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankRequestResult.bankInfo.bankAccount}</p>
+                  <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankRequestResult.bankInfo.bankHolder}</p>
+                  <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {bankRequestResult.amount.toLocaleString("ko-KR")}{t('pricing.won', '원')}</p>
+                  <p className="text-xs text-muted-foreground">{t('pricing.orderId', '신청 번호')}: {bankRequestResult.orderId}</p>
+                </div>
+              </div>
+            ) : selectedPackage != null ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  {t('credits.modalIntro', { charge: selectedPackage.toLocaleString("ko-KR"), total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), defaultValue: `충전금 ${selectedPackage.toLocaleString("ko-KR")}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.` })}
+                </p>
+                {bankInfo && (
+                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                    <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankInfo.bankName}</p>
+                    <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
+                    <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
+                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {totalWithVat(selectedPackage).toLocaleString("ko-KR")}{t('pricing.won', '원')} ({t('credits.depositAmountWithVat', { total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), charge: selectedPackage.toLocaleString("ko-KR"), defaultValue: `${selectedPackage.toLocaleString("ko-KR")}원 + 부가세 10%` })})</p>
+                  </div>
+                )}
+                <Button
+                  className="w-full"
+                  onClick={() => requestBankMutation.mutate(totalWithVat(selectedPackage))}
+                  disabled={requestBankMutation.isPending}
+                >
+                  {requestBankMutation.isPending ? t('credits.processing', '처리 중...') : t('pricing.submitBankRequest', '입금 신청하기')}
+                </Button>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
 
         <div>
           <h2 className="text-xl font-semibold mb-4">{t('credits.transactionHistory', '크레딧 사용 내역')}</h2>

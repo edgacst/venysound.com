@@ -97,7 +97,7 @@ export default function Admin() {
     queryKey: ["/api/admin/users", userSearch],
     queryFn: async () => {
       const url = userSearch ? `/api/admin/users?search=${encodeURIComponent(userSearch)}` : "/api/admin/users";
-      const res = await fetch(url, { credentials: "include" });
+      const res = await fetch(url, { credentials: "include", cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch users");
       return res.json();
     },
@@ -119,9 +119,9 @@ export default function Admin() {
     mutationFn: async (userId: string) => {
       await apiRequest("DELETE", "/api/admin/users/" + userId, undefined, { timeoutMs: 120000 });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["/api/admin/users"] });
+      await queryClient.refetchQueries({ queryKey: ["/api/admin/stats"] });
       toast({ title: t('admin.userDeleted', '회원이 삭제되었습니다') });
     },
     onError: (err: any) => {
@@ -210,7 +210,7 @@ export default function Admin() {
   const { data: pendingBankPayments, isLoading: loadingPendingBank } = useQuery<any[]>({
     queryKey: ["/api/admin/pending-bank-payments"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/pending-bank-payments", { credentials: "include" });
+      const res = await fetch("/api/admin/pending-bank-payments", { credentials: "include", cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -227,6 +227,20 @@ export default function Admin() {
     },
     onError: (err: any) => {
       toast({ title: err?.message || t('admin.updateFailed', '업데이트에 실패했습니다'), variant: "destructive" });
+    },
+  });
+
+  const deleteBankMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/payments/${paymentId}`);
+      if (!res.ok) throw new Error("삭제에 실패했습니다");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
+      toast({ title: t('admin.paymentDeleted', '입금 대기 건이 삭제되었습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t('admin.deleteFailed', '삭제에 실패했습니다'), variant: "destructive" });
     },
   });
 
@@ -676,16 +690,26 @@ export default function Admin() {
                       <td className="p-3">{p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.email || p.userId}</td>
                       <td className="p-3 text-xs font-mono">{p.orderId}</td>
                       <td className="p-3 font-medium">{p.amount?.toLocaleString()}{t('common.won', '원')}</td>
-                      <td className="p-3">{p.billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')}</td>
+                      <td className="p-3">{p.plan === "credit_charge" ? t('admin.creditCharge', '크레딧 충전') : (p.billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간'))}</td>
                       <td className="p-3 text-xs text-muted-foreground">{p.createdAt ? new Date(p.createdAt).toLocaleString("ko-KR") : ""}</td>
                       <td className="p-3">
-                        <Button
-                          size="sm"
-                          onClick={() => confirmBankMutation.mutate(p.id)}
-                          disabled={confirmBankMutation.isPending}
-                        >
-                          <CheckCircle size={12} className="mr-1" /> {t('admin.confirmPayment', '입금 확인')}
-                        </Button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            onClick={() => confirmBankMutation.mutate(p.id)}
+                            disabled={confirmBankMutation.isPending}
+                          >
+                            <CheckCircle size={12} className="mr-1" /> {t('admin.confirmPayment', '입금 확인')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteBankMutation.mutate(p.id)}
+                            disabled={deleteBankMutation.isPending}
+                          >
+                            <Trash2 size={12} className="mr-1" /> {t('admin.delete', '삭제')}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -915,21 +939,29 @@ export default function Admin() {
                       setBackupPwOpen(false);
                       setSavingLocal(true);
                       try {
-                        const res = await fetch("/api/admin/save-to-local", { method: "POST", credentials: "include" });
+                        const ctrl = new AbortController();
+                        const timeoutId = setTimeout(() => ctrl.abort(), 5 * 60 * 1000);
+                        const res = await fetch("/api/admin/save-to-local", {
+                          method: "POST",
+                          credentials: "include",
+                          signal: ctrl.signal,
+                        });
+                        clearTimeout(timeoutId);
                         const text = await res.text();
-                        let data: { message?: string; results?: any[] } = {};
+                        let data: { message?: string; results?: any[]; dir?: string } = {};
                         try {
                           data = text ? JSON.parse(text) : {};
                         } catch {
-                          throw new Error(res.ok ? "응답 파싱 실패" : "서버 오류가 발생했습니다. 로그인 상태와 관리자 권한을 확인해주세요.");
+                          const msg = res.ok ? "응답 파싱 실패" : (res.status === 401 ? "로그인이 필요합니다. 관리자로 로그인 후 다시 시도하세요." : res.status === 403 ? "관리자 권한이 없습니다." : `서버 오류 (${res.status})`);
+                          throw new Error(msg);
                         }
                         if (!res.ok) throw new Error(data.message || "저장 실패");
-                        const succeeded = data.results.filter((r: any) => r.success);
-                        const failed = data.results.filter((r: any) => !r.success);
+                        const succeeded = (data.results || []).filter((r: any) => r.success);
+                        const failed = (data.results || []).filter((r: any) => !r.success);
                         if (succeeded.length > 0) {
                           toast({
                             title: `${succeeded.length}개 저장 완료`,
-                            description: succeeded.map((r: any) => `${r.type}: ${r.file.split("\\").pop()}`).join("\n"),
+                            description: (data.dir ? `경로: ${data.dir}\n` : "") + succeeded.map((r: any) => `${r.type}: ${r.file.split("\\").pop()}`).join("\n"),
                           });
                         }
                         if (failed.length > 0) {

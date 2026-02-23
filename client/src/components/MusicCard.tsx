@@ -12,6 +12,7 @@ import { usePlaylists, useAddToPlaylist } from "@/hooks/use-playlists";
 import { motion } from "framer-motion";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
+import { DonationBadge } from "@/components/DonationBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -354,6 +355,7 @@ export function MusicCard({ music }: MusicCardProps) {
   const canReport = !!user && !isOwner;
   const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
   const uploaderIsPremium = uploaderTier === "premium";
+  const uploaderDonationBadge = (music as { uploaderDonationBadge?: string | null }).uploaderDonationBadge ?? null;
 
   const isPlaying = activeMusicId === music.id;
   const isLiked = myLikes?.includes(music.id) ?? false;
@@ -519,7 +521,10 @@ export function MusicCard({ music }: MusicCardProps) {
           <Link href={`/music/${music.id}`}>
             <h3 className="font-semibold truncate text-lg group-hover:text-primary transition-colors cursor-pointer hover:underline" data-testid={`text-title-${music.id}`}>{music.title}</h3>
           </Link>
-          <p className="text-sm text-muted-foreground truncate" data-testid={`text-artist-${music.id}`}>{music.artist}</p>
+          <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5" data-testid={`text-artist-${music.id}`}>
+            <span className="truncate">{music.artist}</span>
+            {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />}
+          </p>
           
           <div className="mt-3 pt-3 border-t border-white/5 space-y-2" onClick={(e) => e.stopPropagation()}>
             <div className="flex gap-1.5 flex-wrap items-center">
@@ -570,13 +575,7 @@ export function MusicCard({ music }: MusicCardProps) {
               </div>
               <span className="flex items-center gap-1 text-xs text-muted-foreground truncate" data-testid={`text-uploader-${music.id}`}>
                 <UserIcon size={11} className="shrink-0" />
-                {music.userId != null ? (
-                  <Link href={`/profile/${music.userId}`} className="truncate hover:text-foreground hover:underline cursor-pointer">
-                    {music.artist || String(music.userId)}
-                  </Link>
-                ) : (
-                  <span className="truncate">{music.artist}</span>
-                )}
+                <span className="truncate">{music.userId}</span>
               </span>
             </div>
           </div>

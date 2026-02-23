@@ -317,9 +317,7 @@ export default function PostDetail() {
           {!user && (
             <Card className="p-4 mb-6 border-white/5 bg-card/50 text-center">
               <p className="text-muted-foreground text-sm mb-3">{t('postDetail.loginToComment', '댓글을 작성하려면 로그인이 필요합니다.')}</p>
-              <Link href="/login">
-                <Button size="sm" data-testid="button-login-to-comment">{t('postDetail.login', '로그인')}</Button>
-              </Link>
+              <Button size="sm" onClick={() => useLoginModalStore.getState().open()} data-testid="button-login-to-comment">{t('postDetail.login', '로그인')}</Button>
             </Card>
           )}
 

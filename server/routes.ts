@@ -7,16 +7,23 @@ import archiver from "archiver";
 import { storage } from "./storage";
 import { api, errorSchemas } from "@shared/routes";
 import { z } from "zod";
-import { setupAuth, isAuthenticated } from "./replit_integrations/auth";
-import { registerAuthRoutes } from "./replit_integrations/auth";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { ObjectStorageService, ObjectNotFoundError } from "./replit_integrations/object_storage/objectStorage";
-import { generateImageBuffer } from "./replit_integrations/image/client";
+import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
+import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
+import { generateImageBuffer } from "./imageClient";
 import { WebSocketServer, WebSocket } from "ws";
-import { subscriptionPlans, payments } from "@shared/models/auth";
+import { subscriptionPlans, payments } from "../shared/models/auth";
 import { db } from "./db";
-import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable } from "@shared/schema";
+import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
+
+// 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
+function calculateDonationBadge(totalSent: number): string | null {
+  if (totalSent >= 200000) return "sponsor";
+  if (totalSent >= 50000) return "supporter";
+  if (totalSent >= 10000) return "sprout";
+  if (totalSent >= 100) return "seed";
+  return null;
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -25,6 +32,30 @@ export async function registerRoutes(
   // local-uploads 폴더 자동 생성
   const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
+
+  /** 메시지/대화 시간을 항상 UTC ISO 문자열(Z)로 반환 (타임존 9시간 오차 방지) */
+  function toUTCISO(val: unknown): string {
+    if (val == null) return "";
+    if (val instanceof Date) return val.toISOString();
+    if (typeof val === "string") {
+      if (val.includes("Z") || val.endsWith("Z")) return val;
+      return new Date(val.replace(" ", "T") + "Z").toISOString();
+    }
+    return new Date(val as string | number).toISOString();
+  }
+
+  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 프리미엄(또는 admin)인지 반환 */
+  async function ensureExpiredSubscriptionDowngrade(userId: string): Promise<{ isPremium: boolean }> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) return { isPremium: false };
+    if (user.role === "admin") return { isPremium: true };
+    const now = new Date();
+    if (user.subscriptionTier === "premium" && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
+      await db.update(users).set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null }).where(eq(users.id, userId));
+      return { isPremium: false };
+    }
+    return { isPremium: user.subscriptionTier === "premium" };
+  }
 
   // Setup Auth
   await setupAuth(app);
@@ -119,6 +150,7 @@ export async function registerRoutes(
           m.*,
           u.subscription_tier as uploader_subscription_tier,
           u.subscription_expires_at as uploader_subscription_expires_at,
+          u.role as uploader_role,
           COALESCE(l.like_count, 0) as like_count,
           COALESCE(s.stream_seconds, 0) as stream_seconds,
           (COALESCE(l.like_count, 0) * 100 + COALESCE(s.stream_seconds, 0)) as popularity_score
@@ -137,9 +169,8 @@ export async function registerRoutes(
       const rows = (result.rows as any[]).map(r => {
         const tier = r.uploader_subscription_tier;
         const expiresAt = r.uploader_subscription_expires_at;
-        const isPremium =
-          tier === "premium" &&
-          (expiresAt == null || new Date(expiresAt) > now);
+        const subscriptionPremium = tier === "premium" && (expiresAt == null || new Date(expiresAt) > now);
+        const isPremium = r.uploader_role === "admin" || subscriptionPremium;
         return {
           id: Number(r.id),
           title: r.title,
@@ -272,12 +303,12 @@ export async function registerRoutes(
     }
     const uploader = await storage.getUserById(music.userId);
     const now = new Date();
-    const uploaderIsPremium =
-      uploader?.subscriptionTier === "premium" &&
-      (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+    const subscriptionPremium = uploader?.subscriptionTier === "premium" && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+    const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
     res.json({
       ...music,
       uploaderSubscriptionTier: uploaderIsPremium ? "premium" : "free",
+      uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
       uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
     });
   });
@@ -331,8 +362,8 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const user = await storage.getUserById(userId);
-      if (user?.subscriptionTier === "premium" || user?.role === "admin") {
+      const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
+      if (isPremium) {
         return res.json({ limited: false, current: 0, limit: -1 });
       }
       const now = new Date();
@@ -354,8 +385,8 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user.claims.sub;
 
-      const user = await storage.getUserById(userId);
-      if (user && user.subscriptionTier !== "premium" && user.role !== "admin") {
+      const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
+      if (!isPremium) {
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const uploadCount = await db.execute(sql`
@@ -374,8 +405,11 @@ export async function registerRoutes(
       }
 
       const imageFilename = input.imageFilename;
+      // 수익 활동(가격/유료 다운로드)은 프리미엄 회원만 가능
+      const isDownloadable = isPremium ? input.isDownloadable : false;
+      const price = isPremium ? input.price : 0;
 
-      const music = await storage.createMusic({ ...input, imageFilename, userId });
+      const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
       res.status(201).json(music);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -388,9 +422,10 @@ export async function registerRoutes(
 
   app.post("/api/music/generate-cover", isAuthenticated, async (req, res) => {
     try {
+      // @ts-ignore
       const userId = req.user.claims.sub;
-      const user = await storage.getUserById(userId);
-      if (!user || user.subscriptionTier !== "premium") {
+      const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
+      if (!isPremium) {
         return res.status(403).json({ message: "프리미엄 구독이 필요한 기능입니다" });
       }
 
@@ -417,21 +452,7 @@ export async function registerRoutes(
       ];
       const prompt = promptParts.join(" ");
       const imageBuffer = await generateImageBuffer(prompt, "1024x1024");
-
-      const objService = new ObjectStorageService();
-      const uploadURL = await objService.getObjectEntityUploadURL();
-      const objectPath = objService.normalizeObjectEntityPath(uploadURL);
-
-      const putRes = await fetch(uploadURL, {
-        method: "PUT",
-        body: imageBuffer,
-        headers: { "Content-Type": "image/png" },
-      });
-
-      if (!putRes.ok) {
-        return res.status(500).json({ message: "AI 커버 이미지 저장에 실패했습니다" });
-      }
-
+      const objectPath = saveBufferToLocalUploads(imageBuffer, ".png");
       res.json({ objectPath });
     } catch (err: any) {
       console.error("AI cover generation error:", err?.message || err);
@@ -453,6 +474,8 @@ export async function registerRoutes(
       const { title, artist, genre, tags, lyrics, isAi, imageFilename, price, isDownloadable } = req.body;
       if (title !== undefined && !title.trim()) return res.status(400).json({ message: "제목을 입력해주세요" });
       if (artist !== undefined && !artist.trim()) return res.status(400).json({ message: "아티스트를 입력해주세요" });
+
+      const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
       const updateData: any = {};
       if (title !== undefined) updateData.title = title.trim();
       if (artist !== undefined) updateData.artist = artist.trim();
@@ -461,8 +484,8 @@ export async function registerRoutes(
       if (lyrics !== undefined) updateData.lyrics = lyrics;
       if (isAi !== undefined) updateData.isAi = isAi;
       if (imageFilename !== undefined) updateData.imageFilename = imageFilename;
-      if (price !== undefined) updateData.price = Number(price) || 0;
-      if (isDownloadable !== undefined) updateData.isDownloadable = Boolean(isDownloadable);
+      if (price !== undefined) updateData.price = isPremium ? (Number(price) || 0) : 0;
+      if (isDownloadable !== undefined) updateData.isDownloadable = isPremium ? Boolean(isDownloadable) : false;
       const updated = await storage.updateMusic(musicId, updateData);
       res.json(updated);
     } catch (err) {
@@ -510,6 +533,7 @@ export async function registerRoutes(
         userId: music.userId,
         type: "like",
         message: `${likerName}님이 "${music.title}" 곡을 좋아합니다`,
+        payload: { fromName: likerName, musicTitle: music.title },
         url: `/music/${musicId}`
       });
     }
@@ -716,7 +740,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const followerId = req.user?.claims?.sub;
-      const followedId = req.params?.id;
+      const followedId = req.params?.id as string;
 
       if (!followerId || !followedId) {
         return res.status(400).json({ message: "잘못된 요청입니다." });
@@ -734,6 +758,7 @@ export async function registerRoutes(
           userId: followedId,
           type: "follow",
           message: `${followerName}님이 팔로우하기 시작했습니다`,
+          payload: { fromName: followerName },
           url: `/profile/${followerId}`
         });
       }
@@ -786,6 +811,29 @@ export async function registerRoutes(
       following,
       isFollowing
     });
+  });
+
+  app.patch("/api/users/:id/profile", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const currentUserId = req.user.claims.sub;
+      const targetId = req.params.id;
+      if (currentUserId !== targetId) {
+        return res.status(403).json({ message: "본인 프로필만 수정할 수 있습니다" });
+      }
+      const { firstName, lastName, profileImageUrl, username } = req.body;
+      const updated = await storage.updateUserProfile(targetId, {
+        ...(firstName !== undefined && { firstName: String(firstName) }),
+        ...(lastName !== undefined && { lastName: String(lastName) }),
+        ...(profileImageUrl !== undefined && { profileImageUrl: profileImageUrl ? String(profileImageUrl) : "" }),
+        ...(username !== undefined && { username: username ? String(username) : "" }),
+      });
+      if (!updated) return res.status(404).json({ message: "프로필을 찾을 수 없습니다" });
+      res.json(updated);
+    } catch (err) {
+      console.error("Profile update error:", err);
+      res.status(500).json({ message: "프로필 수정에 실패했습니다" });
+    }
   });
 
   // Delete playlist
@@ -871,7 +919,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/users/:id", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const targetId = req.params.id;
+      const targetId = req.params.id as string;
       // @ts-ignore
       if (targetId === req.user.claims.sub) {
         return res.status(400).json({ message: "자기 자신은 삭제할 수 없습니다" });
@@ -885,7 +933,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/admin/users/:id/role", isAuthenticated, isAdmin, async (req, res) => {
-    const targetId = req.params.id;
+    const targetId = req.params.id as string;
     const { role } = req.body;
     if (!role || !["user", "admin"].includes(role)) {
       return res.status(400).json({ message: "유효하지 않은 역할입니다" });
@@ -900,7 +948,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/users/:id/subscription", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const targetId = req.params.id;
+      const targetId = req.params.id as string;
       const { tier } = req.body;
       if (!tier || !["free", "premium"].includes(tier)) {
         return res.status(400).json({ message: "유효하지 않은 구독 플랜입니다" });
@@ -948,6 +996,7 @@ export async function registerRoutes(
         userId: musicItem.userId,
         type: "copyright",
         message: `"${musicItem.title}" 음원에 대한 저작권 신고가 접수되었습니다`,
+        payload: { musicTitle: musicItem.title },
         url: `/music/${musicId}`,
       });
 
@@ -1021,6 +1070,7 @@ export async function registerRoutes(
         await db.update(users).set({
           subscriptionTier: "free",
           subscriptionPlan: null,
+          subscriptionExpiresAt: null,
         }).where(eq(users.id, userId));
       }
 
@@ -1183,12 +1233,13 @@ export async function registerRoutes(
       await db.update(users).set({
         tossBillingKey: null,
         subscriptionPlan: null,
+        subscriptionTier: "free",
+        subscriptionExpiresAt: null,
       }).where(eq(users.id, userId));
 
       res.json({
         success: true,
-        message: "구독이 해지되었습니다. 현재 구독 기간이 끝날 때까지 서비스를 이용하실 수 있습니다.",
-        expiresAt: user.subscriptionExpiresAt,
+        message: "구독이 해지되었습니다.",
       });
     } catch (err) {
       console.error("Cancel subscription error:", err);
@@ -1278,11 +1329,32 @@ export async function registerRoutes(
 
   app.post("/api/admin/payments/:id/confirm-bank", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const paymentId = req.params.id;
+      const paymentId = req.params.id as string;
       const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
       if (payment.status !== "pending" || payment.paymentKey !== "bank_transfer") {
         return res.status(400).json({ message: "계좌이체 대기 건만 확인할 수 있습니다" });
+      }
+
+      await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
+
+      if (payment.plan === "credit_charge") {
+        const creditAmount = Math.round(payment.amount / 1.1);
+        await storage.addCredits(payment.userId, creditAmount);
+        await storage.createCreditTransaction({
+          userId: payment.userId,
+          type: "charge",
+          amount: creditAmount,
+          description: `${creditAmount.toLocaleString()}원 크레딧 충전 (계좌이체, 총결재 ${payment.amount.toLocaleString()}원)`,
+        });
+        await storage.createNotification({
+          userId: payment.userId,
+          type: "system",
+          message: `${creditAmount.toLocaleString()} 크레딧 충전이 완료되었습니다`,
+          payload: { amount: creditAmount },
+          url: "/credits",
+        });
+        return res.json({ success: true, credits: creditAmount });
       }
 
       const now = new Date();
@@ -1292,8 +1364,6 @@ export async function registerRoutes(
       } else {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       }
-
-      await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
       await db.update(users).set({
         subscriptionTier: "premium",
         subscriptionPlan: payment.billingPeriod,
@@ -1307,6 +1377,22 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/admin/payments/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = req.params.id as string;
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
+      if (payment.status !== "pending" || payment.paymentKey !== "bank_transfer") {
+        return res.status(400).json({ message: "계좌이체 대기 건만 삭제할 수 있습니다" });
+      }
+      await db.execute(sql`DELETE FROM payments WHERE id = ${payment.id} AND status = 'pending' AND payment_key = 'bank_transfer'`);
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Delete pending bank payment error:", err);
+      res.status(500).json({ message: "삭제에 실패했습니다" });
+    }
+  });
+
   app.get("/api/admin/pending-bank-payments", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const list = await db
@@ -1315,6 +1401,7 @@ export async function registerRoutes(
           userId: payments.userId,
           orderId: payments.orderId,
           amount: payments.amount,
+          plan: payments.plan,
           billingPeriod: payments.billingPeriod,
           createdAt: payments.createdAt,
           email: users.email,
@@ -1398,6 +1485,59 @@ export async function registerRoutes(
     }
   });
 
+  // 크레딧 계좌이체 충전 신청 (amount = 총결재금액 = 충전금+부가세10%)
+  app.post("/api/credits/request-bank", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const { amount } = req.body;
+      if (!amount || amount < 1100) {
+        return res.status(400).json({ message: "최소 충전 금액은 1,000원(총결재 1,100원)입니다" });
+      }
+      const orderId = `CREDIT_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
+      await db.insert(payments).values({
+        userId,
+        orderId,
+        paymentKey: "bank_transfer",
+        amount,
+        status: "pending",
+        plan: "credit_charge",
+        billingPeriod: null,
+      });
+      await storage.createNotification({
+        userId,
+        type: "system",
+        message: `입금 신청이 접수되었습니다. 총 ${amount.toLocaleString()}원을 등록된 계좌로 입금해 주세요.`,
+        payload: { amount },
+        url: "/credits",
+      });
+      const adminRows = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      for (const admin of adminRows) {
+        if (admin.id === userId) continue;
+        await storage.createNotification({
+          userId: admin.id,
+          type: "system",
+          message: `새 크레딧 입금 신청이 있습니다. (총 ${amount.toLocaleString()}원)`,
+          payload: { amount },
+          url: "/admin",
+        });
+      }
+      const bankName = process.env.BANK_NAME || "은행명";
+      const bankAccount = process.env.BANK_ACCOUNT || "";
+      const bankHolder = process.env.BANK_HOLDER || "";
+      res.json({
+        success: true,
+        orderId,
+        bankInfo: { bankName, bankAccount, bankHolder },
+        amount,
+        message: "입금 신청이 등록되었습니다. 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.",
+      });
+    } catch (err: any) {
+      console.error("Credits request-bank error:", err);
+      res.status(500).json({ message: err?.message || "입금 신청에 실패했습니다" });
+    }
+  });
+
   // === Tips (후원) Routes ===
   app.post("/api/tips", isAuthenticated, async (req, res) => {
     try {
@@ -1434,10 +1574,28 @@ export async function registerRoutes(
         userId: toUserId,
         type: "tip",
         message: `${fromName}님이 ${amount.toLocaleString()} 크레딧을 후원했습니다${message ? `: "${message}"` : ""}`,
+        payload: { fromName, amount, tipMessage: message || undefined },
         url: musicId ? `/explore` : undefined,
       });
 
-      res.json(tip);
+      // 후원 뱃지 자동 계산 및 업데이트
+      const totalSent = await storage.getTipsTotalSent(fromUserId);
+      const newBadge = calculateDonationBadge(totalSent);
+      const currentBadge = fromUser?.donationBadge ?? null;
+      if (newBadge !== currentBadge) {
+        await storage.updateDonationBadge(fromUserId, newBadge);
+        if (newBadge) {
+          const badgeNames: Record<string, string> = { seed: "🌱 씨앗", sprout: "🌿 새싹", supporter: "⭐ 후원자", sponsor: "💎 스폰서" };
+          await storage.createNotification({
+            userId: fromUserId,
+            type: "badge",
+            message: `축하합니다! ${badgeNames[newBadge]} 후원 뱃지를 획득했습니다!`,
+            payload: { badgeKey: newBadge },
+          });
+        }
+      }
+
+      res.json({ ...tip, donationBadge: newBadge });
     } catch (err) {
       console.error("Tip error:", err);
       res.status(500).json({ message: "후원에 실패했습니다" });
@@ -1520,6 +1678,7 @@ export async function registerRoutes(
         userId: musicItem.userId,
         type: "purchase",
         message: `${buyerName}님이 "${musicItem.title}"을(를) ${musicItem.price.toLocaleString()} 크레딧에 구매했습니다`,
+        payload: { fromName: buyerName, musicTitle: musicItem.title, price: musicItem.price },
         url: `/explore`,
       });
 
@@ -1609,21 +1768,7 @@ export async function registerRoutes(
         return;
       }
 
-      // 로컬에 없으면 객체 스토리지에서 다운로드 시도 (배포 환경)
-      try {
-        const objectPath = `/objects/uploads/${fileId}`;
-        const objService = new ObjectStorageService();
-        const objectFile = await objService.getObjectEntityFile(objectPath);
-        await objService.downloadObject(objectFile, res, 3600, {
-          attachmentFilename: safeTitle + (extFromFileId || ".mp3"),
-        });
-      } catch (objErr) {
-        if (objErr instanceof ObjectNotFoundError) {
-          return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
-        }
-        console.error("Download from object storage failed:", objErr);
-        return res.status(500).json({ message: "다운로드에 실패했습니다" });
-      }
+      return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
     } catch (err) {
       res.status(500).json({ message: "다운로드에 실패했습니다" });
     }
@@ -1691,21 +1836,7 @@ export async function registerRoutes(
         return;
       }
 
-      // 로컬에 없으면 객체 스토리지에서 다운로드 시도 (배포 환경)
-      try {
-        const objectPath = `/objects/uploads/${fileId}`;
-        const objService = new ObjectStorageService();
-        const objectFile = await objService.getObjectEntityFile(objectPath);
-        await objService.downloadObject(objectFile, res, 3600, {
-          attachmentFilename: ringtoneBase + (extFromFileId || ".mp3"),
-        });
-      } catch (objErr) {
-        if (objErr instanceof ObjectNotFoundError) {
-          return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
-        }
-        console.error("Ringtone download from object storage failed:", objErr);
-        return res.status(500).json({ message: "다운로드에 실패했습니다" });
-      }
+      return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
     } catch (err) {
       res.status(500).json({ message: "다운로드에 실패했습니다" });
     }
@@ -1852,8 +1983,8 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user?.claims?.sub;
       if (!userId) return res.json({ limited: false });
-      const user = await storage.getUserById(userId);
-      if (user?.subscriptionTier === "premium" || user?.role === "admin") return res.json({ limited: false });
+      const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
+      if (isPremium) return res.json({ limited: false });
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const result = await db.execute(sql`
@@ -1877,8 +2008,8 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub || null;
 
       if (userId) {
-        const user = await storage.getUserById(userId);
-        if (user && user.subscriptionTier !== "premium" && user.role !== "admin") {
+        const { isPremium } = await ensureExpiredSubscriptionDowngrade(userId);
+        if (!isPremium) {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           const result = await db.execute(sql`
@@ -2123,7 +2254,8 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user.claims.sub;
       const convos = await storage.getConversationsByUser(userId);
-      res.json(convos);
+      const serialized = convos.map((c: any) => ({ ...c, last_msg_time: toUTCISO(c.last_msg_time) }));
+      res.json(serialized);
     } catch (error: any) {
       res.status(500).json({ message: "대화 목록 조회 실패" });
     }
@@ -2148,7 +2280,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseInt(req.params.id as string);
       const isParticipant = await storage.isConversationParticipant(conversationId, userId);
       if (!isParticipant) {
         return res.status(403).json({ message: "접근 권한이 없습니다" });
@@ -2156,7 +2288,11 @@ export async function registerRoutes(
       const before = req.query.before ? parseInt(req.query.before as string) : undefined;
       const messages = await storage.getMessages(conversationId, 50, before);
       await storage.markMessagesRead(conversationId, userId);
-      res.json(messages);
+      const serialized = messages.map((m: any) => {
+        const created_at = toUTCISO(m.created_at ?? m.createdAt);
+        return { ...m, created_at };
+      });
+      res.json(serialized);
     } catch (error: any) {
       res.status(500).json({ message: "메시지 조회 실패" });
     }
@@ -2166,7 +2302,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseInt(req.params.id as string);
       const isParticipant = await storage.isConversationParticipant(conversationId, userId);
       if (!isParticipant) {
         return res.status(403).json({ message: "접근 권한이 없습니다" });
@@ -2182,11 +2318,13 @@ export async function registerRoutes(
       if (thisConvo) {
         const otherUserId = thisConvo.other_user_id;
         const sender = await storage.getUserById(userId);
+        const at = (msg as any).createdAt ?? (msg as any).created_at;
         sendToUser(otherUserId, {
           type: "new_message",
           conversationId,
           message: {
             ...msg,
+            created_at: toUTCISO(at),
             sender_first_name: sender?.firstName || "",
             sender_last_name: sender?.lastName || "",
             sender_image: sender?.profileImageUrl || null,
@@ -2194,7 +2332,8 @@ export async function registerRoutes(
         });
       }
 
-      res.json(msg);
+      const at = (msg as any).createdAt ?? (msg as any).created_at;
+      res.json({ ...msg, created_at: toUTCISO(at) });
     } catch (error: any) {
       res.status(500).json({ message: "메시지 전송 실패" });
     }
@@ -2215,7 +2354,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseInt(req.params.id as string);
       const isParticipant = await storage.isConversationParticipant(conversationId, userId);
       if (!isParticipant) {
         return res.status(403).json({ message: "접근 권한이 없습니다" });
@@ -2301,7 +2440,7 @@ export async function registerRoutes(
     }
   });
 
-  // 서버가 직접 E:\뉴베니사운드백업폴더에 저장 (Windows 로컬 PC 전용 — VPS에서는 실행 불가)
+  // 서버가 직접 지정 경로(E: 또는 .env BACKUP_LOCAL_DIR)에 저장 (Windows 로컬 PC 전용 — VPS에서는 실행 불가)
   app.post("/api/admin/save-to-local", isAuthenticated, isAdmin, async (req, res) => {
     if (process.platform !== "win32") {
       return res.status(400).json({
@@ -2311,11 +2450,18 @@ export async function registerRoutes(
     }
     const results: { type: string; file: string; success: boolean; error?: string }[] = [];
     try {
-      const LOCAL_BACKUP_DIR = "E:\\뉴베니사운드백업폴더";
+      const preferredDir = process.env.BACKUP_LOCAL_DIR || "E:\\뉴베니사운드백업폴더";
+      let LOCAL_BACKUP_DIR: string;
+      try {
+        mkdirSync(preferredDir, { recursive: true });
+        LOCAL_BACKUP_DIR = preferredDir;
+      } catch (e: any) {
+        const fallback = path.join(process.cwd(), "backups", "local");
+        mkdirSync(fallback, { recursive: true });
+        LOCAL_BACKUP_DIR = fallback;
+        console.warn("[admin save-to-local] Preferred dir failed, using fallback:", preferredDir, e?.message);
+      }
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-
-      // 백업 폴더 생성
-      mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
 
     // 1. DB 백업
     try {

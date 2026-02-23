@@ -12,10 +12,8 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // SPA fallback: for GET requests not under /api, serve index.html so client router can handle /profile/123 etc.
-  app.use((req, res, next) => {
-    if (req.method !== "GET") return next();
-    if (req.path.startsWith("/api")) return next();
+  // SPA: serve index.html for any GET that didn't match a file (so /music/190 etc. load the app)
+  app.get("*", (_req, res) => {
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

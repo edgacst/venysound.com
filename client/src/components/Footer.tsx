@@ -1,8 +1,12 @@
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import logoImage from "@assets/image_3fb5572f_1771157735033.png";
+import { useAuth } from "@/hooks/use-auth";
+
 export function Footer() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isOwner = user?.email === "freecompr20@gmail.com";
   return (
     <footer className="border-t border-white/5 bg-card mt-auto">
       <div className="container px-4 py-12">
@@ -26,7 +30,7 @@ export function Footer() {
               <li><Link href="/music"><span className="hover:text-foreground cursor-pointer">{t('nav.musicList')}</span></Link></li>
               <li><Link href="/popular"><span className="hover:text-foreground cursor-pointer">{t('nav.popular')}</span></Link></li>
               <li><Link href="/legal"><span className="hover:text-foreground cursor-pointer">{t('footer.terms')}</span></Link></li>
-              <li><Link href="/privacy-policy"><span className="hover:text-foreground cursor-pointer">{t('footer.privacy')}</span></Link></li>
+              <li><Link href="/privacy"><span className="hover:text-foreground cursor-pointer">{t('footer.privacy')}</span></Link></li>
             </ul>
           </div>
           <div>

@@ -263,7 +263,8 @@ export default function Messages() {
                       </div>
                     ) : (
                       messages.map((msg: any) => {
-                        const isMine = msg.sender_id === user.id;
+                        const senderId = String(msg.sender_id ?? msg.senderId ?? "");
+                        const isMine = user?.id ? senderId === String(user.id) : false;
                         return (
                           <div
                             key={msg.id}
@@ -288,7 +289,7 @@ export default function Messages() {
                                   {msg.content}
                                 </div>
                                 <p className={`text-[10px] text-muted-foreground mt-1 ${isMine ? "text-right" : "text-left"}`}>
-                                  {msg.created_at && formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: dateLocale })}
+                                  {(msg.created_at ?? msg.createdAt) && formatDistanceToNow(new Date(msg.created_at ?? msg.createdAt), { addSuffix: true, locale: dateLocale })}
                                 </p>
                               </div>
                             </div>

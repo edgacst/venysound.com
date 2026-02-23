@@ -1,7 +1,7 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/use-auth";
-import { useRoute, Link, useLocation } from "wouter";
+import { useRoute, Link, useLocation, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLikeMusic, useMyLikes, useLikeCounts } from "@/hooks/use-music";
 import { useFollowUser } from "@/hooks/use-user-profile";
@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DonationBadge } from "@/components/DonationBadge";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
@@ -19,7 +20,7 @@ import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
 import {
   Play, Pause, Heart, UserPlus, UserCheck, Music, Clock, Tag,
-  MessageSquare, Send, Loader2, ArrowLeft, Gift, Download,
+  MessageSquare, Send, Loader2, ArrowLeft, Gift, Download, Bell,
   DollarSign, ListPlus, Share2, Disc3, Headphones, BarChart3, TrendingUp,
   FileText, ChevronDown, ChevronUp, BookOpen, PenLine, Trash2
 } from "lucide-react";
@@ -119,8 +120,11 @@ function StoryCommentsList({ storyId }: { storyId: number }) {
 export default function MusicDetail() {
   const { t } = useTranslation();
   const [, params] = useRoute("/music/:id");
+  const paramsAlt = useParams<{ id?: string }>();
   const [, navigate] = useLocation();
-  const musicId = Number(params?.id);
+  const rawId = params?.id ?? paramsAlt?.id ?? (typeof window !== "undefined" ? /^\/music\/(\d+)/.exec(window.location.pathname)?.[1] : undefined);
+  const musicId = rawId != null && rawId !== "" ? Number(rawId) : NaN;
+  const musicIdValid = Number.isFinite(musicId) && musicId > 0;
   const { user } = useAuth();
   const { toast } = useToast();
   const { playMusic, playMusicWithLyrics, activeMusicId, togglePause, pauseRequested } = usePlayerStore();
@@ -135,37 +139,42 @@ export default function MusicDetail() {
   const [storyContent, setStoryContent] = useState("");
   const [storyCommentTexts, setStoryCommentTexts] = useState<Record<number, string>>({});
   const [expandedStories, setExpandedStories] = useState<Set<number>>(new Set());
+  const [isRingtoneDownloading, setIsRingtoneDownloading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const { data: musicData, isLoading } = useQuery<any>({
+  const { data: musicData, isLoading, isError } = useQuery<any>({
     queryKey: ["/api/music", musicId],
     queryFn: async () => {
-      const res = await fetch(`/api/music/${musicId}`);
-      if (!res.ok) throw new Error("failed");
+      const res = await fetch(`/api/music/${musicId}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || ` ${res.status}`);
+      }
       return res.json();
     },
-    enabled: !!musicId,
+    enabled: musicIdValid,
   });
 
   const { data: reviews, isLoading: reviewsLoading } = useQuery<any[]>({
     queryKey: ["/api/music", musicId, "reviews"],
-    queryFn: async () => {
-      const res = await fetch(`/api/music/${musicId}/reviews`);
-      if (!res.ok) return [];
-      return res.json();
-    },
     enabled: !!musicId,
   });
 
   const { data: followStatus } = useQuery<any>({
     queryKey: ["/api/users", musicData?.uploader?.id, "profile"],
-    queryFn: async () => {
-      if (!musicData?.uploader?.id) return null;
-      const res = await fetch(`/api/users/${musicData.uploader.id}/profile`);
-      if (!res.ok) throw new Error("failed");
-      return res.json();
-    },
     enabled: !!musicData?.uploader?.id && !!user,
   });
+
+  const { data: purchasedData } = useQuery<{ purchased: boolean }>({
+    queryKey: ["/api/purchases/check", musicId],
+    queryFn: async () => {
+      const res = await fetch(`/api/purchases/check/${musicId}`);
+      if (!res.ok) return { purchased: false };
+      return res.json();
+    },
+    enabled: !!user && !!musicId,
+  });
+  const hasPurchased = purchasedData?.purchased === true;
 
   const { data: sameGenreData } = useQuery<any>({
     queryKey: ["/api/music", "genre-related", musicData?.genre],
@@ -184,16 +193,6 @@ export default function MusicDetail() {
       return res.json();
     },
     enabled: !!musicData,
-  });
-
-  const { data: purchaseStatus } = useQuery<{ purchased: boolean }>({
-    queryKey: ["/api/purchases/check", musicId],
-    queryFn: async () => {
-      const res = await fetch(`/api/purchases/check/${musicId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("failed");
-      return res.json();
-    },
-    enabled: !!musicId && !!user,
   });
 
   const artistOtherTracks = useMemo(() => {
@@ -291,7 +290,60 @@ export default function MusicDetail() {
   const likeCount = likeCounts?.[musicId] || 0;
   const isOwner = user?.id === musicData?.userId;
   const uploaderIsPremium = musicData?.uploaderSubscriptionTier === "premium";
+  const uploaderDonationBadge = (musicData as { uploaderDonationBadge?: string | null } | undefined)?.uploaderDonationBadge ?? null;
   const isFollowingUploader = followStatus?.isFollowing === true;
+  const canDownload =
+    !!musicData &&
+    (isOwner ||
+      (!!musicData.isDownloadable &&
+        (Number(musicData.price || 0) === 0 || hasPurchased)));
+
+  async function handleDownload(asRingtone: boolean) {
+    if (!user) return;
+    const endpoint = asRingtone ? `/api/music/${musicId}/ringtone` : `/api/music/${musicId}/download`;
+    if (asRingtone) setIsRingtoneDownloading(true);
+    else setIsDownloading(true);
+    try {
+      const res = await fetch(endpoint, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || (asRingtone ? "벨소리 다운로드 실패" : "다운로드 실패"));
+      }
+      const cd = res.headers.get("Content-Disposition");
+      let filename = musicData?.title || "music";
+      if (asRingtone) filename = `${filename}_벨소리`;
+      const match = cd?.match(/filename\*?=(?:UTF-8'')?([^;]+)/);
+      if (match) {
+        try {
+          filename = decodeURIComponent(match[1].replace(/^["']|["']$/g, ""));
+        } catch {}
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename + (filename.includes(".mp3") ? "" : ".mp3");
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({
+        title: asRingtone
+          ? t("musicDetail.ringtoneDownloadComplete", "벨소리용 파일이 다운로드되었습니다")
+          : t("myLibrary.downloadComplete", "다운로드 완료"),
+        description: musicData?.title,
+      });
+    } catch (err: any) {
+      toast({
+        title: asRingtone
+          ? t("musicDetail.ringtoneDownloadFailed", "벨소리 다운로드 실패")
+          : t("myLibrary.downloadFailed", "다운로드 실패"),
+        description: err?.message,
+        variant: "destructive",
+      });
+    } finally {
+      if (asRingtone) setIsRingtoneDownloading(false);
+      else setIsDownloading(false);
+    }
+  }
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -304,6 +356,25 @@ export default function MusicDetail() {
     }
   }, [activeMusicId, musicId, navigate]);
 
+  if (!musicIdValid) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col pb-24">
+        <Navigation />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <Music className="mx-auto mb-4 text-muted-foreground" size={48} />
+            <h2 className="text-xl font-bold mb-2">{t('musicDetail.notFound', '음원을 찾을 수 없습니다')}</h2>
+            <Link href="/music">
+              <Button variant="outline" className="mt-4" data-testid="button-back-to-list">
+                <ArrowLeft size={16} className="mr-2" /> {t('musicDetail.backToList', '음원 목록으로')}
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex flex-col pb-24">
@@ -315,7 +386,7 @@ export default function MusicDetail() {
     );
   }
 
-  if (!musicData) {
+  if (isError || !musicData) {
     return (
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
@@ -348,11 +419,6 @@ export default function MusicDetail() {
     : streamingMinutes > 0
       ? `${streamingMinutes}${t('musicDetail.minutes', '분')} ${streamingSeconds}${t('musicDetail.seconds', '초')}`
       : `${streamingSeconds}${t('musicDetail.seconds', '초')}`;
-
-  const canDownloadRingtone =
-    !!user &&
-    (isOwner ||
-      (musicData.isDownloadable && (musicData.price === 0 || purchaseStatus?.purchased)));
 
   return (
     <PageTransition>
@@ -423,6 +489,7 @@ export default function MusicDetail() {
                       <span className="text-sm font-medium text-foreground">
                         {uploader.firstName || t('musicDetail.user', '사용자')}{uploader.lastName ? ` ${uploader.lastName}` : ""}
                       </span>
+                      {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={true} size="sm" />}
                     </div>
                   </Link>
                 )}
@@ -463,21 +530,6 @@ export default function MusicDetail() {
                   {isCurrentlyPlaying ? t('musicDetail.pause', '일시정지') : t('musicDetail.play', '재생')}
                 </Button>
 
-                {canDownloadRingtone && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    asChild
-                    title={t('music.ringtoneHint', '다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요')}
-                    data-testid="button-ringtone-download"
-                  >
-                    <a href={`/api/music/${musicId}/ringtone`}>
-                      <Download size={16} className="mr-1" />
-                      {t('music.ringtoneDownload', '벨소리용 다운로드')}
-                    </a>
-                  </Button>
-                )}
-
                 {user && (
                   <Button
                     variant="outline"
@@ -516,7 +568,43 @@ export default function MusicDetail() {
                 >
                   <Share2 size={18} />
                 </Button>
+
+                {user && canDownload && (
+                  <>
+                    {hasPurchased && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-full gap-1.5"
+                        disabled={isDownloading}
+                        onClick={() => handleDownload(false)}
+                        data-testid="button-download"
+                        title={t('musicDetail.download', '다운로드')}
+                      >
+                        {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                        {t('musicDetail.download', '다운로드')}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-full gap-1.5"
+                      disabled={isRingtoneDownloading}
+                      onClick={() => handleDownload(true)}
+                      data-testid="button-ringtone"
+                      title={t('musicDetail.ringtoneHint', '다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요')}
+                    >
+                      {isRingtoneDownloading ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+                      {t('musicDetail.ringtoneDownload', '벨소리용')}
+                    </Button>
+                  </>
+                )}
               </div>
+              {user && canDownload && (
+                <p className="text-xs text-muted-foreground mt-2" data-testid="text-ringtone-notice">
+                  {t('musicDetail.ringtoneNotice', '※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.')}
+                </p>
+              )}
             </div>
           </div>
 
@@ -559,7 +647,7 @@ export default function MusicDetail() {
                     {showLyrics ? <ChevronUp size={18} className="text-muted-foreground" /> : <ChevronDown size={18} className="text-muted-foreground" />}
                   </button>
                   {showLyrics && (
-                    <div className="mt-4 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed" data-testid="text-lyrics-content">
+                    <div className="mt-4 whitespace-pre-wrap text-base text-muted-foreground leading-relaxed text-center" data-testid="text-lyrics-content">
                       {musicData.lyrics}
                     </div>
                   )}

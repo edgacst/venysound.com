@@ -1,20 +1,10 @@
-import { Switch, Route, useLocation } from "wouter";
-import { useEffect } from "react";
+import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
 import { LoginModal } from "@/components/LoginModal";
-
-function ScrollToTop() {
-  const [location] = useLocation();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location]);
-  return null;
-}
-
 import Home from "@/pages/Home";
 import Explore from "@/pages/Explore";
 import Popular from "@/pages/Popular";
@@ -24,7 +14,6 @@ import BulkUpload from "@/pages/BulkUpload";
 import Profile from "@/pages/Profile";
 import About from "@/pages/About";
 import Legal from "@/pages/Legal";
-import PrivacyPolicy from "@/pages/PrivacyPolicy";
 import FAQ from "@/pages/FAQ";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -41,6 +30,7 @@ import MusicDetail from "@/pages/MusicDetail";
 import Dashboard from "@/pages/Dashboard";
 import Messages from "@/pages/Messages";
 import SunoGuide from "@/pages/SunoGuide";
+import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -59,7 +49,7 @@ function Router() {
       <Route path="/about" component={About} />
       <Route path="/about/values/:slug" component={ValueDetail} />
       <Route path="/legal" component={Legal} />
-      <Route path="/privacy-policy" component={PrivacyPolicy} />
+      <Route path="/privacy" component={Privacy} />
       <Route path="/faq" component={FAQ} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />
@@ -83,7 +73,6 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <ScrollToTop />
         <Router />
         <GlobalAudioPlayer />
         <LoginModal />

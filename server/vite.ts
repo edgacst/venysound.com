@@ -11,7 +11,11 @@ const viteLogger = createLogger();
 export async function setupVite(server: Server, app: Express) {
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server, path: "/vite-hmr" },
+    hmr: process.env.DISABLE_HMR === "1" ? false : {
+      server,
+      clientPort: parseInt(process.env.PORT || "5000", 10),
+      path: "/__vite_hmr",
+    },
     allowedHosts: true as const,
   };
 
@@ -31,11 +35,13 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
-  // SPA fallback: for GET requests not under /api, serve index.html so client router can handle /profile/123 etc.
-  app.use(async (req, res, next) => {
-    if (req.method !== "GET") return next();
-    if (req.path.startsWith("/api")) return next();
+  app.use("/{*path}", async (req, res, next) => {
+    // WebSocket upgrade: do not send HTML; let Vite's upgrade listener handle it
+    if (req.headers.upgrade === "websocket") {
+      return next();
+    }
     const url = req.originalUrl;
+
     try {
       const clientTemplate = path.resolve(
         import.meta.dirname,
@@ -43,6 +49,8 @@ export async function setupVite(server: Server, app: Express) {
         "client",
         "index.html",
       );
+
+      // always reload the index.html file from disk incase it changes
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,

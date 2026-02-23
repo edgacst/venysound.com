@@ -29,6 +29,7 @@ export const users = pgTable("users", {
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
   credits: integer("credits").default(0),
   balance: integer("balance").default(0),
+  donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -42,7 +42,7 @@ import { motion, AnimatePresence } from "framer-motion";
 export function Navigation() {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
-  const [location, setLocation] = useLocation();
+  const [location] = useLocation();
   const { data: notifications } = useNotifications();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
@@ -58,7 +58,6 @@ export function Navigation() {
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
 
   const openLoginModal = useLoginModalStore((s) => s.open);
-  const openRegisterModal = useLoginModalStore((s) => s.openRegister);
   const { data: unreadMsgData } = useQuery<{ count: number }>({
     queryKey: ["/api/messages/unread-count"],
     enabled: !!user,
@@ -113,6 +112,12 @@ export function Navigation() {
         <div className="hidden md:flex items-center gap-4">
           {user ? (
             <>
+              <Link href={`/profile/${user.id}`}>
+                <Button size="sm" variant="ghost" className="gap-2 text-foreground" data-testid="button-my-music">
+                  <User size={16} />
+                  {t('nav.myMusic', '나의 음악')}
+                </Button>
+              </Link>
               <Link href="/upload">
                 <Button size="sm" className="gap-2 bg-secondary text-foreground border border-white/10" data-testid="button-upload">
                   <Upload size={16} />
@@ -179,10 +184,12 @@ export function Navigation() {
                     </div>
                   </div>
                   <DropdownMenuSeparator className="bg-white/10" />
-                  <DropdownMenuItem onClick={() => setLocation(`/profile/${user.id}`)} className="cursor-pointer">
-                    <div className="flex items-center gap-2 w-full" data-testid="link-mypage">
-                      <User size={16} /> {t('nav.myPage')}
-                    </div>
+                  <DropdownMenuItem asChild>
+                    <Link href={`/profile/${user.id}`}>
+                      <div className="flex items-center gap-2 cursor-pointer w-full" data-testid="link-mypage">
+                        <User size={16} /> {t('nav.myPage')}
+                      </div>
+                    </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/credits">
@@ -195,7 +202,7 @@ export function Navigation() {
                   <DropdownMenuItem asChild>
                     <Link href="/my-library">
                       <div className="flex items-center gap-2 cursor-pointer w-full" data-testid="link-my-library">
-                        <Download size={16} /> {t('nav.myLibrary', '내 라이브러리')}
+                        <Download size={16} /> {t('nav.myLibrary')}
                       </div>
                     </Link>
                   </DropdownMenuItem>
@@ -237,7 +244,6 @@ export function Navigation() {
                   <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button variant="ghost" size="sm" onClick={openRegisterModal} className="text-muted-foreground hover:text-foreground">{t('login.register', '회원가입')}</Button>
               <Button onClick={openLoginModal} data-testid="button-login">{t('nav.login')}</Button>
             </>
           )}
@@ -292,8 +298,8 @@ export function Navigation() {
                       )}
                     </div>
                   </Link>
-                  <NavLink href={`/profile/${user.id}`} icon={User}>{t('nav.myPage')}</NavLink>
-                  <NavLink href="/my-library" icon={Download}>{t('nav.myLibrary', '내 라이브러리')}</NavLink>
+                  <NavLink href={`/profile/${user.id}`} icon={User}>{t('nav.myMusic', '나의 음악')}</NavLink>
+                  <NavLink href="/my-library" icon={Download}>{t('nav.myLibrary')}</NavLink>
                   <NavLink href="/dashboard" icon={BarChart3}>{t('nav.dashboard')}</NavLink>
                   {adminCheck?.isAdmin && (
                     <NavLink href="/admin" icon={ShieldCheck}>{t('nav.admin')}</NavLink>
@@ -337,13 +343,6 @@ export function Navigation() {
                       <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <div
-                    onClick={openRegisterModal}
-                    className="flex items-center gap-2 px-4 py-2 text-muted-foreground hover:text-foreground cursor-pointer"
-                  >
-                    <User size={18} />
-                    <span>{t('login.register', '회원가입')}</span>
-                  </div>
                   <div
                     onClick={openLoginModal}
                     className="flex items-center gap-2 px-4 py-2 text-primary cursor-pointer"

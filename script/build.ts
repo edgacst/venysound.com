@@ -55,6 +55,9 @@ async function buildAll() {
     define: {
       "process.env.NODE_ENV": '"production"',
     },
+    banner: {
+      js: "const path=require('path');globalThis.__APP_ROOT__=path.resolve(__dirname,'..');",
+    },
     minify: true,
     external: externals,
     logLevel: "info",

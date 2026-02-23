@@ -7,23 +7,24 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { MusicCard } from "@/components/MusicCard";
+import { DonationBadge } from "@/components/DonationBadge";
 import { useTranslation } from 'react-i18next';
 import { 
   Loader2, UserPlus, UserCheck, Upload as UploadIcon, Heart, 
   MessageSquare, ListMusic, Music, Users, Bell, BellOff, 
   Plus, Trash2, X, Flag, Clock, Search, CheckCircle, XCircle, Crown,
-  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins, Play
+  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins, Pencil
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePlaylists, useCreatePlaylist, usePlaylist } from "@/hooks/use-playlists";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
 import profileMusicBg from "@/assets/images/profile-music-bg.png";
@@ -824,14 +825,46 @@ export default function Profile() {
   const { t } = useTranslation();
   const [, params] = useRoute("/profile/:id");
   const userId = params?.id;
-  const { data, isLoading, isError } = useUserProfile(userId || "");
+  const { data, isLoading } = useUserProfile(userId || "");
   const { user: currentUser } = useAuth();
   const { mutate: followUser } = useFollowUser();
   const [followersOpen, setFollowersOpen] = useState(false);
   const [followingOpen, setFollowingOpen] = useState(false);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editProfileImageUrl, setEditProfileImageUrl] = useState("");
+  const [profileImageUploading, setProfileImageUploading] = useState(false);
+  const profileImageInputRef = useRef<HTMLInputElement>(null);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { playMusic, setPlaylist } = usePlayerStore();
+  const updateProfileMutation = useMutation({
+    mutationFn: async (body: { firstName: string; lastName: string; profileImageUrl: string }) => {
+      const res = await fetch(`/api/users/${userId}/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "프로필 수정 실패");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/profile", userId] });
+      setProfileEditOpen(false);
+      toast({ title: t("profile.editProfileSuccess", "프로필이 수정되었습니다") });
+    },
+    onError: (err: Error) => {
+      toast({ title: t("profile.editProfileFailed", "프로필 수정 실패"), description: err.message, variant: "destructive" });
+    },
+  });
 
-  const { data: streamingStats } = useQuery<{
-    totalSeconds: number;
+  const { data: streamingStats } = useQuery<{ 
+    totalSeconds: number; 
     totalPlays: number;
     tracks: Array<{ musicId: number; title: string; artist: string; image: string; totalSeconds: number; playCount: number }>;
   }>({
@@ -844,8 +877,6 @@ export default function Profile() {
     enabled: !!userId,
   });
 
-  const { playMusic, setPlaylist } = usePlayerStore();
-
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
@@ -854,7 +885,7 @@ export default function Profile() {
     );
   }
 
-  if (!data || isError) return (
+  if (!data) return (
     <div className="min-h-screen bg-background flex flex-col">
       <Navigation />
       <div className="text-center py-20 text-muted-foreground">{t('profile.notFound', '프로필을 찾을 수 없습니다.')}</div>
@@ -862,14 +893,8 @@ export default function Profile() {
   );
 
   const { user, uploadedMusic, likedMusic, followerCount, followingCount, playlists: userPlaylists, posts: userPosts, followers, following, isFollowing } = data;
-  const isOwnProfile = currentUser?.id === user.id;
+  const isOwnProfile = !!currentUser && String(currentUser.id) === String(user.id);
 
-  const handlePlayAllTracks = (list: { id: number }[]) => {
-    if (!list?.length) return;
-    const ids = list.map((m) => m.id);
-    setPlaylist(ids);
-    playMusic(ids[0]);
-  };
 
   return (
     <PageTransition>
@@ -898,6 +923,9 @@ export default function Profile() {
                     <Crown size={12} className="mr-1" /> Premium
                   </Badge>
                 )}
+                {(user as any).donationBadge && (
+                  <DonationBadge badge={(user as any).donationBadge} />
+                )}
               </h1>
               <p className="text-muted-foreground">{user.email}</p>
             </div>
@@ -921,14 +949,139 @@ export default function Profile() {
                 </>
               )}
               {isOwnProfile && (
-                <Link href="/upload">
-                  <Button variant="outline" className="gap-2 border-white/10" data-testid="button-upload-music">
-                    <UploadIcon size={18} /> {t('profile.uploadMusic', '음악 업로드')}
+                <>
+                  <Button
+                    variant="outline"
+                    className="gap-2 border-white/10"
+                    data-testid="button-edit-profile"
+                    onClick={() => {
+                      setEditFirstName(user.firstName || "");
+                      setEditLastName(user.lastName || "");
+                      setEditProfileImageUrl(user.profileImageUrl || "");
+                      setProfileEditOpen(true);
+                    }}
+                  >
+                    <Pencil size={18} /> {t('profile.editProfile', '프로필 수정')}
                   </Button>
-                </Link>
+                  <Link href="/upload">
+                    <Button variant="outline" className="gap-2 border-white/10" data-testid="button-upload-music">
+                      <UploadIcon size={18} /> {t('profile.uploadMusic', '음악 업로드')}
+                    </Button>
+                  </Link>
+                </>
               )}
             </div>
           </div>
+
+          {isOwnProfile && (
+            <Dialog open={profileEditOpen} onOpenChange={setProfileEditOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>{t('profile.editProfile', '프로필 수정')}</DialogTitle>
+                  <DialogDescription>{t('profile.editProfileDesc', '이름과 프로필 이미지를 수정할 수 있습니다.')}</DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">{t('profile.firstName', '이름')}</label>
+                    <Input
+                      value={editFirstName}
+                      onChange={(e) => setEditFirstName(e.target.value)}
+                      placeholder={t('profile.firstNamePlaceholder', '이름')}
+                      data-testid="input-edit-first-name"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">{t('profile.lastName', '성')}</label>
+                    <Input
+                      value={editLastName}
+                      onChange={(e) => setEditLastName(e.target.value)}
+                      placeholder={t('profile.lastNamePlaceholder', '성')}
+                      data-testid="input-edit-last-name"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">{t('profile.profileImage', '프로필 이미지')}</label>
+                    <div className="flex items-center gap-4">
+                      <Avatar className="h-16 w-16 shrink-0">
+                        <AvatarImage src={editProfileImageUrl ? (editProfileImageUrl.startsWith("http") ? editProfileImageUrl : `${window.location.origin}${editProfileImageUrl}`) : undefined} />
+                        <AvatarFallback>{editFirstName?.[0] || editLastName?.[0] || "?"}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col gap-2 flex-1 min-w-0">
+                        <input
+                          ref={profileImageInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          data-testid="input-edit-profile-image"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setProfileImageUploading(true);
+                            try {
+                              const formData = new FormData();
+                              formData.append("file", file);
+                              const res = await fetch("/api/uploads/local", { method: "POST", body: formData, credentials: "include" });
+                              if (!res.ok) {
+                                const err = await res.json().catch(() => ({}));
+                                throw new Error(err.error || "업로드 실패");
+                              }
+                              const data = await res.json();
+                              if (data.objectPath) setEditProfileImageUrl(data.objectPath);
+                            } catch (err) {
+                              toast({ title: t("profile.profileImageUploadFailed", "이미지 업로드 실패"), description: err instanceof Error ? err.message : "", variant: "destructive" });
+                            } finally {
+                              setProfileImageUploading(false);
+                              e.target.value = "";
+                            }
+                          }}
+                        />
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={profileImageUploading}
+                            onClick={() => profileImageInputRef.current?.click()}
+                            data-testid="button-upload-profile-image"
+                          >
+                            {profileImageUploading ? <Loader2 size={14} className="animate-spin" /> : <UploadIcon size={14} />}
+                            {profileImageUploading ? t('profile.uploading', '업로드 중...') : t('profile.selectImage', '이미지 선택')}
+                          </Button>
+                          {editProfileImageUrl && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-muted-foreground"
+                              onClick={() => setEditProfileImageUrl("")}
+                              data-testid="button-remove-profile-image"
+                            >
+                              {t('profile.removeImage', '이미지 제거')}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setProfileEditOpen(false)}>{t('profile.cancel', '취소')}</Button>
+                  <Button
+                    data-testid="button-save-profile"
+                    disabled={updateProfileMutation.isPending}
+                    onClick={() => updateProfileMutation.mutate({
+                      firstName: editFirstName.trim(),
+                      lastName: editLastName.trim(),
+                      profileImageUrl: editProfileImageUrl.trim(),
+                    })}
+                  >
+                    {updateProfileMutation.isPending ? <Loader2 size={16} className="animate-spin" /> : null}
+                    {t('profile.save', '저장')}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
 
           <div className="flex items-center gap-2 mb-8 flex-wrap">
             <StatItem label={t('profile.uploads', '업로드')} value={uploadedMusic?.length || 0} />
@@ -1031,10 +1184,19 @@ export default function Profile() {
             </TabsList>
             
             <TabsContent value="uploaded">
-              {(uploadedMusic?.length || 0) > 0 && (
-                <div className="flex justify-end mb-4">
-                  <Button variant="outline" size="sm" className="gap-2 border-white/10" onClick={() => handlePlayAllTracks(uploadedMusic)} data-testid="button-play-all-uploaded">
-                    <Play size={16} /> {t('profile.playAll', '전체 재생')}
+              {(uploadedMusic?.length ?? 0) > 0 && (
+                <div className="mb-4">
+                  <Button
+                    variant="outline"
+                    className="gap-2 border-white/10"
+                    onClick={() => {
+                      const ids = uploadedMusic!.map((m: any) => m.id);
+                      setPlaylist(ids);
+                      playMusic(ids[0]);
+                    }}
+                    data-testid="button-play-all-uploads"
+                  >
+                    <Music size={16} /> {t('profile.playAll', '전체 재생')}
                   </Button>
                 </div>
               )}
@@ -1059,13 +1221,6 @@ export default function Profile() {
             </TabsContent>
             
             <TabsContent value="liked">
-              {(likedMusic?.length || 0) > 0 && (
-                <div className="flex justify-end mb-4">
-                  <Button variant="outline" size="sm" className="gap-2 border-white/10" onClick={() => handlePlayAllTracks(likedMusic)} data-testid="button-play-all-liked">
-                    <Play size={16} /> {t('profile.playAll', '전체 재생')}
-                  </Button>
-                </div>
-              )}
               <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {likedMusic?.map(music => (
                   <MusicCard key={music.id} music={music} />

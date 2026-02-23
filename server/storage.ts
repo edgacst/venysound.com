@@ -13,7 +13,7 @@ import { users } from "@shared/models/auth";
 
 export interface IStorage {
   // Music
-  createMusic(musicData: InsertMusic): Promise<Music>;
+  createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
   getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
   getMusicById(id: number): Promise<Music | undefined>;
   getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]>;
@@ -55,6 +55,7 @@ export interface IStorage {
 
   // Users
   getUserById(id: string): Promise<any | undefined>;
+  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string }): Promise<any | undefined>;
 
   // Follows - counts
   getFollowerCount(userId: string): Promise<number>;
@@ -68,7 +69,7 @@ export interface IStorage {
   removeMusicFromPlaylist(playlistId: number, musicId: number): Promise<void>;
 
   // Notifications
-  createNotification(notif: { userId: string, type: string, message: string, url?: string }): Promise<any>;
+  createNotification(notif: { userId: string, type: string, message: string, payload?: Record<string, unknown>, url?: string }): Promise<any>;
   getNotifications(userId: string): Promise<any[]>;
   markNotificationRead(id: number): Promise<void>;
   markAllNotificationsRead(userId: string): Promise<void>;
@@ -99,6 +100,8 @@ export interface IStorage {
   createTip(tip: { fromUserId: string; toUserId: string; musicId?: number | null; amount: number; message?: string | null }): Promise<Tip>;
   getTipsByUser(userId: string): Promise<any[]>;
   getTipsReceived(userId: string): Promise<any[]>;
+  getTipsTotalSent(userId: string): Promise<number>;
+  updateDonationBadge(userId: string, badge: string | null): Promise<void>;
 
   // Purchases
   createPurchase(purchase: { buyerId: string; musicId: number; sellerId: string; amount: number }): Promise<Purchase>;
@@ -148,7 +151,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   // Music
-  async createMusic(musicData: InsertMusic): Promise<Music> {
+  async createMusic(musicData: InsertMusic & { userId: string }): Promise<Music> {
     const [newMusic] = await db.insert(music).values(musicData).returning();
     return newMusic;
   }
@@ -202,6 +205,8 @@ export class DatabaseStorage implements IStorage {
         ...musicColumns,
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderDonationBadge: users.donationBadge,
+        _uploaderRole: users.role,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -215,11 +220,10 @@ export class DatabaseStorage implements IStorage {
     const rows = await query;
     const now = new Date();
     const data: MusicWithUploaderTier[] = rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null };
-      const isPremium =
-        _uploaderTier === "premium" &&
-        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free" } as MusicWithUploaderTier;
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderDonationBadge, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderDonationBadge: string | null; _uploaderRole: string | null };
+      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: _uploaderDonationBadge ?? null } as MusicWithUploaderTier;
     });
 
     return { data, total };
@@ -251,6 +255,8 @@ export class DatabaseStorage implements IStorage {
         ...musicColumns,
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderDonationBadge: users.donationBadge,
+        _uploaderRole: users.role,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -258,11 +264,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(music.createdAt));
     const now = new Date();
     return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null };
-      const isPremium =
-        _uploaderTier === "premium" &&
-        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free" } as MusicWithUploaderTier;
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderDonationBadge, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderDonationBadge: string | null; _uploaderRole: string | null };
+      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: _uploaderDonationBadge ?? null } as MusicWithUploaderTier;
     });
   }
 
@@ -487,8 +492,19 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string }): Promise<any | undefined> {
+    const set: { firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null; username?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+    if (data.firstName !== undefined) set.firstName = data.firstName.trim() || null;
+    if (data.lastName !== undefined) set.lastName = data.lastName.trim() || null;
+    if (data.profileImageUrl !== undefined) set.profileImageUrl = data.profileImageUrl.trim() || null;
+    if (data.username !== undefined) set.username = data.username.trim() || null;
+    if (Object.keys(set).length <= 1) return this.getUserById(userId);
+    const [user] = await db.update(users).set(set).where(eq(users.id, userId)).returning();
+    return user;
+  }
+
   // Notifications
-  async createNotification(notifData: { userId: string, type: string, message: string, url?: string }): Promise<any> {
+  async createNotification(notifData: { userId: string, type: string, message: string, payload?: Record<string, unknown>, url?: string }): Promise<any> {
     const [notif] = await db.insert(notifications).values(notifData).returning();
     await this.pruneNotificationsForUser(notifData.userId, 20);
     return notif;
@@ -771,6 +787,17 @@ export class DatabaseStorage implements IStorage {
     return results.map(r => ({ ...r.tip, fromUser: r.fromUser }));
   }
 
+  async getTipsTotalSent(userId: string): Promise<number> {
+    const result = await db.select({ total: sql<number>`coalesce(sum(${tips.amount}), 0)` })
+      .from(tips)
+      .where(eq(tips.fromUserId, userId));
+    return Number(result[0]?.total ?? 0);
+  }
+
+  async updateDonationBadge(userId: string, badge: string | null): Promise<void> {
+    await db.update(users).set({ donationBadge: badge ?? undefined }).where(eq(users.id, userId));
+  }
+
   // Purchases
   async createPurchase(purchaseData: { buyerId: string; musicId: number; sellerId: string; amount: number }): Promise<Purchase> {
     const [purchase] = await db.insert(purchases).values(purchaseData).returning();
@@ -981,11 +1008,14 @@ export class DatabaseStorage implements IStorage {
       `;
     }
     const rows = await db.execute(query);
-    return rows.rows.reverse();
+    const list = rows.rows as any[];
+    list.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    return list;
   }
 
   async createMessage(conversationId: number, senderId: string, content: string): Promise<DirectMessage> {
-    const [msg] = await db.insert(directMessages).values({ conversationId, senderId, content }).returning();
+    const now = new Date();
+    const [msg] = await db.insert(directMessages).values({ conversationId, senderId, content, createdAt: now }).returning();
     await db.update(conversations).set({ lastMessageAt: new Date() }).where(eq(conversations.id, conversationId));
     return msg;
   }

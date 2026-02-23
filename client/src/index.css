@@ -45,8 +45,12 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: auto;
+  }
   body {
     @apply bg-background text-foreground antialiased font-sans selection:bg-primary/30;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, h4, h5, h6 {

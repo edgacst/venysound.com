@@ -4,12 +4,14 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
+    "dev": "cross-env NODE_ENV=development tsx watch server/index.ts",
+    "restart": "node script/kill-port-5000.cjs && npm run dev",
     "build": "tsx script/build.ts",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "download-files": "tsx script/download-from-production.ts"
+    "download-files": "tsx script/download-from-production.ts",
+    "make-deploy": "tsx script/make-deploy.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
@@ -114,6 +116,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "20.19.27",
     "@types/passport": "^1.0.17",
+    "@types/passport-facebook": "^3.0.4",
     "@types/passport-local": "^1.0.38",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, json } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, jsonb } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -41,13 +41,6 @@ export const follows = pgTable("follows", {
 }, (t) => [
   primaryKey({ columns: [t.followerId, t.followedId] }),
 ]);
-
-// Express session store (connect-pg-simple). Defined here so db:push does not drop it.
-export const sessions = pgTable("sessions", {
-  sid: text("sid").primaryKey(),
-  sess: json("sess").notNull(),
-  expire: timestamp("expire").notNull(),
-});
 
 // Reviews table
 export const reviews = pgTable("reviews", {
@@ -99,8 +92,9 @@ export const postComments = pgTable("post_comments", {
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
   userId: text("user_id").references(() => users.id).notNull(),
-  type: text("type").notNull(), // 'like', 'comment', 'follow', 'system'
+  type: text("type").notNull(), // 'like', 'comment', 'follow', 'tip', 'badge', 'system'
   message: text("message").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>(), // 번역용 파라미터 (nullable, fromName, musicTitle 등)
   url: text("url"),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -405,7 +399,7 @@ export const insertPurchaseSchema = createInsertSchema(purchases).omit({ id: tru
 // === EXPLICIT API CONTRACT TYPES ===
 
 export type Music = typeof music.$inferSelect;
-export type MusicWithUploaderTier = Music & { uploaderSubscriptionTier?: string | null };
+export type MusicWithUploaderTier = Music & { uploaderSubscriptionTier?: string | null; uploaderDonationBadge?: string | null };
 export type UserType = typeof users.$inferSelect;
 export type InsertMusic = z.infer<typeof insertMusicSchema>;
 

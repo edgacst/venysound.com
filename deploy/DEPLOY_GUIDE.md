@@ -142,6 +142,66 @@ ssh root@서버IP "cd /var/www/venysound && npm install && npm run build && pm2 
 
 ---
 
+## 무중단 배포 (5000/5100 스위칭)
+
+서비스 중인 포트(**5000**)와 배포 검증용 포트(**5100**)를 번갈아 쓰면, 배포 중에도 기존 버전이 계속 서비스됩니다.
+
+### 구조
+
+- **5000**: 현재 사용자에게 서비스 중인 앱
+- **5100**: 새 버전을 올려서 검증하는 포트 (확인 후 트래픽을 여기로 스위칭)
+
+### 1. Nginx upstream 설정 (최초 1회)
+
+서버에 `deploy/nginx-upstream.conf` 내용을 반영합니다.
+
+```bash
+# 로컬에서 서버로 복사
+scp deploy/nginx-upstream.conf root@서버IP:/etc/nginx/sites-available/venysound.com
+ssh root@서버IP "nginx -t && systemctl reload nginx"
+```
+
+- upstream에서 **한 포트만** `server 127.0.0.1:5000;` 또는 `server 127.0.0.1:5100;` 로 두고, 나머지는 `#` 로 주석 처리합니다.
+- PM2로 **5000번**과 **5100번** 앱을 각각 띄워 두고, Nginx는 지금 서비스할 쪽 한 포트만 바라보게 합니다.
+
+### 2. 배포 절차 (매 업데이트)
+
+1. **지금 트래픽이 가는 쪽 확인**  
+   - Nginx upstream이 5000을 보면 → 이번에는 **5100**에 배포  
+   - Nginx upstream이 5100을 보면 → 이번에는 **5000**에 배포  
+
+2. **비어 있는 쪽에 새 버전 배포**  
+   - 해당 포트용 디렉터리/앱에 파일 올리고 `npm install --omit=dev`, `pm2 restart venysound-5100` (또는 venysound-5000) 실행  
+
+3. **동작 확인**  
+   - `curl http://127.0.0.1:5100/` (또는 5000) 로 새 버전이 정상 응답하는지 확인  
+
+4. **스위칭**  
+   - Nginx를 새 포트로 바꾼 뒤 reload  
+
+   **방법 A – 스크립트 사용 (upstream 설정이 위와 같을 때)**  
+   ```bash
+   scp deploy/switch-to-port.sh root@서버IP:/root/
+   ssh root@서버IP "chmod +x /root/switch-to-port.sh"
+   # 트래픽을 5100으로 넘기려면:
+   ssh root@서버IP "sudo /root/switch-to-port.sh 5100"
+   ```  
+
+   **방법 B – 수동**  
+   - `/etc/nginx/sites-available/venysound.com` 에서 upstream 안의 두 줄만 수정  
+     (서비스할 포트는 `server 127.0.0.1:5000;` 또는 `server 127.0.0.1:5100;`, 나머지는 `#` 처리)  
+   - `sudo nginx -t && sudo systemctl reload nginx`  
+
+다음 배포 때는 반대 포트에 올리고, 확인 후 다시 스위칭하면 됩니다.
+
+### 3. PM2로 5000/5100 두 개 띄우기
+
+- 앱을 두 세트(예: `app-5000`, `app-5100`)로 두고, 각각 `PORT=5000`, `PORT=5100` 으로 기동  
+- 또는 `ecosystem.config.cjs`에 앱을 두 개 정의 (name: `venysound-5000`, `venysound-5100`, env: PORT 5000/5100)  
+- DB, `.env`, `local-uploads` 등은 두 앱이 같은 값을 보도록 공유하거나 심볼릭 링크로 맞춥니다.
+
+---
+
 ## 유용한 명령어
 
 ```bash

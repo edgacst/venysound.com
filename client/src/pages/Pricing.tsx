@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 
 export default function Pricing() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -297,8 +297,8 @@ export default function Pricing() {
               <DialogTitle>{t('pricing.bankTransferTitle', '계좌이체로 프리미엄 구독')}</DialogTitle>
             </DialogHeader>
             {bankRequestResult ? (
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">{bankRequestResult.message}</p>
+              <div className="space-y-4" key={i18n.language}>
+                <p className="text-sm text-muted-foreground">{t('pricing.bankRequestSuccessMessage', '입금 신청이 등록되었습니다. 위 계좌로 입금해 주시면 즉시 확인 후 프리미엄이 적용됩니다.')}</p>
                 <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
                   <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankRequestResult.bankInfo.bankName}</p>
                   <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankRequestResult.bankInfo.bankAccount}</p>
@@ -310,9 +310,7 @@ export default function Pricing() {
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {billingPeriod === "monthly"
-                  ? t('pricing.bankTransferMonthly', '월간 6,600원을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.')
-                  : `${t('pricing.yearly', '연간')} ${displayPrice.toLocaleString("ko-KR")}${t('pricing.won', '원')}${t('pricing.bankTransferSuffix', '을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.')}`}
+                  {billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')} {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}을 아래 계좌로 입금해 주시면 1~2일 내 확인 후 프리미엄이 적용됩니다.
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">

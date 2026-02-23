@@ -12,8 +12,31 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
 
+function getNotificationMessage(notif: any, t: (key: string, opts?: any) => string): string {
+  const payload = notif.payload as Record<string, unknown> | null | undefined;
+  const type = notif.type as string;
+  if (!payload || !type) return notif.message || "";
+
+  const params: Record<string, string | number> = { ...payload } as Record<string, string | number>;
+  if (type === "badge" && payload.badgeKey) {
+    params.badgeName = t(`donationBadge.${payload.badgeKey}`, String(payload.badgeKey));
+  }
+  if (payload.amount !== undefined) {
+    params.amount = Number(payload.amount).toLocaleString();
+  }
+  if (payload.price !== undefined) {
+    params.price = Number(payload.price).toLocaleString();
+  }
+  if (type === "tip" && payload.tipMessage) {
+    return t("notification.tipWithMessage", params);
+  }
+  const key = `notification.${type}`;
+  const translated = t(key, params);
+  return translated !== key ? translated : notif.message || "";
+}
+
 export default function Notifications() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { data: notifications, isLoading } = useNotifications();
@@ -33,7 +56,7 @@ export default function Notifications() {
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
         <div className="container px-4 py-20 text-center text-muted-foreground">
-          {t('notifications.loginRequired', '로그인이 필요합니다.')}
+          {t('notificationsPage.loginRequired', '로그인이 필요합니다.')}
         </div>
         <Footer />
       </div>
@@ -50,7 +73,7 @@ export default function Notifications() {
           <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
             <div className="flex items-center gap-3">
               <Bell className="text-primary" size={24} />
-            <h1 className="text-2xl font-display font-bold" data-testid="text-notifications-title">{t('notifications.title', '알림')}</h1>
+            <h1 className="text-2xl font-display font-bold" data-testid="text-notifications-title">{t('notificationsPage.title', '알림')}</h1>
             {unreadCount > 0 && (
               <Badge variant="destructive" className="text-xs" data-testid="badge-unread-count">{unreadCount}</Badge>
             )}
@@ -65,12 +88,12 @@ export default function Notifications() {
               data-testid="button-mark-all-read"
             >
               <CheckCheck size={14} />
-              {t('notifications.markAllRead', '모두 읽음')}
+              {t('notificationsPage.markAllRead', '모두 읽음')}
             </Button>
           )}
         </div>
         <p className="text-xs text-muted-foreground mb-4" data-testid="text-notifications-limit-notice">
-          {t('notifications.limitNotice', '알림목록은 20개까지만 보여집니다.')}
+          {t('notificationsPage.limitNotice', '알림 목록은 최근 20개까지 표시됩니다.')}
         </p>
 
         {isLoading ? (
@@ -79,7 +102,7 @@ export default function Notifications() {
           </div>
         ) : !notifications || notifications.length === 0 ? (
           <div className="text-center py-20 text-muted-foreground bg-secondary/30 rounded-lg" data-testid="text-no-notifications">
-            {t('notifications.empty', '알림이 없습니다.')}
+            {t('notificationsPage.empty', '알림이 없습니다.')}
           </div>
         ) : (
           <div className="space-y-2">
@@ -96,9 +119,11 @@ export default function Notifications() {
                 <div className="flex items-start gap-3">
                   <div className={`w-2 h-2 rounded-full mt-2 shrink-0 ${notif.isRead ? 'bg-muted' : 'bg-primary'}`} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm" data-testid={`text-notification-message-${notif.id}`}>{notif.message}</p>
+                    <p className="text-sm" data-testid={`text-notification-message-${notif.id}`}>
+                      {getNotificationMessage(notif, t)}
+                    </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {notif.createdAt ? new Date(notif.createdAt).toLocaleString("ko-KR") : ""}
+                      {notif.createdAt ? new Date(notif.createdAt).toLocaleString(i18n.language === "ko" ? "ko-KR" : i18n.language === "ja" ? "ja-JP" : i18n.language === "zh" ? "zh-CN" : "en-US") : ""}
                     </p>
                   </div>
                   {!notif.isRead && (
