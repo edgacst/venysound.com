@@ -118,6 +118,11 @@ export async function registerRoutes(
     }
   }
 
+  // 배포 시 헬스 체크용 (인증 없음)
+  app.get("/api/health", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   // === Music Routes ===
   app.get(api.music.list.path, async (req, res) => {
     const { genre, search, tag, page, limit } = req.query as { genre?: string, search?: string, tag?: string, page?: string, limit?: string };
@@ -896,6 +901,10 @@ export async function registerRoutes(
   };
 
   // === Admin Routes ===
+  app.get("/api/admin/visitor-count", isAuthenticated, isAdmin, (_req, res) => {
+    res.json({ count: visitorCount });
+  });
+
   app.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
     const stats = await storage.getAdminStats();
     res.json(stats);

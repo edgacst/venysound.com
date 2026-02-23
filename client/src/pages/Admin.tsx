@@ -37,6 +37,7 @@ import {
   Database,
   HardDrive,
   Landmark,
+  Activity,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -86,6 +87,17 @@ export default function Admin() {
   }>({
     queryKey: ["/api/admin/stats"],
     enabled: adminCheck?.isAdmin === true,
+  });
+
+  const { data: visitorData } = useQuery<{ count: number }>({
+    queryKey: ["/api/admin/visitor-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/visitor-count", { credentials: "include" });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 15000,
   });
 
   const { data: adminPosts, isLoading: loadingPosts } = useQuery<any[]>({
@@ -286,38 +298,47 @@ export default function Admin() {
         <div className="container max-w-6xl mx-auto px-4 py-8">
           <h1 className="text-2xl font-bold mb-6" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
 
-        {loadingStats ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-            <Card className="p-4 text-center" data-testid="stat-total-users">
-              <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-                <Users size={14} /> {t('admin.totalUsers', '전체 회원 수')}
-              </div>
-              <div className="text-3xl font-bold">{stats?.totalUsers ?? 0}</div>
-            </Card>
-            <Card className="p-4 text-center" data-testid="stat-total-music">
-              <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-                <Music size={14} /> {t('admin.totalMusic', '전체 음원 수')}
-              </div>
-              <div className="text-3xl font-bold">{stats?.totalMusic ?? 0}</div>
-            </Card>
-            <Card className="p-4 text-center" data-testid="stat-total-likes">
-              <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-                <Heart size={14} /> {t('admin.totalLikes', '총 좋아요 수')}
-              </div>
-              <div className="text-3xl font-bold">{stats?.totalLikes ?? 0}</div>
-            </Card>
-            <Card className="p-4 text-center" data-testid="stat-total-comments">
-              <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-                <MessageSquare size={14} /> {t('admin.totalComments', '총 댓글 수')}
-              </div>
-              <div className="text-3xl font-bold">{stats?.totalComments ?? 0}</div>
-            </Card>
-          </div>
-        )}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+          <Card className="p-4 text-center border-primary/30" data-testid="stat-visitor-count">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Activity size={14} /> {t('admin.currentVisitors', '현재 접속자')}
+            </div>
+            <div className="text-3xl font-bold">{visitorData?.count ?? 0}</div>
+            <div className="text-xs text-muted-foreground mt-1">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-total-users">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Users size={14} /> {t('admin.totalUsers', '전체 회원 수')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalUsers ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-total-music">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Music size={14} /> {t('admin.totalMusic', '전체 음원 수')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalMusic ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-total-likes">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Heart size={14} /> {t('admin.totalLikes', '총 좋아요 수')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalLikes ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-total-comments">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <MessageSquare size={14} /> {t('admin.totalComments', '총 댓글 수')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalComments ?? 0)}
+            </div>
+          </Card>
+        </div>
 
         <h2 className="text-xl font-bold mb-4" data-testid="text-post-management-title">{t('admin.postManagement', '커뮤니티 글 관리')}</h2>
         <Card className="mb-10 overflow-hidden">

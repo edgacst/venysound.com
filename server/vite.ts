@@ -35,7 +35,8 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
-  app.use("/{*path}", async (req, res, next) => {
+  // Express 5: wildcard must be named; {*path} → /*splat for path-to-regexp
+  app.use("/*splat", async (req, res, next) => {
     // WebSocket upgrade: do not send HTML; let Vite's upgrade listener handle it
     if (req.headers.upgrade === "websocket") {
       return next();
