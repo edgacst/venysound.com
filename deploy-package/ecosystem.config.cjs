@@ -4,7 +4,7 @@ module.exports = {
   apps: [
     {
       name: "venysound",
-      script: "./dist/index.mjs",
+      script: "./dist/index.cjs",
       cwd: path.resolve(__dirname),
       instances: 1,
       exec_mode: "fork",

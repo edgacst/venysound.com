@@ -468,7 +468,7 @@ sudo /root/switch-to-port.sh 5001
    - 5000 앱만 켜고, 5001 앱은 끄기: `pm2 stop venysound-5001` (있을 경우)
 
 2. **5001용 폴더에서 앱을 5001 포트로 띄울 수 있게**  
-   - 5001용 폴더(예: `app_new`)에서 `PORT=5001 pm2 start dist/index.mjs --name venysound-5001` 로 한 번 띄워 보거나,  
+   - 5001용 폴더(예: `app_new`)에서 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 한 번 띄워 보거나,  
    - 또는 5001 전용 ecosystem 파일을 만들어서 `pm2 start ecosystem.5001.config.cjs` 처럼 쓰면 됩니다.  
    - (같은 서버에서 5000·5001 두 프로세스가 **다른 폴더**를 쓰면, 한쪽만 갱신해도 됨.)
 
@@ -485,7 +485,7 @@ sudo /root/switch-to-port.sh 5001
    ```bash
    pm2 restart venysound-5001
    ```
-   (처음이면 `PORT=5001 pm2 start dist/index.mjs --name venysound-5001` 로 켜기.)
+   (처음이면 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 켜기.)
 3. **5001이 정상인지 확인**  
    ```bash
    curl -sf http://127.0.0.1:5001/api/health && echo " OK"

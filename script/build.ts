@@ -50,10 +50,13 @@ async function buildAll() {
     entryPoints: ["server/index.ts"],
     platform: "node",
     bundle: true,
-    format: "esm",
-    outfile: "dist/index.mjs",
+    format: "cjs",
+    outfile: "dist/index.cjs",
     define: {
       "process.env.NODE_ENV": '"production"',
+    },
+    banner: {
+      js: "const path=require('path');globalThis.__APP_ROOT__=path.resolve(__dirname,'..');",
     },
     minify: true,
     external: externals,
