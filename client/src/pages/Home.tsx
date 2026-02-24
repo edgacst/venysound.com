@@ -10,6 +10,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
 import { Trans, useTranslation } from 'react-i18next';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -36,6 +37,19 @@ export default function Home() {
   ];
 
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
+
+  const { data: activeAnnouncement } = useQuery<{ id: number; content: string; startsAt: string; endsAt: string } | null>({
+    queryKey: ["/api/announcement/active"],
+    queryFn: async () => {
+      const res = await fetch("/api/announcement/active");
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data;
+    },
+  });
+
+  const showAnnouncement = Boolean(activeAnnouncement?.content && !announcementDismissed);
 
   const nextBanner = useCallback(() => {
     setCurrentBanner((prev) => (prev + 1) % banners.length);
@@ -67,6 +81,17 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col pb-24">
+      <Dialog open={showAnnouncement} onOpenChange={(open) => !open && setAnnouncementDismissed(true)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('home.announcementTitle', '공지')}</DialogTitle>
+          </DialogHeader>
+          <div className="whitespace-pre-wrap text-sm text-muted-foreground py-2">{activeAnnouncement?.content}</div>
+          <Button className="w-full mt-2" onClick={() => setAnnouncementDismissed(true)}>
+            {t('home.announcementConfirm', '확인')}
+          </Button>
+        </DialogContent>
+      </Dialog>
       <Navigation />
       <section className="relative h-[500px] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">

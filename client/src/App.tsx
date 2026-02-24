@@ -24,7 +24,7 @@ function VisitorCountSocket() {
   return null;
 }
 
-/** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰 집계용) */
+/** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
 function AnalyticsVisit() {
   const [pathname] = useLocation();
   useEffect(() => {
@@ -33,11 +33,13 @@ function AnalyticsVisit() {
     try {
       visitorKey = localStorage.getItem(VISITOR_KEY);
     } catch {}
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const utmSource = params?.get("utm_source") || undefined;
     fetch("/api/analytics/visit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ path, visitorKey }),
+      body: JSON.stringify({ path, visitorKey, utmSource }),
     })
       .then((r) => r.ok && r.json())
       .then((data) => {

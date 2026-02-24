@@ -10,7 +10,7 @@ import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
-import { ArrowLeft, MessageSquare, Loader2, Send, Trash2, Reply, CornerDownRight } from "lucide-react";
+import { ArrowLeft, MessageSquare, Loader2, Send, Trash2, Reply, CornerDownRight, Pencil, X } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,8 @@ export default function PostDetail() {
   const [commentText, setCommentText] = useState("");
   const [replyTo, setReplyTo] = useState<{ id: number; userName: string } | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editContent, setEditContent] = useState("");
 
   const dateLocale = i18n.language === 'ko' ? ko : undefined;
 
@@ -74,12 +76,36 @@ export default function PostDetail() {
     },
   });
 
+  const updateCommentMutation = useMutation({
+    mutationFn: async ({ commentId, content }: { commentId: number; content: string }) => {
+      const res = await fetch(`/api/comments/${commentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || t('postDetail.commentUpdateFailed', '댓글 수정 실패'));
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
+      setEditingCommentId(null);
+      setEditContent("");
+      toast({ title: t('postDetail.commentUpdated', '댓글이 수정되었습니다') });
+    },
+    onError: (error: Error) => {
+      toast({ title: t('postDetail.commentUpdateFailed', '댓글 수정 실패'), description: error.message, variant: "destructive" });
+    },
+  });
+
   const deleteCommentMutation = useMutation({
     mutationFn: async (commentId: number) => {
       await apiRequest("DELETE", `/api/comments/${commentId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts", postId, "comments"] });
+      setEditingCommentId(null);
       toast({ title: t('postDetail.commentDeleted', '댓글이 삭제되었습니다') });
     },
     onError: () => {
@@ -132,7 +158,9 @@ export default function PostDetail() {
 
   const renderComment = (comment: any, isReply = false) => {
     const replies = getReplies(comment.id);
-    const isOwner = user?.id === comment.userId;
+    const commentAuthorId = comment.userId ?? comment.user_id ?? comment.user?.id ?? "";
+    const currentUserId = user?.id ?? (user as any)?.claims?.sub ?? "";
+    const isOwner = Boolean(currentUserId && commentAuthorId && String(currentUserId) === String(commentAuthorId));
 
     return (
       <div key={comment.id}>
@@ -150,39 +178,91 @@ export default function PostDetail() {
                   {comment.createdAt ? formatDistanceToNow(new Date(comment.createdAt), { addSuffix: true, locale: dateLocale }) : ""}
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid={`text-comment-content-${comment.id}`}>
-                {comment.content}
-              </p>
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                {user && !isReply && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs gap-1 text-muted-foreground"
-                    onClick={() => {
-                      setReplyTo({ id: comment.id, userName: comment.user?.firstName || t('postDetail.anonymous', '익명') });
-                      setReplyText("");
-                    }}
-                    data-testid={`button-reply-${comment.id}`}
-                  >
-                    <Reply size={12} />
-                    {t('postDetail.reply', '답글')}
-                  </Button>
-                )}
-                {isOwner && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs gap-1 text-red-400"
-                    onClick={() => deleteCommentMutation.mutate(comment.id)}
-                    disabled={deleteCommentMutation.isPending}
-                    data-testid={`button-delete-comment-${comment.id}`}
-                  >
-                    <Trash2 size={12} />
-                    {t('postDetail.delete', '삭제')}
-                  </Button>
-                )}
-              </div>
+              {editingCommentId === comment.id ? (
+                <div className="space-y-2 mt-1">
+                  <Textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={3}
+                    className="bg-secondary/30 border-white/5 text-sm min-h-[60px]"
+                    data-testid={`textarea-edit-comment-${comment.id}`}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!editContent.trim()) return;
+                        updateCommentMutation.mutate({ commentId: comment.id, content: editContent.trim() });
+                      }}
+                      disabled={updateCommentMutation.isPending || !editContent.trim()}
+                      data-testid={`button-save-edit-comment-${comment.id}`}
+                    >
+                      {updateCommentMutation.isPending ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+                      {t('postDetail.save', '저장')}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setEditingCommentId(null); setEditContent(""); }}
+                      data-testid={`button-cancel-edit-comment-${comment.id}`}
+                    >
+                      <X size={12} className="mr-1" />
+                      {t('postDetail.cancel', '취소')}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid={`text-comment-content-${comment.id}`}>
+                    {comment.content}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {user && !isReply && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs gap-1 text-muted-foreground"
+                        onClick={() => {
+                          setReplyTo({ id: comment.id, userName: comment.user?.firstName || t('postDetail.anonymous', '익명') });
+                          setReplyText("");
+                        }}
+                        data-testid={`button-reply-${comment.id}`}
+                      >
+                        <Reply size={12} />
+                        {t('postDetail.reply', '답글')}
+                      </Button>
+                    )}
+                    {isOwner && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1 text-muted-foreground"
+                          onClick={() => {
+                            setEditingCommentId(comment.id);
+                            setEditContent(comment.content || "");
+                          }}
+                          data-testid={`button-edit-comment-${comment.id}`}
+                        >
+                          <Pencil size={12} />
+                          {t('postDetail.edit', '수정')}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs gap-1 text-red-400"
+                          onClick={() => deleteCommentMutation.mutate(comment.id)}
+                          disabled={deleteCommentMutation.isPending}
+                          data-testid={`button-delete-comment-${comment.id}`}
+                        >
+                          <Trash2 size={12} />
+                          {t('postDetail.delete', '삭제')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </Card>

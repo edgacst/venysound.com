@@ -9,7 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Heart, Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { MessageSquare, Heart, Plus, Search, ChevronLeft, ChevronRight, ImagePlus, Loader2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko, ja, zhCN } from "date-fns/locale";
 import { useForm } from "react-hook-form";
@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 
 const categories = ["전체", "자유", "음악추천", "질문", "정보", "후기", "콜라보"];
 const POSTS_PER_PAGE = 10;
+const IMAGE_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
 
 export default function Community() {
   const { t, i18n } = useTranslation();
@@ -35,6 +36,7 @@ export default function Community() {
   });
   const { user } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
   const { mutate: createPost } = useCreatePost();
 
   const totalPages = useMemo(() => {
@@ -58,18 +60,49 @@ export default function Community() {
     defaultValues: {
       title: "",
       content: "",
-      category: "자유"
+      category: "자유",
+      attachment: undefined as string | undefined
     }
   });
 
+  const attachment = form.watch("attachment");
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    setImageUploading(true);
+    try {
+      const urlRes = await fetch("/api/uploads/request-url", { method: "POST", credentials: "include" });
+      const { uploadEndpoint } = await urlRes.json();
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch(uploadEndpoint || "/api/uploads/local", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const { objectPath } = await uploadRes.json();
+      form.setValue("attachment", objectPath);
+    } catch {
+      form.setError("attachment", { message: t("community.imageUploadFailed", "이미지 업로드에 실패했습니다") });
+    } finally {
+      setImageUploading(false);
+      e.target.value = "";
+    }
+  };
+
   const onSubmit = (values: any) => {
-    createPost(values, {
-      onSuccess: () => {
-        setIsCreateOpen(false);
-        form.reset();
-        setCurrentPage(1);
+    createPost(
+      { title: values.title, content: values.content, category: values.category, attachment: values.attachment || undefined },
+      {
+        onSuccess: () => {
+          setIsCreateOpen(false);
+          form.reset({ title: "", content: "", category: "자유", attachment: undefined });
+          setCurrentPage(1);
+        }
       }
-    });
+    );
   };
 
   return (
@@ -142,6 +175,52 @@ export default function Community() {
                         </FormItem>
                       )}
                     />
+                    <FormField
+                      control={form.control}
+                      name="attachment"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('community.image', '이미지 첨부')}</FormLabel>
+                          <div className="flex flex-col gap-2">
+                            {attachment ? (
+                              <div className="relative inline-block w-full max-w-[280px] rounded-lg overflow-hidden border border-white/10 bg-secondary/30">
+                                <img src={attachment.startsWith("http") ? attachment : attachment} alt="" className="w-full h-auto max-h-48 object-contain" />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="icon"
+                                  className="absolute top-1 right-1 h-7 w-7"
+                                  onClick={() => form.setValue("attachment", undefined)}
+                                  data-testid="button-remove-image"
+                                >
+                                  <X size={14} />
+                                </Button>
+                              </div>
+                            ) : (
+                              <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-white/20 bg-secondary/20 px-4 py-6 cursor-pointer hover:bg-secondary/30 transition-colors">
+                                <input
+                                  type="file"
+                                  accept={IMAGE_ACCEPT}
+                                  className="sr-only"
+                                  disabled={imageUploading}
+                                  onChange={handleImageUpload}
+                                  data-testid="input-post-image"
+                                />
+                                {imageUploading ? (
+                                  <Loader2 size={18} className="animate-spin text-muted-foreground" />
+                                ) : (
+                                  <ImagePlus size={18} className="text-muted-foreground" />
+                                )}
+                                <span className="text-sm text-muted-foreground">
+                                  {imageUploading ? t('community.uploading', '업로드 중...') : t('community.addImage', '이미지 선택')}
+                                </span>
+                              </label>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <Button type="submit" className="w-full" data-testid="button-submit-post">{t('community.submit')}</Button>
                   </form>
                 </Form>
@@ -197,6 +276,11 @@ export default function Community() {
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{post.content}</p>
                   </div>
+                  {(post as PostWithUser).attachment && (
+                    <div className="w-12 h-12 shrink-0 rounded overflow-hidden border border-white/10 bg-secondary/30">
+                      <img src={(post as PostWithUser).attachment} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  )}
                   <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1">
                       <MessageSquare size={12} />

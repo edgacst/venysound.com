@@ -1,6 +1,7 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { useCreateMusic } from "@/hooks/use-music";
+import { useUpload } from "@/hooks/use-upload";
 import { useLocation, Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   XCircle,
   FolderUp,
   ImagePlus,
+  DollarSign,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +46,8 @@ interface TrackItem {
   genre: string;
   tags: string;
   isAi: boolean;
+  isDownloadable: boolean;
+  price: number;
   coverUrl: string | null;
   isFetchingCover: boolean;
   status: "pending" | "uploading" | "done" | "error";
@@ -60,6 +64,7 @@ export default function BulkUpload() {
   const [, setLocation] = useLocation();
   const { mutateAsync: createMusic } = useCreateMusic();
   const { toast } = useToast();
+  const { uploadFile: uploadAudio } = useUpload();
 
   const [tracks, setTracks] = useState<TrackItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -67,7 +72,11 @@ export default function BulkUpload() {
   const [globalMainGenre, setGlobalMainGenre] = useState("");
   const [globalSubGenre, setGlobalSubGenre] = useState("");
   const [globalIsAi, setGlobalIsAi] = useState(false);
+  const [globalIsDownloadable, setGlobalIsDownloadable] = useState(false);
+  const [globalPrice, setGlobalPrice] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isPremium = (user as any)?.subscriptionTier === "premium";
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
@@ -95,6 +104,8 @@ export default function BulkUpload() {
       genre: globalSubGenre || globalMainGenre,
       tags: "",
       isAi: globalIsAi,
+      isDownloadable: globalIsDownloadable,
+      price: globalPrice,
       coverUrl: null,
       isFetchingCover: false,
       status: "pending" as const,
@@ -122,6 +133,8 @@ export default function BulkUpload() {
               subGenre: globalSubGenre || t.subGenre,
               genre: globalSubGenre || globalMainGenre || t.genre,
               isAi: globalIsAi,
+              isDownloadable: globalIsDownloadable,
+              price: globalPrice,
             }
           : t
       )
@@ -163,26 +176,11 @@ export default function BulkUpload() {
 
     updateTrack(track.id, { status: "uploading" });
     try {
-      const urlRes = await fetch("/api/uploads/request-url", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: track.file.name,
-          size: track.file.size,
-          contentType: track.file.type || "application/octet-stream",
-        }),
-      });
-      if (!urlRes.ok) throw new Error(t('bulkUpload.uploadUrlFailed', '업로드 URL 요청 실패'));
-      const { uploadURL, objectPath } = await urlRes.json();
+      const audioRes = await uploadAudio(track.file);
+      if (!audioRes) throw new Error(t('bulkUpload.uploadFailed', '업로드 실패'));
+      const objectPath = audioRes.objectPath;
 
-      const putRes = await fetch(uploadURL, {
-        method: "PUT",
-        body: track.file,
-        headers: { "Content-Type": track.file.type || "application/octet-stream" },
-      });
-      if (!putRes.ok) throw new Error(t('bulkUpload.storageUploadFailed', '파일 저장소 업로드 실패'));
-
-      await createMusic({
+      const payload: Parameters<typeof createMusic>[0] = {
         title: track.title,
         artist: track.artist,
         genre: track.genre || undefined,
@@ -190,7 +188,13 @@ export default function BulkUpload() {
         isAi: track.isAi,
         filename: objectPath,
         imageFilename: track.coverUrl || null,
-      });
+      };
+      if (isPremium) {
+        const downloadable = track.isDownloadable ?? false;
+        payload.isDownloadable = downloadable;
+        payload.price = downloadable ? (track.price ?? 0) : 0;
+      }
+      await createMusic(payload);
 
       updateTrack(track.id, { status: "done" });
     } catch (err: any) {
@@ -292,7 +296,7 @@ export default function BulkUpload() {
                 </Select>
               </div>
             )}
-            <div className="flex items-end gap-3">
+            <div className="flex items-center gap-2">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <Checkbox
                   checked={globalIsAi}
@@ -301,6 +305,42 @@ export default function BulkUpload() {
                 />
                 {t('bulkUpload.aiMusic', 'AI 음원')}
               </label>
+            </div>
+            {isPremium && (
+              <>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <Checkbox
+                      checked={globalIsDownloadable}
+                      onCheckedChange={(v) => setGlobalIsDownloadable(!!v)}
+                      data-testid="checkbox-global-downloadable"
+                    />
+                    {t('music.downloadable', '다운로드 판매 허용')}
+                  </label>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('music.price', '판매 금액')}</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={globalPrice}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const n = v === "" ? 0 : Number(v);
+                        if (!Number.isNaN(n) && n >= 0) setGlobalPrice(n);
+                      }}
+                      disabled={!globalIsDownloadable}
+                      className="bg-background border-white/10 w-28"
+                      data-testid="input-global-price"
+                    />
+                    <span className="text-xs text-muted-foreground">{t('common.won', '원')}</span>
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="flex items-end">
               <Button size="sm" variant="outline" onClick={applyGlobalSettings} data-testid="button-apply-global">
                 {t('bulkUpload.apply', '적용')}
               </Button>

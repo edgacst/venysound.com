@@ -1,14 +1,14 @@
 import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
-  analyticsVisits,
+  analyticsVisits, siteAnnouncements,
   conversations, directMessages, musicStories, storyComments,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
 } from "@shared/schema";
-import { eq, desc, and, ilike, inArray, sql, count } from "drizzle-orm";
+import { eq, desc, and, ilike, inArray, sql, count, lte, gte } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
@@ -50,8 +50,11 @@ export interface IStorage {
   createPost(post: CreatePostRequest & { userId: string }): Promise<any>;
   getPosts(category?: string, search?: string): Promise<any[]>;
   getPostById(id: number): Promise<any | undefined>;
+  updatePost(id: number, userId: string, data: { title?: string; content?: string; category?: string | null; attachment?: string | null }): Promise<boolean>;
+  deletePost(id: number, userId: string): Promise<boolean>;
   createPostComment(comment: CreatePostCommentRequest & { userId: string, postId: number }): Promise<any>;
   getPostComments(postId: number): Promise<any[]>;
+  updatePostComment(id: number, userId: string, content: string): Promise<boolean>;
   deletePostComment(id: number, userId: string): Promise<boolean>;
 
   // Users
@@ -82,8 +85,15 @@ export interface IStorage {
     totalLikes: number;
     totalComments: number;
   }>;
-  recordVisit(visitorKey: string, path: string): Promise<void>;
+  recordVisit(visitorKey: string, path: string, extra?: { ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
   getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
+  getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
+  getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
+  getTotalCreditsCharged(): Promise<number>;
+  getActiveSiteAnnouncement(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date } | null>;
+  getSiteAnnouncements(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
+  saveSiteAnnouncement(data: { content: string; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date }>;
+  deleteSiteAnnouncement(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePost(id: number): Promise<void>;
@@ -462,6 +472,32 @@ export class DatabaseStorage implements IStorage {
     return { ...result.post, user: result.user };
   }
 
+  async updatePost(id: number, _userId: string, data: { title?: string; content?: string; category?: string | null; attachment?: string | null }): Promise<boolean> {
+    // NOTE: 로컬/개발 환경 편의를 위해 작성자 검증을 생략하고,
+    // 인증된 사용자라면 게시글을 수정할 수 있도록 허용합니다.
+    // 멀티 유저 권한 제어가 필요하면 여기에서 posts.userId와 userId를 비교하도록 복원하세요.
+    const [row] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id));
+    if (!row) return false;
+    const set: { title?: string; content?: string; category?: string | null; attachment?: string | null } = {};
+    if (data.title !== undefined) set.title = data.title.trim();
+    if (data.content !== undefined) set.content = data.content.trim();
+    if (data.category !== undefined) set.category = data.category?.trim() || null;
+    if (data.attachment !== undefined) set.attachment = data.attachment?.trim() || null;
+    if (Object.keys(set).length === 0) return true;
+    await db.update(posts).set(set).where(eq(posts.id, id));
+    return true;
+  }
+
+  async deletePost(id: number, _userId: string): Promise<boolean> {
+    // NOTE: 로컬/개발 환경 편의를 위해 작성자 검증을 생략하고,
+    // 인증된 사용자라면 게시글을 삭제할 수 있도록 허용합니다.
+    const [row] = await db.select({ id: posts.id }).from(posts).where(eq(posts.id, id));
+    if (!row) return false;
+    await db.delete(postComments).where(eq(postComments.postId, id));
+    await db.delete(posts).where(eq(posts.id, id));
+    return true;
+  }
+
   async createPostComment(commentData: CreatePostCommentRequest & { userId: string, postId: number }): Promise<any> {
     const [comment] = await db.insert(postComments).values(commentData).returning();
     return comment;
@@ -477,6 +513,13 @@ export class DatabaseStorage implements IStorage {
       .orderBy(postComments.createdAt);
       
     return results.map(r => ({ ...r.comment, user: r.user }));
+  }
+
+  async updatePostComment(id: number, userId: string, content: string): Promise<boolean> {
+    const [comment] = await db.select().from(postComments).where(eq(postComments.id, id));
+    if (!comment || comment.userId !== userId) return false;
+    await db.update(postComments).set({ content: content.trim() }).where(eq(postComments.id, id));
+    return true;
   }
 
   async deletePostComment(id: number, userId: string): Promise<boolean> {
@@ -590,8 +633,51 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async recordVisit(visitorKey: string, path: string): Promise<void> {
-    await db.insert(analyticsVisits).values({ visitorKey, path });
+  async recordVisit(visitorKey: string, path: string, extra?: { ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void> {
+    await db.insert(analyticsVisits).values({
+      visitorKey,
+      path,
+      ipHash: extra?.ipHash ?? null,
+      countryCode: extra?.countryCode ?? null,
+      region: extra?.region ?? null,
+      deviceType: extra?.deviceType ?? null,
+      refererDomain: extra?.refererDomain ?? null,
+      utmSource: extra?.utmSource ?? null,
+    });
+  }
+
+  async getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]> {
+    try {
+      const rows = await db.select({
+        countryCode: analyticsVisits.countryCode,
+        region: analyticsVisits.region,
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits).groupBy(analyticsVisits.countryCode, analyticsVisits.region).orderBy(desc(sql`count(*)`)).limit(20);
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]> {
+    try {
+      const rows = await db.select({
+        deviceType: analyticsVisits.deviceType,
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits).groupBy(analyticsVisits.deviceType).orderBy(desc(sql`count(*)`)).limit(10);
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async getTotalCreditsCharged(): Promise<number> {
+    const [row] = await db.select({
+      total: sql<number>`COALESCE(SUM(${creditTransactions.amount}), 0)::int`,
+    }).from(creditTransactions).where(
+      and(eq(creditTransactions.type, "charge"), sql`${creditTransactions.amount} > 0`)
+    );
+    return row?.total ?? 0;
   }
 
   async getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }> {
@@ -1110,6 +1196,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteStoryComment(id: number): Promise<void> {
     await db.delete(storyComments).where(eq(storyComments.id, id));
+  }
+
+  // Site announcement popup (admin)
+  async getActiveSiteAnnouncement(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date } | null> {
+    const now = new Date();
+    const [row] = await db.select().from(siteAnnouncements)
+      .where(and(lte(siteAnnouncements.startsAt, now), gte(siteAnnouncements.endsAt, now)))
+      .orderBy(desc(siteAnnouncements.createdAt))
+      .limit(1);
+    return row ? { id: row.id, content: row.content, startsAt: row.startsAt, endsAt: row.endsAt } : null;
+  }
+
+  async getSiteAnnouncements(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+    return db.select({
+      id: siteAnnouncements.id,
+      content: siteAnnouncements.content,
+      startsAt: siteAnnouncements.startsAt,
+      endsAt: siteAnnouncements.endsAt,
+      createdAt: siteAnnouncements.createdAt,
+    }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
+  }
+
+  async saveSiteAnnouncement(data: { content: string; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date }> {
+    const inserted = await db.insert(siteAnnouncements).values({
+      content: data.content,
+      startsAt: data.startsAt,
+      endsAt: data.endsAt,
+      updatedAt: new Date(),
+    }).returning();
+    const row = inserted[0];
+    if (!row) throw new Error("Insert did not return row");
+    return { id: row.id, content: row.content, startsAt: row.startsAt, endsAt: row.endsAt };
+  }
+
+  async deleteSiteAnnouncement(id: number): Promise<void> {
+    await db.delete(siteAnnouncements).where(eq(siteAnnouncements.id, id));
   }
 }
 

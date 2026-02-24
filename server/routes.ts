@@ -14,7 +14,7 @@ import { generateImageBuffer } from "./imageClient";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments } from "../shared/models/auth";
 import { db } from "./db";
-import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable } from "../shared/schema";
+import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
 
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
@@ -63,8 +63,15 @@ export async function registerRoutes(
   registerAuthRoutes(app);
   registerObjectStorageRoutes(app);
 
-  // WebSocket for visitor count + DM
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+  // WebSocket for visitor count + DM (noServer so /_vite_hmr can be handled by Vite)
+  const wss = new WebSocketServer({ noServer: true });
+  httpServer.on("upgrade", (request, socket, head) => {
+    const pathname = request.url?.split("?")[0] || "";
+    if (pathname === "/ws") {
+      wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+    }
+    // else: let other listeners (e.g. Vite HMR) handle /_vite_hmr; do not respond so they can
+  });
   let visitorCount = 0;
   const userSockets = new Map<string, Set<WebSocket>>();
 
@@ -732,7 +739,8 @@ export async function registerRoutes(
   app.get(api.posts.get.path, async (req, res) => {
     const post = await storage.getPostById(Number(req.params.id));
     if (!post) return res.status(404).json({ message: "Post not found" });
-    res.json(post);
+    const p = post as any;
+    res.json({ ...p, userId: p.userId ?? p.user_id ?? p.user?.id ?? null });
   });
 
   app.post(api.posts.create.path, isAuthenticated, async (req, res) => {
@@ -747,9 +755,38 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/posts/:id", isAuthenticated, async (req, res) => {
+    // @ts-ignore
+    const userId = req.user?.claims?.sub != null ? String(req.user.claims.sub) : "";
+    if (!userId) return res.status(401).json({ message: "인증 정보가 없습니다" });
+    const postId = Number(req.params.id);
+    const body = req.body || {};
+    const title = typeof body.title === "string" ? body.title.trim() : undefined;
+    const content = typeof body.content === "string" ? body.content.trim() : undefined;
+    const category = body.category !== undefined ? (body.category === null || body.category === "" ? null : String(body.category).trim()) : undefined;
+    const attachment = body.attachment !== undefined ? (body.attachment === null || body.attachment === "" ? null : String(body.attachment).trim()) : undefined;
+    const success = await storage.updatePost(postId, userId, { title, content, category, attachment });
+    if (!success) return res.status(403).json({ message: "수정 권한이 없습니다" });
+    const post = await storage.getPostById(postId);
+    res.json(post);
+  });
+
+  app.delete("/api/posts/:id", isAuthenticated, async (req, res) => {
+    // @ts-ignore
+    const userId = req.user?.claims?.sub != null ? String(req.user.claims.sub) : "";
+    if (!userId) return res.status(401).json({ message: "인증 정보가 없습니다" });
+    const postId = Number(req.params.id);
+    const success = await storage.deletePost(postId, userId);
+    if (!success) return res.status(403).json({ message: "삭제 권한이 없습니다" });
+    res.json({ success: true });
+  });
+
   app.get(api.posts.getComments.path, async (req, res) => {
     const comments = await storage.getPostComments(Number(req.params.id));
-    res.json(comments);
+    res.json(comments.map((c: any) => ({
+      ...c,
+      userId: c.userId ?? (c as any).user_id ?? c.user?.id ?? null,
+    })));
   });
 
   app.post(api.posts.createComment.path, isAuthenticated, async (req, res) => {
@@ -766,6 +803,21 @@ export async function registerRoutes(
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
     }
+  });
+
+  app.patch("/api/comments/:commentId", isAuthenticated, async (req, res) => {
+    // @ts-ignore
+    const userId = req.user.claims.sub;
+    const commentId = Number(req.params.commentId);
+    const { content } = req.body;
+    if (typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ message: "내용을 입력해주세요" });
+    }
+    const success = await storage.updatePostComment(commentId, userId, content.trim());
+    if (!success) {
+      return res.status(403).json({ message: "수정 권한이 없습니다" });
+    }
+    res.json({ success: true });
   });
 
   app.delete("/api/comments/:commentId", isAuthenticated, async (req, res) => {
@@ -928,12 +980,33 @@ export async function registerRoutes(
   });
 
   // === Analytics (public: 방문 기록) ===
+  function getDeviceType(ua: string | undefined): string {
+    if (!ua) return "unknown";
+    const u = ua.toLowerCase();
+    if (/mobile|android|iphone|ipod|webos|blackberry|iemobile/i.test(u) && !/ipad|tablet/i.test(u)) return "mobile";
+    if (/ipad|tablet|playbook|silk/i.test(u)) return "tablet";
+    return "desktop";
+  }
+  function refererDomain(referer: string | undefined): string | null {
+    if (!referer) return null;
+    try {
+      const u = new URL(referer);
+      return u.hostname || null;
+    } catch {
+      return null;
+    }
+  }
   app.post("/api/analytics/visit", async (req, res) => {
     const path = typeof req.body?.path === "string" ? req.body.path : "/";
     let visitorKey = typeof req.body?.visitorKey === "string" ? req.body.visitorKey : null;
     if (!visitorKey) visitorKey = crypto.randomUUID();
+    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+    const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
+    const deviceType = getDeviceType(req.headers["user-agent"]);
+    const refererDomainVal = refererDomain(req.headers["referer"]);
+    const utmSource = typeof req.body?.utmSource === "string" ? req.body.utmSource : (typeof req.query?.utm_source === "string" ? req.query.utm_source : undefined);
     try {
-      await storage.recordVisit(visitorKey, path);
+      await storage.recordVisit(visitorKey, path, { ipHash, deviceType, refererDomain: refererDomainVal ?? undefined, utmSource });
     } catch (e) {
       console.error("[analytics/visit] recordVisit failed (table may be missing – run db:push):", e);
     }
@@ -969,6 +1042,96 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/analytics]", e);
       res.json({ dailyVisitors: 0, totalVisitors: 0, pageViewsToday: 0, pageViewsTotal: 0 });
+    }
+  });
+
+  app.get("/api/admin/credits-charged", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const total = await storage.getTotalCreditsCharged();
+      res.json({ totalCreditsCharged: total });
+    } catch (e) {
+      console.error("[admin/credits-charged]", e);
+      res.json({ totalCreditsCharged: 0 });
+    }
+  });
+
+  app.get("/api/admin/stats/regions", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const rows = await storage.getAdminStatsByRegion();
+      res.json(rows);
+    } catch (e) {
+      console.error("[admin/stats/regions]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/admin/stats/devices", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const rows = await storage.getAdminStatsByDevice();
+      res.json(rows);
+    } catch (e) {
+      console.error("[admin/stats/devices]", e);
+      res.json([]);
+    }
+  });
+
+  // 사이트 공지 팝업 (메인 접속 시 노출) — 공개 API
+  app.get("/api/announcement/active", async (_req, res) => {
+    try {
+      const announcement = await storage.getActiveSiteAnnouncement();
+      if (!announcement) return res.json(null);
+      res.json({
+        id: announcement.id,
+        content: announcement.content,
+        startsAt: announcement.startsAt.toISOString(),
+        endsAt: announcement.endsAt.toISOString(),
+      });
+    } catch (e) {
+      console.error("[announcement/active]", e);
+      res.json(null);
+    }
+  });
+
+  app.get("/api/admin/site-announcements", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await storage.getSiteAnnouncements();
+      res.json(list.map((a) => ({ ...a, startsAt: a.startsAt.toISOString(), endsAt: a.endsAt.toISOString(), createdAt: a.createdAt.toISOString() })));
+    } catch (e) {
+      console.error("[admin/site-announcements]", e);
+      res.json([]);
+    }
+  });
+
+  app.post("/api/admin/site-announcements", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { content, startsAt, endsAt } = req.body;
+      if (!content || typeof content !== "string" || !startsAt || !endsAt) {
+        return res.status(400).json({ message: "content, startsAt, endsAt가 필요합니다" });
+      }
+      const start = new Date(startsAt);
+      const end = new Date(endsAt);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        return res.status(400).json({ message: "시작·종료 일시가 유효하지 않습니다" });
+      }
+      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), startsAt: start, endsAt: end });
+      res.json({ ...saved, startsAt: saved.startsAt.toISOString(), endsAt: saved.endsAt.toISOString() });
+    } catch (e: any) {
+      console.error("[admin/site-announcements POST]", e);
+      const msg = e?.message || "";
+      const hint = msg.includes("does not exist") || msg.includes("relation")
+        ? " DB 테이블이 없을 수 있습니다. deploy/site-announcements.sql 실행 여부를 확인하세요."
+        : "";
+      res.status(500).json({ message: "저장에 실패했습니다." + hint });
+    }
+  });
+
+  app.delete("/api/admin/site-announcements/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      await storage.deleteSiteAnnouncement(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/site-announcements DELETE]", e);
+      res.status(500).json({ message: "삭제에 실패했습니다" });
     }
   });
 
@@ -1336,8 +1499,8 @@ export async function registerRoutes(
     const bankAccount = process.env.BANK_ACCOUNT || "";
     const bankHolder = process.env.BANK_HOLDER || "";
     const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
-    const amountMonthly = plan?.monthlyPrice ?? 6600;
-    const amountYearly = plan?.yearlyPrice ?? 60000;
+    const amountMonthly = plan?.monthlyPrice ?? 5500;
+    const amountYearly = plan?.yearlyPrice ?? 59400;
     res.json({
       bankName,
       bankAccount,
@@ -1361,9 +1524,9 @@ export async function registerRoutes(
       let amount: number;
       try {
         const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
-        amount = plan ? (billingPeriod === "monthly" ? plan.monthlyPrice : plan.yearlyPrice) : (billingPeriod === "monthly" ? 6600 : 60000);
+        amount = plan ? (billingPeriod === "monthly" ? plan.monthlyPrice : plan.yearlyPrice) : (billingPeriod === "monthly" ? 5500 : 59400);
       } catch {
-        amount = billingPeriod === "monthly" ? 6600 : 60000;
+        amount = billingPeriod === "monthly" ? 5500 : 59400;
       }
       const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
 

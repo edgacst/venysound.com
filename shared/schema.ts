@@ -136,12 +136,28 @@ export const purchases = pgTable("purchases", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Analytics visits (일일/누적 방문자, 페이지뷰 집계용)
+// Analytics visits (일일/누적 방문자, 페이지뷰, 광고용 지역·디바이스 집계)
 export const analyticsVisits = pgTable("analytics_visits", {
   id: serial("id").primaryKey(),
   visitedAt: timestamp("visited_at").defaultNow().notNull(),
   visitorKey: text("visitor_key").notNull(),
   path: text("path").notNull(),
+  ipHash: text("ip_hash"),
+  countryCode: text("country_code"),
+  region: text("region"),
+  deviceType: text("device_type"),
+  refererDomain: text("referer_domain"),
+  utmSource: text("utm_source"),
+});
+
+// 사이트 공지 팝업 (관리자 설정, 메인 접속 시 노출)
+export const siteAnnouncements = pgTable("site_announcements", {
+  id: serial("id").primaryKey(),
+  content: text("content").notNull(),
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // === RELATIONS ===

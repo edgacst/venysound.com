@@ -14,7 +14,7 @@ export async function setupVite(server: Server, app: Express) {
     hmr: process.env.DISABLE_HMR === "1" ? false : {
       server,
       clientPort: parseInt(process.env.PORT || "5000", 10),
-      path: "/__vite_hmr",
+      path: "/_vite_hmr",
     },
     allowedHosts: true as const,
   };

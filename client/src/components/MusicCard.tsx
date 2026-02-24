@@ -249,6 +249,8 @@ export function MusicCard({ music }: MusicCardProps) {
   const [editIsAi, setEditIsAi] = useState(music.isAi || false);
   const [editLyrics, setEditLyrics] = useState(music.lyrics || "");
   const [editCoverUrl, setEditCoverUrl] = useState<string | null>(null);
+  const [editIsDownloadable, setEditIsDownloadable] = useState<boolean>(music.isDownloadable || false);
+  const [editPrice, setEditPrice] = useState<number | "">(music.price ?? 0);
   const [isFetchingEditCover, setIsFetchingEditCover] = useState(false);
   const [syncEditorOpen, setSyncEditorOpen] = useState(false);
 
@@ -378,6 +380,8 @@ export function MusicCard({ music }: MusicCardProps) {
     setEditIsAi(music.isAi || false);
     setEditLyrics(music.lyrics || "");
     setEditCoverUrl(null);
+    setEditIsDownloadable(music.isDownloadable || false);
+    setEditPrice(music.price ?? 0);
     setEditOpen(true);
   };
 
@@ -397,6 +401,11 @@ export function MusicCard({ music }: MusicCardProps) {
 
   const handleEditSubmit = () => {
     const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: editTags, lyrics: editLyrics, isAi: editIsAi };
+    if (uploaderIsPremium) {
+      data.isDownloadable = editIsDownloadable;
+      const priceValue = typeof editPrice === "number" ? editPrice : 0;
+      data.price = editIsDownloadable ? priceValue : 0;
+    }
     if (editCoverUrl) {
       data.imageFilename = editCoverUrl;
     }
@@ -633,6 +642,53 @@ export function MusicCard({ music }: MusicCardProps) {
             <div className="flex items-center gap-2">
               <Checkbox id="edit-isai" checked={editIsAi} onCheckedChange={(v) => setEditIsAi(v === true)} data-testid="checkbox-edit-isai" />
               <Label htmlFor="edit-isai">{t('music.isAiMusic')}</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="edit-downloadable"
+                checked={editIsDownloadable}
+                onCheckedChange={(v) => setEditIsDownloadable(v === true)}
+                disabled={!uploaderIsPremium}
+                data-testid="checkbox-edit-downloadable"
+              />
+              <Label htmlFor="edit-downloadable">
+                {t('music.downloadable', '다운로드 판매 허용')}
+                {!uploaderIsPremium && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {t('music.premiumOnly', '프리미엄 업로더 전용')}
+                  </span>
+                )}
+              </Label>
+            </div>
+            <div>
+              <Label htmlFor="edit-price">{t('music.price', '판매 금액')}</Label>
+              <div className="mt-1 flex items-center gap-2">
+                <Input
+                  id="edit-price"
+                  type="number"
+                  min={0}
+                  step={100}
+                  value={editPrice === "" ? "" : editPrice}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "") {
+                      setEditPrice("");
+                      return;
+                    }
+                    const n = Number(v);
+                    if (Number.isNaN(n) || n < 0) return;
+                    setEditPrice(n);
+                  }}
+                  disabled={!uploaderIsPremium || !editIsDownloadable}
+                  data-testid="input-edit-price"
+                />
+                <span className="text-sm text-muted-foreground">{t('common.won', '원')}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {uploaderIsPremium
+                  ? t('upload.priceDesc', '최소 100원부터 설정 가능합니다')
+                  : t('music.premiumPriceHint', '판매 금액 설정은 프리미엄 업로더만 가능합니다')}
+              </p>
             </div>
             <div>
               <Label>{t('music.currentCover')}</Label>

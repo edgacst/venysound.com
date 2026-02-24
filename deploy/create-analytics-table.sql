@@ -6,5 +6,11 @@ CREATE TABLE IF NOT EXISTS analytics_visits (
   id SERIAL PRIMARY KEY,
   visited_at TIMESTAMP NOT NULL DEFAULT NOW(),
   visitor_key TEXT NOT NULL,
-  path TEXT NOT NULL
+  path TEXT NOT NULL,
+  ip_hash TEXT,
+  country_code TEXT,
+  region TEXT,
+  device_type TEXT,
+  referer_domain TEXT,
+  utm_source TEXT
 );

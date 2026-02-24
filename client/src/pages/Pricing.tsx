@@ -137,8 +137,9 @@ export default function Pricing() {
   };
 
   const isPremium = subscriptionData?.tier === "premium";
-  const monthlyPrice = 6600;
-  const yearlyPrice = 60000;
+  const monthlyPrice = 5500;
+  const yearlyRegularTotal = monthlyPrice * 12; // 66,000
+  const yearlyPrice = Math.round(yearlyRegularTotal * 0.9); // 10% 할인 = 59,400
   const displayPrice = billingPeriod === "monthly" ? monthlyPrice : yearlyPrice;
 
   return (
@@ -153,6 +154,9 @@ export default function Pricing() {
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             {t('pricing.subtitle', '프리미엄 멤버십으로 무제한 스트리밍, AI 커버 생성 등 모든 기능을 즐겨보세요')}
+          </p>
+          <p className="text-sm text-muted-foreground max-w-2xl mx-auto mt-1 underline decoration-muted-foreground/50">
+            {t('pricing.taxReceiptNote', '구독료에 대한 세금계산서, 현금 영수증 발행이 가능합니다.')}
           </p>
         </div>
 
@@ -242,7 +246,7 @@ export default function Pricing() {
                   </span>
                   {billingPeriod === "yearly" && (
                     <div className="text-sm text-muted-foreground mt-1">
-                      {t('pricing.monthlyEquivalent', '월')} {Math.round(yearlyPrice / 12).toLocaleString("ko-KR")}{t('pricing.won', '원')} ({t('pricing.regularPrice', '정가')} {yearlyPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')})
+                      {t('pricing.monthlyEquivalent', '월')} {Math.round(yearlyPrice / 12).toLocaleString("ko-KR")}{t('pricing.won', '원')} ({t('pricing.regularPrice', '정가')} {yearlyRegularTotal.toLocaleString("ko-KR")}{t('pricing.won', '원')})
                     </div>
                   )}
                 </div>
@@ -277,14 +281,19 @@ export default function Pricing() {
                     </Button>
                   </div>
                 ) : (
-                  <Button
-                    className="w-full bg-primary"
-                    onClick={handleBankTransferClick}
-                    data-testid="button-bank-subscribe"
-                  >
-                    <Landmark size={16} className="mr-2" />
-                    {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
-                  </Button>
+                  <div>
+                    <Button
+                      className="w-full bg-primary"
+                      onClick={handleBankTransferClick}
+                      data-testid="button-bank-subscribe"
+                    >
+                      <Landmark size={16} className="mr-2" />
+                      {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
+                    </Button>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      {t('pricing.bankTransferOnlyNote', '당분간은 계좌 이체만 가능합니다')}
+                    </p>
+                  </div>
                 )}
               </Card>
             </div>
@@ -310,7 +319,7 @@ export default function Pricing() {
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')} {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}을 아래 계좌로 입금해 주시면 1~2일 내 확인 후 프리미엄이 적용됩니다.
+                  {billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')} {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}을 아래 계좌로 입금해 주시면 즉시 확인 후 프리미엄이 적용됩니다.
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">

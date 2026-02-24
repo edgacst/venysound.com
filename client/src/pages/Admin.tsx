@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import {
   Users,
   Music,
@@ -41,6 +43,8 @@ import {
   Calendar,
   UserCheck,
   Eye,
+  Coins,
+  Megaphone,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -76,6 +80,9 @@ export default function Admin() {
   const [showBackupPw, setShowBackupPw] = useState(false);
   const backupPwRef = useRef<HTMLInputElement>(null);
   const [withdrawalNotes, setWithdrawalNotes] = useState<Record<number, string>>({});
+  const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
+  const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -117,6 +124,85 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 60000,
+  });
+
+  const { data: creditsChargedData } = useQuery<{ totalCreditsCharged: number }>({
+    queryKey: ["/api/admin/credits-charged"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/credits-charged", { credentials: "include" });
+      if (!res.ok) return { totalCreditsCharged: 0 };
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
+  const { data: statsByRegion } = useQuery<{ countryCode: string | null; region: string | null; count: number }[]>({
+    queryKey: ["/api/admin/stats/regions"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/stats/regions", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
+  const { data: statsByDevice } = useQuery<{ deviceType: string | null; count: number }[]>({
+    queryKey: ["/api/admin/stats/devices"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/stats/devices", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
+  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; startsAt: string; endsAt: string; createdAt: string }[]>({
+    queryKey: ["/api/admin/site-announcements"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/site-announcements", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const saveAnnouncementMutation = useMutation({
+    mutationFn: async (body: { content: string; startsAt: string; endsAt: string }) => {
+      const res = await fetch("/api/admin/site-announcements", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "저장 실패");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/site-announcements"] });
+      toast({ title: t('admin.announcementSaved', '공지가 저장되었습니다. 설정한 기간에 메인 접속 시 팝업으로 노출됩니다.') });
+      setAnnouncementContent("");
+      setAnnouncementStartsAt("");
+      setAnnouncementEndsAt("");
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "저장 실패", variant: "destructive" });
+    },
+  });
+
+  const deleteAnnouncementMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", "/api/admin/site-announcements/" + id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/site-announcements"] });
+      toast({ title: t('admin.announcementDeleted', '공지가 삭제되었습니다') });
+    },
   });
 
   const { data: adminPosts, isLoading: loadingPosts } = useQuery<any[]>({
@@ -317,7 +403,25 @@ export default function Admin() {
         <div className="container max-w-6xl mx-auto px-4 py-8">
           <h1 className="text-2xl font-bold mb-6" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+          <Tabs defaultValue="stats" className="w-full">
+            <TabsList className="mb-4 flex flex-wrap gap-1 h-auto">
+              <TabsTrigger value="stats">{t('admin.statsOverview', '통계')}</TabsTrigger>
+              <TabsTrigger value="posts">{t('admin.postManagement', '글 관리')}</TabsTrigger>
+              <TabsTrigger value="copyright">{t('admin.copyrightManagement', '저작권')}</TabsTrigger>
+              <TabsTrigger value="users">{t('admin.userManagement', '회원')}</TabsTrigger>
+              <TabsTrigger value="bank">{t('admin.pendingBankPayments', '입금 대기')}</TabsTrigger>
+              <TabsTrigger value="withdrawal">{t('admin.withdrawalManagement', '출금')}</TabsTrigger>
+              <TabsTrigger value="announcement">{t('admin.siteAnnouncement', '공지 팝업')}</TabsTrigger>
+              <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="stats">
+        {/* 통계 총괄 */}
+        <section className="mb-10">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" data-testid="text-stats-section">
+            <Activity size={18} className="text-primary" />
+            {t('admin.statsOverview', '통계')}
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
           <Card className="p-4 text-center border-primary/30" data-testid="stat-visitor-count">
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Activity size={14} /> {t('admin.currentVisitors', '현재 접속자')}
@@ -329,7 +433,7 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Users size={14} /> {t('admin.totalUsers', '전체 회원 수')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalUsers ?? 0)}
             </div>
           </Card>
@@ -337,7 +441,7 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Music size={14} /> {t('admin.totalMusic', '전체 음원 수')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalMusic ?? 0)}
             </div>
           </Card>
@@ -345,7 +449,7 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Heart size={14} /> {t('admin.totalLikes', '총 좋아요 수')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalLikes ?? 0)}
             </div>
           </Card>
@@ -353,13 +457,12 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <MessageSquare size={14} /> {t('admin.totalComments', '총 댓글 수')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalComments ?? 0)}
             </div>
           </Card>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card className="p-4 text-center" data-testid="stat-daily-visitors">
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Calendar size={14} /> {t('admin.dailyVisitors', '일일 방문자')}
@@ -372,7 +475,7 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <UserCheck size={14} /> {t('admin.totalVisitors', '누적 방문자')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.totalVisitors ?? 0)}
             </div>
           </Card>
@@ -388,14 +491,67 @@ export default function Admin() {
             <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
               <Eye size={14} /> {t('admin.pageViewsTotal', '총 페이지뷰')}
             </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
               {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.pageViewsTotal ?? 0)}
             </div>
           </Card>
-        </div>
+          <Card className="p-4 text-center" data-testid="stat-credits-charged">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Coins size={14} /> {t('admin.totalCreditsCharged', '총 충전된 크레딧')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
+              {(creditsChargedData?.totalCreditsCharged ?? 0).toLocaleString()}C
+            </div>
+          </Card>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <Card className="p-4 overflow-hidden">
+              <h3 className="text-sm font-semibold mb-3">{t('admin.byRegion', '지역별 방문')}</h3>
+              {Array.isArray(statsByRegion) && statsByRegion.length > 0 ? (
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={statsByRegion.map((r) => ({ name: r.countryCode || r.region || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }} formatter={(v: number) => [v.toLocaleString(), t('admin.visits', '방문수')]} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="hsl(var(--primary))" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noRegionData', '수집된 지역 데이터 없음')}</p>
+              )}
+            </Card>
+            <Card className="p-4 overflow-hidden">
+              <h3 className="text-sm font-semibold mb-3">{t('admin.byDevice', '디바이스별 방문')}</h3>
+              {Array.isArray(statsByDevice) && statsByDevice.length > 0 ? (
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={statsByDevice.map((r) => ({ name: r.deviceType || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }} formatter={(v: number) => [v.toLocaleString(), t('admin.visits', '방문수')]} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                        {(Array.isArray(statsByDevice) ? statsByDevice : []).map((_, i) => (
+                          <Cell key={i} fill={["hsl(var(--primary))", "hsl(var(--primary) / 0.8)", "hsl(var(--primary) / 0.6)"][i % 3]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noDeviceData', '수집된 디바이스 데이터 없음')}</p>
+              )}
+            </Card>
+          </div>
+        </section>
+            </TabsContent>
+            <TabsContent value="posts">
         <h2 className="text-xl font-bold mb-4" data-testid="text-post-management-title">{t('admin.postManagement', '커뮤니티 글 관리')}</h2>
-        <Card className="mb-10 overflow-hidden">
+        <Card className="mb-6 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-posts">
               <thead>
@@ -445,7 +601,8 @@ export default function Admin() {
             </table>
           </div>
         </Card>
-
+            </TabsContent>
+            <TabsContent value="copyright">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-copyright-management-title">
           <Flag size={20} className="text-orange-500" /> {t('admin.copyrightManagement', '저작권 신고 관리')}
         </h2>
@@ -590,7 +747,8 @@ export default function Admin() {
             </table>
           </div>
         </Card>
-
+            </TabsContent>
+            <TabsContent value="users">
         <h2 className="text-xl font-bold mb-4" data-testid="text-user-management-title">{t('admin.userManagement', '회원 관리')}</h2>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <Input
@@ -739,7 +897,8 @@ export default function Admin() {
             </table>
           </div>
         </Card>
-
+            </TabsContent>
+            <TabsContent value="bank">
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-pending-bank-payments">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Landmark size={20} className="text-primary" /> {t('admin.pendingBankPayments', '계좌이체 입금 대기')}
@@ -797,7 +956,8 @@ export default function Admin() {
             </table>
           </div>
         </Card>
-
+            </TabsContent>
+            <TabsContent value="withdrawal">
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-withdrawal-management">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-withdrawal-management-title">
             <Banknote size={20} className="text-primary" /> {t('admin.withdrawalManagement', '출금 관리')}
@@ -897,6 +1057,109 @@ export default function Admin() {
             </table>
           </div>
         </Card>
+            </TabsContent>
+            <TabsContent value="announcement">
+        <Card className="p-4 sm:p-6" data-testid="card-site-announcement">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Megaphone size={20} className="text-primary" /> {t('admin.siteAnnouncement', '공지 팝업')}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('admin.siteAnnouncementDesc', '공지 내용과 노출 시작·종료 일시를 설정하면, 메인 페이지(/) 접속 시 해당 기간에 팝업으로 표시됩니다.')}
+          </p>
+          <div className="space-y-4 max-w-xl">
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.announcementContent', '공지 내용')}</label>
+              <Textarea
+                value={announcementContent}
+                onChange={(e) => setAnnouncementContent(e.target.value)}
+                placeholder={t('admin.announcementContentPlaceholder', '전체 방문자에게 보여줄 공지 텍스트')}
+                className="min-h-[100px]"
+                data-testid="textarea-announcement-content"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium mb-1 block">{t('admin.announcementStartsAt', '노출 시작')}</label>
+                <Input
+                  type="datetime-local"
+                  value={announcementStartsAt}
+                  onChange={(e) => setAnnouncementStartsAt(e.target.value)}
+                  data-testid="input-announcement-starts"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">{t('admin.announcementEndsAt', '노출 종료')}</label>
+                <Input
+                  type="datetime-local"
+                  value={announcementEndsAt}
+                  onChange={(e) => setAnnouncementEndsAt(e.target.value)}
+                  data-testid="input-announcement-ends"
+                />
+              </div>
+            </div>
+            <Button
+              onClick={() => {
+                if (!announcementContent.trim()) {
+                  toast({ title: t('admin.announcementContentRequired', '공지 내용을 입력하세요'), variant: "destructive" });
+                  return;
+                }
+                if (!announcementStartsAt || !announcementEndsAt) {
+                  toast({ title: t('admin.announcementDateTimeRequired', '노출 시작·종료 일시를 모두 선택하세요'), variant: "destructive" });
+                  return;
+                }
+                const start = new Date(announcementStartsAt);
+                const end = new Date(announcementEndsAt);
+                if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                  toast({ title: t('admin.announcementDateTimeInvalid', '노출 시작·종료 일시를 올바르게 선택하세요'), variant: "destructive" });
+                  return;
+                }
+                if (end <= start) {
+                  toast({ title: t('admin.announcementEndAfterStart', '종료 일시는 시작 일시보다 뒤여야 합니다'), variant: "destructive" });
+                  return;
+                }
+                saveAnnouncementMutation.mutate({
+                  content: announcementContent.trim(),
+                  startsAt: start.toISOString(),
+                  endsAt: end.toISOString(),
+                });
+              }}
+              disabled={saveAnnouncementMutation.isPending}
+              data-testid="button-save-announcement"
+            >
+              {saveAnnouncementMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {t('admin.saveAnnouncement', '공지 저장')}
+            </Button>
+          </div>
+          {siteAnnouncementsList && siteAnnouncementsList.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <h3 className="text-sm font-semibold mb-2">{t('admin.savedAnnouncements', '저장된 공지')}</h3>
+              <ul className="space-y-2">
+                {siteAnnouncementsList.map((a) => (
+                  <li key={a.id} className="flex items-start justify-between gap-2 p-3 rounded-lg bg-muted/30 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="line-clamp-2 text-foreground">{a.content}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t('admin.announcementStartsAt', '노출 시작')}: {isNaN(new Date(a.startsAt).getTime()) ? String(a.startsAt) : new Date(a.startsAt).toLocaleString("ko-KR")} ~ {t('admin.announcementEndsAt', '노출 종료')}: {isNaN(new Date(a.endsAt).getTime()) ? String(a.endsAt) : new Date(a.endsAt).toLocaleString("ko-KR")}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => { if (confirm(t('admin.confirmDeleteAnnouncement', '이 공지를 삭제하시겠습니까?'))) deleteAnnouncementMutation.mutate(a.id); }}
+                      disabled={deleteAnnouncementMutation.isPending}
+                      data-testid={`button-delete-announcement-${a.id}`}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+            </TabsContent>
+            <TabsContent value="backup">
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-backup-title">
             <Database className="w-5 h-5 text-emerald-400" />
@@ -1060,6 +1323,8 @@ export default function Admin() {
             </div>
           )}
         </Card>
+            </TabsContent>
+          </Tabs>
       </div>
       </div>
     </PageTransition>

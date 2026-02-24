@@ -12,16 +12,19 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 2) premium 플랜 행 (이미 있으면 무시)
+-- 2) premium 플랜 행 (이미 있으면 무시) — 월 5,500원, 연간 10% 할인 59,400원
 INSERT INTO subscription_plans (id, name, description, monthly_price, yearly_price)
 VALUES (
   'premium',
   'Premium',
   '모든 기능 무제한',
-  6600,
-  60000
+  5500,
+  59400
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 기존 premium 행 금액 업데이트 (이미 위와 동일하면 무시)
+UPDATE subscription_plans SET monthly_price = 5500, yearly_price = 59400 WHERE id = 'premium';
 
 -- 3) payments 테이블
 CREATE TABLE IF NOT EXISTS payments (

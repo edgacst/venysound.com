@@ -54,6 +54,64 @@ export function useCreatePost() {
   });
 }
 
+export function useUpdatePost(id: number) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (data: { title?: string; content?: string; category?: string | null; attachment?: string | null }) => {
+      const res = await fetch(`/api/posts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to update post");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [api.posts.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/posts", id] });
+      queryClient.invalidateQueries({ queryKey: [api.posts.get.path, id] });
+      toast({ title: "성공", description: "게시글이 수정되었습니다!" });
+    },
+  });
+}
+
+export function useDeletePost() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (postId: number) => {
+      const res = await fetch(`/api/posts/${postId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete post");
+      }
+      return res.json();
+    },
+    onSuccess: (_, postId) => {
+      // 리스트 캐시에서 바로 제거해 UI를 즉시 반영
+      queryClient.setQueriesData<any[]>({ queryKey: [api.posts.list.path] }, (old) => {
+        if (!old) return old;
+        return old.filter((p) => p.id !== postId);
+      });
+      // 혹시 모를 다른 뷰를 위해 무효화도 함께 수행
+      queryClient.invalidateQueries({ queryKey: [api.posts.list.path] });
+      queryClient.removeQueries({ queryKey: ["/api/posts", postId] });
+      queryClient.removeQueries({ queryKey: [api.posts.get.path, postId] });
+      toast({ title: "성공", description: "게시글이 삭제되었습니다!" });
+    },
+  });
+}
+
 export function useComments(postId: number) {
   return useQuery({
     queryKey: [api.posts.getComments.path, postId],
