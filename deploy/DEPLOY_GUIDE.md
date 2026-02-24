@@ -11,18 +11,13 @@
 
 GitHub에는 올려 뒀는데 **서버(사이트)에는 아직 반영이 안 된 상태**라면, **서버에 SSH 접속해서 아래만 실행**하면 됩니다.
 
-**1) 배포 폴더가 `/var/www/venysound` 인 경우**  
-(Hostinger 터미널에서 복사 → 붙여넣기 → Enter)
+**배포 폴더** (앱은 **venysound 하나만** 사용합니다. `/var/www/venysound` 또는 실제로 쓰는 앱 디렉터리 한 곳에서만 실행하세요.)
 
 ```bash
-cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart all
+cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart venysound
 ```
 
-**2) 배포 폴더가 `/var/www/venysound/app_new` 인 경우**
-
-```bash
-cd /var/www/venysound/app_new && git pull && npm install --omit=dev && npm run build && pm2 restart all
-```
+- `pm2 restart all` 대신 `pm2 restart venysound` 로 서비스 앱만 재시작하는 것을 권장합니다.
 
 **3) `pm2 restart all` 했는데 “재시작할 프로세스 0개” 라고 나오면**  
 앱이 꺼져 있는 상태이므로, **한 번 다시 켜기**까지 해야 합니다. 같은 폴더에서:
@@ -41,7 +36,7 @@ pm2 save
 1. **로컬에서** 코드 수정 후 **GitHub에 푸시** (이미 하셨다면 이 단계는 끝).
 2. **서버(Hostinger)에 SSH로 접속**한 뒤, 터미널에서 **위 “지금 Git에 푸시해 놓고…”** 의 1) 또는 2) 한 줄 실행.
 
-- **배포 경로가 다르면** (예: `/var/www/venysound/app_new`) 위 2) 번 블록을 쓰면 됩니다.
+- **배포 경로가 다르면** (예: 앱이 `/var/www/venysound/app` 에 있으면) `cd` 뒤 경로만 실제 경로로 바꾸면 됩니다.
 - **`pm2 restart all` 해도 재시작될 프로세스가 0개**라면 위 3) 번대로 `pm2 start` 후 `pm2 save` 하세요.
 - `git pull` 이 GitHub에서 방금 푸시한 코드를 서버로 가져옵니다.  
 - 끝나면 **새 버전으로 반영**된 겁니다.  
@@ -330,12 +325,13 @@ sudo /root/switch-to-port.sh 5000
    pm2 list
    ```
 2. **한 개만 남기고 나머지는 끄기**  
-   - 5000만 쓸 거면, 5000에서 도는 앱만 남기고 **5001용 앱이 있으면 중지**합니다.  
+   - 5000만 쓸 거면, **venysound**만 남기고 green/5001용 앱은 중지합니다.  
      ```bash
-     pm2 stop venysound-5001
-     # 또는 5001용으로 켠 앱 이름이 다르면 그 이름으로 stop
+     pm2 stop venysound-green
+     pm2 save
      ```
-   - **배포 폴더도 하나만** 쓰기로 합니다. (`/var/www/venysound` **또는** `app_new` 중 하나만 정해서, 그 폴더에서만 pull·build·restart.)
+     (이름이 `venysound-5001` 이면 그 이름으로 stop. 필요하면 `pm2 delete venysound-green` 으로 목록에서 제거해도 됩니다.)
+   - **배포 폴더도 하나만** 쓰기로 합니다. (`/var/www/venysound` 또는 실제 앱이 있는 디렉터리 한 곳에서만 pull·build·restart.)
 3. **Nginx는 5000만 보게**
    ```bash
    sudo /root/switch-to-port.sh 5000
@@ -343,9 +339,8 @@ sudo /root/switch-to-port.sh 5000
 4. **이후 배포**  
    - 정한 **그 폴더 하나**에서만:  
      ```bash
-     cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart all
-     ```  
-     (경로가 `app_new` 면 `cd /var/www/venysound/app_new && ...` 로.)
+     cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart venysound
+     ```
 
 **정리:**  
 신버전을 안 띄우고 구버전만 둘 다 띄우면 에러 난다 → **앱은 한 개만 띄우고, 그 한 군데만 “신버전으로 갱신”하면** 됩니다. 두 개 동시에 쓰지 말고, 한 개만 쓰고 그 한 개를 항상 최신으로 유지하세요.
@@ -473,7 +468,7 @@ sudo /root/switch-to-port.sh 5001
    - 5000 앱만 켜고, 5001 앱은 끄기: `pm2 stop venysound-5001` (있을 경우)
 
 2. **5001용 폴더에서 앱을 5001 포트로 띄울 수 있게**  
-   - 5001용 폴더(예: `app_new`)에서 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 한 번 띄워 보거나,  
+   - 5001용 폴더(예: `app_new`)에서 `PORT=5001 pm2 start dist/index.mjs --name venysound-5001` 로 한 번 띄워 보거나,  
    - 또는 5001 전용 ecosystem 파일을 만들어서 `pm2 start ecosystem.5001.config.cjs` 처럼 쓰면 됩니다.  
    - (같은 서버에서 5000·5001 두 프로세스가 **다른 폴더**를 쓰면, 한쪽만 갱신해도 됨.)
 
@@ -490,7 +485,7 @@ sudo /root/switch-to-port.sh 5001
    ```bash
    pm2 restart venysound-5001
    ```
-   (처음이면 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 켜기.)
+   (처음이면 `PORT=5001 pm2 start dist/index.mjs --name venysound-5001` 로 켜기.)
 3. **5001이 정상인지 확인**  
    ```bash
    curl -sf http://127.0.0.1:5001/api/health && echo " OK"

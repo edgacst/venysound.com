@@ -1,7 +1,7 @@
 import path from "path";
 import { fileURLToPath } from "url";
 
-// 프로덕션(dist/index.cjs): 앱 루트 = dist의 상위. 번들 상단에 __APP_ROOT__ 가 주입됨.
+// 프로덕션(dist/index.mjs): import.meta.url 기준으로 앱 루트 = dist의 상위.
 // 개발(tsx): import.meta.url 기준으로 server/ 의 상위 = 프로젝트 루트
 const APP_ROOT =
   typeof (globalThis as any).__APP_ROOT__ === "string"

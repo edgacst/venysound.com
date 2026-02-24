@@ -96,7 +96,7 @@ export interface IStorage {
   deleteSiteAnnouncement(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
-  deletePost(id: number): Promise<void>;
+  deletePostAdmin(id: number): Promise<void>;
   deleteUser(id: string): Promise<void>;
   updateUserRole(id: string, role: string): Promise<void>;
   updateUserSubscription(id: string, tier: string, expiresAt: Date | null): Promise<void>;
@@ -724,7 +724,7 @@ export class DatabaseStorage implements IStorage {
     return results.map(r => ({ ...r.post, user: r.user, commentCount: r.commentCount }));
   }
 
-  async deletePost(id: number): Promise<void> {
+  async deletePostAdmin(id: number): Promise<void> {
     await db.delete(postComments).where(eq(postComments.postId, id));
     await db.delete(posts).where(eq(posts.id, id));
   }

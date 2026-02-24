@@ -1141,7 +1141,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/admin/posts/:id", isAuthenticated, isAdmin, async (req, res) => {
-    await storage.deletePost(Number(req.params.id));
+    await storage.deletePostAdmin(Number(req.params.id));
     res.json({ success: true });
   });
 
