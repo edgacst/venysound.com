@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
+  analyticsVisits,
   conversations, directMessages, musicStories, storyComments,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
@@ -81,6 +82,8 @@ export interface IStorage {
     totalLikes: number;
     totalComments: number;
   }>;
+  recordVisit(visitorKey: string, path: string): Promise<void>;
+  getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePost(id: number): Promise<void>;
@@ -205,7 +208,6 @@ export class DatabaseStorage implements IStorage {
         ...musicColumns,
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
-        _uploaderDonationBadge: users.donationBadge,
         _uploaderRole: users.role,
       })
       .from(music)
@@ -220,10 +222,10 @@ export class DatabaseStorage implements IStorage {
     const rows = await query;
     const now = new Date();
     const data: MusicWithUploaderTier[] = rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderDonationBadge, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderDonationBadge: string | null; _uploaderRole: string | null };
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
       const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: _uploaderDonationBadge ?? null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
 
     return { data, total };
@@ -255,7 +257,6 @@ export class DatabaseStorage implements IStorage {
         ...musicColumns,
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
-        _uploaderDonationBadge: users.donationBadge,
         _uploaderRole: users.role,
       })
       .from(music)
@@ -264,10 +265,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(music.createdAt));
     const now = new Date();
     return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderDonationBadge, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderDonationBadge: string | null; _uploaderRole: string | null };
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
       const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: _uploaderDonationBadge ?? null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
   }
 
@@ -586,6 +587,31 @@ export class DatabaseStorage implements IStorage {
       totalMusic: musicCount?.count ?? 0,
       totalLikes: likeCount?.count ?? 0,
       totalComments: (commentCount?.count ?? 0) + (reviewCount?.count ?? 0),
+    };
+  }
+
+  async recordVisit(visitorKey: string, path: string): Promise<void> {
+    await db.insert(analyticsVisits).values({ visitorKey, path });
+  }
+
+  async getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }> {
+    const [dailyV] = await db.select({
+      count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+    }).from(analyticsVisits).where(sql`${analyticsVisits.visitedAt} >= date_trunc('day', now())`);
+    const [totalV] = await db.select({
+      count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+    }).from(analyticsVisits);
+    const [pvToday] = await db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(analyticsVisits).where(sql`${analyticsVisits.visitedAt} >= date_trunc('day', now())`);
+    const [pvTotal] = await db.select({
+      count: sql<number>`count(*)::int`,
+    }).from(analyticsVisits);
+    return {
+      dailyVisitors: dailyV?.count ?? 0,
+      totalVisitors: totalV?.count ?? 0,
+      pageViewsToday: pvToday?.count ?? 0,
+      pageViewsTotal: pvTotal?.count ?? 0,
     };
   }
 

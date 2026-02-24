@@ -1,0 +1,570 @@
+import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
+import { useTranslation } from 'react-i18next';
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useCreateMusic } from "@/hooks/use-music";
+import { useUpload } from "@/hooks/use-upload";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation, Link } from "wouter";
+import { 
+  Form, 
+  FormControl, 
+  FormField, 
+  FormItem, 
+  FormLabel, 
+  FormMessage,
+  FormDescription
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, ImagePlus, DollarSign, Download, AlertCircle, Crown } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { PageTransition } from "@/components/PageTransition";
+
+const uploadSchema = z.object({
+  title: z.string().min(1, "음원 제목을 입력해주세요"),
+  artist: z.string().min(1, "아티스트 이름을 입력해주세요"),
+  genre: z.string().optional(),
+  tags: z.string().optional(),
+  lyrics: z.string().optional(),
+  isAi: z.boolean().optional(),
+  isDownloadable: z.boolean().optional(),
+  price: z.number().min(0).optional(),
+});
+
+type UploadFormValues = z.infer<typeof uploadSchema>;
+
+const mainGenres: Record<string, string[]> = {
+  "팝뮤직": ["팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
+  "국내가요": ["케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요"],
+  "월드뮤직": ["라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
+  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악"],
+  "기타": []
+};
+
+export default function Upload() {
+  const { t } = useTranslation();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const [, setLocation] = useLocation();
+  const { mutate: createMusic, isPending: isCreating } = useCreateMusic();
+  
+  const { uploadFile: uploadAudio, isUploading: isUploadingAudio } = useUpload();
+  const { uploadFile: uploadImage, isUploading: isUploadingImage } = useUpload();
+  
+  const { toast } = useToast();
+  const { data: uploadLimit } = useQuery<{ limited: boolean; current: number; limit: number }>({
+    queryKey: ["/api/upload-limit"],
+    enabled: isAuthenticated,
+  });
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [unsplashUrl, setUnsplashUrl] = useState<string | null>(null);
+  const [isFetchingUnsplash, setIsFetchingUnsplash] = useState(false);
+  const [selectedMainGenre, setSelectedMainGenre] = useState("");
+  const [selectedSubGenre, setSelectedSubGenre] = useState("");
+
+  const form = useForm<UploadFormValues>({
+    resolver: zodResolver(uploadSchema),
+    defaultValues: {
+      title: "",
+      artist: user?.firstName || "",
+      genre: "",
+      tags: "",
+      lyrics: "",
+      isAi: false,
+      isDownloadable: false,
+      price: 0,
+    },
+  });
+
+  useEffect(() => {
+    if (!isAuthLoading && !isAuthenticated) {
+      setLocation("/login");
+    }
+  }, [isAuthLoading, isAuthenticated, setLocation]);
+
+  if (isAuthLoading || !isAuthenticated) return null;
+
+  const handleMainGenreChange = (value: string) => {
+    setSelectedMainGenre(value);
+    setSelectedSubGenre("");
+    if (!mainGenres[value] || mainGenres[value].length === 0) {
+      form.setValue("genre", value);
+    } else {
+      form.setValue("genre", "");
+    }
+  };
+
+  const handleSubGenreChange = (value: string) => {
+    setSelectedSubGenre(value);
+    form.setValue("genre", value);
+  };
+
+  const handleGenerateAiCover = () => {
+    if ((user as any)?.subscriptionTier !== "premium") {
+      toast({ title: t('upload.premiumOnly', '프리미엄 전용 기능'), description: t('upload.premiumAiCoverDesc', 'AI 커버 생성은 프리미엄 멤버십 구독 후 이용 가능합니다.') });
+      setLocation("/pricing");
+      return;
+    }
+    toast({ title: t('upload.aiCoverGenerating', 'AI 커버 생성 중...'), description: t('upload.pleaseWait', '잠시만 기다려주세요.') });
+  };
+
+  const handleFetchUnsplash = async () => {
+    const title = form.getValues("title");
+    const genre = form.getValues("genre");
+    const keyword = genre || title || "music";
+
+    setIsFetchingUnsplash(true);
+    try {
+      const res = await fetch("/api/music/random-cover");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setUnsplashUrl(data.imageUrl);
+      setImageFile(null);
+      toast({ title: t('upload.randomCoverFetched', '랜덤 커버 이미지를 가져왔습니다') });
+    } catch (err) {
+      toast({ title: t('upload.imageFetchFailed', '이미지를 가져오는데 실패했습니다. 다시 시도해주세요.'), variant: "destructive" });
+    } finally {
+      setIsFetchingUnsplash(false);
+    }
+  };
+
+  const onSubmit = async (values: UploadFormValues) => {
+    if (!audioFile) {
+      toast({ title: t('upload.error', '오류'), description: t('upload.selectAudioFile', '음원 파일을 선택해주세요'), variant: "destructive" });
+      return;
+    }
+
+    if (uploadLimit?.limited) {
+      toast({ title: t('upload.uploadLimit', '업로드 제한'), description: t('upload.uploadLimitDesc', `Free 플랜은 월 ${uploadLimit.limit}곡까지 업로드할 수 있습니다. 프리미엄으로 업그레이드해주세요.`), variant: "destructive" });
+      return;
+    }
+
+    const isPremium = (user as any)?.subscriptionTier === "premium";
+    const payload = {
+      ...values,
+      isDownloadable: isPremium ? values.isDownloadable : false,
+      price: isPremium ? (values.price ?? 0) : 0,
+    };
+
+    try {
+      const audioRes = await uploadAudio(audioFile);
+      if (!audioRes) throw new Error(t('upload.audioUploadFailed', '음원 업로드 실패'));
+
+      let imagePath = unsplashUrl || null;
+      if (imageFile) {
+        const imageRes = await uploadImage(imageFile);
+        if (imageRes) imagePath = imageRes.objectPath;
+      }
+
+      createMusic({
+        ...payload,
+        filename: audioRes.objectPath,
+        imageFilename: imagePath,
+      }, {
+        onSuccess: () => setLocation("/")
+      });
+
+    } catch (error) {
+      console.error(t('upload.uploadFailed', '업로드 실패'), error);
+    }
+  };
+
+  const subGenres = selectedMainGenre ? mainGenres[selectedMainGenre] || [] : [];
+
+  return (
+    <PageTransition>
+      <div className="min-h-screen bg-background flex flex-col pb-24">
+        <Navigation />
+      
+        <div className="container max-w-2xl px-4 py-12">
+        <Card className="border-white/10 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="text-center">
+            <div className="text-primary text-4xl mb-2">
+              <CloudUpload className="mx-auto w-10 h-10" />
+            </div>
+            <CardTitle className="text-2xl font-display" data-testid="text-upload-title">{t('upload.title', '음원 업로드')}</CardTitle>
+            <p className="text-muted-foreground text-sm">{t('upload.subtitle', '당신의 음악을 Veny Sound와 공유하세요')}</p>
+            {uploadLimit && uploadLimit.limit > 0 && (
+              <div className={`mt-3 p-3 rounded-lg text-sm flex items-center gap-2 ${
+                uploadLimit.limited 
+                  ? "bg-destructive/10 text-destructive border border-destructive/20" 
+                  : "bg-primary/10 text-primary border border-primary/20"
+              }`} data-testid="text-upload-limit-info">
+                {uploadLimit.limited ? (
+                  <>
+                    <AlertCircle size={16} />
+                    {t('upload.limitReached', `이번 달 업로드 한도(${uploadLimit.limit}곡)에 도달했습니다.`)} <Link href="/pricing" className="underline font-semibold">{t('upload.premiumUpgrade', '프리미엄 업그레이드')}</Link>
+                  </>
+                ) : (
+                  <>
+                    <MusicIcon size={16} />
+                    {t('upload.monthlyUpload', '이번 달 업로드')}: {uploadLimit.current}/{uploadLimit.limit}{t('upload.songsUnit', '곡')}
+                  </>
+                )}
+              </div>
+            )}
+            {uploadLimit && uploadLimit.limit === -1 && (
+              <div className="mt-3 p-3 rounded-lg text-sm flex items-center gap-2 bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" data-testid="text-premium-upload">
+                <Crown size={16} />
+                {t('upload.premiumUnlimited', '프리미엄 회원: 무제한 업로드')}
+              </div>
+            )}
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <FormLabel>{t('upload.audioFile', '음원 파일')}</FormLabel>
+                    <div 
+                      className={`
+                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+                        ${audioFile ? 'border-primary bg-primary/5' : 'border-white/10 hover:border-white/20 hover:bg-white/5'}
+                      `}
+                      onClick={() => document.getElementById('audio-input')?.click()}
+                      data-testid="dropzone-audio"
+                    >
+                      <input 
+                        id="audio-input" 
+                        type="file" 
+                        accept=".mp3,.wav,.ogg" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0] || null;
+                          setAudioFile(file);
+                          if (file) {
+                            const titleFromName = file.name.replace(/\.[^/.]+$/, "");
+                            form.setValue("title", titleFromName);
+                          }
+                        }}
+                      />
+                      {audioFile ? (
+                        <div className="text-primary flex flex-col items-center">
+                          <CheckCircle className="mb-2" />
+                          <span className="text-sm truncate max-w-full">{audioFile.name}</span>
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground flex flex-col items-center">
+                          <MusicIcon className="mb-2 w-8 h-8 opacity-50" />
+                          <span className="text-sm">{t('upload.dragOrClick', '파일을 여기에 드래그하거나 클릭하세요')}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{t('upload.audioFormats', 'MP3, WAV, OGG 형식, 최대 50MB')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <FormLabel>{t('upload.albumCover', '앨범 커버 (선택)')}</FormLabel>
+                    <div 
+                      className={`
+                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+                        ${imageFile || unsplashUrl ? 'border-primary bg-primary/5' : 'border-white/10 hover:border-white/20 hover:bg-white/5'}
+                      `}
+                      onClick={() => !unsplashUrl && document.getElementById('image-input')?.click()}
+                      data-testid="dropzone-image"
+                    >
+                      <input 
+                        id="image-input" 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={(e) => {
+                          setImageFile(e.target.files?.[0] || null);
+                          setUnsplashUrl(null);
+                        }}
+                      />
+                      {unsplashUrl ? (
+                        <div className="text-primary flex flex-col items-center">
+                          <img src={unsplashUrl} alt={t('upload.randomCover', '랜덤 커버')} className="w-20 h-20 rounded-md object-cover mb-2" />
+                          <span className="text-sm">{t('upload.randomCoverApplied', '랜덤 커버 적용됨')}</span>
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground mt-1 underline"
+                            onClick={(e) => { e.stopPropagation(); setUnsplashUrl(null); }}
+                            data-testid="button-remove-random-cover"
+                          >
+                            {t('upload.remove', '제거')}
+                          </button>
+                        </div>
+                      ) : imageFile ? (
+                        <div className="text-primary flex flex-col items-center">
+                          <CheckCircle className="mb-2" />
+                          <span className="text-sm truncate max-w-full">{imageFile.name}</span>
+                        </div>
+                      ) : (
+                        <div className="text-muted-foreground flex flex-col items-center">
+                          <ImageIcon className="mb-2 w-8 h-8 opacity-50" />
+                          <span className="text-sm">{t('upload.selectImage', '이미지 선택')}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{t('upload.imageFormats', 'PNG, JPG, GIF')}</span>
+                        </div>
+                      )}
+                    </div>
+                    {!imageFile && !unsplashUrl && (
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleFetchUnsplash}
+                          disabled={isFetchingUnsplash}
+                          data-testid="button-fetch-random-cover"
+                        >
+                          {isFetchingUnsplash ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              {t('upload.fetching', '가져오는 중...')}
+                            </>
+                          ) : (
+                            <>
+                              <ImagePlus className="mr-2 h-4 w-4" />
+                              {t('upload.fetchRandomCover', '커버랜덤생성')}
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('upload.songTitle', '음원 제목')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t('upload.songTitlePlaceholder', '예: 내 첫 번째 곡')} className="bg-background border-white/10" {...field} data-testid="input-title" />
+                      </FormControl>
+                      <FormDescription>{t('upload.songTitleDesc', '음원의 제목을 입력해주세요 (최대 100자)')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="artist"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('upload.artistName', '아티스트 이름')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t('upload.artistNamePlaceholder', '예: 본인 이름 또는 예명')} className="bg-background border-white/10" {...field} data-testid="input-artist" />
+                      </FormControl>
+                      <FormDescription>{t('upload.artistNameDesc', '본인의 이름이나 예명을 입력해주세요')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <FormLabel>{t('upload.mainGenre', '장르 (대분류)')}</FormLabel>
+                    <Select onValueChange={handleMainGenreChange} value={selectedMainGenre}>
+                      <SelectTrigger data-testid="select-main-genre">
+                        <SelectValue placeholder={t('upload.selectMainGenre', '대분류 선택')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.keys(mainGenres).map(g => (
+                          <SelectItem key={g} value={g}>{g}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {subGenres.length > 0 && (
+                    <div className="space-y-2">
+                      <FormLabel>{t('upload.subGenre', '장르 (소분류)')}</FormLabel>
+                      <Select onValueChange={handleSubGenreChange} value={selectedSubGenre}>
+                        <SelectTrigger data-testid="select-sub-genre">
+                          <SelectValue placeholder={t('upload.selectSubGenre', '소분류 선택')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {subGenres.map(g => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="tags"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('upload.tags', '태그 (쉼표로 구분)')}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t('upload.tagsPlaceholder', '예: 발라드, 겨울, 감성')} className="bg-background border-white/10" {...field} data-testid="input-tags" />
+                      </FormControl>
+                      <FormDescription>{t('upload.tagsDesc', '관련 키워드나 분위기를 쉼표(,)로 구분해 입력하세요')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="lyrics"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('upload.lyrics', '가사 (선택사항)')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('upload.lyricsPlaceholder', '가사를 입력하세요...')}
+                          className="bg-background border-white/10 min-h-[120px] resize-y"
+                          {...field}
+                          data-testid="input-lyrics"
+                        />
+                      </FormControl>
+                      <FormDescription>{t('upload.lyricsDesc', '일반 텍스트 또는 LRC 형식([00:15.00]가사)으로 입력하면 싱크 가사가 지원됩니다')}</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="isAi"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center gap-3 space-y-0">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value || false}
+                          onCheckedChange={field.onChange}
+                          data-testid="checkbox-ai"
+                        />
+                      </FormControl>
+                      <FormLabel className="font-normal">{t('upload.isAi', 'AI로 만든 음원입니다')}</FormLabel>
+                    </FormItem>
+                  )}
+                />
+
+                <Card className="p-4 border-white/10 bg-secondary/30">
+                  <div className="flex items-center gap-2 mb-4">
+                    <DollarSign className="w-5 h-5 text-primary" />
+                    <h3 className="font-semibold text-sm">{t('upload.monetization', '수익 창출 설정')}</h3>
+                    {(user as any)?.subscriptionTier === "premium" && (
+                      <span className="text-xs text-primary flex items-center gap-1 ml-auto">
+                        <Crown size={12} /> Premium
+                      </span>
+                    )}
+                  </div>
+                  <FormField
+                    control={form.control}
+                    name="isDownloadable"
+                    render={({ field }) => {
+                      const isPremium = (user as any)?.subscriptionTier === "premium";
+                      return (
+                        <FormItem className="flex flex-row items-center gap-3 space-y-0 mb-4">
+                          <FormControl>
+                            <Checkbox
+                              checked={isPremium ? (field.value || false) : false}
+                              disabled={!isPremium}
+                              onCheckedChange={(checked) => {
+                                if (!isPremium) {
+                                  toast({
+                                    title: t('upload.premiumRequired', '프리미엄 회원 전용'),
+                                    description: t('upload.premiumRequiredDesc', '프리미엄회원에 한해 수익활동이 가능합니다'),
+                                    variant: "destructive",
+                                  });
+                                  return;
+                                }
+                                field.onChange(checked);
+                              }}
+                              data-testid="checkbox-downloadable"
+                            />
+                          </FormControl>
+                          <div className="flex-1">
+                            <FormLabel className="font-normal flex items-center gap-1">
+                              <Download className="w-4 h-4" />
+                              {t('upload.allowDownload', '유료 다운로드 허용')}
+                            </FormLabel>
+                            <FormDescription className="text-xs">
+                              {isPremium
+                                ? t('upload.downloadDesc', '리스너가 이 음원을 구매하여 다운로드할 수 있습니다')
+                                : t('upload.premiumRequiredDesc', '프리미엄회원에 한해 수익활동이 가능합니다')}
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      );
+                    }}
+                  />
+
+                  {form.watch("isDownloadable") && (user as any)?.subscriptionTier === "premium" && (
+                    <FormField
+                      control={form.control}
+                      name="price"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('upload.downloadPrice', '다운로드 가격 (원)')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min={100}
+                              step={100}
+                              placeholder={t('upload.pricePlaceholder', '예: 1000')}
+                              className="bg-background border-white/10"
+                              value={field.value || ""}
+                              onChange={(e) => field.onChange(Number(e.target.value))}
+                              data-testid="input-price"
+                            />
+                          </FormControl>
+                          <FormDescription>{t('upload.priceDesc', '최소 100원부터 설정 가능합니다')}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </Card>
+
+                <Button 
+                  type="submit" 
+                  className="w-full bg-primary text-white font-semibold"
+                  disabled={isUploadingAudio || isUploadingImage || isCreating || isFetchingUnsplash || (uploadLimit?.limited === true)}
+                  data-testid="button-submit-upload"
+                >
+                  {(isUploadingAudio || isUploadingImage || isCreating) ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {t('upload.uploading', '업로드 중...')}
+                    </>
+                  ) : (
+                    t('upload.submitUpload', '음원 업로드')
+                  )}
+                </Button>
+              </form>
+            </Form>
+
+            <div className="flex items-center justify-between mt-6 flex-wrap gap-4">
+              <Link href="/">
+                <div className="flex items-center gap-2 text-primary cursor-pointer hover:underline" data-testid="link-back-home">
+                  <ArrowLeft size={16} />
+                  {t('upload.backToHome', '홈으로 돌아가기')}
+                </div>
+              </Link>
+              <Link href="/bulk-upload">
+                <Button variant="outline" size="sm" className="gap-2" data-testid="link-bulk-upload">
+                  <CloudUpload size={14} />
+                  {t('upload.bulkUpload', '대량 업로드')}
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      <Footer />
+      </div>
+    </PageTransition>
+  );
+}

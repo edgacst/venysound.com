@@ -36,14 +36,21 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useNotifications } from "@/hooks/use-user-profile";
+import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 export function Navigation() {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
+  const { toast } = useToast();
   const [location] = useLocation();
   const { data: notifications } = useNotifications();
+
+  const handleLogout = () => {
+    toast({ title: t("nav.logoutSuccess", "로그아웃되었습니다") });
+    setTimeout(() => logout(), 400);
+  };
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -222,7 +229,7 @@ export function Navigation() {
                       </Link>
                     </DropdownMenuItem>
                   )}
-                  <DropdownMenuItem onClick={() => logout()} className="text-red-400 focus:text-red-400" data-testid="button-logout">
+                  <DropdownMenuItem onClick={handleLogout} className="text-red-400 focus:text-red-400" data-testid="button-logout">
                     <LogOut size={16} className="mr-2" /> {t('nav.logout')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -319,7 +326,7 @@ export function Navigation() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <div 
-                    onClick={() => logout()} 
+                    onClick={handleLogout} 
                     className="flex items-center gap-2 px-4 py-2 text-red-400 cursor-pointer"
                   >
                     <LogOut size={18} />

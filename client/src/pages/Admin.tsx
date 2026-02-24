@@ -38,6 +38,9 @@ import {
   HardDrive,
   Landmark,
   Activity,
+  Calendar,
+  UserCheck,
+  Eye,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -98,6 +101,22 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 15000,
+  });
+
+  const { data: analytics, isLoading: loadingAnalytics } = useQuery<{
+    dailyVisitors: number;
+    totalVisitors: number;
+    pageViewsToday: number;
+    pageViewsTotal: number;
+  }>({
+    queryKey: ["/api/admin/analytics"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/analytics", { credentials: "include" });
+      if (!res.ok) return { dailyVisitors: 0, totalVisitors: 0, pageViewsToday: 0, pageViewsTotal: 0 };
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
   });
 
   const { data: adminPosts, isLoading: loadingPosts } = useQuery<any[]>({
@@ -336,6 +355,41 @@ export default function Admin() {
             </div>
             <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
               {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalComments ?? 0)}
+            </div>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          <Card className="p-4 text-center" data-testid="stat-daily-visitors">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Calendar size={14} /> {t('admin.dailyVisitors', '일일 방문자')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.dailyVisitors ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-total-visitors">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <UserCheck size={14} /> {t('admin.totalVisitors', '누적 방문자')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.totalVisitors ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-page-views-today">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Eye size={14} /> {t('admin.pageViewsToday', '오늘 페이지뷰')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.pageViewsToday ?? 0)}
+            </div>
+          </Card>
+          <Card className="p-4 text-center" data-testid="stat-page-views-total">
+            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
+              <Eye size={14} /> {t('admin.pageViewsTotal', '총 페이지뷰')}
+            </div>
+            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
+              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.pageViewsTotal ?? 0)}
             </div>
           </Card>
         </div>

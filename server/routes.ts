@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
+import crypto from "crypto";
 import { execSync } from "child_process";
 import { existsSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
 import archiver from "archiver";
@@ -121,6 +122,44 @@ export async function registerRoutes(
   // 배포 시 헬스 체크용 (인증 없음)
   app.get("/api/health", (_req, res) => {
     res.status(200).json({ ok: true });
+  });
+
+  // 사이트맵 (SEO) — /api 경로로 두어 정적·캐시와 겹치지 않게 함
+  app.get("/sitemap.xml", (_req, res) => res.redirect(301, "/api/sitemap.xml"));
+  app.get("/api/sitemap.xml", async (_req, res) => {
+    const base = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+    const staticPaths = [
+      "",
+      "/music",
+      "/popular",
+      "/explore",
+      "/community",
+      "/about",
+      "/pricing",
+      "/credits",
+      "/login",
+      "/register",
+      "/faq",
+      "/legal",
+      "/privacy",
+      "/guide",
+      "/file-guide",
+      "/suno-guide",
+    ];
+    const now = new Date().toISOString().slice(0, 10);
+    let urls = staticPaths.map(
+      (p) => `<url><loc>${base}${p || "/"}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${p ? "0.8" : "1.0"}</priority></url>`
+    );
+    try {
+      const { data: musicList } = await storage.getMusicList(undefined, undefined, undefined, 1, 10000);
+      for (const m of musicList) {
+        urls.push(`<url><loc>${base}/music/${m.id}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`);
+      }
+    } catch {
+      // DB 오류 시 정적 페이지만 포함
+    }
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
+    res.type("application/xml").send(xml);
   });
 
   // === Music Routes ===
@@ -888,6 +927,19 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // === Analytics (public: 방문 기록) ===
+  app.post("/api/analytics/visit", async (req, res) => {
+    const path = typeof req.body?.path === "string" ? req.body.path : "/";
+    let visitorKey = typeof req.body?.visitorKey === "string" ? req.body.visitorKey : null;
+    if (!visitorKey) visitorKey = crypto.randomUUID();
+    try {
+      await storage.recordVisit(visitorKey, path);
+    } catch (e) {
+      console.error("[analytics/visit] recordVisit failed (table may be missing – run db:push):", e);
+    }
+    res.json({ ok: true, visitorKey });
+  });
+
   // === Admin Middleware ===
   const isAdmin = async (req: any, res: any, next: any) => {
     if (!req.user?.claims?.sub) {
@@ -908,6 +960,16 @@ export async function registerRoutes(
   app.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
     const stats = await storage.getAdminStats();
     res.json(stats);
+  });
+
+  app.get("/api/admin/analytics", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const analytics = await storage.getAdminAnalytics();
+      res.json(analytics);
+    } catch (e) {
+      console.error("[admin/analytics]", e);
+      res.json({ dailyVisitors: 0, totalVisitors: 0, pageViewsToday: 0, pageViewsTotal: 0 });
+    }
   });
 
   app.get("/api/admin/posts", isAuthenticated, isAdmin, async (req, res) => {

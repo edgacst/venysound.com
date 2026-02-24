@@ -7,24 +7,47 @@
 코드만 바꿔서 **사이트를 새 버전으로 올리고 싶을 때**는 아래만 하면 됩니다.  
 (처음 서버 세팅은 이미 되어 있다고 가정합니다.)
 
-### GitHub에 푸시한 경우 (가장 흔함)
+### 지금 Git에 푸시해 놓고 업데이트만 못 하고 있을 때
 
-1. **로컬에서** 코드 수정 후 **GitHub에 푸시** (이미 하셨다면 이 단계는 끝).
-2. **서버(Hostinger)에 SSH로 접속**한 뒤, 터미널에서 **아래 한 줄만** 복사해서 붙여넣고 Enter.
+GitHub에는 올려 뒀는데 **서버(사이트)에는 아직 반영이 안 된 상태**라면, **서버에 SSH 접속해서 아래만 실행**하면 됩니다.
+
+**1) 배포 폴더가 `/var/www/venysound` 인 경우**  
+(Hostinger 터미널에서 복사 → 붙여넣기 → Enter)
 
 ```bash
 cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart all
 ```
 
-- **배포 경로가 다르면** (예: `/var/www/venysound/app_new`) `cd` 뒤 경로만 실제 경로로 바꾸세요.  
-  예: `cd /var/www/venysound/app_new && git pull && ...`
-- **`pm2 restart all` 해도 재시작될 프로세스가 0개**라면, 앱이 크래시해서 죽어 있는 상태일 수 있습니다.  
-  그때는 `pm2 start ecosystem.config.cjs --env production` (또는 사용 중인 설정 파일)으로 **한 번 다시 시작**한 뒤, `pm2 save` 해 두세요.
+**2) 배포 폴더가 `/var/www/venysound/app_new` 인 경우**
+
+```bash
+cd /var/www/venysound/app_new && git pull && npm install --omit=dev && npm run build && pm2 restart all
+```
+
+**3) `pm2 restart all` 했는데 “재시작할 프로세스 0개” 라고 나오면**  
+앱이 꺼져 있는 상태이므로, **한 번 다시 켜기**까지 해야 합니다. 같은 폴더에서:
+
+```bash
+pm2 start ecosystem.config.cjs --env production
+pm2 save
+```
+
+끝나면 브라우저에서 사이트 새로고침해서 새 버전이 보이는지 확인하면 됩니다.
+
+---
+
+### GitHub에 푸시한 경우 (가장 흔함)
+
+1. **로컬에서** 코드 수정 후 **GitHub에 푸시** (이미 하셨다면 이 단계는 끝).
+2. **서버(Hostinger)에 SSH로 접속**한 뒤, 터미널에서 **위 “지금 Git에 푸시해 놓고…”** 의 1) 또는 2) 한 줄 실행.
+
+- **배포 경로가 다르면** (예: `/var/www/venysound/app_new`) 위 2) 번 블록을 쓰면 됩니다.
+- **`pm2 restart all` 해도 재시작될 프로세스가 0개**라면 위 3) 번대로 `pm2 start` 후 `pm2 save` 하세요.
 - `git pull` 이 GitHub에서 방금 푸시한 코드를 서버로 가져옵니다.  
 - 끝나면 **새 버전으로 반영**된 겁니다.  
 - 이때 **몇 초~几十 초** 사이트가 잠깐 멈췄다가 다시 뜰 수 있습니다. 정상입니다.
 
-**정리:** GitHub 푸시 → 서버에서 위 한 줄 실행. (경로·PM2는 위 참고.)
+**정리:** GitHub 푸시 → 서버 SSH 접속 → 위 1) 또는 2) 한 줄 실행. (PM2가 꺼져 있으면 3)까지.)
 
 ---
 
@@ -55,6 +78,41 @@ cd /var/www/venysound && npm install --omit=dev && npm run build && pm2 restart 
 | **PM2** | 서버 안에서 “우리 사이트 프로그램을 켜 두고, 꺼지면 다시 켜 주는” 도구. `pm2 restart` = 프로그램 한 번 재시작. |
 | **Nginx** | 인터넷에서 들어온 요청(사이트 접속)을 우리 사이트 프로그램으로 넘겨 주는 문지기. |
 | **SSH** | 내 컴퓨터에서 서버 컴퓨터 안으로 들어가서 명령을 치는 방법. Hostinger 패널에서 “터미널”로 들어가면 됩니다. |
+
+---
+
+## Hostinger 말고 더 쉽게 배포하는 방법 (다른 곳)
+
+Hostinger VPS는 SSH, Nginx, PM2, 포트 스위칭 등을 직접 해야 해서 부담스럽다면, **GitHub만 연결하면 푸시할 때마다 자동으로 배포해 주는 서비스**를 쓰면 훨씬 수월합니다. 아래는 그런 서비스들입니다.
+
+| 서비스 | 쉬운 점 | 참고 |
+|--------|---------|------|
+| **Render** (render.com) | 가입 후 “Web Service” + “PostgreSQL” 만들고 GitHub 연결 → 푸시 시 자동 배포. | 무료 플랜 있음. 파일 저장은 Render Disk(유료) 또는 S3 연동. |
+| **Railway** (railway.app) | GitHub 연결 후 푸시하면 자동 배포. DB·Volume 추가 쉬움. | 무료 크레딧. Volume으로 업로드 폴더 유지 가능. |
+| **Fly.io** (fly.io) | GitHub 연동, 푸시 시 자동 배포. 전 세계 엣지. | 무료 티어 있음. `fly volumes` 로 디스크 유지. |
+| **Koyeb** (koyeb.com) | GitHub 연결 후 자동 배포. 웹 대시보드만으로 설정. | 무료 플랜 있음. |
+| **Zeabur** (zeabur.com) | GitHub 연결 후 자동 배포. 한국어 문서·커뮤니티 있음. | 사용량 기반 과금. |
+| **DigitalOcean App Platform** (digitalocean.com) | GitHub 연결 후 자동 빌드·배포. Managed DB 선택 가능. | 유료부터. |
+| **Northflank** (northflank.com) | GitHub 연동, 자동 배포. DB·스토리지 추가 가능. | 무료 티어 있음. |
+
+**Render 말고 쓰고 싶을 때**  
+- **Railway** · **Fly.io** · **Koyeb** · **Zeabur** 모두 “GitHub 연결 → Build/Start 명령·환경 변수 넣기” 면 됩니다.  
+- Node + PostgreSQL 지원하고, 푸시 시 자동 배포되는 점은 같습니다.  
+- 음원 등 **파일 보존**이 필요하면 각 서비스의 **Volume/디스크** 기능을 쓰거나, 나중에 S3 등으로 바꾸면 됩니다.
+
+**공통으로 할 일:**  
+- 해당 사이트 가입 → “새 앱 / New Web Service” 등에서 **GitHub 저장소 선택** (edgacst/venysound.com 등).  
+- **Build 명령:** `npm install && npm run build`  
+- **Start 명령:** `npm start`  
+- **환경 변수**는 지금 `.env` 에 있는 것들을 대시보드 “Environment”에 그대로 넣기.  
+- **DB**는 각 서비스가 제공하는 PostgreSQL을 만들고, 주소를 `DATABASE_URL` 로 넣으면 됩니다.
+
+**파일(음원 업로드) 처리:**  
+- Render / Railway / App Platform 모두 **재배포 시 기본 디스크는 비워질 수 있음.**  
+- **Railway**는 Volume을 붙여서 특정 폴더(예: `local-uploads`)를 유지할 수 있음.  
+- **Render**는 Render Disk(유료) 또는 나중에 S3/GCS 연동으로 바꾸는 방법이 있음.
+
+정리하면, **“배포가 쉽다”** 는 목적만 보면 **Render** 또는 **Railway**가 Hostinger VPS보다 훨씬 수월합니다. GitHub 푸시만 하면 되고, SSH·Nginx·PM2는 신경 쓰지 않아도 됩니다.
 
 ---
 
@@ -228,9 +286,76 @@ ssh root@서버IP "cd /var/www/venysound && npm install && npm run build && pm2 
 
 ---
 
-## 무중단 배포 (5000/5001 스위칭)
+## Blue-green 말고 단순 배포만 할 때 (추천)
 
-서비스 중인 포트(**5000**)와 배포 검증용 포트(**5001**)를 번갈아 쓰면, 배포 중에도 기존 버전이 계속 서비스됩니다.
+**Blue-green(5000/5001 스위칭)을 쓰다가 서비스가 두 번씩 다운됐다면**, 그 방식은 당장 쓰지 말고 **한 포트만 쓰는 단순 배포**로 가는 게 안전합니다.
+
+**단순 배포란**
+- **앱은 5000 포트 하나만** 띄움. (5001은 안 씀.)
+- **Nginx는 항상 5000만** 보게 설정해 두고, **절대 바꾸지 않음.**
+- 배포할 때마다: 서버에서 `git pull` → `npm run build` → `pm2 restart all` **한 번만** 실행.
+
+**단점**  
+- 재배포하는 **10~30초 동안** 사이트가 잠깐 멈췄다가 다시 뜹니다. (한 번만 멈추고 끝.)
+
+**장점**  
+- 포트 스위칭·Nginx upstream 불일치로 인한 **서비스 다운이 없음.**  
+- 실수할 여지가 적어서, Blue-green 때문에 미칠 일이 없습니다.
+
+**지금 Nginx가 5001을 보고 있다면**  
+→ 한 번만 5000으로 되돌려 두면 됩니다. (이후에는 스위칭 안 함.)
+
+```bash
+sudo /root/switch-to-port.sh 5000
+```
+
+**이후 배포**  
+- 위 “지금 Git에 푸시해 놓고…” 에 있는 **1) 또는 2) 한 줄**만 실행하면 됩니다.  
+- 5001, 스위칭 스크립트, safe-switch 는 **신경 쓰지 않아도 됩니다.**
+
+### 신버전은 안 뜨고 구버전만 둘 다 떠 있어서 에러 나는 경우
+
+**원인:**  
+앱을 **두 군데**(또는 두 포트)에서 띄워 놓고, **신버전은 안 올리고** 둘 다 예전 코드로만 돌리다 보니, 서로 충돌하거나 Nginx가 잘못된 쪽을 보면서 에러가 납니다.
+
+**해결:**  
+- **앱은 한 군데(한 포트)만** 띄웁니다.  
+- **배포할 때도 그 한 군데에서만** `git pull` → `npm run build` → `pm2 restart` 를 합니다.  
+  → 그러면 **그 한 개가 곧 신버전**이 됩니다. 구버전이랑 둘 다 떠 있을 일이 없습니다.
+
+**지금 할 일 (한 번만 정리):**
+
+1. **PM2에서 앱이 몇 개 떠 있는지 확인**
+   ```bash
+   pm2 list
+   ```
+2. **한 개만 남기고 나머지는 끄기**  
+   - 5000만 쓸 거면, 5000에서 도는 앱만 남기고 **5001용 앱이 있으면 중지**합니다.  
+     ```bash
+     pm2 stop venysound-5001
+     # 또는 5001용으로 켠 앱 이름이 다르면 그 이름으로 stop
+     ```
+   - **배포 폴더도 하나만** 쓰기로 합니다. (`/var/www/venysound` **또는** `app_new` 중 하나만 정해서, 그 폴더에서만 pull·build·restart.)
+3. **Nginx는 5000만 보게**
+   ```bash
+   sudo /root/switch-to-port.sh 5000
+   ```
+4. **이후 배포**  
+   - 정한 **그 폴더 하나**에서만:  
+     ```bash
+     cd /var/www/venysound && git pull && npm install --omit=dev && npm run build && pm2 restart all
+     ```  
+     (경로가 `app_new` 면 `cd /var/www/venysound/app_new && ...` 로.)
+
+**정리:**  
+신버전을 안 띄우고 구버전만 둘 다 띄우면 에러 난다 → **앱은 한 개만 띄우고, 그 한 군데만 “신버전으로 갱신”하면** 됩니다. 두 개 동시에 쓰지 말고, 한 개만 쓰고 그 한 개를 항상 최신으로 유지하세요.
+
+---
+
+## 무중단 배포 (5000/5001 스위칭) — 복잡함, 다운 나면 위 단순 배포로
+
+서비스 중인 포트(**5000**)와 배포 검증용 포트(**5001**)를 번갈아 쓰면, 배포 중에도 기존 버전이 계속 서비스됩니다.  
+**다만 포트·Nginx 설정을 잘못 건드리면 서비스가 내려갈 수 있어서**, 이미 Blue-green 때문에 다운을 겪었다면 **위 “Blue-green 말고 단순 배포만”** 을 쓰는 것을 권장합니다.
 
 ### 구조
 
@@ -329,6 +454,103 @@ sudo /root/switch-to-port.sh 5001
 - 앱을 두 세트(예: `app-5000`, `app-5001`)로 두고, 각각 `PORT=5000`, `PORT=5001` 으로 기동  
 - 또는 `ecosystem.config.cjs`에 앱을 두 개 정의 (name: `venysound-5000`, `venysound-5001`, env: PORT 5000/5001)  
 - DB, `.env`, `local-uploads` 등은 두 앱이 같은 값을 보도록 공유하거나 심볼릭 링크로 맞춥니다.
+
+### 3-1. 5001에서 테스트한 뒤 스위칭하기 (Hostinger, 단계별)
+
+**목표:** 신버전이 5000에 바로 올라가서 에러 나는 게 걱정되니까, **5001에서 먼저 띄워 보고** 괜찮을 때만 Nginx를 5001로 바꾸고 싶은 경우.
+
+**전제:**  
+- **폴더 두 개**가 있어야 합니다.  
+  - 하나는 **지금 서비스 중인 5000용** (예: `/var/www/venysound`),  
+  - 하나는 **테스트용 5001** (예: `/var/www/venysound/app_new`).  
+- Nginx upstream 설정에는 **5000**과 **5001** 두 줄이 다 있고, 지금은 **5000만** 주석 해제된 상태.  
+- `switch-to-port.sh` / `safe-switch.sh` 는 서버 `/root/` 에 이미 있음.
+
+**한 번만 할 초기 설정**
+
+1. **5000 쪽만 서비스 중이게**  
+   - Nginx가 5000을 보게: `sudo /root/switch-to-port.sh 5000`  
+   - 5000 앱만 켜고, 5001 앱은 끄기: `pm2 stop venysound-5001` (있을 경우)
+
+2. **5001용 폴더에서 앱을 5001 포트로 띄울 수 있게**  
+   - 5001용 폴더(예: `app_new`)에서 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 한 번 띄워 보거나,  
+   - 또는 5001 전용 ecosystem 파일을 만들어서 `pm2 start ecosystem.5001.config.cjs` 처럼 쓰면 됩니다.  
+   - (같은 서버에서 5000·5001 두 프로세스가 **다른 폴더**를 쓰면, 한쪽만 갱신해도 됨.)
+
+**배포할 때마다 (신버전을 5001에서 테스트 후 스위칭)**
+
+1. **5001용 폴더**로 가서 **신버전만** 올리기 (5000 폴더는 건드리지 않음).  
+   ```bash
+   cd /var/www/venysound/app_new
+   git pull
+   npm install --omit=dev
+   npm run build
+   ```
+2. **5001 앱 재시작** (같은 폴더에서).  
+   ```bash
+   pm2 restart venysound-5001
+   ```
+   (처음이면 `PORT=5001 pm2 start dist/index.cjs --name venysound-5001` 로 켜기.)
+3. **5001이 정상인지 확인**  
+   ```bash
+   curl -sf http://127.0.0.1:5001/api/health && echo " OK"
+   ```  
+   - OK가 나오면 브라우저로 `http://서버IP:5001` (또는 테스트용 URL) 한 번 더 확인.
+4. **괜찮으면 Nginx만 5001로 바꾸기**  
+   ```bash
+   sudo /root/safe-switch.sh 5001
+   ```  
+   (또는 `sudo /root/switch-to-port.sh 5001`)
+5. **사이트 접속해서** 신버전이 보이는지 확인.  
+   - 문제 있으면 **바로 롤백:** `sudo /root/switch-to-port.sh 5000`
+
+**다음 배포 때**  
+- 그때는 **5000 쪽 폴더**에 신버전을 올리고, 5000 앱 재시작한 뒤, 테스트하고 Nginx를 **5000**으로 스위칭하면 됩니다. (5000 ↔ 5001 번갈아 가며 쓰는 방식.)
+
+**정리:**  
+Hostinger에서 “5001에서 테스트하고 스위칭”하려면, **5001용 폴더를 하나 두고, 그 폴더에서만 pull·build·restart 한 뒤** 5001 응답 확인하고 `safe-switch.sh 5001` 로 바꾸면 됩니다. 5000은 그대로 두면 되고, 스위칭 후에만 트래픽이 5001로 갑니다.
+
+### 4. 포트 불일치 해결 (앱은 5000인데 Nginx는 5001을 보는 경우)
+
+로그에 **“serving on port 5000”** 이 나오는데, Nginx는 5001을 바라보고 있으면 **사이트가 안 뜨거나 502 등**이 납니다. 아래 순서로 맞추면 됩니다.
+
+**1단계: 앱이 실제로 어떤 포트에서 떠 있는지 확인**
+
+```bash
+pm2 status
+# 로그에서 확인
+pm2 logs --lines 30 | grep -i port
+```
+
+- 한 개만 떠 있다면 보통 **5000**입니다 (ecosystem에서 `PORT=5000`).
+
+**2단계: Nginx가 지금 어떤 포트를 보는지 확인**
+
+```bash
+grep -A2 "upstream venysound_backend" /etc/nginx/sites-available/venysound.com
+```
+
+- `server 127.0.0.1:5000;` 이 주석 없이 있으면 → Nginx는 **5000**을 봄.  
+- `server 127.0.0.1:5001;` 이 주석 없이 있으면 → Nginx는 **5001**을 봄.
+
+**3단계: 둘을 맞추기**
+
+- **앱이 5000에서만 떠 있는데 Nginx가 5001을 보고 있으면**  
+  → 5001에는 아무것도 없으니 트래픽이 실패합니다.  
+  **Nginx를 5000으로 되돌리세요.**
+
+  ```bash
+  sudo /root/switch-to-port.sh 5000
+  ```
+
+- **앱을 5001에서도 띄우고, 트래픽을 5001로 넘기려면**  
+  → 5001 포트로 떠 있는 앱이 있어야 합니다.  
+  ecosystem에서 `PORT=5001` 인 앱을 하나 더 띄우거나, 5001용으로 `pm2 start` 한 뒤,  
+  그다음 `sudo /root/switch-to-port.sh 5001` 로 Nginx를 5001로 바꾸면 됩니다.
+
+**정리:**  
+- 한 포트만 쓸 때: **앱 포트 = Nginx upstream 포트** 로 맞추기.  
+- 지금 앱이 5000이면 → `switch-to-port.sh 5000` 으로 Nginx를 5000에 맞추면 해결됩니다.
 
 ---
 

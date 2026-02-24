@@ -12,9 +12,8 @@ export function serveStatic(app: Express) {
 
   app.use(express.static(distPath));
 
-  // SPA: serve index.html for any GET that didn't match a file (so /music/190 etc. load the app)
-  // Express 5: wildcard must be named (e.g. /*splat), plain * causes "Missing parameter name"
-  app.get("/*splat", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
-  });
+  const indexPath = path.resolve(distPath, "index.html");
+  app.get("/", (_req, res) => res.sendFile(indexPath));
+  // SPA: serve index.html for any other GET (e.g. /music/190). Express 5: /*splat does not match "/"
+  app.get("/*splat", (_req, res) => res.sendFile(indexPath));
 }

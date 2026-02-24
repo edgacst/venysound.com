@@ -1,10 +1,56 @@
-import { Switch, Route } from "wouter";
+import { useEffect, useRef } from "react";
+import { Router, Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
 import { LoginModal } from "@/components/LoginModal";
+
+const VISITOR_KEY = "vkey";
+
+/** 앱 전역에서 /ws 연결 1개 유지 → 접속자 수 집계에 포함 */
+function VisitorCountSocket() {
+  const wsRef = useRef<WebSocket | null>(null);
+  useEffect(() => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    wsRef.current = ws;
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, []);
+  return null;
+}
+
+/** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰 집계용) */
+function AnalyticsVisit() {
+  const [pathname] = useLocation();
+  useEffect(() => {
+    const path = pathname || "/";
+    let visitorKey: string | null = null;
+    try {
+      visitorKey = localStorage.getItem(VISITOR_KEY);
+    } catch {}
+    fetch("/api/analytics/visit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ path, visitorKey }),
+    })
+      .then((r) => r.ok && r.json())
+      .then((data) => {
+        if (data?.visitorKey) {
+          try {
+            localStorage.setItem(VISITOR_KEY, data.visitorKey);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [pathname]);
+  return null;
+}
 import Home from "@/pages/Home";
 import Explore from "@/pages/Explore";
 import Popular from "@/pages/Popular";
@@ -33,7 +79,7 @@ import SunoGuide from "@/pages/SunoGuide";
 import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 
-function Router() {
+function Routes() {
   return (
     <Switch>
       <Route path="/" component={Home} />
@@ -72,12 +118,16 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Router />
-        <GlobalAudioPlayer />
-        <LoginModal />
-        <Toaster />
-      </TooltipProvider>
+      <Router>
+        <TooltipProvider>
+          <VisitorCountSocket />
+          <AnalyticsVisit />
+          <Routes />
+          <GlobalAudioPlayer />
+          <LoginModal />
+          <Toaster />
+        </TooltipProvider>
+      </Router>
     </QueryClientProvider>
   );
 }

@@ -35,9 +35,10 @@ export default function Login() {
       const res = await fetch("/api/auth/dev-login", { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
-        window.location.reload();
+        toast({ title: t("login.loginSuccess", "로그인되었습니다") });
+        setTimeout(() => { window.location.href = "/"; }, 800);
       } else {
-        alert(data.error || t("login.loginFailed", "로그인 실패"));
+        toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error, variant: "destructive" });
         setDevLoggingIn(false);
       }
     } catch {
@@ -61,7 +62,8 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        window.location.href = "/";
+        toast({ title: t("login.loginSuccess", "로그인되었습니다") });
+        setTimeout(() => { window.location.href = "/"; }, 800);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }

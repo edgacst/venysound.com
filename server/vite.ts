@@ -1,4 +1,4 @@
-import { type Express } from "express";
+import express, { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
 import viteConfig from "../vite.config";
@@ -35,33 +35,22 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use(vite.middlewares);
 
-  // Express 5: wildcard must be named; {*path} → /*splat for path-to-regexp
-  app.use("/*splat", async (req, res, next) => {
-    // WebSocket upgrade: do not send HTML; let Vite's upgrade listener handle it
-    if (req.headers.upgrade === "websocket") {
-      return next();
-    }
+  const serveSpa = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.headers.upgrade === "websocket") return next();
     const url = req.originalUrl;
-
     try {
-      const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "..",
-        "client",
-        "index.html",
-      );
-
-      // always reload the index.html file from disk incase it changes
+      const clientTemplate = path.resolve(import.meta.dirname, "..", "client", "index.html");
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`,
-      );
+      template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
     }
-  });
+  };
+
+  app.get("/", serveSpa);
+  // Express 5: wildcard must be named; /*splat does not match "/" so we handle "/" above
+  app.use("/*splat", serveSpa);
 }

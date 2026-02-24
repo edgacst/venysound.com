@@ -136,6 +136,14 @@ export const purchases = pgTable("purchases", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Analytics visits (일일/누적 방문자, 페이지뷰 집계용)
+export const analyticsVisits = pgTable("analytics_visits", {
+  id: serial("id").primaryKey(),
+  visitedAt: timestamp("visited_at").defaultNow().notNull(),
+  visitorKey: text("visitor_key").notNull(),
+  path: text("path").notNull(),
+});
+
 // === RELATIONS ===
 
 export const usersRelations = relations(users, ({ many }) => ({
