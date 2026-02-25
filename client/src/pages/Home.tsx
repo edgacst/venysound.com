@@ -85,7 +85,7 @@ export default function Home() {
     <div className="min-h-screen bg-background flex flex-col pb-24">
       <Dialog open={showAnnouncement} onOpenChange={(open) => !open && setAnnouncementDismissed(true)}>
         <DialogContent
-          className="sm:max-w-md p-0 overflow-hidden border-0"
+          className={`sm:max-w-md p-0 overflow-hidden ${activeAnnouncement?.imageUrl ? "border-2 border-white/30 shadow-2xl shadow-black/60 ring-2 ring-white/10" : ""}`}
           style={activeAnnouncement?.imageUrl ? {
             backgroundImage: `url(${activeAnnouncement.imageUrl.startsWith("http") ? activeAnnouncement.imageUrl : resolveStorageUrl(activeAnnouncement.imageUrl)})`,
             backgroundSize: "cover",
@@ -93,20 +93,20 @@ export default function Home() {
             minHeight: "320px",
           } : undefined}
         >
-          <div className={activeAnnouncement?.imageUrl ? "absolute inset-0 bg-black/50" : ""} />
+          <div className={activeAnnouncement?.imageUrl ? "absolute inset-0 bg-black/60" : ""} />
           <div className={`relative p-5 ${activeAnnouncement?.imageUrl ? "text-white" : ""}`}>
             <DialogHeader>
-              <DialogTitle className={activeAnnouncement?.imageUrl ? "text-white" : ""}>
+              <DialogTitle className={activeAnnouncement?.imageUrl ? "text-white drop-shadow-md" : ""}>
                 {t('home.announcementTitle', '공지')}
               </DialogTitle>
             </DialogHeader>
-            <div className={`whitespace-pre-wrap text-sm py-2 ${activeAnnouncement?.imageUrl ? "text-white/95" : "text-muted-foreground"}`}>
+            <div className={`whitespace-pre-wrap text-sm py-2 ${activeAnnouncement?.imageUrl ? "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" : "text-muted-foreground"}`}>
               {activeAnnouncement?.content}
             </div>
             <Button
-              className="w-full mt-2"
+              className={`w-full mt-2 ${activeAnnouncement?.imageUrl ? "bg-white text-black hover:bg-white/90 border border-white/50" : ""}`}
               onClick={() => setAnnouncementDismissed(true)}
-              variant={activeAnnouncement?.imageUrl ? "secondary" : "default"}
+              variant="default"
             >
               {t('home.announcementConfirm', '확인')}
             </Button>
