@@ -10,6 +10,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
 import { Trans, useTranslation } from 'react-i18next';
+import { resolveStorageUrl } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
@@ -39,7 +40,7 @@ export default function Home() {
   const [currentBanner, setCurrentBanner] = useState(0);
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
 
-  const { data: activeAnnouncement } = useQuery<{ id: number; content: string; startsAt: string; endsAt: string } | null>({
+  const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string } | null>({
     queryKey: ["/api/announcement/active"],
     queryFn: async () => {
       const res = await fetch("/api/announcement/active");
@@ -86,6 +87,15 @@ export default function Home() {
           <DialogHeader>
             <DialogTitle>{t('home.announcementTitle', '공지')}</DialogTitle>
           </DialogHeader>
+          {activeAnnouncement?.imageUrl ? (
+            <div className="mb-3 rounded-md overflow-hidden bg-muted">
+              <img
+                src={activeAnnouncement.imageUrl.startsWith("http") ? activeAnnouncement.imageUrl : resolveStorageUrl(activeAnnouncement.imageUrl)}
+                alt=""
+                className="w-full max-h-48 object-contain"
+              />
+            </div>
+          ) : null}
           <div className="whitespace-pre-wrap text-sm text-muted-foreground py-2">{activeAnnouncement?.content}</div>
           <Button className="w-full mt-2" onClick={() => setAnnouncementDismissed(true)}>
             {t('home.announcementConfirm', '확인')}

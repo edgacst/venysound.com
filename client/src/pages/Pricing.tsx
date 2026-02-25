@@ -193,7 +193,7 @@ export default function Pricing() {
             <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
               <Card className="p-8 relative" data-testid="card-free-plan">
                 <div className="mb-6">
-                  <h3 className="text-xl font-bold mb-2">Free</h3>
+                  <h3 className="text-xl font-bold mb-2">{t('pricing.freePlanName', 'Free')}</h3>
                   <p className="text-muted-foreground text-sm">{t('pricing.freeDescription', '기본적인 음악 스트리밍')}</p>
                 </div>
                 <div className="mb-6">
@@ -233,7 +233,7 @@ export default function Pricing() {
                 <div className="mb-6">
                   <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
                     <Crown size={20} className="text-yellow-500" />
-                    Premium
+                    {t('pricing.premiumPlanName', 'Premium')}
                   </h3>
                   <p className="text-muted-foreground text-sm">{t('pricing.premiumDescription', '모든 기능을 무제한으로')}</p>
                 </div>
@@ -319,7 +319,7 @@ export default function Pricing() {
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간')} {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}을 아래 계좌로 입금해 주시면 즉시 확인 후 프리미엄이 적용됩니다.
+                  {t('pricing.bankModalInstruction', '{{period}} {{amount}}원을 아래 계좌로 입금해 주시면 즉시 확인 후 프리미엄이 적용됩니다.', { period: billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간'), amount: displayPrice.toLocaleString("ko-KR") })}
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">

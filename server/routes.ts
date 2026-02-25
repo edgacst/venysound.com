@@ -1083,6 +1083,7 @@ export async function registerRoutes(
       res.json({
         id: announcement.id,
         content: announcement.content,
+        imageUrl: announcement.imageUrl ?? null,
         startsAt: announcement.startsAt.toISOString(),
         endsAt: announcement.endsAt.toISOString(),
       });
@@ -1104,7 +1105,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/site-announcements", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const { content, startsAt, endsAt } = req.body;
+      const { content, imageUrl, startsAt, endsAt } = req.body;
       if (!content || typeof content !== "string" || !startsAt || !endsAt) {
         return res.status(400).json({ message: "content, startsAt, endsAt가 필요합니다" });
       }
@@ -1113,13 +1114,14 @@ export async function registerRoutes(
       if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
         return res.status(400).json({ message: "시작·종료 일시가 유효하지 않습니다" });
       }
-      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), startsAt: start, endsAt: end });
+      const imageUrlVal = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : null;
+      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), imageUrl: imageUrlVal, startsAt: start, endsAt: end });
       res.json({ ...saved, startsAt: saved.startsAt.toISOString(), endsAt: saved.endsAt.toISOString() });
     } catch (e: any) {
       console.error("[admin/site-announcements POST]", e);
       const msg = e?.message || "";
       const hint = msg.includes("does not exist") || msg.includes("relation")
-        ? " DB 테이블이 없을 수 있습니다. deploy/site-announcements.sql 실행 여부를 확인하세요."
+        ? " DB 테이블이 없습니다. 서버에서 npm run db:site-announcements 실행 후 다시 시도하세요."
         : "";
       res.status(500).json({ message: "저장에 실패했습니다." + hint });
     }

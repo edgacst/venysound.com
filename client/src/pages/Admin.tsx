@@ -81,6 +81,7 @@ export default function Admin() {
   const backupPwRef = useRef<HTMLInputElement>(null);
   const [withdrawalNotes, setWithdrawalNotes] = useState<Record<number, string>>({});
   const [announcementContent, setAnnouncementContent] = useState("");
+  const [announcementImageUrl, setAnnouncementImageUrl] = useState("");
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
 
@@ -161,7 +162,7 @@ export default function Admin() {
     refetchInterval: 60000,
   });
 
-  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; startsAt: string; endsAt: string; createdAt: string }[]>({
+  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string; createdAt: string }[]>({
     queryKey: ["/api/admin/site-announcements"],
     queryFn: async () => {
       const res = await fetch("/api/admin/site-announcements", { credentials: "include" });
@@ -172,7 +173,7 @@ export default function Admin() {
   });
 
   const saveAnnouncementMutation = useMutation({
-    mutationFn: async (body: { content: string; startsAt: string; endsAt: string }) => {
+    mutationFn: async (body: { content: string; imageUrl?: string | null; startsAt: string; endsAt: string }) => {
       const res = await fetch("/api/admin/site-announcements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -187,6 +188,7 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/site-announcements"] });
       toast({ title: t('admin.announcementSaved', '공지가 저장되었습니다. 설정한 기간에 메인 접속 시 팝업으로 노출됩니다.') });
       setAnnouncementContent("");
+      setAnnouncementImageUrl("");
       setAnnouncementStartsAt("");
       setAnnouncementEndsAt("");
     },
@@ -1089,6 +1091,48 @@ export default function Admin() {
                 data-testid="textarea-announcement-content"
               />
             </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.announcementImage', '공지 이미지 (선택)')}</label>
+              <Input
+                value={announcementImageUrl}
+                onChange={(e) => setAnnouncementImageUrl(e.target.value)}
+                placeholder={t('admin.announcementImagePlaceholder', '이미지 URL 또는 업로드 후 경로')}
+                className="mb-2"
+                data-testid="input-announcement-image"
+              />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                id="admin-announcement-image-upload"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  const res = await fetch("/api/uploads/local", { method: "POST", body: formData, credentials: "include" });
+                  if (!res.ok) {
+                    toast({ title: t('admin.imageUploadFailed', '이미지 업로드 실패'), variant: "destructive" });
+                    return;
+                  }
+                  const data = await res.json();
+                  if (data?.objectPath) setAnnouncementImageUrl(data.objectPath);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => document.getElementById("admin-announcement-image-upload")?.click()}
+                data-testid="button-announcement-image-upload"
+              >
+                {t('admin.uploadImage', '이미지 업로드')}
+              </Button>
+              {announcementImageUrl ? (
+                <p className="text-xs text-muted-foreground mt-1 truncate">{announcementImageUrl}</p>
+              ) : null}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">{t('admin.announcementStartsAt', '노출 시작')}</label>
@@ -1131,6 +1175,7 @@ export default function Admin() {
                 }
                 saveAnnouncementMutation.mutate({
                   content: announcementContent.trim(),
+                  imageUrl: announcementImageUrl.trim() || null,
                   startsAt: start.toISOString(),
                   endsAt: end.toISOString(),
                 });

@@ -192,7 +192,7 @@ export default function BulkUpload() {
       if (isPremium) {
         const downloadable = track.isDownloadable ?? false;
         payload.isDownloadable = downloadable;
-        payload.price = downloadable ? (track.price ?? 0) : 0;
+        payload.price = downloadable ? (track.price ?? globalPrice ?? 0) : 0;
       }
       await createMusic(payload);
 

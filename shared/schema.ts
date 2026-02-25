@@ -154,6 +154,7 @@ export const analyticsVisits = pgTable("analytics_visits", {
 export const siteAnnouncements = pgTable("site_announcements", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
+  imageUrl: text("image_url"),
   startsAt: timestamp("starts_at").notNull(),
   endsAt: timestamp("ends_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),

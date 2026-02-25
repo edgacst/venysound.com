@@ -90,9 +90,9 @@ export interface IStorage {
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
   getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
-  getActiveSiteAnnouncement(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date } | null>;
-  getSiteAnnouncements(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
-  saveSiteAnnouncement(data: { content: string; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date }>;
+  getActiveSiteAnnouncement(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null>;
+  getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
+  saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
   deleteSiteAnnouncement(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
@@ -1224,35 +1224,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Site announcement popup (admin)
-  async getActiveSiteAnnouncement(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date } | null> {
+  async getActiveSiteAnnouncement(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null> {
     const now = new Date();
     const [row] = await db.select().from(siteAnnouncements)
       .where(and(lte(siteAnnouncements.startsAt, now), gte(siteAnnouncements.endsAt, now)))
       .orderBy(desc(siteAnnouncements.createdAt))
       .limit(1);
-    return row ? { id: row.id, content: row.content, startsAt: row.startsAt, endsAt: row.endsAt } : null;
+    return row ? { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt } : null;
   }
 
-  async getSiteAnnouncements(): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
     return db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
+      imageUrl: siteAnnouncements.imageUrl,
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
       createdAt: siteAnnouncements.createdAt,
     }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
   }
 
-  async saveSiteAnnouncement(data: { content: string; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; startsAt: Date; endsAt: Date }> {
+  async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
     const inserted = await db.insert(siteAnnouncements).values({
       content: data.content,
+      imageUrl: data.imageUrl ?? null,
       startsAt: data.startsAt,
       endsAt: data.endsAt,
       updatedAt: new Date(),
     }).returning();
     const row = inserted[0];
     if (!row) throw new Error("Insert did not return row");
-    return { id: row.id, content: row.content, startsAt: row.startsAt, endsAt: row.endsAt };
+    return { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
   }
 
   async deleteSiteAnnouncement(id: number): Promise<void> {
