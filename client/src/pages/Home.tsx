@@ -11,14 +11,20 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
 import { Trans, useTranslation } from 'react-i18next';
 import { resolveStorageUrl } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
 import banner4 from "@/assets/images/banner-4.png";
 
+const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: number) =>
+  userId ? `announcement_seen_${userId}_${announcementId}` : `announcement_seen_guest_${announcementId}`;
+
 export default function Home() {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList();
   const musicList = musicResult?.data;
   const totalCount = musicResult?.total || 0;
@@ -41,7 +47,7 @@ export default function Home() {
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
 
   const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
-  const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string } | null>({
+  const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; textSize?: string; startsAt: string; endsAt: string } | null>({
     queryKey: ["/api/announcement/active", lang],
     queryFn: async () => {
       const res = await fetch(`/api/announcement/active?lang=${encodeURIComponent(lang)}`);
@@ -51,7 +57,23 @@ export default function Home() {
     },
   });
 
+  // 아이디당(로그인 시) / 비로그인은 세션당 1번만 표시: 이미 본 공지면 숨김
+  useEffect(() => {
+    if (!activeAnnouncement?.id) return;
+    const storage = userId ? localStorage : sessionStorage;
+    const key = ANNOUNCEMENT_SEEN_KEY(userId, activeAnnouncement.id);
+    if (storage.getItem(key) === "1") setAnnouncementDismissed(true);
+  }, [activeAnnouncement?.id, userId]);
+
   const showAnnouncement = Boolean(activeAnnouncement?.content && !announcementDismissed);
+
+  const handleAnnouncementDismiss = () => {
+    if (activeAnnouncement?.id) {
+      const storage = userId ? localStorage : sessionStorage;
+      storage.setItem(ANNOUNCEMENT_SEEN_KEY(userId, activeAnnouncement.id), "1");
+    }
+    setAnnouncementDismissed(true);
+  };
 
   const nextBanner = useCallback(() => {
     setCurrentBanner((prev) => (prev + 1) % banners.length);
@@ -83,7 +105,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col pb-24">
-      <Dialog open={showAnnouncement} onOpenChange={(open) => !open && setAnnouncementDismissed(true)}>
+      <Dialog open={showAnnouncement} onOpenChange={(open) => !open && handleAnnouncementDismiss()}>
         <DialogContent
           className={`sm:max-w-md p-0 overflow-hidden ${activeAnnouncement?.imageUrl ? "border-2 border-white/30 shadow-2xl shadow-black/60 ring-2 ring-white/10" : ""}`}
           style={activeAnnouncement?.imageUrl ? {
@@ -100,12 +122,12 @@ export default function Home() {
                 {t('home.announcementTitle', '공지')}
               </DialogTitle>
             </DialogHeader>
-            <div className={`whitespace-pre-wrap text-sm py-2 ${activeAnnouncement?.imageUrl ? "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" : "text-muted-foreground"}`}>
+            <div className={`whitespace-pre-wrap py-2 ${activeAnnouncement?.textSize === "lg" ? "text-lg" : activeAnnouncement?.textSize === "sm" ? "text-xs" : "text-sm"} ${activeAnnouncement?.imageUrl ? "text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" : "text-muted-foreground"}`}>
               {activeAnnouncement?.content}
             </div>
             <Button
               className={`w-full mt-2 ${activeAnnouncement?.imageUrl ? "bg-white text-black hover:bg-white/90 border border-white/50" : ""}`}
-              onClick={() => setAnnouncementDismissed(true)}
+              onClick={handleAnnouncementDismiss}
               variant="default"
             >
               {t('home.announcementConfirm', '확인')}

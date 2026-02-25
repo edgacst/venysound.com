@@ -90,9 +90,9 @@ export interface IStorage {
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
   getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
-  getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null>;
+  getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
   getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
-  saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
+  saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
   updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void>;
   deleteSiteAnnouncement(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
@@ -1230,12 +1230,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Site announcement popup (admin)
-  async getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null> {
+  async getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null> {
     const now = new Date();
     const [row] = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
       contentTranslations: siteAnnouncements.contentTranslations,
+      textSize: siteAnnouncements.textSize,
       imageUrl: siteAnnouncements.imageUrl,
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
@@ -1246,7 +1247,15 @@ export class DatabaseStorage implements IStorage {
     if (!row) return null;
     const translations = (row.contentTranslations as Record<string, string> | null) ?? {};
     const content = (lang && translations[lang]) ? translations[lang] : row.content;
-    return { id: row.id, content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
+    const result: { id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } = {
+      id: row.id,
+      content,
+      imageUrl: row.imageUrl ?? null,
+      textSize: row.textSize ?? null,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+    };
+    return result;
   }
 
   async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
@@ -1261,10 +1270,12 @@ export class DatabaseStorage implements IStorage {
     return rows.map((r) => ({ ...r, createdAt: r.createdAt ?? new Date() }));
   }
 
-  async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
+  async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
+    const textSizeVal = data.textSize && ["sm", "md", "lg"].includes(data.textSize) ? data.textSize : "md";
     const inserted = await db.insert(siteAnnouncements).values({
       content: data.content,
       imageUrl: data.imageUrl ?? null,
+      textSize: textSizeVal,
       startsAt: data.startsAt,
       endsAt: data.endsAt,
       updatedAt: new Date(),

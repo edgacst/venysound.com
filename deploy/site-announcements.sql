@@ -12,3 +12,5 @@ CREATE TABLE IF NOT EXISTS site_announcements (
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS image_url TEXT;
 -- 언어별 번역 저장 (공지 저장 시 자동 번역)
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS content_translations JSONB DEFAULT '{}';
+-- 공지 본문 텍스트 크기 (sm, md, lg)
+ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS text_size TEXT DEFAULT 'md';

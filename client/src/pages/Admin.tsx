@@ -82,6 +82,7 @@ export default function Admin() {
   const [withdrawalNotes, setWithdrawalNotes] = useState<Record<number, string>>({});
   const [announcementContent, setAnnouncementContent] = useState("");
   const [announcementImageUrl, setAnnouncementImageUrl] = useState("");
+  const [announcementTextSize, setAnnouncementTextSize] = useState<"sm" | "md" | "lg">("md");
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
 
@@ -1092,6 +1093,19 @@ export default function Admin() {
               />
             </div>
             <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.announcementTextSize', '텍스트 크기')}</label>
+              <Select value={announcementTextSize} onValueChange={(v: "sm" | "md" | "lg") => setAnnouncementTextSize(v)}>
+                <SelectTrigger className="w-full max-w-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sm">{t('admin.textSizeSmall', '작게')}</SelectItem>
+                  <SelectItem value="md">{t('admin.textSizeMedium', '보통')}</SelectItem>
+                  <SelectItem value="lg">{t('admin.textSizeLarge', '크게')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <label className="text-sm font-medium mb-1 block">{t('admin.announcementImage', '공지 이미지 (선택)')}</label>
               <Input
                 value={announcementImageUrl}
@@ -1176,6 +1190,7 @@ export default function Admin() {
                 saveAnnouncementMutation.mutate({
                   content: announcementContent.trim(),
                   imageUrl: announcementImageUrl.trim() || null,
+                  textSize: announcementTextSize,
                   startsAt: start.toISOString(),
                   endsAt: end.toISOString(),
                 });

@@ -1101,6 +1101,7 @@ export async function registerRoutes(
         id: announcement.id,
         content: announcement.content,
         imageUrl: announcement.imageUrl ?? null,
+        textSize: announcement.textSize ?? "md",
         startsAt: announcement.startsAt.toISOString(),
         endsAt: announcement.endsAt.toISOString(),
       });
@@ -1122,7 +1123,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/site-announcements", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const { content, imageUrl, startsAt, endsAt } = req.body;
+      const { content, imageUrl, textSize, startsAt, endsAt } = req.body;
       if (!content || typeof content !== "string" || !startsAt || !endsAt) {
         return res.status(400).json({ message: "content, startsAt, endsAt가 필요합니다" });
       }
@@ -1132,13 +1133,17 @@ export async function registerRoutes(
         return res.status(400).json({ message: "시작·종료 일시가 유효하지 않습니다" });
       }
       const imageUrlVal = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : null;
-      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), imageUrl: imageUrlVal, startsAt: start, endsAt: end });
-      // 저장 직후 언어별 자동 번역 (비동기, 응답은 먼저 반환)
-      translateAnnouncementContent(content.trim()).then((translations) => {
+      const textSizeVal = typeof textSize === "string" && ["sm", "md", "lg"].includes(textSize) ? textSize : null;
+      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), imageUrl: imageUrlVal, textSize: textSizeVal, startsAt: start, endsAt: end });
+      // 언어별 자동 번역 후 DB 반영 (번역 실패 시에도 공지는 저장됨)
+      try {
+        const translations = await translateAnnouncementContent(content.trim());
         if (Object.keys(translations).length > 0) {
-          return storage.updateSiteAnnouncementTranslations(saved.id, translations);
+          await storage.updateSiteAnnouncementTranslations(saved.id, translations);
         }
-      }).catch((e) => console.warn("[site-announcements translate]", e));
+      } catch (e) {
+        console.warn("[site-announcements translate]", e);
+      }
       res.json({ ...saved, startsAt: saved.startsAt.toISOString(), endsAt: saved.endsAt.toISOString() });
     } catch (e: any) {
       console.error("[admin/site-announcements POST]", e);
