@@ -461,6 +461,21 @@ export async function registerRoutes(
       const price = isPremium ? input.price : 0;
 
       const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
+      await storage.addCredits(userId, 200);
+      await storage.createCreditTransaction({
+        userId,
+        type: "music_upload_bonus",
+        amount: 200,
+        description: "음원 등록 보너스",
+        relatedId: music.id,
+      });
+      await storage.createNotification({
+        userId,
+        type: "system",
+        message: "음원이 등록되었습니다. 200 크레딧이 지급되었습니다.",
+        payload: { musicTitle: music.title, amount: 200 },
+        url: "/credits",
+      });
       res.status(201).json(music);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1195,6 +1210,14 @@ export async function registerRoutes(
         expiresAt.setFullYear(expiresAt.getFullYear() + 99);
       }
       await storage.updateUserSubscription(targetId, tier, expiresAt);
+      if (tier === "premium") {
+        await storage.createNotification({
+          userId: targetId,
+          type: "system",
+          message: "관리자에 의해 프리미엄 회원으로 적용되었습니다.",
+          url: "/pricing",
+        });
+      }
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "구독 상태 변경에 실패했습니다" });

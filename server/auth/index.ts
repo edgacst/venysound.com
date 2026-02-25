@@ -210,9 +210,20 @@ export async function setupAuth(app: Express) {
         if (existing.email === email) return res.status(409).json({ error: "이미 사용 중인 이메일입니다." });
       }
       const passwordHash = await bcrypt.hash(password, 10);
+      const premiumExpiresAt = new Date();
+      premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
       const [user] = await db
         .insert(users)
-        .values({ username, email, passwordHash, firstName: username, role: "user" })
+        .values({
+          username,
+          email,
+          passwordHash,
+          firstName: username,
+          role: "user",
+          subscriptionTier: "premium",
+          subscriptionPlan: "premium",
+          subscriptionExpiresAt: premiumExpiresAt,
+        })
         .returning();
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", "", "local");
       req.login(sessionUser, (err) => {
@@ -325,6 +336,7 @@ export function registerAuthRoutes(app: Express): void {
     }
     try {
       const userId = req.user.claims.sub;
+      await authStorage.downgradeExpiredSubscription(userId);
       const user = await authStorage.getUser(userId);
       if (!user) {
         return res.status(401).json({ message: "Unauthorized" });

@@ -16,6 +16,19 @@ class AuthStorage implements IAuthStorage {
     return user;
   }
 
+  /** 구독 만료일이 지난 프리미엄 회원을 일반으로 전환 */
+  async downgradeExpiredSubscription(userId: string): Promise<void> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user || user.subscriptionTier !== "premium" || !user.subscriptionExpiresAt) return;
+    const now = new Date();
+    if (new Date(user.subscriptionExpiresAt) <= now) {
+      await db
+        .update(users)
+        .set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null })
+        .where(eq(users.id, userId));
+    }
+  }
+
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
@@ -42,11 +55,16 @@ class AuthStorage implements IAuthStorage {
       }
     }
 
+    const premiumExpiresAt = new Date();
+    premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
     const [user] = await db
       .insert(users)
       .values({
         ...userData,
         role: isAdmin ? "admin" : "user",
+        subscriptionTier: "premium",
+        subscriptionPlan: "premium",
+        subscriptionExpiresAt: premiumExpiresAt,
       })
       .onConflictDoUpdate({
         target: users.id,
