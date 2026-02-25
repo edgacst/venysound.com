@@ -1,8 +1,15 @@
 import type { Config } from "tailwindcss";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
 
 export default {
   darkMode: ["class"],
-  content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
+  content: [
+    path.join(root, "client", "index.html"),
+    path.join(root, "client", "src", "**", "*.{js,jsx,ts,tsx}"),
+  ],
   theme: {
     container: {
       center: true,

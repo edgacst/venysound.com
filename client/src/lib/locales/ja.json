@@ -771,6 +771,7 @@
     "orLoginWithId": "またはユーザー名でログイン",
     "additionalOptions": "追加のログインオプション（準備中）",
     "continueWithFacebook": "Facebook（準備中）",
+    "continueWithTikTok": "TikTokで続ける",
     "agreementPrefix": "ログイン/登録することで",
     "terms": "利用規約",
     "and": "および",

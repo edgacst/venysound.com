@@ -1,12 +1,14 @@
 import path from "path";
 import { fileURLToPath } from "url";
 
-// 프로덕션(dist/index.cjs): 앱 루트 = 배너로 주입된 __APP_ROOT__ (dist의 상위).
-// 개발(tsx): import.meta.url 기준으로 server/ 의 상위 = 프로젝트 루트
+// 프로덕션(dist/index.cjs): 배너로 주입된 __APP_ROOT__ 사용.
+// 개발(tsx): __dirname(tsx가 제공) 또는 import.meta.url 기준으로 프로젝트 루트
 const APP_ROOT =
-  typeof (globalThis as any).__APP_ROOT__ === "string"
+  (globalThis as any).__APP_ROOT__ != null
     ? (globalThis as any).__APP_ROOT__
-    : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+    : typeof __dirname !== "undefined"
+      ? path.resolve(__dirname, "..")
+      : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(APP_ROOT);
 
 import "dotenv/config";

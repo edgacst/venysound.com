@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as NaverStrategy } from "passport-naver-v2";
@@ -69,6 +70,7 @@ export async function setupAuth(app: Express) {
   const hasNaver = !!(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET);
   const hasKakao = !!(process.env.KAKAO_CLIENT_ID && process.env.KAKAO_CLIENT_SECRET);
   const hasFacebook = !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
+  const hasTikTok = !!(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
 
   if (hasGoogle) {
     passport.use(
@@ -185,7 +187,7 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/auth/login-options", (_req, res) => {
-    res.json({ hasGoogle, hasNaver, hasKakao, hasFacebook });
+    res.json({ hasGoogle, hasNaver, hasKakao, hasFacebook, hasTikTok });
   });
 
   // 일반 회원가입
@@ -270,7 +272,7 @@ export async function setupAuth(app: Express) {
     if (process.env.NODE_ENV === "production") {
       return res.status(403).json({ error: "프로덕션 환경에서는 개발용 로그인을 사용할 수 없습니다." });
     }
-    if (hasGoogle || hasNaver || hasKakao || hasFacebook) {
+    if (hasGoogle || hasNaver || hasKakao || hasFacebook || hasTikTok) {
       return res.status(400).json({ error: "OAuth가 설정되어 있어 개발용 로그인을 사용할 수 없습니다." });
     }
     try {
@@ -297,6 +299,7 @@ export async function setupAuth(app: Express) {
     else if (hasNaver) res.redirect("/api/auth/naver");
     else if (hasKakao) res.redirect("/api/auth/kakao");
     else if (hasFacebook) res.redirect("/api/auth/facebook");
+    else if (hasTikTok) res.redirect("/api/auth/tiktok");
     else res.redirect("/?msg=로그인_설정_필요");
   });
 
@@ -318,6 +321,86 @@ export async function setupAuth(app: Express) {
   if (hasFacebook) {
     app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email", "public_profile"] }));
     app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { failureRedirect: "/login", successRedirect: "/" }));
+  }
+
+  if (hasTikTok) {
+    const tiktokCallbackUrl = process.env.SITE_URL
+      ? `${process.env.SITE_URL.replace(/\/$/, "")}/api/auth/tiktok/callback`
+      : "/api/auth/tiktok/callback";
+    app.get("/api/auth/tiktok", (req, res) => {
+      const state = crypto.randomBytes(24).toString("hex");
+      (req.session as any).tiktokCsrfState = state;
+      const base = "https://www.tiktok.com/v2/auth/authorize/";
+      const params = new URLSearchParams({
+        client_key: process.env.TIKTOK_CLIENT_KEY!,
+        scope: "user.info.basic",
+        response_type: "code",
+        redirect_uri: tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`,
+        state,
+      });
+      res.redirect(`${base}?${params.toString()}`);
+    });
+    app.get("/api/auth/tiktok/callback", async (req, res) => {
+      const { code, state, error, error_description } = req.query;
+      const savedState = (req.session as any)?.tiktokCsrfState;
+      delete (req.session as any)?.tiktokCsrfState;
+      if (error) {
+        console.error("TikTok OAuth error:", error, error_description);
+        return res.redirect("/login?error=tiktok");
+      }
+      if (!savedState || state !== savedState || typeof code !== "string") {
+        return res.redirect("/login?error=invalid_state");
+      }
+      const redirectUri = tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`;
+      try {
+        const tokenRes = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_key: process.env.TIKTOK_CLIENT_KEY!,
+            client_secret: process.env.TIKTOK_CLIENT_SECRET!,
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: redirectUri,
+          }),
+        });
+        const tokenData = await tokenRes.json();
+        if (tokenData.error || !tokenData.access_token || !tokenData.open_id) {
+          console.error("TikTok token error:", tokenData);
+          return res.redirect("/login?error=tiktok");
+        }
+        const userRes = await fetch(
+          "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url",
+          {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` },
+          }
+        );
+        const userData = await userRes.json();
+        const userInfo = userData?.data?.user ?? userData?.user;
+        const openId = tokenData.open_id as string;
+        const displayName = userInfo?.display_name ?? openId;
+        const avatarUrl = userInfo?.avatar_url ?? "";
+        const id = `tiktok_${openId}`;
+        const user = await authStorage.upsertUser({
+          id,
+          email: null,
+          firstName: displayName,
+          lastName: "",
+          profileImageUrl: avatarUrl,
+        });
+        const sessionUser = buildUserSession(user.id, user.email ?? null, user.firstName ?? displayName, user.lastName ?? "", user.profileImageUrl ?? avatarUrl, tokenData.access_token, tokenData.refresh_token);
+        req.login(sessionUser, (err) => {
+          if (err) {
+            console.error("TikTok login session error:", err);
+            return res.redirect("/login?error=session");
+          }
+          res.redirect("/");
+        });
+      } catch (err) {
+        console.error("TikTok callback error:", err);
+        res.redirect("/login?error=tiktok");
+      }
+    });
   }
 
   app.get("/api/logout", (req, res) => {

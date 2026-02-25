@@ -61,6 +61,7 @@ async function buildAll() {
     minify: true,
     external: externals,
     logLevel: "info",
+    logOverride: { "empty-import-meta": "silent" },
   });
 
   // connect-pg-simple이 번들 안에서 __dirname=dist 로 table.sql을 찾으므로 복사
