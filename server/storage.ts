@@ -681,24 +681,49 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }> {
-    const [dailyV] = await db.select({
-      count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
-    }).from(analyticsVisits).where(sql`${analyticsVisits.visitedAt} >= date_trunc('day', now())`);
-    const [totalV] = await db.select({
-      count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
-    }).from(analyticsVisits);
-    const [pvToday] = await db.select({
-      count: sql<number>`count(*)::int`,
-    }).from(analyticsVisits).where(sql`${analyticsVisits.visitedAt} >= date_trunc('day', now())`);
-    const [pvTotal] = await db.select({
-      count: sql<number>`count(*)::int`,
-    }).from(analyticsVisits);
-    return {
-      dailyVisitors: dailyV?.count ?? 0,
-      totalVisitors: totalV?.count ?? 0,
-      pageViewsToday: pvToday?.count ?? 0,
-      pageViewsTotal: pvTotal?.count ?? 0,
-    };
+    // "오늘" = 한국(Asia/Seoul) 기준 자정~현재. visited_at이 UTC로 저장돼 있어도 일일/오늘 페이지뷰가 맞게 집계되도록.
+    const todayCondition = sql`${analyticsVisits.visitedAt} >= (date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul')`;
+    try {
+      const [dailyV] = await db.select({
+        count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+      }).from(analyticsVisits).where(todayCondition);
+      const [totalV] = await db.select({
+        count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+      }).from(analyticsVisits);
+      const [pvToday] = await db.select({
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits).where(todayCondition);
+      const [pvTotal] = await db.select({
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits);
+      return {
+        dailyVisitors: dailyV?.count ?? 0,
+        totalVisitors: totalV?.count ?? 0,
+        pageViewsToday: pvToday?.count ?? 0,
+        pageViewsTotal: pvTotal?.count ?? 0,
+      };
+    } catch {
+      // 타임존 미지원 등으로 실패 시 서버 기준 "오늘"로 폴백
+      const fallback = sql`${analyticsVisits.visitedAt} >= date_trunc('day', now())`;
+      const [dailyV] = await db.select({
+        count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+      }).from(analyticsVisits).where(fallback);
+      const [totalV] = await db.select({
+        count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+      }).from(analyticsVisits);
+      const [pvToday] = await db.select({
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits).where(fallback);
+      const [pvTotal] = await db.select({
+        count: sql<number>`count(*)::int`,
+      }).from(analyticsVisits);
+      return {
+        dailyVisitors: dailyV?.count ?? 0,
+        totalVisitors: totalV?.count ?? 0,
+        pageViewsToday: pvToday?.count ?? 0,
+        pageViewsTotal: pvTotal?.count ?? 0,
+      };
+    }
   }
 
   async getAllUsers(search?: string): Promise<any[]> {

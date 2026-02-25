@@ -421,88 +421,100 @@ export default function Admin() {
             <Activity size={18} className="text-primary" />
             {t('admin.statsOverview', '통계')}
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
-          <Card className="p-4 text-center border-primary/30" data-testid="stat-visitor-count">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Activity size={14} /> {t('admin.currentVisitors', '현재 접속자')}
-            </div>
-            <div className="text-3xl font-bold">{visitorData?.count ?? 0}</div>
-            <div className="text-xs text-muted-foreground mt-1">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-total-users">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Users size={14} /> {t('admin.totalUsers', '전체 회원 수')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalUsers ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-total-music">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Music size={14} /> {t('admin.totalMusic', '전체 음원 수')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalMusic ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-total-likes">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Heart size={14} /> {t('admin.totalLikes', '총 좋아요 수')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalLikes ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-total-comments">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <MessageSquare size={14} /> {t('admin.totalComments', '총 댓글 수')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (stats?.totalComments ?? 0)}
-            </div>
-          </Card>
+
+          {/* 방문자·페이지뷰 */}
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Eye size={16} />
+            {t('admin.visitorAndPageViews', '방문자 · 페이지뷰')}
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+            <Card className="p-3 sm:p-4 text-center border-primary/30 min-h-[100px] flex flex-col justify-center" data-testid="stat-visitor-count">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Activity size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.currentVisitors', '현재 접속자')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums">{visitorData?.count ?? 0}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-daily-visitors">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Calendar size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.dailyVisitors', '일일 방문자')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center">
+                {loadingAnalytics ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (analytics?.dailyVisitors ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-visitors">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <UserCheck size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalVisitors', '누적 방문자')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingAnalytics ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (analytics?.totalVisitors ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-page-views-today">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Eye size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.pageViewsToday', '오늘 페이지뷰')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center">
+                {loadingAnalytics ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (analytics?.pageViewsToday ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-page-views-total">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Eye size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.pageViewsTotal', '총 페이지뷰')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingAnalytics ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (analytics?.pageViewsTotal ?? 0)}
+              </div>
+            </Card>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card className="p-4 text-center" data-testid="stat-daily-visitors">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Calendar size={14} /> {t('admin.dailyVisitors', '일일 방문자')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
-              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.dailyVisitors ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-total-visitors">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <UserCheck size={14} /> {t('admin.totalVisitors', '누적 방문자')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.totalVisitors ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-page-views-today">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Eye size={14} /> {t('admin.pageViewsToday', '오늘 페이지뷰')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center">
-              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.pageViewsToday ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-page-views-total">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Eye size={14} /> {t('admin.pageViewsTotal', '총 페이지뷰')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {loadingAnalytics ? <Loader2 className="w-6 h-6 animate-spin text-primary" /> : (analytics?.pageViewsTotal ?? 0)}
-            </div>
-          </Card>
-          <Card className="p-4 text-center" data-testid="stat-credits-charged">
-            <div className="text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1">
-              <Coins size={14} /> {t('admin.totalCreditsCharged', '총 충전된 크레딧')}
-            </div>
-            <div className="text-3xl font-bold min-h-[2.25rem] flex items-center justify-center text-primary">
-              {(creditsChargedData?.totalCreditsCharged ?? 0).toLocaleString()}C
-            </div>
-          </Card>
+
+          {/* 서비스 통계 */}
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
+            <Database size={16} />
+            {t('admin.serviceStats', '서비스 통계')}
+          </h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-users">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Users size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalUsers', '전체 회원 수')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingStats ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (stats?.totalUsers ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-music">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Music size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalMusic', '전체 음원 수')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingStats ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (stats?.totalMusic ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-likes">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Heart size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalLikes', '총 좋아요 수')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingStats ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (stats?.totalLikes ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-comments">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <MessageSquare size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalComments', '총 댓글 수')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {loadingStats ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (stats?.totalComments ?? 0)}
+              </div>
+            </Card>
+            <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-credits-charged">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
+                <Coins size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalCreditsCharged', '총 충전된 크레딧')}</span>
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
+                {(creditsChargedData?.totalCreditsCharged ?? 0).toLocaleString()}C
+              </div>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
