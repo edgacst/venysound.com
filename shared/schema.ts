@@ -163,6 +163,17 @@ export const siteAnnouncements = pgTable("site_announcements", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// 동영상 가이드 (관리자가 /guide 영상 링크를 등록)
+export const guideVideos = pgTable("guide_videos", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  youtubeUrl: text("youtube_url").notNull(),
+  sortOrder: integer("sort_order"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // === RELATIONS ===
 
 export const usersRelations = relations(users, ({ many }) => ({

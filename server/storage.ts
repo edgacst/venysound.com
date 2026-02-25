@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
-  analyticsVisits, siteAnnouncements,
+  analyticsVisits, siteAnnouncements, guideVideos,
   conversations, directMessages, musicStories, storyComments,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
@@ -95,6 +95,10 @@ export interface IStorage {
   saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
   updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void>;
   deleteSiteAnnouncement(id: number): Promise<void>;
+  getGuideVideos(): Promise<{ id: number; title: string; description: string | null; youtubeUrl: string; sortOrder: number | null; createdAt: Date; updatedAt: Date }[]>;
+  createGuideVideo(data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void>;
+  updateGuideVideo(id: number, data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void>;
+  deleteGuideVideo(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePostAdmin(id: number): Promise<void>;
@@ -1293,6 +1297,57 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSiteAnnouncement(id: number): Promise<void> {
     await db.delete(siteAnnouncements).where(eq(siteAnnouncements.id, id));
+  }
+
+  // 동영상 가이드 (관리자 등록, /guide 페이지에서 사용)
+  async getGuideVideos(): Promise<{ id: number; title: string; description: string | null; youtubeUrl: string; sortOrder: number | null; createdAt: Date; updatedAt: Date }[]> {
+    const rows = await db
+      .select({
+        id: guideVideos.id,
+        title: guideVideos.title,
+        description: guideVideos.description,
+        youtubeUrl: guideVideos.youtubeUrl,
+        sortOrder: guideVideos.sortOrder,
+        createdAt: guideVideos.createdAt,
+        updatedAt: guideVideos.updatedAt,
+      })
+      .from(guideVideos)
+      .orderBy(guideVideos.sortOrder, desc(guideVideos.createdAt))
+      .limit(50);
+    return rows.map((r) => ({
+      ...r,
+      description: r.description ?? null,
+      sortOrder: r.sortOrder ?? null,
+      createdAt: r.createdAt ?? new Date(),
+      updatedAt: r.updatedAt ?? new Date(),
+    }));
+  }
+
+  async createGuideVideo(data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void> {
+    await db.insert(guideVideos).values({
+      title: data.title,
+      description: data.description ?? null,
+      youtubeUrl: data.youtubeUrl,
+      sortOrder: data.sortOrder ?? null,
+      updatedAt: new Date(),
+    });
+  }
+
+  async updateGuideVideo(id: number, data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void> {
+    await db
+      .update(guideVideos)
+      .set({
+        title: data.title,
+        description: data.description ?? null,
+        youtubeUrl: data.youtubeUrl,
+        sortOrder: data.sortOrder ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(guideVideos.id, id));
+  }
+
+  async deleteGuideVideo(id: number): Promise<void> {
+    await db.delete(guideVideos).where(eq(guideVideos.id, id));
   }
 }
 

@@ -26,10 +26,11 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useTranslation } from 'react-i18next';
+import { useQuery } from "@tanstack/react-query";
 
 export default function Guide() {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<"artist" | "listener">("listener");
+  const [activeTab, setActiveTab] = useState<"artist" | "listener" | "video">("listener");
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -46,6 +47,34 @@ export default function Guide() {
   const item = {
     hidden: { opacity: 0, y: 16 },
     show: { opacity: 1, y: 0 }
+  };
+
+  const { data: videoGuides } = useQuery<
+    { id: number; title: string; description: string | null; youtubeUrl: string; sortOrder: number | null; createdAt: string }[]
+  >({
+    queryKey: ["/api/guide-videos"],
+    queryFn: async () => {
+      const res = await fetch("/api/guide-videos");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const parseYoutubeId = (url: string) => {
+    try {
+      // 단순 ID만 들어온 경우
+      if (!url.includes("http")) return url.trim();
+      const u = new URL(url);
+      if (u.hostname.includes("youtu.be")) {
+        return u.pathname.replace("/", "");
+      }
+      if (u.searchParams.get("v")) {
+        return u.searchParams.get("v") as string;
+      }
+      return url.trim();
+    } catch {
+      return url.trim();
+    }
   };
 
   return (
@@ -88,6 +117,15 @@ export default function Guide() {
             >
               <Mic2 size={16} />
               {t('guide.artistGuide', '아티스트 가이드')}
+            </Button>
+            <Button
+              variant={activeTab === "video" ? "default" : "outline"}
+              onClick={() => setActiveTab("video")}
+              className="gap-2 rounded-full px-6"
+              data-testid="tab-video"
+            >
+              <Play size={16} />
+              {t("guide.videoGuide", "동영상 가이드")}
             </Button>
           </div>
 
@@ -367,6 +405,63 @@ export default function Guide() {
                     </div>
                   </div>
                 </Card>
+              </motion.div>
+            </motion.div>
+          )}
+
+          {activeTab === "video" && (
+            <motion.div
+              variants={container}
+              initial="hidden"
+              animate="show"
+              className="space-y-6"
+              data-testid="section-video-guide"
+            >
+              <motion.div variants={item}>
+                <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                  <Play className="text-primary" size={24} />
+                  {t("guide.videoGuideTitle", "동영상 가이드")}
+                </h2>
+                <p className="text-muted-foreground mb-6">
+                  {t(
+                    "guide.videoGuideIntro",
+                    "서비스 사용법을 영상으로 보고 싶을 때 아래 가이드를 참고하세요. 유튜브 영상 ID만 교체하면 언제든 내용을 바꿀 수 있습니다."
+                  )}
+                </p>
+              </motion.div>
+
+              <motion.div
+                variants={item}
+                className="grid grid-cols-1 md:grid-cols-2 gap-6"
+              >
+                {(videoGuides ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    등록된 동영상 가이드가 없습니다. 관리자 페이지에서 유튜브 링크를 추가해 주세요.
+                  </p>
+                ) : (
+                  (videoGuides ?? []).map((v) => (
+                    <Card
+                      key={v.id}
+                      className="overflow-hidden border-white/10 w-full md:w-1/2 mx-auto"
+                    >
+                      <div className="aspect-video w-full bg-black">
+                        <iframe
+                          className="w-full h-full"
+                          src={`https://www.youtube.com/embed/${parseYoutubeId(v.youtubeUrl)}`}
+                          title={v.title}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                          allowFullScreen
+                        />
+                      </div>
+                      <div className="p-4 space-y-2">
+                        <h3 className="font-semibold text-base">{v.title}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {v.description}
+                        </p>
+                      </div>
+                    </Card>
+                  ))
+                )}
               </motion.div>
             </motion.div>
           )}

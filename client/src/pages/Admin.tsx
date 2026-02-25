@@ -45,6 +45,7 @@ import {
   Eye,
   Coins,
   Megaphone,
+  Video,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -85,6 +86,10 @@ export default function Admin() {
   const [announcementTextSize, setAnnouncementTextSize] = useState<"sm" | "md" | "lg">("md");
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
+  const [guideVideoTitle, setGuideVideoTitle] = useState("");
+  const [guideVideoDescription, setGuideVideoDescription] = useState("");
+  const [guideVideoYoutubeUrl, setGuideVideoYoutubeUrl] = useState("");
+  const [guideVideoSortOrder, setGuideVideoSortOrder] = useState<number | "">("");
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -171,6 +176,57 @@ export default function Admin() {
       return res.json();
     },
     enabled: adminCheck?.isAdmin === true,
+  });
+
+  type GuideVideoItem = { id: number; title: string; description: string | null; youtubeUrl: string; sortOrder: number | null; createdAt: string; updatedAt: string };
+  const { data: guideVideosList, refetch: refetchGuideVideos } = useQuery<GuideVideoItem[]>({
+    queryKey: ["/api/admin/guide-videos"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/guide-videos", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const createGuideVideoMutation = useMutation({
+    mutationFn: async (body: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }) => {
+      const res = await fetch("/api/admin/guide-videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "저장 실패");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/guide-videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/guide-videos"] });
+      toast({ title: t('admin.guideVideoAdded', '동영상 가이드가 추가되었습니다.') });
+      setGuideVideoTitle("");
+      setGuideVideoDescription("");
+      setGuideVideoYoutubeUrl("");
+      setGuideVideoSortOrder("");
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "저장 실패", variant: "destructive" });
+    },
+  });
+
+  const deleteGuideVideoMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", "/api/admin/guide-videos/" + id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/guide-videos"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/guide-videos"] });
+      toast({ title: t('admin.guideVideoDeleted', '동영상 가이드가 삭제되었습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "삭제 실패", variant: "destructive" });
+    },
   });
 
   const saveAnnouncementMutation = useMutation({
@@ -415,6 +471,7 @@ export default function Admin() {
               <TabsTrigger value="bank">{t('admin.pendingBankPayments', '입금 대기')}</TabsTrigger>
               <TabsTrigger value="withdrawal">{t('admin.withdrawalManagement', '출금')}</TabsTrigger>
               <TabsTrigger value="announcement">{t('admin.siteAnnouncement', '공지 팝업')}</TabsTrigger>
+              <TabsTrigger value="guide-videos">{t('admin.guideVideos', '동영상 가이드 관리')}</TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
             <TabsContent value="stats">
@@ -1221,6 +1278,105 @@ export default function Admin() {
                       onClick={() => { if (confirm(t('admin.confirmDeleteAnnouncement', '이 공지를 삭제하시겠습니까?'))) deleteAnnouncementMutation.mutate(a.id); }}
                       disabled={deleteAnnouncementMutation.isPending}
                       data-testid={`button-delete-announcement-${a.id}`}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+            </TabsContent>
+            <TabsContent value="guide-videos">
+        <Card className="p-4 sm:p-6" data-testid="card-guide-videos">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Video size={20} className="text-primary" /> {t('admin.guideVideos', '동영상 가이드 관리')}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('admin.guideVideosDesc', '가이드 페이지(/guide)의 "동영상 가이드" 탭에 노출될 유튜브 영상을 등록합니다.')}
+          </p>
+          <div className="space-y-4 max-w-xl mb-6">
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.guideVideoTitle', '제목')}</label>
+              <Input
+                value={guideVideoTitle}
+                onChange={(e) => setGuideVideoTitle(e.target.value)}
+                placeholder={t('admin.guideVideoTitlePlaceholder', '예: 업로드 방법')}
+                data-testid="input-guide-video-title"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.guideVideoDescription', '설명 (선택)')}</label>
+              <Textarea
+                value={guideVideoDescription}
+                onChange={(e) => setGuideVideoDescription(e.target.value)}
+                placeholder={t('admin.guideVideoDescriptionPlaceholder', '간단한 설명')}
+                className="min-h-[60px]"
+                data-testid="textarea-guide-video-description"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.guideVideoYoutubeUrl', '유튜브 URL')}</label>
+              <Input
+                value={guideVideoYoutubeUrl}
+                onChange={(e) => setGuideVideoYoutubeUrl(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+                data-testid="input-guide-video-youtube"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.guideVideoSortOrder', '정렬 순서 (선택, 숫자 작을수록 먼저)')}</label>
+              <Input
+                type="number"
+                value={guideVideoSortOrder === "" ? "" : guideVideoSortOrder}
+                onChange={(e) => setGuideVideoSortOrder(e.target.value === "" ? "" : Number(e.target.value))}
+                placeholder="0"
+                data-testid="input-guide-video-sort"
+              />
+            </div>
+            <Button
+              onClick={() => {
+                if (!guideVideoTitle.trim()) {
+                  toast({ title: t('admin.guideVideoTitleRequired', '제목을 입력하세요'), variant: "destructive" });
+                  return;
+                }
+                if (!guideVideoYoutubeUrl.trim()) {
+                  toast({ title: t('admin.guideVideoUrlRequired', '유튜브 URL을 입력하세요'), variant: "destructive" });
+                  return;
+                }
+                createGuideVideoMutation.mutate({
+                  title: guideVideoTitle.trim(),
+                  description: guideVideoDescription.trim() || undefined,
+                  youtubeUrl: guideVideoYoutubeUrl.trim(),
+                  sortOrder: guideVideoSortOrder === "" ? null : Number(guideVideoSortOrder),
+                });
+              }}
+              disabled={createGuideVideoMutation.isPending}
+              data-testid="button-add-guide-video"
+            >
+              {createGuideVideoMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              {t('admin.addGuideVideo', '동영상 추가')}
+            </Button>
+          </div>
+          {guideVideosList && guideVideosList.length > 0 && (
+            <div className="pt-6 border-t border-border">
+              <h3 className="text-sm font-semibold mb-2">{t('admin.registeredGuideVideos', '등록된 동영상 가이드')}</h3>
+              <ul className="space-y-2">
+                {guideVideosList.map((v) => (
+                  <li key={v.id} className="flex items-start justify-between gap-2 p-3 rounded-lg bg-muted/30 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-foreground">{v.title}</p>
+                      {v.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{v.description}</p>}
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{v.youtubeUrl}</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => { if (confirm(t('admin.confirmDeleteGuideVideo', '이 동영상 가이드를 삭제하시겠습니까?'))) deleteGuideVideoMutation.mutate(v.id); }}
+                      disabled={deleteGuideVideoMutation.isPending}
+                      data-testid={`button-delete-guide-video-${v.id}`}
                     >
                       <Trash2 size={14} />
                     </Button>

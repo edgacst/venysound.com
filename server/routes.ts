@@ -1111,6 +1111,47 @@ export async function registerRoutes(
     }
   });
 
+  // 사이트 공지 리스트 (공개용) — 최신순 최대 50개
+  app.get("/api/announcements/site", async (_req, res) => {
+    try {
+      const list = await storage.getSiteAnnouncements();
+      res.json(
+        list.map((a) => ({
+          id: a.id,
+          content: a.content,
+          imageUrl: a.imageUrl ?? null,
+          startsAt: a.startsAt.toISOString(),
+          endsAt: a.endsAt.toISOString(),
+          createdAt: a.createdAt.toISOString(),
+        }))
+      );
+    } catch (e) {
+      console.error("[announcements/site]", e);
+      res.json([]);
+    }
+  });
+
+  // 동영상 가이드 (공개용)
+  app.get("/api/guide-videos", async (_req, res) => {
+    try {
+      const list = await storage.getGuideVideos();
+      res.json(
+        list.map((v) => ({
+          id: v.id,
+          title: v.title,
+          description: v.description,
+          youtubeUrl: v.youtubeUrl,
+          sortOrder: v.sortOrder,
+          createdAt: v.createdAt.toISOString(),
+          updatedAt: v.updatedAt.toISOString(),
+        }))
+      );
+    } catch (e) {
+      console.error("[guide-videos]", e);
+      res.json([]);
+    }
+  });
+
   app.get("/api/admin/site-announcements", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const list = await storage.getSiteAnnouncements();
@@ -1162,6 +1203,81 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/site-announcements DELETE]", e);
       res.status(500).json({ message: "삭제에 실패했습니다" });
+    }
+  });
+
+  // 동영상 가이드 (관리자용 CRUD)
+  app.get("/api/admin/guide-videos", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await storage.getGuideVideos();
+      res.json(
+        list.map((v) => ({
+          id: v.id,
+          title: v.title,
+          description: v.description,
+          youtubeUrl: v.youtubeUrl,
+          sortOrder: v.sortOrder,
+          createdAt: v.createdAt.toISOString(),
+          updatedAt: v.updatedAt.toISOString(),
+        }))
+      );
+    } catch (e) {
+      console.error("[admin/guide-videos]", e);
+      res.json([]);
+    }
+  });
+
+  app.post("/api/admin/guide-videos", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { title, description, youtubeUrl, sortOrder } = req.body || {};
+      if (!title || typeof title !== "string" || !youtubeUrl || typeof youtubeUrl !== "string") {
+        return res.status(400).json({ message: "title, youtubeUrl 이 필요합니다." });
+      }
+      await storage.createGuideVideo({
+        title: title.trim(),
+        description: typeof description === "string" ? description.trim() : undefined,
+        youtubeUrl: youtubeUrl.trim(),
+        sortOrder: typeof sortOrder === "number" ? sortOrder : null,
+      });
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("[admin/guide-videos POST]", e);
+      const msg = e?.message || "";
+      const hint = msg.includes("guide_videos") && msg.includes("does not exist")
+        ? " DB 테이블이 없습니다. 서버에서 npm run db:guide-videos 실행 후 다시 시도하세요."
+        : "";
+      res.status(500).json({ message: "저장에 실패했습니다." + hint });
+    }
+  });
+
+  app.put("/api/admin/guide-videos/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { title, description, youtubeUrl, sortOrder } = req.body || {};
+      if (!title || typeof title !== "string" || !youtubeUrl || typeof youtubeUrl !== "string") {
+        return res.status(400).json({ message: "title, youtubeUrl 이 필요합니다." });
+      }
+      await storage.updateGuideVideo(id, {
+        title: title.trim(),
+        description: typeof description === "string" ? description.trim() : undefined,
+        youtubeUrl: youtubeUrl.trim(),
+        sortOrder: typeof sortOrder === "number" ? sortOrder : null,
+      });
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/guide-videos PUT]", e);
+      res.status(500).json({ message: "수정에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/admin/guide-videos/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      await storage.deleteGuideVideo(id);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/guide-videos DELETE]", e);
+      res.status(500).json({ message: "삭제에 실패했습니다." });
     }
   });
 

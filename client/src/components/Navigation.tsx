@@ -23,7 +23,8 @@ import {
   BarChart3,
   MessageSquare,
   Globe,
-  Download
+  Download,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -114,6 +115,7 @@ export function Navigation() {
           <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
           <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
           <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
+          <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
         </div>
 
         <div className="hidden md:flex items-center gap-4">
@@ -280,6 +282,7 @@ export function Navigation() {
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
               <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
+              <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
               {user && (
                 <>
                   <NavLink href="/upload" icon={Upload}>{t('nav.upload')}</NavLink>

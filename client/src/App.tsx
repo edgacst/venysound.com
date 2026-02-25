@@ -80,6 +80,7 @@ import Messages from "@/pages/Messages";
 import SunoGuide from "@/pages/SunoGuide";
 import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
+import Notices from "@/pages/Notices";
 
 function Routes() {
   return (
@@ -112,6 +113,7 @@ function Routes() {
       <Route path="/messages" component={Messages} />
       <Route path="/messages/:userId" component={Messages} />
       <Route path="/suno-guide" component={SunoGuide} />
+      <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>
   );
