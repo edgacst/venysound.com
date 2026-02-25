@@ -18,7 +18,7 @@ import banner3 from "@/assets/images/banner-3.png";
 import banner4 from "@/assets/images/banner-4.png";
 
 export default function Home() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: musicResult, isLoading } = useMusicList();
   const musicList = musicResult?.data;
   const totalCount = musicResult?.total || 0;
@@ -40,10 +40,11 @@ export default function Home() {
   const [currentBanner, setCurrentBanner] = useState(0);
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
 
+  const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
   const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string } | null>({
-    queryKey: ["/api/announcement/active"],
+    queryKey: ["/api/announcement/active", lang],
     queryFn: async () => {
-      const res = await fetch("/api/announcement/active");
+      const res = await fetch(`/api/announcement/active?lang=${encodeURIComponent(lang)}`);
       if (!res.ok) return null;
       const data = await res.json();
       return data;
@@ -83,23 +84,33 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background flex flex-col pb-24">
       <Dialog open={showAnnouncement} onOpenChange={(open) => !open && setAnnouncementDismissed(true)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('home.announcementTitle', '공지')}</DialogTitle>
-          </DialogHeader>
-          {activeAnnouncement?.imageUrl ? (
-            <div className="mb-3 rounded-md overflow-hidden bg-muted">
-              <img
-                src={activeAnnouncement.imageUrl.startsWith("http") ? activeAnnouncement.imageUrl : resolveStorageUrl(activeAnnouncement.imageUrl)}
-                alt=""
-                className="w-full max-h-48 object-contain"
-              />
+        <DialogContent
+          className="sm:max-w-md p-0 overflow-hidden border-0"
+          style={activeAnnouncement?.imageUrl ? {
+            backgroundImage: `url(${activeAnnouncement.imageUrl.startsWith("http") ? activeAnnouncement.imageUrl : resolveStorageUrl(activeAnnouncement.imageUrl)})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            minHeight: "320px",
+          } : undefined}
+        >
+          <div className={activeAnnouncement?.imageUrl ? "absolute inset-0 bg-black/50" : ""} />
+          <div className={`relative p-5 ${activeAnnouncement?.imageUrl ? "text-white" : ""}`}>
+            <DialogHeader>
+              <DialogTitle className={activeAnnouncement?.imageUrl ? "text-white" : ""}>
+                {t('home.announcementTitle', '공지')}
+              </DialogTitle>
+            </DialogHeader>
+            <div className={`whitespace-pre-wrap text-sm py-2 ${activeAnnouncement?.imageUrl ? "text-white/95" : "text-muted-foreground"}`}>
+              {activeAnnouncement?.content}
             </div>
-          ) : null}
-          <div className="whitespace-pre-wrap text-sm text-muted-foreground py-2">{activeAnnouncement?.content}</div>
-          <Button className="w-full mt-2" onClick={() => setAnnouncementDismissed(true)}>
-            {t('home.announcementConfirm', '확인')}
-          </Button>
+            <Button
+              className="w-full mt-2"
+              onClick={() => setAnnouncementDismissed(true)}
+              variant={activeAnnouncement?.imageUrl ? "secondary" : "default"}
+            >
+              {t('home.announcementConfirm', '확인')}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
       <Navigation />

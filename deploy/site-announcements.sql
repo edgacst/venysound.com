@@ -10,3 +10,5 @@ CREATE TABLE IF NOT EXISTS site_announcements (
 );
 -- 기존 테이블에 이미지 컬럼 추가 (이미 있으면 무시)
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS image_url TEXT;
+-- 언어별 번역 저장 (공지 저장 시 자동 번역)
+ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS content_translations JSONB DEFAULT '{}';

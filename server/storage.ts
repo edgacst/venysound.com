@@ -90,9 +90,10 @@ export interface IStorage {
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
   getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
-  getActiveSiteAnnouncement(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null>;
+  getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null>;
   getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
   saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
+  updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void>;
   deleteSiteAnnouncement(id: number): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
@@ -1229,17 +1230,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Site announcement popup (admin)
-  async getActiveSiteAnnouncement(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null> {
+  async getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date } | null> {
     const now = new Date();
-    const [row] = await db.select().from(siteAnnouncements)
+    const [row] = await db.select({
+      id: siteAnnouncements.id,
+      content: siteAnnouncements.content,
+      contentTranslations: siteAnnouncements.contentTranslations,
+      imageUrl: siteAnnouncements.imageUrl,
+      startsAt: siteAnnouncements.startsAt,
+      endsAt: siteAnnouncements.endsAt,
+    }).from(siteAnnouncements)
       .where(and(lte(siteAnnouncements.startsAt, now), gte(siteAnnouncements.endsAt, now)))
       .orderBy(desc(siteAnnouncements.createdAt))
       .limit(1);
-    return row ? { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt } : null;
+    if (!row) return null;
+    const translations = (row.contentTranslations as Record<string, string> | null) ?? {};
+    const content = (lang && translations[lang]) ? translations[lang] : row.content;
+    return { id: row.id, content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
   }
 
   async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
-    return db.select({
+    const rows = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
       imageUrl: siteAnnouncements.imageUrl,
@@ -1247,6 +1258,7 @@ export class DatabaseStorage implements IStorage {
       endsAt: siteAnnouncements.endsAt,
       createdAt: siteAnnouncements.createdAt,
     }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
+    return rows.map((r) => ({ ...r, createdAt: r.createdAt ?? new Date() }));
   }
 
   async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
@@ -1260,6 +1272,10 @@ export class DatabaseStorage implements IStorage {
     const row = inserted[0];
     if (!row) throw new Error("Insert did not return row");
     return { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
+  }
+
+  async updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void> {
+    await db.update(siteAnnouncements).set({ contentTranslations: translations, updatedAt: new Date() }).where(eq(siteAnnouncements.id, id));
   }
 
   async deleteSiteAnnouncement(id: number): Promise<void> {
