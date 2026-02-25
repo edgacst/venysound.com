@@ -17,7 +17,7 @@ async function translateWithMyMemory(text: string, targetLang: string): Promise<
   if (!res.ok) throw new Error(`MyMemory ${res.status}`);
   const data = await res.json();
   const translated = data?.responseData?.translatedText;
-  if (!translated) throw new Error("MyMemory no translatedText");
+  if (!translated || typeof translated !== "string") throw new Error("MyMemory no translatedText");
   return translated;
 }
 
@@ -59,9 +59,11 @@ export async function translateAnnouncementContent(content: string): Promise<Tra
   for (const target of TARGET_LANGS) {
     try {
       result[target] = await translateToLang(trimmed, target);
+      if (result[target]) console.info("[translate] ok", target);
     } catch (e) {
       console.warn("[translate] skip", target, e);
     }
+    await new Promise((r) => setTimeout(r, 300));
   }
   if (Object.keys(result).length === 0) {
     console.warn("[translate] no translations succeeded for announcement");

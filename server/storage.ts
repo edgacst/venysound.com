@@ -1245,7 +1245,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(siteAnnouncements.createdAt))
       .limit(1);
     if (!row) return null;
-    const translations = (row.contentTranslations as Record<string, string> | null) ?? {};
+    const raw = row.contentTranslations;
+    const translations: Record<string, string> =
+      typeof raw === "string" ? (() => { try { return JSON.parse(raw) ?? {}; } catch { return {}; } })() : (raw ?? {}) as Record<string, string>;
     const content = (lang && translations[lang]) ? translations[lang] : row.content;
     const result: { id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } = {
       id: row.id,

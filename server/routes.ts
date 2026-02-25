@@ -1094,7 +1094,7 @@ export async function registerRoutes(
   // 사이트 공지 팝업 (메인 접속 시 노출) — 공개 API. 쿼리 lang=en|ja|zh|ko 에 따라 번역된 내용 반환
   app.get("/api/announcement/active", async (req, res) => {
     try {
-      const lang = (req.query.lang as string)?.toLowerCase()?.slice(0, 2) || undefined;
+      const lang = (req.query.lang as string)?.toLowerCase()?.replace(/-.*$/, "").slice(0, 2) || undefined;
       const announcement = await storage.getActiveSiteAnnouncement(lang);
       if (!announcement) return res.json(null);
       res.json({

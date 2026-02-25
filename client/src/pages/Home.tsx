@@ -23,7 +23,7 @@ const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: numbe
 
 export default function Home() {
   const { t, i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList();
   const musicList = musicResult?.data;
@@ -57,15 +57,16 @@ export default function Home() {
     },
   });
 
-  // 아이디당(로그인 시) / 비로그인은 세션당 1번만 표시: 이미 본 공지면 숨김
-  useEffect(() => {
-    if (!activeAnnouncement?.id) return;
-    const storage = userId ? localStorage : sessionStorage;
-    const key = ANNOUNCEMENT_SEEN_KEY(userId, activeAnnouncement.id);
-    if (storage.getItem(key) === "1") setAnnouncementDismissed(true);
-  }, [activeAnnouncement?.id, userId]);
+  // 아이디당 1번만 표시: 로그인 확정 후 storage에서 '이미 봤는지' 읽어서 깜빡임 없이 판단
+  const hasSeenInStorage =
+    typeof window !== "undefined" &&
+    activeAnnouncement?.id != null &&
+    !isAuthLoading &&
+    (userId ? localStorage : sessionStorage).getItem(ANNOUNCEMENT_SEEN_KEY(userId, activeAnnouncement.id)) === "1";
 
-  const showAnnouncement = Boolean(activeAnnouncement?.content && !announcementDismissed);
+  const showAnnouncement = Boolean(
+    !isAuthLoading && activeAnnouncement?.content && !announcementDismissed && !hasSeenInStorage
+  );
 
   const handleAnnouncementDismiss = () => {
     if (activeAnnouncement?.id) {
