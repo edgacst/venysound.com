@@ -242,6 +242,7 @@ export default function Messages() {
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground">{t('messages.receiveNewMessagesHint', '끄면 모르는 사람이 대화를 걸 수 없습니다')}</p>
+                <p className="text-[10px] text-muted-foreground">{t('messages.blockReportHint', '차단·신고: 대화를 연 뒤 상단 ⋮ 메뉴')}</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                   <Input
@@ -396,7 +397,7 @@ export default function Messages() {
                                       : "bg-muted"
                                   }`}
                                 >
-                                  {msg.content}
+                                  {(msg.content ?? msg.body ?? "").trim() || t('messages.emptyMessage', '(메시지 없음)')}
                                 </div>
                                 <p className={`text-[10px] text-muted-foreground mt-1 ${isMine ? "text-right" : "text-left"}`}>
                                   {(msg.created_at ?? msg.createdAt) && formatDistanceToNow(new Date(msg.created_at ?? msg.createdAt), { addSuffix: true, locale: dateLocale })}

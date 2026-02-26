@@ -626,6 +626,10 @@
     },
     "preset": "프리셋"
   },
+  "messages": {
+    "emptyMessage": "(메시지 없음)",
+    "blockReportHint": "차단·신고: 대화를 연 뒤 상단 ⋮ 메뉴"
+  },
   "notificationsPage": {
     "title": "알림",
     "loginRequired": "로그인이 필요합니다.",

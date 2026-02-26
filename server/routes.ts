@@ -2913,7 +2913,15 @@ export async function registerRoutes(
       await storage.markMessagesRead(conversationId, userId);
       const serialized = messages.map((m: any) => {
         const created_at = toUTCISO(m.created_at ?? m.createdAt);
-        return { ...m, created_at };
+        return {
+          ...m,
+          created_at,
+          content: m.content ?? m.body ?? "",
+          sender_id: m.sender_id ?? m.senderId,
+          sender_first_name: m.sender_first_name,
+          sender_last_name: m.sender_last_name,
+          sender_image: m.sender_image,
+        };
       });
       res.json(serialized);
     } catch (error: any) {

@@ -626,6 +626,10 @@
     },
     "preset": "Preset"
   },
+  "messages": {
+    "emptyMessage": "(No content)",
+    "blockReportHint": "Block or report: open a conversation, then use the ⋮ menu at the top"
+  },
   "notificationsPage": {
     "title": "Notifications",
     "loginRequired": "Please log in.",
