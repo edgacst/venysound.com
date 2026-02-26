@@ -79,7 +79,10 @@ export default function Messages() {
     queryKey: ["/api/conversations", selectedConvoId, "messages"],
     queryFn: async () => {
       if (!selectedConvoId) return [];
-      const res = await fetch(`/api/conversations/${selectedConvoId}/messages`, { credentials: "include" });
+      const res = await fetch(`/api/conversations/${selectedConvoId}/messages`, {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to fetch messages");
       return res.json();
     },
@@ -198,12 +201,33 @@ export default function Messages() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "new_message") {
+        if (data.type === "new_message" && data.conversationId != null) {
           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
           queryClient.invalidateQueries({ queryKey: ["/api/messages/unread-count"] });
-          if (data.conversationId === selectedConvoId) {
-            queryClient.invalidateQueries({ queryKey: ["/api/conversations", selectedConvoId, "messages"] });
+          const cid = data.conversationId;
+          const payload = data.message;
+          if (payload && typeof cid === "number") {
+            const newMsg = {
+              id: payload.id,
+              conversation_id: cid,
+              sender_id: payload.sender_id ?? payload.senderId,
+              content: payload.content ?? "",
+              created_at: payload.created_at ?? payload.createdAt,
+              sender_first_name: payload.sender_first_name ?? "",
+              sender_last_name: payload.sender_last_name ?? "",
+              sender_image: payload.sender_image ?? null,
+            };
+            queryClient.setQueryData(
+              ["/api/conversations", cid, "messages"],
+              (old: any[] | undefined) => {
+                const list = old ?? [];
+                if (list.some((m: any) => String(m.id) === String(newMsg.id))) return list;
+                return [...list, newMsg];
+              }
+            );
           }
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations", cid, "messages"] });
+          queryClient.refetchQueries({ queryKey: ["/api/conversations", cid, "messages"] });
         }
       } catch {}
     };
