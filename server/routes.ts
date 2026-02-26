@@ -2782,6 +2782,7 @@ export async function registerRoutes(
       const serialized = convos.map((c: any) => ({ ...c, last_msg_time: toUTCISO(c.last_msg_time) }));
       res.json(serialized);
     } catch (error: any) {
+      console.error("Conversations list error:", error?.message ?? error);
       res.status(500).json({ message: "대화 목록 조회 실패" });
     }
   });
@@ -2947,7 +2948,7 @@ export async function registerRoutes(
       const convos = await storage.getConversationsByUser(userId);
       const thisConvo = convos.find((c: any) => c.id === conversationId);
       if (thisConvo) {
-        const otherUserId = thisConvo.other_user_id;
+        const otherUserId = thisConvo.other_user_id ?? thisConvo.otherUserId;
         const sender = await storage.getUserById(userId);
         const at = (msg as any).createdAt ?? (msg as any).created_at;
         sendToUser(otherUserId, {
@@ -2966,6 +2967,7 @@ export async function registerRoutes(
       const at = (msg as any).createdAt ?? (msg as any).created_at;
       res.json({ ...msg, created_at: toUTCISO(at) });
     } catch (error: any) {
+      console.error("Message send error:", error?.message ?? error);
       res.status(500).json({ message: "메시지 전송 실패" });
     }
   });
