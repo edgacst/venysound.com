@@ -628,7 +628,8 @@
   },
   "messages": {
     "emptyMessage": "(No content)",
-    "blockReportHint": "Block or report: open a conversation, then use the ⋮ menu at the top"
+    "blockReportHint": "Block or report: open a conversation, then use the ⋮ menu at the top",
+    "loadingConversation": "Loading conversation..."
   },
   "notificationsPage": {
     "title": "Notifications",

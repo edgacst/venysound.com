@@ -28,10 +28,16 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { usePlayerStore } from "@/components/AudioPlayer";
+
+const PLAYER_BAR_HEIGHT_REM = 5;   // 플레이어 바 높이 (대략 80px)
+const INPUT_BAR_HEIGHT_REM = 3.5;  // 입력창 높이
 
 export default function Messages() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const activeMusicId = usePlayerStore((s) => s.activeMusicId);
+  const playerVisible = activeMusicId !== null;
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const params = useParams<{ userId?: string }>();
@@ -194,6 +200,8 @@ export default function Messages() {
   }, [handleSend]);
 
   const selectedConvo = conversations.find((c: any) => c.id === selectedConvoId);
+  // 첫 대화 생성 직후에는 conversations 목록이 아직 갱신되지 않아 selectedConvo가 없을 수 있음 → selectedConvoId만 있으면 채팅+입력 표시
+  const otherUserId = selectedConvo?.other_user_id ?? params.userId ?? null;
 
   const filteredConvos = conversations.filter((c: any) => {
     if (!searchQuery) return true;
@@ -307,8 +315,8 @@ export default function Messages() {
             </div>
 
             <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${!selectedConvoId ? "hidden md:flex" : "flex"}`}>
-              {selectedConvoId && selectedConvo ? (
-                <div className="grid grid-rows-[auto_1fr_auto] min-h-0 h-full">
+              {selectedConvoId ? (
+                <div className="flex flex-col min-h-0 h-full">
                   <div className="flex items-center gap-2 p-3 border-b border-border shrink-0">
                     <Button
                       variant="ghost"
@@ -319,50 +327,65 @@ export default function Messages() {
                     >
                       <ArrowLeft size={20} />
                     </Button>
-                    <Link href={`/profile/${selectedConvo.other_user_id}`}>
-                      <Avatar className="h-9 w-9 cursor-pointer shrink-0">
-                        <AvatarImage src={selectedConvo.other_profile_image} />
-                        <AvatarFallback>{(selectedConvo.other_first_name || "?")[0]}</AvatarFallback>
-                      </Avatar>
-                    </Link>
-                    <Link href={`/profile/${selectedConvo.other_user_id}`} className="flex-1 min-w-0">
-                      <span className="font-medium cursor-pointer truncate block" data-testid="text-chat-partner-name">
-                        {selectedConvo.other_first_name} {selectedConvo.other_last_name}
+                    {otherUserId ? (
+                      <>
+                        <Link href={`/profile/${otherUserId}`}>
+                          <Avatar className="h-9 w-9 cursor-pointer shrink-0">
+                            <AvatarImage src={selectedConvo?.other_profile_image} />
+                            <AvatarFallback>{(selectedConvo?.other_first_name ?? "?")[0]}</AvatarFallback>
+                          </Avatar>
+                        </Link>
+                        <Link href={`/profile/${otherUserId}`} className="flex-1 min-w-0">
+                          <span className="font-medium cursor-pointer truncate block" data-testid="text-chat-partner-name">
+                            {selectedConvo ? `${selectedConvo.other_first_name ?? ""} ${selectedConvo.other_last_name ?? ""}`.trim() : t('messages.loadingConversation', '대화 로딩 중...')}
+                          </span>
+                        </Link>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-chat-menu">
+                              <MoreVertical size={18} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => {
+                                if (confirm(t('messages.confirmBlock', '이 사용자를 차단하시겠습니까? 차단하면 대화가 목록에서 사라집니다.'))) {
+                                  blockUser.mutate(otherUserId);
+                                }
+                              }}
+                              data-testid="button-block-user"
+                            >
+                              <Ban size={14} className="mr-2" /> {t('messages.block', '차단')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                setReportTargetUserId(otherUserId);
+                                setReportTargetConvoId(selectedConvoId);
+                                setReportOpen(true);
+                              }}
+                              data-testid="button-report-user"
+                            >
+                              <Flag size={14} className="mr-2" /> {t('messages.report', '신고')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
+                    ) : (
+                      <span className="flex-1 font-medium truncate text-muted-foreground" data-testid="text-chat-partner-name">
+                        {t('messages.loadingConversation', '대화 로딩 중...')}
                       </span>
-                    </Link>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-chat-menu">
-                          <MoreVertical size={18} />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => {
-                            if (confirm(t('messages.confirmBlock', '이 사용자를 차단하시겠습니까? 차단하면 대화가 목록에서 사라집니다.'))) {
-                              blockUser.mutate(selectedConvo.other_user_id);
-                            }
-                          }}
-                          data-testid="button-block-user"
-                        >
-                          <Ban size={14} className="mr-2" /> {t('messages.block', '차단')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => {
-                            setReportTargetUserId(selectedConvo.other_user_id);
-                            setReportTargetConvoId(selectedConvo.id);
-                            setReportOpen(true);
-                          }}
-                          data-testid="button-report-user"
-                        >
-                          <Flag size={14} className="mr-2" /> {t('messages.report', '신고')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    )}
                   </div>
 
-                  <div className="min-h-0 overflow-y-auto p-4 space-y-3">
+                  <div
+                    className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3"
+                    style={{
+                      paddingBottom: playerVisible
+                        ? `${INPUT_BAR_HEIGHT_REM + PLAYER_BAR_HEIGHT_REM}rem`
+                        : `${INPUT_BAR_HEIGHT_REM}rem`,
+                    }}
+                  >
                     {messagesLoading ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="animate-spin text-muted-foreground" size={24} />
@@ -411,8 +434,14 @@ export default function Messages() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <div className="shrink-0 p-3 border-t border-border bg-background">
-                    <div className="flex items-center gap-2">
+                  {/* 입력창: 화면 하단 고정, 플레이어 바가 있으면 그 위에 배치 (z-40 < 플레이어 z-50) */}
+                  <div
+                    className="fixed left-0 right-0 z-40 border-t border-border bg-background p-3"
+                    style={{
+                      bottom: playerVisible ? `${PLAYER_BAR_HEIGHT_REM}rem` : 0,
+                    }}
+                  >
+                    <div className="max-w-6xl mx-auto flex items-center gap-2">
                       <Input
                         placeholder={t('messages.inputPlaceholder', '메시지를 입력하세요...')}
                         value={messageText}
@@ -420,6 +449,7 @@ export default function Messages() {
                         onKeyDown={handleKeyDown}
                         disabled={sendMessage.isPending}
                         data-testid="input-message"
+                        className="flex-1"
                       />
                       <Button
                         size="icon"

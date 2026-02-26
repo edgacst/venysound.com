@@ -628,7 +628,8 @@
   },
   "messages": {
     "emptyMessage": "(메시지 없음)",
-    "blockReportHint": "차단·신고: 대화를 연 뒤 상단 ⋮ 메뉴"
+    "blockReportHint": "차단·신고: 대화를 연 뒤 상단 ⋮ 메뉴",
+    "loadingConversation": "대화 로딩 중..."
   },
   "notificationsPage": {
     "title": "알림",
