@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bell, Check, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, Check, CheckCheck, Loader2, Trash2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -45,6 +45,15 @@ export default function Notifications() {
   const markAllRead = useMutation({
     mutationFn: async () => {
       await apiRequest("PATCH", "/api/notifications/read-all");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+
+  const deleteNotification = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/notifications/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -105,37 +114,54 @@ export default function Notifications() {
             {t('notificationsPage.empty', '알림이 없습니다.')}
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {notifications.map((notif: any) => (
               <Card
                 key={notif.id}
-                className={`p-4 cursor-pointer transition-colors ${notif.isRead ? 'opacity-60' : 'border-primary/20'}`}
+                className={`px-3 py-2 cursor-pointer transition-colors ${notif.isRead ? 'opacity-60' : 'border-primary/20'}`}
                 onClick={() => {
                   if (!notif.isRead) markRead(notif.id);
                   if (notif.url) setLocation(notif.url);
                 }}
                 data-testid={`notification-${notif.id}`}
               >
-                <div className="flex items-start gap-3">
-                  <div className={`w-2 h-2 rounded-full mt-2 shrink-0 ${notif.isRead ? 'bg-muted' : 'bg-primary'}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm" data-testid={`text-notification-message-${notif.id}`}>
-                      {getNotificationMessage(notif, t)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {notif.createdAt ? new Date(notif.createdAt).toLocaleString(i18n.language === "ko" ? "ko-KR" : i18n.language === "ja" ? "ja-JP" : i18n.language === "zh" ? "zh-CN" : "en-US") : ""}
-                    </p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${notif.isRead ? 'bg-muted' : 'bg-primary'}`} />
+                  <p className="flex-1 min-w-0 text-xs truncate" data-testid={`text-notification-message-${notif.id}`}>
+                    {getNotificationMessage(notif, t)}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">
+                    {notif.createdAt
+                      ? new Intl.DateTimeFormat(i18n.language === "ko" ? "ko-KR" : i18n.language === "ja" ? "ja-JP" : i18n.language === "zh" ? "zh-CN" : "en-US", {
+                          timeZone: "Asia/Seoul",
+                          dateStyle: "medium",
+                          timeStyle: "medium",
+                          hour12: i18n.language === "ko",
+                        }).format(new Date(notif.createdAt))
+                      : ""}
+                  </span>
                   {!notif.isRead && (
                     <Button
                       size="icon"
                       variant="ghost"
+                      className="h-7 w-7 shrink-0"
                       onClick={(e) => { e.stopPropagation(); markRead(notif.id); }}
                       data-testid={`button-mark-read-${notif.id}`}
                     >
-                      <Check size={14} />
+                      <Check size={12} />
                     </Button>
                   )}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); deleteNotification.mutate(notif.id); }}
+                    disabled={deleteNotification.isPending}
+                    data-testid={`button-delete-notification-${notif.id}`}
+                    title={t('notificationsPage.delete', '삭제')}
+                  >
+                    <Trash2 size={12} />
+                  </Button>
                 </div>
               </Card>
             ))}

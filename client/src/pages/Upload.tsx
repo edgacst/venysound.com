@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useCreateMusic } from "@/hooks/use-music";
+import { useCreateMusic, useUpdateMusic } from "@/hooks/use-music";
 import { useUpload } from "@/hooks/use-upload";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
@@ -28,6 +28,15 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/PageTransition";
+import { LyricsSyncEditor } from "@/components/MusicCard";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const uploadSchema = z.object({
   title: z.string().min(1, "음원 제목을 입력해주세요"),
@@ -55,7 +64,8 @@ export default function Upload() {
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { mutate: createMusic, isPending: isCreating } = useCreateMusic();
-  
+  const { mutate: updateMusic, isPending: isUpdatingLyrics } = useUpdateMusic();
+
   const { uploadFile: uploadAudio, isUploading: isUploadingAudio } = useUpload();
   const { uploadFile: uploadImage, isUploading: isUploadingImage } = useUpload();
   
@@ -70,6 +80,8 @@ export default function Upload() {
   const [isFetchingUnsplash, setIsFetchingUnsplash] = useState(false);
   const [selectedMainGenre, setSelectedMainGenre] = useState("");
   const [selectedSubGenre, setSelectedSubGenre] = useState("");
+  /** 업로드 직후 가사만 넣었을 때 싱크 단계로 넘어가기 위함 */
+  const [postUploadSync, setPostUploadSync] = useState<{ musicId: number; lyrics: string } | null>(null);
 
   const form = useForm<UploadFormValues>({
     resolver: zodResolver(uploadSchema),
@@ -165,13 +177,24 @@ export default function Upload() {
         if (imageRes) imagePath = imageRes.objectPath;
       }
 
-      createMusic({
-        ...payload,
-        filename: audioRes.objectPath,
-        imageFilename: imagePath,
-      }, {
-        onSuccess: () => setLocation("/")
-      });
+      createMusic(
+        {
+          ...payload,
+          filename: audioRes.objectPath,
+          imageFilename: imagePath,
+        },
+        {
+          onSuccess: (created) => {
+            const lyrics = (payload.lyrics ?? "").trim();
+            const hasLrcTimestamps = /\[\d{2}:\d{2}(?:\.\d{2,3})?\]/.test(lyrics);
+            if (lyrics && !hasLrcTimestamps) {
+              setPostUploadSync({ musicId: created.id, lyrics });
+              return;
+            }
+            setLocation("/");
+          },
+        }
+      );
 
     } catch (error) {
       console.error(t('upload.uploadFailed', '업로드 실패'), error);
@@ -427,7 +450,7 @@ export default function Upload() {
                           data-testid="input-lyrics"
                         />
                       </FormControl>
-                      <FormDescription>{t('upload.lyricsDesc', '일반 텍스트 또는 LRC 형식([00:15.00]가사)으로 입력하면 싱크 가사가 지원됩니다')}</FormDescription>
+                      <FormDescription>{t('upload.lyricsDesc', '가사만 입력하면 등록 직후 입싱크 맞추기 단계가 나옵니다. LRC 형식([00:15.00]가사)으로 입력해도 됩니다.')}</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -564,6 +587,47 @@ export default function Upload() {
         </Card>
       </div>
       <Footer />
+
+      <Dialog open={!!postUploadSync} onOpenChange={(open) => { if (!open) { setPostUploadSync(null); setLocation("/"); } }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('upload.syncLyricsTitle', '가사 입싱크 맞추기')}</DialogTitle>
+            <DialogDescription>
+              {t('upload.syncLyricsDesc', '음원을 재생하면서 가사가 나올 때마다 버튼을 눌러주세요. 등록 직후 한 번만 맞추면 됩니다.')}
+            </DialogDescription>
+          </DialogHeader>
+          {postUploadSync && (
+            <LyricsSyncEditor
+              audioUrl={`/api/music/${postUploadSync.musicId}/stream`}
+              plainLyrics={postUploadSync.lyrics.replace(/\[\d{2}:\d{2}(?:\.\d{2,3})?\]/g, "").trim()}
+              onSave={(lrc) => {
+                updateMusic(
+                  { id: postUploadSync.musicId, data: { lyrics: lrc } },
+                  {
+                    onSuccess: () => {
+                      toast({ title: t('upload.syncSaved', '가사 싱크가 저장되었습니다') });
+                      setPostUploadSync(null);
+                      setLocation("/");
+                    },
+                  }
+                );
+              }}
+              onClose={() => { setPostUploadSync(null); setLocation("/"); }}
+            />
+          )}
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => { setPostUploadSync(null); setLocation("/"); }}
+              disabled={isUpdatingLyrics}
+              data-testid="button-skip-sync"
+            >
+              {t('upload.skipSync', '나중에 하기')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </div>
     </PageTransition>
   );

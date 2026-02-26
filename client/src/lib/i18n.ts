@@ -10,6 +10,7 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
+    debug: false,
     resources: {
       ko: { translation: ko },
       en: { translation: en },

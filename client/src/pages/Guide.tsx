@@ -91,19 +91,20 @@ export default function Guide() {
           </Link>
 
           <div className="text-center mb-8">
-            <h1 className="text-3xl md:text-4xl font-display font-bold mb-3" data-testid="text-guide-title">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-bold mb-3 break-words px-1" data-testid="text-guide-title">
               {t('guide.title', 'Veny_Sound 시작 가이드')}
             </h1>
-            <p className="text-muted-foreground text-lg">
+            <p className="text-muted-foreground text-base sm:text-lg break-words px-1">
               {t('guide.subtitle', 'Veny_Sound를 100% 활용하는 방법을 알아보세요')}
             </p>
           </div>
 
-          <div className="flex justify-center gap-2 mb-10">
+          <div className="flex justify-center gap-2 mb-10 overflow-x-auto pb-1 scrollbar-thin max-w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-2 shrink-0">
             <Button
               variant={activeTab === "listener" ? "default" : "outline"}
               onClick={() => setActiveTab("listener")}
-              className="gap-2 rounded-full px-6"
+              className="gap-2 rounded-full px-6 shrink-0"
               data-testid="tab-listener"
             >
               <Headphones size={16} />
@@ -112,7 +113,7 @@ export default function Guide() {
             <Button
               variant={activeTab === "artist" ? "default" : "outline"}
               onClick={() => setActiveTab("artist")}
-              className="gap-2 rounded-full px-6"
+              className="gap-2 rounded-full px-6 shrink-0"
               data-testid="tab-artist"
             >
               <Mic2 size={16} />
@@ -121,12 +122,13 @@ export default function Guide() {
             <Button
               variant={activeTab === "video" ? "default" : "outline"}
               onClick={() => setActiveTab("video")}
-              className="gap-2 rounded-full px-6"
+              className="gap-2 rounded-full px-6 shrink-0"
               data-testid="tab-video"
             >
               <Play size={16} />
               {t("guide.videoGuide", "동영상 가이드")}
             </Button>
+            </div>
           </div>
 
           {activeTab === "listener" && (

@@ -9,26 +9,59 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { PageTransition } from "@/components/PageTransition";
-import { MessageSquare, Send, ArrowLeft, Search, Loader2 } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Search, Loader2, Settings2, Ban, Flag, MoreVertical } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { Link, useLocation, useParams } from "wouter";
 import { useTranslation } from 'react-i18next';
+import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 export default function Messages() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const params = useParams<{ userId?: string }>();
   const [selectedConvoId, setSelectedConvoId] = useState<number | null>(null);
   const [messageText, setMessageText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [initialConvoCreated, setInitialConvoCreated] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
+  const [reportTargetConvoId, setReportTargetConvoId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const dateLocale = i18n.language === 'ko' ? ko : undefined;
+
+  const { data: messageSettings, refetch: refetchMessageSettings } = useQuery<{ allowDirectMessages: boolean }>({
+    queryKey: ["/api/users/me/message-settings"],
+    enabled: !!user,
+  });
+
+  const updateMessageSettings = useMutation({
+    mutationFn: async (allowDirectMessages: boolean) => {
+      await apiRequest("PATCH", "/api/users/me/message-settings", { allowDirectMessages });
+    },
+    onSuccess: (_, allowDirectMessages) => {
+      queryClient.setQueryData(["/api/users/me/message-settings"], { allowDirectMessages });
+      toast({ title: t('messages.settingsSaved', '설정이 저장되었습니다') });
+    },
+  });
 
   const { data: conversations = [], isLoading: convosLoading } = useQuery<any[]>({
     queryKey: ["/api/conversations"],
@@ -61,6 +94,36 @@ export default function Messages() {
     },
   });
 
+  const blockUser = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", `/api/block/${userId}`);
+    },
+    onSuccess: (_, userId) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      setSelectedConvoId(null);
+      toast({ title: t('messages.userBlocked', '사용자를 차단했습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: t('messages.blockFailed', '차단 실패'), description: err?.message, variant: "destructive" });
+    },
+  });
+
+  const reportUser = useMutation({
+    mutationFn: async ({ reportedUserId, reason, conversationId }: { reportedUserId: string; reason: string; conversationId?: number }) => {
+      await apiRequest("POST", "/api/report-user", { reportedUserId, reason, conversationId });
+    },
+    onSuccess: () => {
+      setReportOpen(false);
+      setReportReason("");
+      setReportTargetUserId(null);
+      setReportTargetConvoId(null);
+      toast({ title: t('messages.reportSubmitted', '신고가 접수되었습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: t('messages.reportFailed', '신고 실패'), description: err?.message, variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     if (!user || !params.userId || initialConvoCreated || params.userId === user.id) return;
     const existingConvo = conversations.find((c: any) => c.other_user_id === params.userId);
@@ -71,15 +134,20 @@ export default function Messages() {
     }
     if (!convosLoading) {
       apiRequest("POST", "/api/conversations", { otherUserId: params.userId })
-        .then(r => r.json())
+        .then(r => {
+          if (r.status === 403) return r.json().then((d: any) => { throw new Error(d.message || "메시지를 보낼 수 없습니다"); });
+          return r.json();
+        })
         .then(conv => {
           setInitialConvoCreated(true);
           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
           setSelectedConvoId(conv.id);
         })
-        .catch(() => {});
+        .catch((err) => {
+          toast({ title: t('messages.cannotStartConversation', '대화를 시작할 수 없습니다'), description: err?.message || "", variant: "destructive" });
+        });
     }
-  }, [user, params.userId, conversations, convosLoading, initialConvoCreated]);
+  }, [user, params.userId, conversations, convosLoading, initialConvoCreated, toast, t]);
 
   useEffect(() => {
     if (!user) return;
@@ -161,7 +229,19 @@ export default function Messages() {
 
           <Card className="flex overflow-hidden" style={{ height: "calc(100vh - 200px)", minHeight: "500px" }}>
             <div className={`w-full md:w-80 border-r border-border flex flex-col ${selectedConvoId ? "hidden md:flex" : "flex"}`}>
-              <div className="p-3 border-b border-border">
+              <div className="p-3 border-b border-border space-y-3">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
+                    <Settings2 size={14} /> {t('messages.receiveNewMessages', '새 메시지 받기')}
+                  </span>
+                  <Switch
+                    checked={messageSettings?.allowDirectMessages ?? true}
+                    onCheckedChange={(checked) => updateMessageSettings.mutate(checked)}
+                    disabled={updateMessageSettings.isPending}
+                    data-testid="switch-allow-messages"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">{t('messages.receiveNewMessagesHint', '끄면 모르는 사람이 대화를 걸 수 없습니다')}</p>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
                   <Input
@@ -228,27 +308,57 @@ export default function Messages() {
             <div className={`flex-1 flex flex-col ${!selectedConvoId ? "hidden md:flex" : "flex"}`}>
               {selectedConvoId && selectedConvo ? (
                 <>
-                  <div className="flex items-center gap-3 p-3 border-b border-border">
+                  <div className="flex items-center gap-2 p-3 border-b border-border">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="md:hidden"
+                      className="md:hidden shrink-0"
                       onClick={() => setSelectedConvoId(null)}
                       data-testid="button-back-to-list"
                     >
                       <ArrowLeft size={20} />
                     </Button>
                     <Link href={`/profile/${selectedConvo.other_user_id}`}>
-                      <Avatar className="h-9 w-9 cursor-pointer">
+                      <Avatar className="h-9 w-9 cursor-pointer shrink-0">
                         <AvatarImage src={selectedConvo.other_profile_image} />
                         <AvatarFallback>{(selectedConvo.other_first_name || "?")[0]}</AvatarFallback>
                       </Avatar>
                     </Link>
-                    <Link href={`/profile/${selectedConvo.other_user_id}`}>
-                      <span className="font-medium cursor-pointer" data-testid="text-chat-partner-name">
+                    <Link href={`/profile/${selectedConvo.other_user_id}`} className="flex-1 min-w-0">
+                      <span className="font-medium cursor-pointer truncate block" data-testid="text-chat-partner-name">
                         {selectedConvo.other_first_name} {selectedConvo.other_last_name}
                       </span>
                     </Link>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="shrink-0" data-testid="button-chat-menu">
+                          <MoreVertical size={18} />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => {
+                            if (confirm(t('messages.confirmBlock', '이 사용자를 차단하시겠습니까? 차단하면 대화가 목록에서 사라집니다.'))) {
+                              blockUser.mutate(selectedConvo.other_user_id);
+                            }
+                          }}
+                          data-testid="button-block-user"
+                        >
+                          <Ban size={14} className="mr-2" /> {t('messages.block', '차단')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setReportTargetUserId(selectedConvo.other_user_id);
+                            setReportTargetConvoId(selectedConvo.id);
+                            setReportOpen(true);
+                          }}
+                          data-testid="button-report-user"
+                        >
+                          <Flag size={14} className="mr-2" /> {t('messages.report', '신고')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -331,6 +441,35 @@ export default function Messages() {
               )}
             </div>
           </Card>
+
+          <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('messages.reportUser', '사용자 신고')}</DialogTitle>
+                <DialogDescription>{t('messages.reportUserDesc', '신고 사유를 입력해 주세요. 검토 후 조치하겠습니다.')}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label>{t('messages.reportReason', '사유')}</Label>
+                <Textarea
+                  placeholder={t('messages.reportReasonPlaceholder', '스팸, 욕설, 괴롭힘 등')}
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  rows={3}
+                  data-testid="input-report-reason"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setReportOpen(false)}>{t('common.cancel', '취소')}</Button>
+                <Button
+                  onClick={() => reportTargetUserId && reportReason.trim() && reportUser.mutate({ reportedUserId: reportTargetUserId, reason: reportReason.trim(), conversationId: reportTargetConvoId ?? undefined })}
+                  disabled={!reportReason.trim() || reportUser.isPending}
+                  data-testid="button-submit-report"
+                >
+                  {reportUser.isPending ? <Loader2 className="animate-spin size-4" /> : t('messages.submitReport', '신고하기')}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </PageTransition>
     </div>

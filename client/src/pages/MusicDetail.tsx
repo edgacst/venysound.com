@@ -546,15 +546,22 @@ export default function MusicDetail() {
                 </span>
 
                 {!isOwner && user && uploader && (
-                  <Button
-                    variant={isFollowingUploader ? "default" : "outline"}
-                    size="sm"
-                    className={`rounded-full gap-1 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
-                    onClick={() => followUser(uploader.id)}
-                    data-testid="button-follow-uploader"
-                  >
-                    {isFollowingUploader ? <><UserCheck size={14} /> {t('musicDetail.following', '팔로잉')}</> : <><UserPlus size={14} /> {t('musicDetail.follow', '팔로우')}</>}
-                  </Button>
+                  <>
+                    <Button
+                      variant={isFollowingUploader ? "default" : "outline"}
+                      size="sm"
+                      className={`rounded-full gap-1 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
+                      onClick={() => followUser(uploader.id)}
+                      data-testid="button-follow-uploader"
+                    >
+                      {isFollowingUploader ? <><UserCheck size={14} /> {t('musicDetail.following', '팔로잉')}</> : <><UserPlus size={14} /> {t('musicDetail.follow', '팔로우')}</>}
+                    </Button>
+                    <Link href={`/messages/${uploader.id}`}>
+                      <Button variant="outline" size="sm" className="rounded-full gap-1" data-testid="button-message-uploader">
+                        <MessageSquare size={14} /> {t('musicDetail.sendMessage', '메시지 보내기')}
+                      </Button>
+                    </Link>
+                  </>
                 )}
 
                 <Button
@@ -955,15 +962,22 @@ export default function MusicDetail() {
                     </div>
                   </Link>
                   {!isOwner && user && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className={`w-full mt-3 gap-2 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
-                      onClick={() => followUser(uploader.id)}
-                      data-testid="button-follow-sidebar"
-                    >
-                      {isFollowingUploader ? <><UserCheck size={14} /> {t('musicDetail.following', '팔로잉')}</> : <><UserPlus size={14} /> {t('musicDetail.follow', '팔로우')}</>}
-                    </Button>
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className={`flex-1 gap-2 ${isFollowingUploader ? "bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
+                        onClick={() => followUser(uploader.id)}
+                        data-testid="button-follow-sidebar"
+                      >
+                        {isFollowingUploader ? <><UserCheck size={14} /> {t('musicDetail.following', '팔로잉')}</> : <><UserPlus size={14} /> {t('musicDetail.follow', '팔로우')}</>}
+                      </Button>
+                      <Link href={`/messages/${uploader.id}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full gap-2" data-testid="button-message-uploader-sidebar">
+                          <MessageSquare size={14} /> {t('musicDetail.sendMessage', '메시지')}
+                        </Button>
+                      </Link>
+                    </div>
                   )}
                 </Card>
               )}

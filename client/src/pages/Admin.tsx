@@ -420,6 +420,29 @@ export default function Admin() {
     },
   });
 
+  const { data: userReportsList, isLoading: loadingUserReports } = useQuery<any[]>({
+    queryKey: ["/api/admin/user-reports"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/user-reports", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const updateUserReportMutation = useMutation({
+    mutationFn: async ({ id, status, adminNote }: { id: number; status: string; adminNote?: string }) => {
+      await apiRequest("PATCH", "/api/admin/user-reports/" + id, { status, adminNote });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/user-reports"] });
+      toast({ title: t('admin.reportUpdated', '신고 상태가 업데이트되었습니다') });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t('admin.updateFailed', '업데이트에 실패했습니다'), variant: "destructive" });
+    },
+  });
+
   if (checkingAdmin) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -464,12 +487,34 @@ export default function Admin() {
 
           <Tabs defaultValue="stats" className="w-full">
             <TabsList className="mb-4 flex flex-wrap gap-1 h-auto">
-              <TabsTrigger value="stats">{t('admin.statsOverview', '통계')}</TabsTrigger>
-              <TabsTrigger value="posts">{t('admin.postManagement', '글 관리')}</TabsTrigger>
-              <TabsTrigger value="copyright">{t('admin.copyrightManagement', '저작권')}</TabsTrigger>
-              <TabsTrigger value="users">{t('admin.userManagement', '회원')}</TabsTrigger>
-              <TabsTrigger value="bank">{t('admin.pendingBankPayments', '입금 대기')}</TabsTrigger>
-              <TabsTrigger value="withdrawal">{t('admin.withdrawalManagement', '출금')}</TabsTrigger>
+              <TabsTrigger value="stats" className="gap-1.5">
+                {t('admin.statsOverview', '통계')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{stats?.totalUsers ?? "-"}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="posts" className="gap-1.5">
+                {t('admin.postManagement', '글 관리')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-posts-count">{adminPosts?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="copyright" className="gap-1.5">
+                {t('admin.copyrightManagement', '저작권')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-copyright-count">{copyrightReports?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="user-reports" className="gap-1.5">
+                {t('admin.userReports', '회원 신고')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-user-reports-count">{userReportsList?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="users" className="gap-1.5">
+                {t('admin.userManagement', '회원')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-users-count">{stats?.totalUsers ?? adminUsers?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="bank" className="gap-1.5">
+                {t('admin.pendingBankPayments', '입금 대기')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-bank-count">{pendingBankPayments?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="withdrawal" className="gap-1.5">
+                {t('admin.withdrawalManagement', '출금')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-withdrawal-count">{adminWithdrawals?.length ?? 0}</Badge>
+              </TabsTrigger>
               <TabsTrigger value="announcement">{t('admin.siteAnnouncement', '공지 팝업')}</TabsTrigger>
               <TabsTrigger value="guide-videos">{t('admin.guideVideos', '동영상 가이드 관리')}</TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
@@ -820,6 +865,60 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
+            <TabsContent value="user-reports">
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-user-reports-title">
+          <MessageSquare size={20} className="text-amber-500" /> {t('admin.userReports', '회원 신고 (메시지)')}
+        </h2>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="text-left p-3 font-medium">{t('admin.number', '번호')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.reporter', '신고자')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.reportedUser', '피신고자')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.reason', '사유')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.status', '상태')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.receivedDate', '접수일')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.manage', '관리')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingUserReports ? (
+                  <tr><td colSpan={7} className="text-center p-8"><Loader2 className="animate-spin mx-auto text-primary" size={20} /></td></tr>
+                ) : !userReportsList || userReportsList.length === 0 ? (
+                  <tr><td colSpan={7} className="text-center p-8 text-muted-foreground">{t('admin.noUserReports', '회원 신고가 없습니다')}</td></tr>
+                ) : (
+                  userReportsList.map((r: any) => (
+                    <tr key={r.id} className="border-b border-border/50">
+                      <td className="p-3">{r.id}</td>
+                      <td className="p-3">{r.reporterName || "-"}</td>
+                      <td className="p-3">{r.reportedUserName || "-"}</td>
+                      <td className="p-3 max-w-[200px] truncate" title={r.reason}>{r.reason}</td>
+                      <td className="p-3">
+                        {r.status === "pending" && <Badge variant="secondary"><Clock size={12} className="mr-1" />{t('admin.pending', '대기중')}</Badge>}
+                        {r.status === "reviewed" && <Badge className="bg-blue-500/20 text-blue-400"><Search size={12} className="mr-1" />{t('admin.reviewing', '검토중')}</Badge>}
+                        {r.status === "resolved" && <Badge className="bg-green-500/20 text-green-400"><CheckCircle size={12} className="mr-1" />{t('admin.resolved', '처리완료')}</Badge>}
+                      </td>
+                      <td className="p-3 text-muted-foreground text-xs">{r.createdAt ? formatDateTime(r.createdAt) : "-"}</td>
+                      <td className="p-3">
+                        <div className="flex gap-1 flex-wrap">
+                          {r.status !== "reviewed" && (
+                            <Button size="sm" variant="outline" onClick={() => updateUserReportMutation.mutate({ id: r.id, status: "reviewed" })} disabled={updateUserReportMutation.isPending}>{t('admin.reviewing', '검토중')}</Button>
+                          )}
+                          {r.status !== "resolved" && (
+                            <Button size="sm" variant="outline" className="text-green-400 border-green-400/30" onClick={() => updateUserReportMutation.mutate({ id: r.id, status: "resolved" })} disabled={updateUserReportMutation.isPending}>{t('admin.resolved', '처리완료')}</Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+            </TabsContent>
             <TabsContent value="users">
         <h2 className="text-xl font-bold mb-4" data-testid="text-user-management-title">{t('admin.userManagement', '회원 관리')}</h2>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -847,6 +946,7 @@ export default function Admin() {
                   <th className="text-left p-3 font-medium">{t('admin.userId', '아이디')}</th>
                   <th className="text-left p-3 font-medium">{t('admin.email', '이메일')}</th>
                   <th className="text-left p-3 font-medium">{t('admin.joinDate', '가입일')}</th>
+                  <th className="text-left p-3 font-medium">{t('admin.registerSource', '가입 경로')}</th>
                   <th className="text-left p-3 font-medium">{t('admin.role', '권한')}</th>
                   <th className="text-left p-3 font-medium">{t('admin.subscription', '구독')}</th>
                   <th className="text-left p-3 font-medium">{t('admin.manage', '관리')}</th>
@@ -855,7 +955,7 @@ export default function Admin() {
               <tbody>
                 {loadingUsers ? (
                   <tr>
-                    <td colSpan={6} className="text-center p-8">
+                    <td colSpan={7} className="text-center p-8">
                       <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
                     </td>
                   </tr>
@@ -869,6 +969,21 @@ export default function Admin() {
                         <td className="p-3 font-mono text-xs max-w-[120px] truncate">{u.firstName || u.id}</td>
                         <td className="p-3">{u.email || "-"}</td>
                         <td className="p-3 text-muted-foreground">{u.createdAt ? formatDate(u.createdAt) : "-"}</td>
+                        <td className="p-3">
+                          <span className="text-muted-foreground" data-testid={`text-register-source-${u.id}`}>
+                            {(() => {
+                              let source = u.registerSource ?? u.register_source ?? "";
+                              if (!source && typeof u.id === "string") {
+                                if (u.id.startsWith("google_")) source = "google";
+                                else if (u.id.startsWith("naver_")) source = "naver";
+                                else if (u.id.startsWith("kakao_")) source = "kakao";
+                                else if (u.id.startsWith("facebook_")) source = "facebook";
+                                else if (u.id.startsWith("tiktok_")) source = "tiktok";
+                              }
+                              return source === "email" ? t('admin.registerSourceEmail', '이메일') : source === "google" ? "Google" : source === "naver" ? "네이버" : source === "kakao" ? "카카오" : source === "facebook" ? "Facebook" : source === "tiktok" ? "TikTok" : "-";
+                            })()}
+                          </span>
+                        </td>
                         <td className="p-3">
                           {isUserAdmin ? (
                             <Badge variant="default" className="bg-red-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid={`badge-role-${u.id}`}>{t('admin.adminRole', '관리자')}</Badge>
@@ -962,7 +1077,7 @@ export default function Admin() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={6} className="text-center p-8 text-muted-foreground">{t('admin.noUsers', '회원이 없습니다')}</td>
+                    <td colSpan={7} className="text-center p-8 text-muted-foreground">{t('admin.noUsers', '회원이 없습니다')}</td>
                   </tr>
                 )}
               </tbody>

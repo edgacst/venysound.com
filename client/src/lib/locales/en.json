@@ -6,9 +6,13 @@
     "community": "Community",
     "about": "About",
     "premium": "Premium",
+    "notices": "Notices",
+    "menu": "Menu",
+    "myMenu": "My Menu",
     "upload": "Upload",
     "credits": "Credits",
     "messages": "Messages",
+    "notifications": "Notifications",
     "myPage": "My Page",
     "myMusic": "My Music",
     "myLibrary": "My Library",
@@ -202,7 +206,11 @@
     "uploadCount": "This month: {{current}}/{{limit}} tracks",
     "premiumUnlimited": "Premium: Unlimited uploads",
     "uploadLimit": "Upload Limit",
-    "uploadLimitFreeDesc": "Free plan allows up to {{limit}} tracks per month. Please upgrade to Premium."
+    "uploadLimitFreeDesc": "Free plan allows up to {{limit}} tracks per month. Please upgrade to Premium.",
+    "syncLyricsTitle": "Sync Lyrics",
+    "syncLyricsDesc": "Play the track and tap the button when each line is sung. You only need to do this once right after upload.",
+    "syncSaved": "Lyrics sync saved",
+    "skipSync": "Skip for now"
   },
   "bulkUpload": {
     "title": "Bulk Upload",

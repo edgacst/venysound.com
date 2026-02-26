@@ -575,6 +575,24 @@ export async function registerRoutes(
         return res.status(403).json({ message: "삭제 권한이 없습니다" });
       }
 
+      // 이벤트: 음원 등록 시 지급한 200 크레딧 회수
+      const ownerId = existing.userId;
+      await storage.addCredits(ownerId, -200);
+      await storage.createCreditTransaction({
+        userId: ownerId,
+        type: "music_upload_bonus_reversal",
+        amount: -200,
+        description: "음원 삭제 시 등록 보너스 회수",
+        relatedId: musicId,
+      });
+      await storage.createNotification({
+        userId: ownerId,
+        type: "system",
+        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 200 크레딧이 회수되었습니다.`,
+        payload: { musicTitle: existing.title, amount: -200 },
+        url: "/credits",
+      });
+
       await storage.deleteMusic(musicId);
       res.json({ success: true });
     } catch (err) {
@@ -619,11 +637,22 @@ export async function registerRoutes(
       const input = api.reviews.create.input.parse(req.body);
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const review = await storage.createReview({ 
-        ...input, 
-        userId, 
-        musicId: Number(req.params.id) 
+      const review = await storage.createReview({
+        ...input,
+        userId,
+        musicId: Number(req.params.id)
       });
+      const musicItem = await storage.getMusicById(Number(req.params.id));
+      if (musicItem && musicItem.userId !== userId) {
+        const reviewerName = (req as any).user?.claims?.first_name || "사용자";
+        await storage.createNotification({
+          userId: musicItem.userId,
+          type: "review",
+          message: `${reviewerName}님이 "${musicItem.title}" 곡에 리뷰를 남겼습니다`,
+          payload: { fromName: reviewerName, musicTitle: musicItem.title },
+          url: `/music/${req.params.id}`,
+        });
+      }
       res.status(201).json(review);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -698,7 +727,18 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user.claims.sub;
       const storyId = Number(req.params.id);
+      const [storyRow] = await db.select({ userId: musicStoriesTable.userId, musicId: musicStoriesTable.musicId }).from(musicStoriesTable).where(eq(musicStoriesTable.id, storyId));
       const comment = await storage.createStoryComment({ ...input, userId, storyId });
+      if (storyRow && storyRow.userId !== userId) {
+        const commenterName = (req as any).user?.claims?.first_name || "사용자";
+        await storage.createNotification({
+          userId: storyRow.userId,
+          type: "story_comment",
+          message: `${commenterName}님이 창작 히스토리에 댓글을 남겼습니다`,
+          payload: { fromName: commenterName },
+          url: storyRow.musicId ? `/music/${storyRow.musicId}` : "/explore",
+        });
+      }
       res.status(201).json(comment);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -810,11 +850,23 @@ export async function registerRoutes(
       const input = api.posts.createComment.input.parse(req.body);
       // @ts-ignore
       const userId = req.user.claims.sub;
+      const postId = Number(req.params.id);
+      const post = await storage.getPostById(postId);
       const comment = await storage.createPostComment({
         ...input,
         userId,
-        postId: Number(req.params.id)
+        postId,
       });
+      if (post && (post as any).userId !== userId) {
+        const commenterName = (req as any).user?.claims?.first_name || "사용자";
+        await storage.createNotification({
+          userId: (post as any).userId,
+          type: "post_comment",
+          message: `${commenterName}님이 게시글에 댓글을 남겼습니다`,
+          payload: { fromName: commenterName },
+          url: `/posts/${postId}`,
+        });
+      }
       res.status(201).json(comment);
     } catch (err) {
       res.status(400).json({ message: "Invalid input" });
@@ -986,12 +1038,25 @@ export async function registerRoutes(
     // @ts-ignore
     const userId = req.user.claims.sub;
     const notifs = await storage.getNotifications(userId);
-    res.json(notifs);
+    const serialized = notifs.map((n: any) => ({
+      ...n,
+      createdAt: n.createdAt instanceof Date ? n.createdAt.toISOString() : n.createdAt,
+    }));
+    res.json(serialized);
   });
 
   app.patch(api.notifications.markRead.path, isAuthenticated, async (req, res) => {
     const id = Number(req.params.id);
     await storage.markNotificationRead(id);
+    res.json({ success: true });
+  });
+
+  app.delete("/api/notifications/:id", isAuthenticated, async (req, res) => {
+    const id = Number(req.params.id);
+    // @ts-ignore
+    const userId = req.user.claims.sub;
+    const deleted = await storage.deleteNotification(id, userId);
+    if (!deleted) return res.status(404).json({ message: "알림을 찾을 수 없습니다." });
     res.json({ success: true });
   });
 
@@ -1416,9 +1481,59 @@ export async function registerRoutes(
       }
       const updated = await storage.updateCopyrightReportStatus(Number(req.params.id), status, adminNote);
       if (!updated) return res.status(404).json({ message: "신고를 찾을 수 없습니다" });
+      if (updated.reporterId) {
+        const statusLabels: Record<string, string> = { pending: "검토 대기", reviewing: "검토 중", resolved: "처리 완료", rejected: "반려" };
+        const musicItem = await storage.getMusicById(updated.musicId);
+        await storage.createNotification({
+          userId: updated.reporterId,
+          type: "copyright",
+          message: `"${musicItem?.title || "음원"}" 저작권 신고가 ${statusLabels[status] || status}(으)로 처리되었습니다.`,
+          payload: { status, musicTitle: musicItem?.title },
+          url: "/credits",
+        });
+      }
       res.json(updated);
     } catch (err) {
       console.error("Copyright report update error:", err);
+      res.status(500).json({ message: "신고 처리에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/admin/user-reports", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const reports = await storage.getAllUserReports(status);
+      const withUsers = await Promise.all(reports.map(async (r: any) => {
+        const reporter = await storage.getUserById(r.reporterId);
+        const reported = await storage.getUserById(r.reportedUserId);
+        return { ...r, reporterName: reporter ? `${reporter.firstName || ""} ${reporter.lastName || ""}`.trim() || reporter.email : "-", reportedUserName: reported ? `${reported.firstName || ""} ${reported.lastName || ""}`.trim() || reported.email : "-" };
+      }));
+      res.json(withUsers);
+    } catch (err) {
+      res.status(500).json({ message: "회원 신고 목록 조회 실패" });
+    }
+  });
+
+  app.patch("/api/admin/user-reports/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { status, adminNote } = req.body;
+      if (!status || !["pending", "reviewed", "resolved"].includes(status)) {
+        return res.status(400).json({ message: "유효하지 않은 상태입니다" });
+      }
+      const report = await storage.getUserReportById(Number(req.params.id));
+      await storage.updateUserReportStatus(Number(req.params.id), status, adminNote);
+      if (report && report.reporterId) {
+        const statusLabels: Record<string, string> = { pending: "검토 대기", reviewed: "검토 완료", resolved: "처리 완료" };
+        await storage.createNotification({
+          userId: report.reporterId,
+          type: "system",
+          message: `회원 신고가 ${statusLabels[status] || status}(으)로 처리되었습니다.`,
+          payload: { status, adminNote: adminNote || undefined },
+          url: "/messages",
+        });
+      }
+      res.json({ success: true });
+    } catch (err) {
       res.status(500).json({ message: "신고 처리에 실패했습니다" });
     }
   });
@@ -1597,6 +1712,14 @@ export async function registerRoutes(
         subscriptionPlan: billingPeriod,
         subscriptionExpiresAt: expiresAt,
       }).where(eq(users.id, userId));
+
+      await storage.createNotification({
+        userId,
+        type: "system",
+        message: `프리미엄 구독이 완료되었습니다. (${billingPeriod === "monthly" ? "월간" : "연간"})`,
+        payload: { plan: billingPeriod, amount },
+        url: "/pricing",
+      });
 
       res.json({
         success: true,
@@ -1824,7 +1947,11 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user.claims.sub;
       const transactions = await storage.getCreditTransactions(userId);
-      res.json(transactions);
+      const serialized = transactions.map((tx: any) => ({
+        ...tx,
+        createdAt: tx.createdAt instanceof Date ? tx.createdAt.toISOString() : tx.createdAt,
+      }));
+      res.json(serialized);
     } catch (err) {
       res.status(500).json({ message: "거래 내역을 불러올 수 없습니다" });
     }
@@ -2350,6 +2477,16 @@ export async function registerRoutes(
       }
 
       const updated = await storage.updateWithdrawalStatus(withdrawalId, status, adminNote);
+      if (updated && updated.userId) {
+        const statusLabel = status === "approved" ? "승인" : "거절";
+        await storage.createNotification({
+          userId: updated.userId,
+          type: "system",
+          message: `출금 신청이 ${statusLabel}되었습니다.${adminNote ? ` (${adminNote})` : ""}`,
+          payload: { status, adminNote: adminNote || undefined },
+          url: "/credits",
+        });
+      }
       res.json(updated);
     } catch (err) {
       console.error("Withdrawal update error:", err);
@@ -2660,7 +2797,105 @@ export async function registerRoutes(
       const conv = await storage.getOrCreateConversation(userId, otherUserId);
       res.json(conv);
     } catch (error: any) {
+      if (error?.code === "MESSAGES_NOT_ACCEPTED") {
+        return res.status(403).json({ message: "해당 사용자는 새 메시지를 받지 않도록 설정했습니다." });
+      }
+      if (error?.code === "BLOCKED") {
+        return res.status(403).json({ message: "메시지를 보낼 수 없습니다." });
+      }
       res.status(500).json({ message: "대화 생성 실패" });
+    }
+  });
+
+  app.get("/api/users/me/message-settings", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const u = await storage.getUserById(userId);
+      const allow = u?.allowDirectMessages ?? u?.allow_direct_messages ?? true;
+      res.json({ allowDirectMessages: !!allow });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "조회 실패" });
+    }
+  });
+
+  app.patch("/api/users/me/message-settings", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const { allowDirectMessages } = req.body;
+      if (typeof allowDirectMessages !== "boolean") {
+        return res.status(400).json({ message: "allowDirectMessages는 true/false여야 합니다." });
+      }
+      await storage.updateUserProfile(userId, { allowDirectMessages });
+      res.json({ allowDirectMessages });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "설정 저장 실패" });
+    }
+  });
+
+  app.get("/api/blocked-users", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const ids = await storage.getBlockedUserIds(userId);
+      const users = await Promise.all(ids.map((id) => storage.getUserById(id)));
+      res.json(users.filter(Boolean).map((u: any) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName, profileImageUrl: u.profileImageUrl })));
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "조회 실패" });
+    }
+  });
+
+  app.post("/api/block/:userId", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const blockerId = req.user.claims.sub;
+      const blockedId = req.params.userId;
+      if (!blockedId || blockedId === blockerId) {
+        return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
+      }
+      await storage.blockUser(blockerId, blockedId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "차단 실패" });
+    }
+  });
+
+  app.delete("/api/block/:userId", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const blockerId = req.user.claims.sub;
+      const blockedId = req.params.userId;
+      if (!blockedId) return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
+      await storage.unblockUser(blockerId, blockedId);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "차단 해제 실패" });
+    }
+  });
+
+  app.post("/api/report-user", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const reporterId = req.user.claims.sub;
+      const { reportedUserId, reason, messageId, conversationId } = req.body;
+      if (!reportedUserId || !reason || !reason.trim()) {
+        return res.status(400).json({ message: "신고 대상과 사유를 입력해주세요." });
+      }
+      await storage.createUserReport({ reporterId, reportedUserId, reason: reason.trim(), messageId, conversationId });
+      const adminRows = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      for (const admin of adminRows) {
+        await storage.createNotification({
+          userId: admin.id,
+          type: "system",
+          message: "새 회원 신고가 접수되었습니다.",
+          payload: { reportedUserId },
+          url: "/admin",
+        });
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message || "신고 접수 실패" });
     }
   });
 

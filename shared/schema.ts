@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -97,7 +97,7 @@ export const notifications = pgTable("notifications", {
   payload: jsonb("payload").$type<Record<string, unknown>>(), // 번역용 파라미터 (nullable, fromName, musicTitle 등)
   url: text("url"),
   isRead: boolean("is_read").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
 // Copyright Reports table
@@ -348,7 +348,7 @@ export const creditTransactions = pgTable("credit_transactions", {
   amount: integer("amount").notNull(), // positive for additions, negative for deductions
   description: text("description"),
   relatedId: integer("related_id"), // tip or purchase id
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
 // Withdrawals table (artist cash-out requests)
@@ -543,3 +543,32 @@ export const insertDirectMessageSchema = createInsertSchema(directMessages).omit
 export type Conversation = typeof conversations.$inferSelect;
 export type DirectMessage = typeof directMessages.$inferSelect;
 export type InsertDirectMessage = z.infer<typeof insertDirectMessageSchema>;
+
+// 차단: blocker가 blocked를 차단
+export const userBlocks = pgTable("user_blocks", {
+  id: serial("id").primaryKey(),
+  blockerId: text("blocker_id").references(() => users.id).notNull(),
+  blockedId: text("blocked_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [uniqueIndex("user_blocks_blocker_blocked").on(t.blockerId, t.blockedId)]);
+export const userBlocksRelations = relations(userBlocks, ({ one }) => ({
+  blocker: one(users, { fields: [userBlocks.blockerId], references: [users.id] }),
+  blocked: one(users, { fields: [userBlocks.blockedId], references: [users.id] }),
+}));
+
+// 메시지/사용자 신고
+export const userReports = pgTable("user_reports", {
+  id: serial("id").primaryKey(),
+  reporterId: text("reporter_id").references(() => users.id).notNull(),
+  reportedUserId: text("reported_user_id").references(() => users.id).notNull(),
+  reason: text("reason").notNull(),
+  messageId: integer("message_id").references(() => directMessages.id),
+  conversationId: integer("conversation_id").references(() => conversations.id),
+  status: text("status").default("pending"), // pending | reviewed | resolved
+  adminNote: text("admin_note"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const userReportsRelations = relations(userReports, ({ one }) => ({
+  reporter: one(users, { fields: [userReports.reporterId], references: [users.id] }),
+  reportedUser: one(users, { fields: [userReports.reportedUserId], references: [users.id] }),
+}));

@@ -88,7 +88,7 @@ export async function setupAuth(app: Express) {
             const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
             const profileImageUrl = profile.photos?.[0]?.value || "";
             const id = `google_${profile.id}`;
-            const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl });
+            const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "google" });
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -115,7 +115,7 @@ export async function setupAuth(app: Express) {
             const firstName = profile.name || profile.nickname || "";
             const profileImageUrl = profile.profileImage || "";
             const id = `naver_${profile.id}`;
-            const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl });
+            const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "naver" });
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -144,7 +144,7 @@ export async function setupAuth(app: Express) {
             const firstName = kakaoProfile.nickname || profile.displayName || "";
             const profileImageUrl = kakaoProfile.profile_image_url || "";
             const id = `kakao_${profile.id}`;
-            const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl });
+            const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "kakao" });
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -173,7 +173,7 @@ export async function setupAuth(app: Express) {
             const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
             const profileImageUrl = profile.photos?.[0]?.value || "";
             const id = `facebook_${profile.id}`;
-            const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl });
+            const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "facebook" });
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken));
           } catch (error) {
             done(error as Error);
@@ -225,6 +225,7 @@ export async function setupAuth(app: Express) {
           subscriptionTier: "premium",
           subscriptionPlan: "premium",
           subscriptionExpiresAt: premiumExpiresAt,
+          registerSource: "email",
         })
         .returning();
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", "", "local");
@@ -387,6 +388,7 @@ export async function setupAuth(app: Express) {
           firstName: displayName,
           lastName: "",
           profileImageUrl: avatarUrl,
+          registerSource: "tiktok",
         });
         const sessionUser = buildUserSession(user.id, user.email ?? null, user.firstName ?? displayName, user.lastName ?? "", user.profileImageUrl ?? avatarUrl, tokenData.access_token, tokenData.refresh_token);
         req.login(sessionUser, (err) => {

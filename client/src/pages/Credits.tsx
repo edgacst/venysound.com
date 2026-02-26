@@ -301,7 +301,14 @@ export default function Credits() {
                         {tx.amount > 0 ? "+" : ""}{tx.amount.toLocaleString()}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString("ko-KR") : ""}
+                        {tx.createdAt
+                          ? new Intl.DateTimeFormat("ko-KR", {
+                              timeZone: "Asia/Seoul",
+                              dateStyle: "short",
+                              timeStyle: "short",
+                              hour12: false,
+                            }).format(new Date(tx.createdAt))
+                          : ""}
                       </p>
                     </div>
                   </div>

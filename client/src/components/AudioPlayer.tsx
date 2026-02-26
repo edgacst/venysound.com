@@ -213,11 +213,11 @@ function MarqueeLyric({ lyrics, currentTime, duration }: { lyrics: string; curre
   const currentLine = activeIndex >= 0 ? parsedLines[activeIndex]?.text : "";
   const nextLine = activeIndex + 1 < parsedLines.length ? parsedLines[activeIndex + 1]?.text : "";
 
-  if (!currentLine) return <div className="flex-1 min-w-0" />;
+  if (!currentLine) return <div className="flex-1 min-w-0 min-h-[2.5rem]" />;
 
   return (
-    <div className="flex-1 min-w-0 overflow-hidden relative" data-testid="marquee-lyrics">
-      <div className="relative h-full flex flex-col justify-center">
+    <div className="flex-1 min-w-0 min-h-[2.5rem] overflow-hidden relative flex flex-col justify-center" data-testid="marquee-lyrics">
+      <div className="relative flex flex-col justify-center">
         <AnimatePresence mode="popLayout">
           <motion.div
             key={`lyric-${activeIndex}`}
@@ -980,11 +980,12 @@ export function GlobalAudioPlayer() {
               <span className="min-w-[2.5em]" data-testid="text-duration">{formatTime(duration)}</span>
             </div>
 
-            {displayMusic?.lyrics ? (
-              <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
-            ) : (
-              <div className="flex-1" />
-            )}
+            {/* 고정 높이로 가사 유무에 따른 플레이바 흔들림 방지 (모바일) */}
+            <div className="flex-1 min-w-0 flex items-center h-10 sm:h-9">
+              {displayMusic?.lyrics ? (
+                <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
+              ) : null}
+            </div>
 
             <div className="hidden sm:flex items-center gap-1 shrink-0">
               <Button size="icon" variant="ghost" onClick={toggleMute} data-testid="button-mute">

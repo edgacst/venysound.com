@@ -3,12 +3,15 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)));
+// node_modules 제외: client 내부만 스캔 (Windows \ 대신 / 사용으로 glob 경고 방지)
+const clientSrc = path.join(root, "client", "src").split(path.sep).join("/");
+const clientRoot = path.join(root, "client").split(path.sep).join("/");
 
 export default {
   darkMode: ["class"],
   content: [
-    path.join(root, "client", "index.html"),
-    path.join(root, "client", "src", "**", "*.{js,jsx,ts,tsx}"),
+    `${clientRoot}/index.html`,
+    `${clientSrc}/**/*.{js,jsx,ts,tsx}`,
   ],
   theme: {
     container: {

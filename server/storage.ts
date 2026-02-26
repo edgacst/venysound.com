@@ -2,7 +2,7 @@ import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
   analyticsVisits, siteAnnouncements, guideVideos,
-  conversations, directMessages, musicStories, storyComments,
+  conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
@@ -59,7 +59,7 @@ export interface IStorage {
 
   // Users
   getUserById(id: string): Promise<any | undefined>;
-  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string }): Promise<any | undefined>;
+  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean }): Promise<any | undefined>;
 
   // Follows - counts
   getFollowerCount(userId: string): Promise<number>;
@@ -77,6 +77,7 @@ export interface IStorage {
   getNotifications(userId: string): Promise<any[]>;
   markNotificationRead(id: number): Promise<void>;
   markAllNotificationsRead(userId: string): Promise<void>;
+  deleteNotification(id: number, userId: string): Promise<boolean>;
 
   // Admin
   getAdminStats(): Promise<{
@@ -165,6 +166,16 @@ export interface IStorage {
   createMessage(conversationId: number, senderId: string, content: string): Promise<DirectMessage>;
   markMessagesRead(conversationId: number, userId: string): Promise<void>;
   getUnreadMessageCount(userId: string): Promise<number>;
+
+  // Block & Report
+  blockUser(blockerId: string, blockedId: string): Promise<void>;
+  unblockUser(blockerId: string, blockedId: string): Promise<void>;
+  getBlockedUserIds(userId: string): Promise<string[]>;
+  isBlocked(blockerId: string, blockedId: string): Promise<boolean>;
+  createUserReport(data: { reporterId: string; reportedUserId: string; reason: string; messageId?: number; conversationId?: number }): Promise<any>;
+  getUserReportById(id: number): Promise<any | undefined>;
+  getAllUserReports(status?: string): Promise<any[]>;
+  updateUserReportStatus(id: number, status: string, adminNote?: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -541,12 +552,13 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string }): Promise<any | undefined> {
-    const set: { firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null; username?: string | null; updatedAt: Date } = { updatedAt: new Date() };
+  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean }): Promise<any | undefined> {
+    const set: { firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null; username?: string | null; allowDirectMessages?: boolean; updatedAt: Date } = { updatedAt: new Date() };
     if (data.firstName !== undefined) set.firstName = data.firstName.trim() || null;
     if (data.lastName !== undefined) set.lastName = data.lastName.trim() || null;
     if (data.profileImageUrl !== undefined) set.profileImageUrl = data.profileImageUrl.trim() || null;
     if (data.username !== undefined) set.username = data.username.trim() || null;
+    if (data.allowDirectMessages !== undefined) set.allowDirectMessages = data.allowDirectMessages;
     if (Object.keys(set).length <= 1) return this.getUserById(userId);
     const [user] = await db.update(users).set(set).where(eq(users.id, userId)).returning();
     return user;
@@ -587,6 +599,11 @@ export class DatabaseStorage implements IStorage {
 
   async markAllNotificationsRead(userId: string): Promise<void> {
     await db.update(notifications).set({ isRead: true }).where(eq(notifications.userId, userId));
+  }
+
+  async deleteNotification(id: number, userId: string): Promise<boolean> {
+    const [deleted] = await db.delete(notifications).where(and(eq(notifications.id, id), eq(notifications.userId, userId))).returning({ id: notifications.id });
+    return !!deleted;
   }
 
   async getFollowerCount(userId: string): Promise<number> {
@@ -1107,6 +1124,18 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(conversations.user1Id, id1), eq(conversations.user2Id, id2)))
       .limit(1);
     if (existing.length > 0) return existing[0];
+    const otherUser = await this.getUserById(user2Id);
+    const allow = otherUser?.allowDirectMessages ?? otherUser?.allow_direct_messages;
+    if (allow === false) {
+      const err = new Error("MESSAGES_NOT_ACCEPTED") as Error & { code?: string };
+      err.code = "MESSAGES_NOT_ACCEPTED";
+      throw err;
+    }
+    if (await this.isBlocked(user1Id, user2Id) || await this.isBlocked(user2Id, user1Id)) {
+      const err = new Error("BLOCKED") as Error & { code?: string };
+      err.code = "BLOCKED";
+      throw err;
+    }
     const [conv] = await db.insert(conversations).values({ user1Id: id1, user2Id: id2 }).returning();
     return conv;
   }
@@ -1132,7 +1161,16 @@ export class DatabaseStorage implements IStorage {
       WHERE c.user1_id = ${userId} OR c.user2_id = ${userId}
       ORDER BY COALESCE(dm.created_at, c.created_at) DESC
     `);
-    return rows.rows;
+    const blockedIds = await this.getBlockedUserIds(userId);
+    const blockedMe = await this.getBlockedMeUserIds(userId);
+    return (rows.rows as any[]).filter(
+      (r) => !blockedIds.includes(r.other_user_id) && !blockedMe.includes(r.other_user_id)
+    );
+  }
+
+  async getBlockedMeUserIds(userId: string): Promise<string[]> {
+    const rows = await db.select({ blockerId: userBlocks.blockerId }).from(userBlocks).where(eq(userBlocks.blockedId, userId));
+    return rows.map((r) => r.blockerId);
   }
 
   async getMessages(conversationId: number, limit: number = 50, before?: number): Promise<any[]> {
@@ -1185,6 +1223,48 @@ export class DatabaseStorage implements IStorage {
         AND dm.is_read = false
     `);
     return (result.rows[0] as any)?.count || 0;
+  }
+
+  async blockUser(blockerId: string, blockedId: string): Promise<void> {
+    if (blockerId === blockedId) return;
+    await db.insert(userBlocks).values({ blockerId, blockedId }).onConflictDoNothing({ target: [userBlocks.blockerId, userBlocks.blockedId] });
+  }
+
+  async unblockUser(blockerId: string, blockedId: string): Promise<void> {
+    await db.delete(userBlocks).where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId)));
+  }
+
+  async getBlockedUserIds(userId: string): Promise<string[]> {
+    const rows = await db.select({ blockedId: userBlocks.blockedId }).from(userBlocks).where(eq(userBlocks.blockerId, userId));
+    return rows.map((r) => r.blockedId);
+  }
+
+  async isBlocked(blockerId: string, blockedId: string): Promise<boolean> {
+    const rows = await db.select().from(userBlocks).where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, blockedId))).limit(1);
+    return rows.length > 0;
+  }
+
+  async createUserReport(data: { reporterId: string; reportedUserId: string; reason: string; messageId?: number; conversationId?: number }): Promise<any> {
+    const [report] = await db.insert(userReports).values(data).returning();
+    return report;
+  }
+
+  async getUserReportById(id: number): Promise<any | undefined> {
+    const [row] = await db.select().from(userReports).where(eq(userReports.id, id));
+    return row;
+  }
+
+  async getAllUserReports(status?: string): Promise<any[]> {
+    if (status && status !== "all") {
+      return await db.select().from(userReports).where(eq(userReports.status, status)).orderBy(desc(userReports.createdAt));
+    }
+    return await db.select().from(userReports).orderBy(desc(userReports.createdAt));
+  }
+
+  async updateUserReportStatus(id: number, status: string, adminNote?: string): Promise<void> {
+    const set: { status: string; adminNote?: string } = { status };
+    if (adminNote !== undefined) set.adminNote = adminNote;
+    await db.update(userReports).set(set).where(eq(userReports.id, id));
   }
 
   // Music Stories

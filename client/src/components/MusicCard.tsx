@@ -57,7 +57,7 @@ function formatLrcTime(sec: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 }
 
-function LyricsSyncEditor({ audioUrl, plainLyrics, onSave, onClose }: {
+export function LyricsSyncEditor({ audioUrl, plainLyrics, onSave, onClose }: {
   audioUrl: string;
   plainLyrics: string;
   onSave: (lrc: string) => void;

@@ -95,10 +95,10 @@ export function Navigation() {
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-white/5 bg-background/80 backdrop-blur-xl">
       <div className="container flex h-16 items-center justify-between gap-4 px-4">
-        <Link href="/">
-          <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
-            <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5" />
-            <span className="text-xl font-display font-bold">
+        <Link href="/" className="flex-shrink-0 min-w-0 overflow-hidden">
+            <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
+            <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
+            <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap max-w-[180px] sm:max-w-none truncate" title="Veny Sound">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
             </span>
@@ -273,9 +273,10 @@ export function Navigation() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-white/10 bg-background"
+            className="md:hidden border-t border-white/10 bg-background overflow-y-auto max-h-[85vh]"
           >
-            <div className="flex flex-col p-4 gap-2">
+            <div className="flex flex-col p-3 gap-0.5">
+              <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.menu', '메뉴')}</p>
               <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
               <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
@@ -285,6 +286,9 @@ export function Navigation() {
               <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
               {user && (
                 <>
+                  <div className="border-t border-white/10 my-2" />
+                  <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.myMenu', '나의 메뉴')}</p>
+                  <NavLink href={`/profile/${user.id}`} icon={User}>{t('nav.myPage')}</NavLink>
                   <NavLink href="/upload" icon={Upload}>{t('nav.upload')}</NavLink>
                   <Link href="/credits">
                     <div
@@ -301,14 +305,19 @@ export function Navigation() {
                     </div>
                   </Link>
                   <Link href="/messages">
-                    <div className="flex items-center justify-between px-4 py-2 text-muted-foreground cursor-pointer hover:bg-secondary hover:text-foreground rounded-full" data-testid="nav-link-mobile-messages">
+                    <div className={`flex items-center justify-between px-4 py-2 rounded-full transition-all duration-200 cursor-pointer ${isActive("/messages") ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`} data-testid="nav-link-mobile-messages">
                       <span className="flex items-center gap-2"><MessageSquare size={18} /> {t('nav.messages')}</span>
                       {unreadMsgCount > 0 && (
                         <Badge variant="default" className="text-xs min-w-5 h-5" data-testid="badge-mobile-unread-msg">{unreadMsgCount}</Badge>
                       )}
                     </div>
                   </Link>
-                  <NavLink href={`/profile/${user.id}`} icon={User}>{t('nav.myMusic', '나의 음악')}</NavLink>
+                  <Link href="/notifications">
+                    <div className={`flex items-center justify-between px-4 py-2 rounded-full transition-all duration-200 cursor-pointer ${isActive("/notifications") ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`} data-testid="nav-link-mobile-notifications">
+                      <span className="flex items-center gap-2"><Bell size={18} /> {t('nav.notifications', '알림')}</span>
+                      {unreadCount > 0 && <Badge variant="destructive" className="text-xs min-w-5 h-5">{unreadCount > 99 ? '99+' : unreadCount}</Badge>}
+                    </div>
+                  </Link>
                   <NavLink href="/my-library" icon={Download}>{t('nav.myLibrary')}</NavLink>
                   <NavLink href="/dashboard" icon={BarChart3}>{t('nav.dashboard')}</NavLink>
                   {adminCheck?.isAdmin && (

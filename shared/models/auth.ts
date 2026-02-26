@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table (express-session + connect-pg-simple).
 export const sessions = pgTable(
@@ -30,6 +30,8 @@ export const users = pgTable("users", {
   credits: integer("credits").default(0),
   balance: integer("balance").default(0),
   donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'
+  registerSource: varchar("register_source"), // 'email' | 'google' | 'naver' | 'kakao' | 'facebook' | 'tiktok'
+  allowDirectMessages: boolean("allow_direct_messages").default(true), // false면 새 대화 요청 거절
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
