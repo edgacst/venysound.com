@@ -89,6 +89,7 @@ export default function Messages() {
 
   const sendMessage = useMutation({
     mutationFn: async (content: string) => {
+      if (!selectedConvoId) throw new Error(t('messages.noConversationSelected', '대화가 선택되지 않았습니다'));
       const res = await apiRequest("POST", `/api/conversations/${selectedConvoId}/messages`, { content });
       return res.json();
     },
@@ -97,6 +98,18 @@ export default function Messages() {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", selectedConvoId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/messages/unread-count"] });
+      queryClient.refetchQueries({ queryKey: ["/api/conversations", selectedConvoId, "messages"] });
+    },
+    onError: (err: any) => {
+      let desc = err?.message || t('messages.sendFailed', '메시지 전송에 실패했습니다');
+      try {
+        const match = typeof desc === "string" && desc.match(/^\d+:\s*(\{.+\})$/);
+        if (match) {
+          const obj = JSON.parse(match[1]);
+          if (obj.message) desc = obj.message;
+        }
+      } catch {}
+      toast({ title: t('messages.sendFailed', '전송 실패'), description: desc, variant: "destructive" });
     },
   });
 
@@ -436,12 +449,16 @@ export default function Messages() {
 
                   {/* 입력창: 화면 하단 고정, 플레이어 바가 있으면 그 위에 배치 (z-40 < 플레이어 z-50) */}
                   <div
-                    className="fixed left-0 right-0 z-40 border-t border-border bg-background p-3"
+                    className="fixed left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur"
                     style={{
                       bottom: playerVisible ? `${PLAYER_BAR_HEIGHT_REM}rem` : 0,
+                      paddingTop: "0.75rem",
+                      paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0px))",
+                      paddingLeft: "max(0.75rem, env(safe-area-inset-left, 0px))",
+                      paddingRight: "max(0.75rem, env(safe-area-inset-right, 0px))",
                     }}
                   >
-                    <div className="max-w-6xl mx-auto flex items-center gap-2">
+                    <div className="max-w-6xl mx-auto px-2 sm:px-4 flex items-center gap-2">
                       <Input
                         placeholder={t('messages.inputPlaceholder', '메시지를 입력하세요...')}
                         value={messageText}
@@ -449,10 +466,11 @@ export default function Messages() {
                         onKeyDown={handleKeyDown}
                         disabled={sendMessage.isPending}
                         data-testid="input-message"
-                        className="flex-1"
+                        className="flex-1 min-w-0 h-10 sm:h-11 text-base"
                       />
                       <Button
                         size="icon"
+                        className="h-10 w-10 sm:h-11 sm:w-11 shrink-0"
                         onClick={handleSend}
                         disabled={!messageText.trim() || sendMessage.isPending}
                         data-testid="button-send-message"

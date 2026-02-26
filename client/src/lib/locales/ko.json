@@ -629,7 +629,9 @@
   "messages": {
     "emptyMessage": "(메시지 없음)",
     "blockReportHint": "차단·신고: 대화를 연 뒤 상단 ⋮ 메뉴",
-    "loadingConversation": "대화 로딩 중..."
+    "loadingConversation": "대화 로딩 중...",
+    "sendFailed": "전송 실패",
+    "noConversationSelected": "대화가 선택되지 않았습니다"
   },
   "notificationsPage": {
     "title": "알림",
