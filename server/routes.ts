@@ -35,15 +35,24 @@ export async function registerRoutes(
   const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
 
-  /** 메시지/대화 시간을 항상 UTC ISO 문자열(Z)로 반환 (타임존 9시간 오차 방지) */
+  /** 메시지/대화 시간을 항상 UTC ISO 문자열(Z)로 반환 (타임존 9시간 오차 방지)
+   *  - DB에 예상치 못한 값이 들어있을 때 서버가 500 나지 않도록, 파싱 실패 시 빈 문자열 반환
+   */
   function toUTCISO(val: unknown): string {
     if (val == null) return "";
-    if (val instanceof Date) return val.toISOString();
-    if (typeof val === "string") {
-      if (val.includes("Z") || val.endsWith("Z")) return val;
-      return new Date(val.replace(" ", "T") + "Z").toISOString();
+    try {
+      if (val instanceof Date) return val.toISOString();
+      if (typeof val === "string") {
+        if (!val.trim()) return "";
+        if (val.includes("Z") || val.endsWith("Z")) return val;
+        const d = new Date(val.replace(" ", "T") + "Z");
+        return isNaN(d.getTime()) ? "" : d.toISOString();
+      }
+      const d = new Date(val as string | number);
+      return isNaN(d.getTime()) ? "" : d.toISOString();
+    } catch {
+      return "";
     }
-    return new Date(val as string | number).toISOString();
   }
 
   /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 프리미엄(또는 admin)인지 반환 */
