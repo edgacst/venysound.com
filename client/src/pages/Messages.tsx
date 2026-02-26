@@ -227,8 +227,8 @@ export default function Messages() {
         <div className="max-w-6xl mx-auto px-4 py-6">
           <h1 className="text-2xl font-bold mb-4" data-testid="text-messages-title">{t('messages.title', '메시지')}</h1>
 
-          <Card className="flex overflow-hidden" style={{ height: "calc(100vh - 200px)", minHeight: "500px" }}>
-            <div className={`w-full md:w-80 border-r border-border flex flex-col ${selectedConvoId ? "hidden md:flex" : "flex"}`}>
+          <Card className="flex flex-col md:flex-row overflow-hidden min-h-0 h-[calc(100vh-11rem)]">
+            <div className={`w-full md:w-80 border-r border-border flex flex-col min-h-0 ${selectedConvoId ? "hidden md:flex" : "flex"}`}>
               <div className="p-3 border-b border-border space-y-3">
                 <div className="flex items-center justify-between gap-2 text-sm">
                   <span className="text-muted-foreground flex items-center gap-1.5">
@@ -306,10 +306,10 @@ export default function Messages() {
               </div>
             </div>
 
-            <div className={`flex-1 flex flex-col ${!selectedConvoId ? "hidden md:flex" : "flex"}`}>
+            <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${!selectedConvoId ? "hidden md:flex" : "flex"}`}>
               {selectedConvoId && selectedConvo ? (
-                <>
-                  <div className="flex items-center gap-2 p-3 border-b border-border">
+                <div className="grid grid-rows-[auto_1fr_auto] min-h-0 h-full">
+                  <div className="flex items-center gap-2 p-3 border-b border-border shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -362,7 +362,7 @@ export default function Messages() {
                     </DropdownMenu>
                   </div>
 
-                  <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+                  <div className="min-h-0 overflow-y-auto p-4 space-y-3">
                     {messagesLoading ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="animate-spin text-muted-foreground" size={24} />
@@ -411,7 +411,7 @@ export default function Messages() {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  <div className="flex-shrink-0 p-3 border-t border-border bg-background">
+                  <div className="shrink-0 p-3 border-t border-border bg-background">
                     <div className="flex items-center gap-2">
                       <Input
                         placeholder={t('messages.inputPlaceholder', '메시지를 입력하세요...')}
@@ -431,7 +431,7 @@ export default function Messages() {
                       </Button>
                     </div>
                   </div>
-                </>
+                </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-muted-foreground" data-testid="text-select-conversation">
                   <div className="text-center">
