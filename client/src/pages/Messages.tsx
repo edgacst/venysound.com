@@ -93,8 +93,25 @@ export default function Messages() {
       const res = await apiRequest("POST", `/api/conversations/${selectedConvoId}/messages`, { content });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       setMessageText("");
+      const cid = selectedConvoId;
+      if (cid && data?.id != null && user) {
+        const newMsg = {
+          id: data.id,
+          conversation_id: data.conversation_id ?? data.conversationId,
+          sender_id: data.sender_id ?? data.senderId ?? user.id,
+          content: data.content ?? "",
+          created_at: data.created_at ?? data.createdAt,
+          sender_first_name: (user as any).firstName ?? (user as any).first_name ?? "",
+          sender_last_name: (user as any).lastName ?? (user as any).last_name ?? "",
+          sender_image: (user as any).profileImageUrl ?? (user as any).profile_image_url ?? null,
+        };
+        queryClient.setQueryData(
+          ["/api/conversations", cid, "messages"],
+          (old: any[] | undefined) => [...(old ?? []), newMsg]
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", selectedConvoId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/messages/unread-count"] });
