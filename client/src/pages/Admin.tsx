@@ -19,7 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import {
   Users,
   Music,
@@ -46,6 +48,7 @@ import {
   Coins,
   Megaphone,
   Video,
+  ListMusic,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 
@@ -90,6 +93,12 @@ export default function Admin() {
   const [guideVideoDescription, setGuideVideoDescription] = useState("");
   const [guideVideoYoutubeUrl, setGuideVideoYoutubeUrl] = useState("");
   const [guideVideoSortOrder, setGuideVideoSortOrder] = useState<number | "">("");
+  const [curatedName, setCuratedName] = useState("");
+  const [curatedDesc, setCuratedDesc] = useState("");
+  const [curatedSlug, setCuratedSlug] = useState("");
+  const [curatedTracksDialogId, setCuratedTracksDialogId] = useState<number | null>(null);
+  const [curatedTracksText, setCuratedTracksText] = useState("");
+  const [curatedGenre, setCuratedGenre] = useState<string>("");
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -133,6 +142,17 @@ export default function Admin() {
     refetchInterval: 60000,
   });
 
+  const { data: analyticsStatus } = useQuery<{ tableExists: boolean }>({
+    queryKey: ["/api/admin/analytics/status"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/analytics/status", { credentials: "include" });
+      if (!res.ok) return { tableExists: false };
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
   const { data: creditsChargedData } = useQuery<{ totalCreditsCharged: number }>({
     queryKey: ["/api/admin/credits-charged"],
     queryFn: async () => {
@@ -168,6 +188,31 @@ export default function Admin() {
     refetchInterval: 60000,
   });
 
+  const [analyticsTrendDays, setAnalyticsTrendDays] = useState(7);
+  const { data: analyticsTrend } = useQuery<{ date: string; uniqueVisitors: number; pageViews: number }[]>({
+    queryKey: ["/api/admin/analytics/trend", analyticsTrendDays],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/analytics/trend?days=${analyticsTrendDays}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
+  const { data: statsBySource } = useQuery<{ source: string; count: number }[]>({
+    queryKey: ["/api/admin/stats/sources"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/stats/sources", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
   const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string; createdAt: string }[]>({
     queryKey: ["/api/admin/site-announcements"],
     queryFn: async () => {
@@ -187,6 +232,69 @@ export default function Admin() {
       return res.json();
     },
     enabled: adminCheck?.isAdmin === true,
+  });
+
+  const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number }[]>({
+    queryKey: ["/api/admin/curated-playlists"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/curated-playlists", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const createCuratedMutation = useMutation({
+    mutationFn: async (body: { name: string; description?: string; slug: string }) => {
+      const res = await fetch("/api/admin/curated-playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.message || "Failed");
+      }
+    },
+    onSuccess: () => {
+      refetchCurated();
+      setCuratedName("");
+      setCuratedDesc("");
+      setCuratedSlug("");
+      toast({ title: t('admin.curatedCreated', '테마 플레이리스트가 추가되었습니다.') });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const deleteCuratedMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/admin/curated-playlists/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+    },
+    onSuccess: () => {
+      refetchCurated();
+      toast({ title: t('admin.curatedDeleted', '삭제되었습니다.') });
+    },
+  });
+
+  const setCuratedTracksMutation = useMutation({
+    mutationFn: async ({ id, musicIds }: { id: number; musicIds: number[] }) => {
+      const res = await fetch(`/api/admin/curated-playlists/${id}/tracks`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ musicIds }),
+      });
+      if (!res.ok) throw new Error("Failed");
+    },
+    onSuccess: () => {
+      setCuratedTracksDialogId(null);
+      setCuratedTracksText("");
+      refetchCurated();
+      toast({ title: t('admin.curatedTracksSaved', '트랙이 저장되었습니다.') });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const createGuideVideoMutation = useMutation({
@@ -517,6 +625,7 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="announcement">{t('admin.siteAnnouncement', '공지 팝업')}</TabsTrigger>
               <TabsTrigger value="guide-videos">{t('admin.guideVideos', '동영상 가이드 관리')}</TabsTrigger>
+              <TabsTrigger value="curated">{t('admin.curatedPlaylists', '테마 플레이리스트')}</TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
             <TabsContent value="stats">
@@ -526,6 +635,15 @@ export default function Admin() {
             <Activity size={18} className="text-primary" />
             {t('admin.statsOverview', '통계')}
           </h2>
+
+          {analyticsStatus?.tableExists === false && (
+            <Alert variant="destructive" className="mb-4 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 dark:bg-amber-500/10">
+              <AlertTitle>{t('admin.analyticsTableMissingTitle', '방문/페이지뷰 통계 테이블 없음')}</AlertTitle>
+              <AlertDescription>
+                {t('admin.analyticsTableMissingDesc', 'analytics_visits 테이블이 DB에 없어 일일·누적 방문자, 페이지뷰, 지역/디바이스 통계가 0으로 나옵니다. 서버에서 deploy/create-analytics-table.sql 을 실행해 주세요. (예: psql "$DATABASE_URL" -f deploy/create-analytics-table.sql)')}
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* 방문자·페이지뷰 */}
           <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-1.5">
@@ -664,6 +782,53 @@ export default function Admin() {
               )}
             </Card>
           </div>
+
+          {/* 유입 경로 · 기간별 추이 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <Card className="p-4 overflow-hidden">
+              <h3 className="text-sm font-semibold mb-3">{t('admin.bySource', '유입 경로')}</h3>
+              {Array.isArray(statsBySource) && statsBySource.length > 0 ? (
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={statsBySource.map((r) => ({ name: r.source || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }} formatter={(v: number) => [v.toLocaleString(), t('admin.visits', '방문수')]} />
+                      <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="hsl(var(--primary) / 0.8)" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noSourceData', '수집된 유입 경로 데이터 없음')}</p>
+              )}
+            </Card>
+            <Card className="p-4 overflow-hidden">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">{t('admin.trend', '기간별 추이')}</h3>
+                <div className="flex gap-1">
+                  <Button type="button" variant={analyticsTrendDays === 7 ? "default" : "outline"} size="sm" onClick={() => setAnalyticsTrendDays(7)}>7{t('admin.days', '일')}</Button>
+                  <Button type="button" variant={analyticsTrendDays === 30 ? "default" : "outline"} size="sm" onClick={() => setAnalyticsTrendDays(30)}>30{t('admin.days', '일')}</Button>
+                </div>
+              </div>
+              {Array.isArray(analyticsTrend) && analyticsTrend.length > 0 ? (
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analyticsTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} className="text-muted-foreground" />
+                      <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                      <Tooltip contentStyle={{ backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "var(--radius)" }} />
+                      <Line type="monotone" dataKey="uniqueVisitors" name={t('admin.uniqueVisitors', '순 방문자')} stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="pageViews" name={t('admin.pageViews', '페이지뷰')} stroke="hsl(var(--primary) / 0.6)" strokeWidth={2} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noTrendData', '기간별 데이터 없음')}</p>
+              )}
+            </Card>
+          </div>
         </section>
             </TabsContent>
             <TabsContent value="posts">
@@ -692,7 +857,7 @@ export default function Admin() {
                   adminPosts.map((post: any) => (
                     <tr key={post.id} className="border-b border-border/50" data-testid={`row-post-${post.id}`}>
                       <td className="p-3">{post.id}</td>
-                      <td className="p-3 max-w-[200px] truncate">{post.title}</td>
+                      <td className="p-3 max-w-[200px] truncate" title={post.title}>{post.title}</td>
                       <td className="p-3">{post.user?.firstName || post.userId}</td>
                       <td className="p-3 text-muted-foreground">{post.createdAt ? formatDateTime(post.createdAt) : "-"}</td>
                       <td className="p-3">{post.commentCount ?? 0}</td>
@@ -1501,6 +1666,173 @@ export default function Admin() {
             </div>
           )}
         </Card>
+            </TabsContent>
+            <TabsContent value="curated">
+        <Card className="p-4 sm:p-6">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <ListMusic size={20} className="text-primary" /> {t('admin.curatedPlaylists', '테마 플레이리스트')}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('admin.curatedPlaylistsDesc', '음원 목록(/music) 상단에 노출되는 테마/무드 플레이리스트입니다. 이름·슬러그·설명을 입력하고 트랙(음원 ID)을 설정하세요.')}
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 max-w-2xl">
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.curatedName', '이름')}</label>
+              <Input value={curatedName} onChange={(e) => setCuratedName(e.target.value)} placeholder="예: 작업할 때" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.curatedSlug', '슬러그 (URL)')}</label>
+              <Input value={curatedSlug} onChange={(e) => setCuratedSlug(e.target.value)} placeholder="예: work" />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">{t('admin.curatedDescription', '설명 (선택)')}</label>
+              <Input value={curatedDesc} onChange={(e) => setCuratedDesc(e.target.value)} placeholder="집중이 잘 될 곡들" />
+            </div>
+          </div>
+          <Button
+            onClick={() => {
+              if (!curatedName.trim() || !curatedSlug.trim()) {
+                toast({ title: t('admin.curatedNameSlugRequired', '이름과 슬러그를 입력하세요'), variant: "destructive" });
+                return;
+              }
+              createCuratedMutation.mutate({
+                name: curatedName.trim(),
+                description: curatedDesc.trim() || undefined,
+                slug: curatedSlug.trim(),
+              });
+            }}
+            disabled={createCuratedMutation.isPending}
+            className="gap-2"
+          >
+            {createCuratedMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+            {t('admin.addCurated', '플레이리스트 추가')}
+          </Button>
+          {curatedPlaylistsList && curatedPlaylistsList.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <h3 className="text-sm font-semibold mb-2">{t('admin.registeredCurated', '등록된 테마 플레이리스트')}</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left p-2 font-medium">{t('admin.name', '이름')}</th>
+                      <th className="text-left p-2 font-medium">slug</th>
+                      <th className="text-left p-2 font-medium">{t('admin.manage', '관리')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {curatedPlaylistsList.map((pl) => (
+                      <tr key={pl.id} className="border-b border-border/50">
+                        <td className="p-2">{pl.name}</td>
+                        <td className="p-2 text-muted-foreground">/curated/{pl.slug}</td>
+                        <td className="p-2 flex gap-1 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setCuratedTracksDialogId(pl.id);
+                              setCuratedTracksText("");
+                            }}
+                          >
+                            {t('admin.editTracks', '트랙 편집')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => { if (confirm(t('admin.confirmDeleteCurated', '이 플레이리스트를 삭제하시겠습니까?'))) deleteCuratedMutation.mutate(pl.id); }}
+                            disabled={deleteCuratedMutation.isPending}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </Card>
+        <Dialog open={curatedTracksDialogId != null} onOpenChange={(open) => !open && setCuratedTracksDialogId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('admin.editTracks', '트랙 편집')}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground mb-2">
+              {t('admin.curatedTracksHint', '음원 ID를 쉼표로 구분하여 입력하세요. (예: 1, 2, 5, 10)')}
+            </p>
+            <Textarea
+              value={curatedTracksText}
+              onChange={(e) => setCuratedTracksText(e.target.value)}
+              placeholder="1, 2, 3"
+              className="min-h-[120px] font-mono text-sm"
+            />
+            <div className="mt-4 space-y-2">
+              <label className="text-sm font-medium block">{t('admin.curatedFillByGenre', '카테고리(장르)로 채우기')}</label>
+              <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end">
+                <Select value={curatedGenre} onValueChange={(v) => setCuratedGenre(v)}>
+                  <SelectTrigger className="w-full sm:w-48">
+                    <SelectValue placeholder={t('admin.selectGenre', '장르 선택')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="팝뮤직">팝뮤직</SelectItem>
+                    <SelectItem value="국내가요">국내가요</SelectItem>
+                    <SelectItem value="월드뮤직">월드뮤직</SelectItem>
+                    <SelectItem value="경음악">경음악</SelectItem>
+                    <SelectItem value="케이팝">케이팝</SelectItem>
+                    <SelectItem value="발라드">발라드</SelectItem>
+                    <SelectItem value="트로트">트로트</SelectItem>
+                    <SelectItem value="재즈">재즈</SelectItem>
+                    <SelectItem value="클래식">클래식</SelectItem>
+                    <SelectItem value="기타">기타</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!curatedGenre}
+                  onClick={async () => {
+                    if (!curatedGenre) {
+                      toast({ title: t('admin.selectGenreFirst', '장르를 먼저 선택하세요'), variant: "destructive" });
+                      return;
+                    }
+                    try {
+                      const res = await fetch(`/api/music?genre=${encodeURIComponent(curatedGenre)}&limit=50`, { credentials: "include" });
+                      if (!res.ok) {
+                        toast({ title: t('admin.curatedGenreFetchFailed', '해당 장르의 곡을 불러오지 못했습니다.'), variant: "destructive" });
+                        return;
+                      }
+                      const data = await res.json();
+                      const ids = Array.isArray(data?.data) ? data.data.map((m: any) => m.id).filter((id: any) => typeof id === "number") : [];
+                      setCuratedTracksText(ids.join(", "));
+                      toast({ title: t('admin.curatedGenreFilled', '선택한 장르의 곡 ID가 채워졌습니다. 저장을 눌러 반영하세요.') });
+                    } catch {
+                      toast({ title: t('admin.curatedGenreFetchFailed', '해당 장르의 곡을 불러오지 못했습니다.'), variant: "destructive" });
+                    }
+                  }}
+                >
+                  {t('admin.fillWithGenre', '이 장르 곡으로 채우기')}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('admin.curatedGenreNote', '※ 아래 저장 버튼을 눌러야 실제 플레이리스트에 반영됩니다.')}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCuratedTracksDialogId(null)}>{t('common.cancel', '취소')}</Button>
+              <Button
+                onClick={() => {
+                  if (curatedTracksDialogId == null) return;
+                  const musicIds = curatedTracksText.split(/[\s,]+/).map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n) && n > 0);
+                  setCuratedTracksMutation.mutate({ id: curatedTracksDialogId, musicIds });
+                }}
+                disabled={setCuratedTracksMutation.isPending}
+              >
+                {setCuratedTracksMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+                {t('admin.save', '저장')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
             </TabsContent>
             <TabsContent value="backup">
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">

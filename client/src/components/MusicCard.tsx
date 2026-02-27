@@ -185,7 +185,7 @@ export function LyricsSyncEditor({ audioUrl, plainLyrics, onSave, onClose }: {
                 <span className="text-muted-foreground/40">--:--.--</span>
               )}
             </span>
-            <span className="truncate">{line}</span>
+            <span className="truncate" title={line}>{line}</span>
           </div>
         ))}
         {allDone && (
@@ -526,16 +526,16 @@ export function MusicCard({ music }: MusicCardProps) {
           )}
         </div>
 
-        <div className="p-4">
+        <div className="p-3.5 sm:p-4">
           <Link href={`/music/${music.id}`}>
             <h3 className="font-semibold truncate text-lg group-hover:text-primary transition-colors cursor-pointer hover:underline" data-testid={`text-title-${music.id}`}>{music.title}</h3>
           </Link>
-          <p className="text-sm text-muted-foreground truncate flex items-center gap-1.5" data-testid={`text-artist-${music.id}`}>
-            <span className="truncate">{music.artist}</span>
+          <p className="text-xs sm:text-sm text-muted-foreground truncate flex items-center gap-1.5" data-testid={`text-artist-${music.id}`}>
+            <span className="truncate" title={music.artist}>{music.artist}</span>
             {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />}
           </p>
           
-          <div className="mt-3 pt-3 border-t border-white/5 space-y-2" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
             <div className="flex gap-1.5 flex-wrap items-center">
               <span className="text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground truncate max-w-full">{music.genre || t('music.other')}</span>
               {uploaderIsPremium && music.isDownloadable && music.price && music.price > 0 && (
@@ -582,7 +582,7 @@ export function MusicCard({ music }: MusicCardProps) {
                   <span className="text-xs tabular-nums" data-testid={`text-like-count-${music.id}`}>{likeCount}</span>
                 </Button>
               </div>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground truncate" data-testid={`text-uploader-${music.id}`}>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground truncate" data-testid={`text-uploader-${music.id}`} title={music.userId}>
                 <UserIcon size={11} className="shrink-0" />
                 <span className="truncate">{music.userId}</span>
               </span>

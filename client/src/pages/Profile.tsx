@@ -189,7 +189,7 @@ function PlaylistSection({ profilePlaylists, isOwnProfile, userId }: { profilePl
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {playlistDetail.musics.map((m: any) => (
-              <div key={m.id} className="relative group">
+              <div key={m.id} className="relative group transform scale-90 md:scale-90 origin-top-left">
                 <MusicCard music={m} />
                 {isOwnProfile && (
                   <Button
@@ -1200,9 +1200,11 @@ export default function Profile() {
                   </Button>
                 </div>
               )}
-              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {uploadedMusic?.map(music => (
-                  <MusicCard key={music.id} music={music} />
+                  <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
+                    <MusicCard music={music} />
+                  </div>
                 ))}
               </div>
               {(!uploadedMusic || uploadedMusic.length === 0) && (
@@ -1221,9 +1223,11 @@ export default function Profile() {
             </TabsContent>
             
             <TabsContent value="liked">
-              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {likedMusic?.map(music => (
-                  <MusicCard key={music.id} music={music} />
+                  <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
+                    <MusicCard music={music} />
+                  </div>
                 ))}
               </div>
               {(!likedMusic || likedMusic.length === 0) && (

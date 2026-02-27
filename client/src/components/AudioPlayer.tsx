@@ -9,6 +9,7 @@ import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
 import { useTranslation } from 'react-i18next';
+import { useLocation } from "wouter";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -440,6 +441,7 @@ function QueuePanel({
 
 export function GlobalAudioPlayer() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { activeMusicId, playlist, queue, playMusic, closePlayer, pauseRequested, lyricsRequested, clearLyricsRequest, repeatMode, shuffleEnabled, shuffledOrder, toggleRepeat, toggleShuffle, removeFromQueue, clearQueue, addToQueue } = usePlayerStore();
   const { data: music } = useMusic(activeMusicId || 0);
@@ -892,7 +894,7 @@ export function GlobalAudioPlayer() {
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl"
+          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)]"
         >
           <div
             ref={progressRef}
@@ -916,8 +918,13 @@ export function GlobalAudioPlayer() {
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-2 sm:px-4 py-2 flex items-center gap-2 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 max-w-[35%] sm:max-w-[25%]">
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-1.5 sm:gap-4">
+            <button
+              type="button"
+              onClick={() => activeMusicId != null && setLocation(`/music/${activeMusicId}`)}
+              className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 max-w-[28%] sm:max-w-[25%] text-left cursor-pointer rounded-md hover:bg-white/5 active:bg-white/10 transition-colors touch-manipulation"
+              data-testid="button-player-go-detail"
+            >
               <img 
                 src={imageUrl} 
                 alt={displayMusic.title} 
@@ -927,7 +934,7 @@ export function GlobalAudioPlayer() {
                 <h4 className="font-semibold truncate text-white text-sm sm:text-base" data-testid="text-player-title">{displayMusic.title}</h4>
                 <p className="text-xs sm:text-sm text-muted-foreground truncate" data-testid="text-player-artist">{displayMusic.artist}</p>
               </div>
-            </div>
+            </button>
 
             <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
               <Button
@@ -980,8 +987,8 @@ export function GlobalAudioPlayer() {
               <span className="min-w-[2.5em]" data-testid="text-duration">{formatTime(duration)}</span>
             </div>
 
-            {/* 고정 높이로 가사 유무에 따른 플레이바 흔들림 방지 (모바일) */}
-            <div className="flex-1 min-w-0 flex items-center h-10 sm:h-9">
+            {/* 고정 높이로 가사 유무에 따른 플레이바 흔들림 방지 (모바일). 모바일에서 오른쪽 버튼 공간 확보를 위해 min-w-0 */}
+            <div className="flex-1 min-w-0 flex items-center h-10 sm:h-9 overflow-hidden">
               {displayMusic?.lyrics ? (
                 <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
               ) : null}
@@ -1003,12 +1010,12 @@ export function GlobalAudioPlayer() {
               />
             </div>
 
-            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 min-w-0">
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={() => togglePanel('eq')}
-                className={`hidden sm:inline-flex ${showEqPanel ? "text-primary" : ""}`}
+                className={`hidden sm:inline-flex shrink-0 ${showEqPanel ? "text-primary" : ""}`}
                 data-testid="button-equalizer"
               >
                 <SlidersHorizontal size={16} />
@@ -1017,7 +1024,7 @@ export function GlobalAudioPlayer() {
                 size="icon"
                 variant="ghost"
                 onClick={() => togglePanel('queue')}
-                className={showQueuePanel ? "text-primary" : ""}
+                className={`shrink-0 ${showQueuePanel ? "text-primary" : ""}`}
                 data-testid="button-queue"
               >
                 <ListMusic size={16} />
@@ -1032,44 +1039,45 @@ export function GlobalAudioPlayer() {
                   size="icon"
                   variant="ghost"
                   onClick={() => togglePanel('lyrics')}
-                  className={showLyricsPanel ? "text-primary" : ""}
+                  className={`shrink-0 ${showLyricsPanel ? "text-primary" : ""}`}
                   data-testid="button-player-lyrics"
                 >
                   <FileText size={16} />
                 </Button>
               )}
 
-              <div className="flex sm:hidden items-center gap-0.5">
+              <div className="flex sm:hidden items-center gap-0.5 shrink-0">
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={toggleShuffle}
                   className={shuffleEnabled ? "text-primary" : ""}
                   data-testid="button-shuffle-mobile"
+                  onClick={toggleShuffle}
                 >
                   <Shuffle size={14} />
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={toggleRepeat}
                   className={repeatMode !== 'none' ? "text-primary" : ""}
                   data-testid="button-repeat-mobile"
+                  onClick={toggleRepeat}
                 >
                   {repeatIcon}
                 </Button>
               </div>
 
-              <span className="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline" data-testid="text-track-position">
+              <span className="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline shrink-0" data-testid="text-track-position">
                 {currentIndex >= 0 ? currentIndex + 1 : "-"} / {currentList.length}
               </span>
               <Button 
                 size="icon"
                 variant="ghost"
                 onClick={handleClose}
+                className="shrink-0"
                 data-testid="button-close-player"
               >
-                <X size={20} />
+                <X size={18} className="sm:w-5 sm:h-5" />
               </Button>
             </div>
           </div>

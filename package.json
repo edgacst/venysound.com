@@ -12,6 +12,8 @@
     "db:push": "drizzle-kit push",
     "db:site-announcements": "tsx script/run-site-announcements-table.ts",
     "db:guide-videos": "tsx script/run-guide-videos-table.ts",
+    "db:analytics": "tsx script/run-analytics-table.ts",
+    "db:curated": "tsx script/run-curated-playlists-table.ts",
     "download-files": "tsx script/download-from-production.ts",
     "make-deploy": "tsx script/make-deploy.ts"
   },
@@ -69,6 +71,7 @@
     "express": "^5.0.1",
     "express-session": "^1.19.0",
     "framer-motion": "^11.18.2",
+    "geoip-lite": "^1.4.10",
     "google-auth-library": "^10.5.0",
     "i18next": "^25.8.10",
     "i18next-browser-languagedetector": "^8.2.1",

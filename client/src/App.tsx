@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
+import { ScrollToTop } from "@/components/ScrollToTop";
 import { LoginModal } from "@/components/LoginModal";
 
 const VISITOR_KEY = "vkey";
@@ -81,6 +82,7 @@ import SunoGuide from "@/pages/SunoGuide";
 import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 import Notices from "@/pages/Notices";
+import CuratedPlaylist from "@/pages/CuratedPlaylist";
 
 function Routes() {
   return (
@@ -88,6 +90,7 @@ function Routes() {
       <Route path="/" component={Home} />
       <Route path="/music/:id" component={MusicDetail} />
       <Route path="/music" component={Explore} />
+      <Route path="/curated/:slug" component={CuratedPlaylist} />
       <Route path="/explore" component={Explore} />
       <Route path="/popular" component={Popular} />
       <Route path="/community" component={Community} />
@@ -128,6 +131,7 @@ function App() {
           <AnalyticsVisit />
           <Routes />
           <GlobalAudioPlayer />
+          <ScrollToTop />
           <LoginModal />
           <Toaster />
         </TooltipProvider>

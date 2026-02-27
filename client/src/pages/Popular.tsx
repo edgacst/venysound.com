@@ -68,9 +68,9 @@ export default function Popular() {
             {t('popular.noPopular')}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {popularList.map((music, index) => (
-              <div key={music.id} className="relative" data-testid={`card-popular-${music.id}`}>
+              <div key={music.id} className="relative transform scale-90 md:scale-90 origin-top-left" data-testid={`card-popular-${music.id}`}>
                 {index < 3 && (
                   <Badge className="absolute -top-2 -left-2 z-10 bg-red-500 text-white border-none text-xs px-2">
                     TOP {index + 1}

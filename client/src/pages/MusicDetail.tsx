@@ -61,8 +61,8 @@ function MiniMusicCard({ item, onPlay }: { item: any; onPlay: (id: number) => vo
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{item.title}</p>
-        <p className="text-xs text-muted-foreground truncate">{item.artist}</p>
+        <p className="text-sm font-medium truncate" title={item.title}>{item.title}</p>
+        <p className="text-xs text-muted-foreground truncate" title={item.artist}>{item.artist}</p>
       </div>
       <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
         <Heart size={10} />
@@ -176,6 +176,16 @@ export default function MusicDetail() {
   });
   const hasPurchased = purchasedData?.purchased === true;
 
+  const { data: similarTracks } = useQuery<any[]>({
+    queryKey: ["/api/music", musicId, "similar"],
+    queryFn: async () => {
+      const res = await fetch(`/api/music/${musicId}/similar?limit=8`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: musicIdValid,
+  });
+
   const { data: sameGenreData } = useQuery<any>({
     queryKey: ["/api/music", "genre-related", musicData?.genre],
     queryFn: async () => {
@@ -203,10 +213,12 @@ export default function MusicDetail() {
   }, [allMusicData, musicData, musicId]);
 
   const recommendedTracks = useMemo(() => {
+    const fromApi = Array.isArray(similarTracks) && similarTracks.length > 0 ? similarTracks : [];
+    if (fromApi.length > 0) return fromApi;
     const genreList = sameGenreData?.music || [];
     const filtered = genreList.filter((m: any) => m.id !== musicId && !artistOtherTracks.some((a: any) => a.id === m.id));
     return filtered.slice(0, 6);
-  }, [sameGenreData, musicId, artistOtherTracks]);
+  }, [similarTracks, sameGenreData, musicId, artistOtherTracks]);
 
   const streamingStats = useQuery<any>({
     queryKey: ["/api/streaming-stats", "music", musicId],
@@ -640,6 +652,23 @@ export default function MusicDetail() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             <div className="lg:col-span-2 space-y-6">
+              {recommendedTracks.length > 0 && (
+                <Card className="p-6 bg-black/40 border-white/10 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <TrendingUp size={18} className="text-primary" />
+                    <h2 className="text-lg font-bold" data-testid="text-recommended-title">{t('musicDetail.ifYouLikedThis', '이 곡을 좋아한다면')}</h2>
+                    {musicData.genre && (
+                      <Badge variant="secondary" className="text-xs">{musicData.genre}</Badge>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                    {recommendedTracks.map((track: any) => (
+                      <MiniMusicCard key={track.id} item={track} onPlay={playMusic} />
+                    ))}
+                  </div>
+                </Card>
+              )}
+
               {musicData?.lyrics && (
                 <Card className="p-6 bg-black/40 border-white/10 backdrop-blur-sm" data-testid="card-lyrics">
                   <button
@@ -881,22 +910,6 @@ export default function MusicDetail() {
                 )}
               </Card>
 
-              {recommendedTracks.length > 0 && (
-                <Card className="p-6 bg-black/40 border-white/10 backdrop-blur-sm">
-                  <div className="flex items-center gap-2 mb-4">
-                    <TrendingUp size={18} className="text-primary" />
-                    <h2 className="text-lg font-bold" data-testid="text-recommended-title">{t('musicDetail.similarTracks', '비슷한 음원')}</h2>
-                    {musicData.genre && (
-                      <Badge variant="secondary" className="text-xs">{musicData.genre}</Badge>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                    {recommendedTracks.map((track: any) => (
-                      <MiniMusicCard key={track.id} item={track} onPlay={playMusic} />
-                    ))}
-                  </div>
-                </Card>
-              )}
             </div>
 
             <div className="space-y-4">
@@ -905,11 +918,11 @@ export default function MusicDetail() {
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground">{t('musicDetail.infoTitle', '제목')}</span>
-                    <span className="font-medium text-right truncate" data-testid="text-info-title">{musicData.title}</span>
+                    <span className="font-medium text-right truncate" data-testid="text-info-title" title={musicData.title}>{musicData.title}</span>
                   </div>
                   <div className="flex justify-between gap-2">
                     <span className="text-muted-foreground">{t('musicDetail.infoArtist', '아티스트')}</span>
-                    <span className="font-medium text-right truncate" data-testid="text-info-artist">{musicData.artist}</span>
+                    <span className="font-medium text-right truncate" data-testid="text-info-artist" title={musicData.artist}>{musicData.artist}</span>
                   </div>
                   {musicData.genre && (
                     <div className="flex justify-between gap-2">
@@ -920,7 +933,7 @@ export default function MusicDetail() {
                   {musicData.tags && (
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t('musicDetail.infoTags', '태그')}</span>
-                      <span className="font-medium text-right truncate" data-testid="text-info-tags">{musicData.tags}</span>
+                      <span className="font-medium text-right truncate" data-testid="text-info-tags" title={musicData.tags}>{musicData.tags}</span>
                     </div>
                   )}
                   <div className="flex justify-between gap-2">

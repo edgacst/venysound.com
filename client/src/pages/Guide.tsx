@@ -99,36 +99,37 @@ export default function Guide() {
             </p>
           </div>
 
-          <div className="flex justify-center gap-2 mb-10 overflow-x-auto pb-1 scrollbar-thin max-w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className="flex gap-2 shrink-0">
+          <div className="flex justify-center gap-1 sm:gap-2 mb-10 flex-wrap">
             <Button
               variant={activeTab === "listener" ? "default" : "outline"}
               onClick={() => setActiveTab("listener")}
-              className="gap-2 rounded-full px-6 shrink-0"
+              className="gap-1 sm:gap-2 rounded-full px-3 sm:px-6 py-2 text-xs sm:text-base shrink-0"
               data-testid="tab-listener"
             >
-              <Headphones size={16} />
-              {t('guide.listenerGuide', '리스너 가이드')}
+              <Headphones size={14} className="shrink-0 sm:w-4 sm:h-4" />
+              <span className="sm:hidden">{t('guide.listenerShort', '리스너')}</span>
+              <span className="hidden sm:inline">{t('guide.listenerGuide', '리스너 가이드')}</span>
             </Button>
             <Button
               variant={activeTab === "artist" ? "default" : "outline"}
               onClick={() => setActiveTab("artist")}
-              className="gap-2 rounded-full px-6 shrink-0"
+              className="gap-1 sm:gap-2 rounded-full px-3 sm:px-6 py-2 text-xs sm:text-base shrink-0"
               data-testid="tab-artist"
             >
-              <Mic2 size={16} />
-              {t('guide.artistGuide', '아티스트 가이드')}
+              <Mic2 size={14} className="shrink-0 sm:w-4 sm:h-4" />
+              <span className="sm:hidden">{t('guide.artistShort', '아티스트')}</span>
+              <span className="hidden sm:inline">{t('guide.artistGuide', '아티스트 가이드')}</span>
             </Button>
             <Button
               variant={activeTab === "video" ? "default" : "outline"}
               onClick={() => setActiveTab("video")}
-              className="gap-2 rounded-full px-6 shrink-0"
+              className="gap-1 sm:gap-2 rounded-full px-3 sm:px-6 py-2 text-xs sm:text-base shrink-0"
               data-testid="tab-video"
             >
-              <Play size={16} />
-              {t("guide.videoGuide", "동영상 가이드")}
+              <Play size={14} className="shrink-0 sm:w-4 sm:h-4" />
+              <span className="sm:hidden">{t('guide.videoShort', '동영상')}</span>
+              <span className="hidden sm:inline">{t("guide.videoGuide", "동영상 가이드")}</span>
             </Button>
-            </div>
           </div>
 
           {activeTab === "listener" && (

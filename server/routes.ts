@@ -17,6 +17,7 @@ import { subscriptionPlans, payments } from "../shared/models/auth";
 import { db } from "./db";
 import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
+import geoip from "geoip-lite";
 
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
@@ -204,6 +205,40 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/music/top-weekly", async (req, res) => {
+    try {
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
+      const list = await storage.getWeeklyTopTracks(limit);
+      res.json(list);
+    } catch (e) {
+      console.error("[music/top-weekly]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/music/recent", async (req, res) => {
+    try {
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 12));
+      const days = Math.min(90, Math.max(1, parseInt(String(req.query.days), 10) || 7));
+      const list = await storage.getRecentMusic(days, limit);
+      res.json(list);
+    } catch (e) {
+      console.error("[music/recent]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/artists/top-weekly", async (_req, res) => {
+    try {
+      const data = await storage.getWeeklyTopArtist(5);
+      if (!data) return res.json(null);
+      res.json(data);
+    } catch (e) {
+      console.error("[artists/top-weekly]", e);
+      res.json(null);
+    }
+  });
+
   app.get("/api/music/popular", async (_req, res) => {
     try {
       const result = await db.execute(sql`
@@ -372,6 +407,41 @@ export async function registerRoutes(
       uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
       uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
     });
+  });
+
+  app.get("/api/music/:id/similar", async (req, res) => {
+    const id = Number(req.params.id);
+    const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit), 10) || 8));
+    try {
+      const data = await storage.getSimilarMusic(id, limit);
+      res.json(data);
+    } catch (e) {
+      console.error("[music/similar]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/curated-playlists", async (_req, res) => {
+    try {
+      const list = await storage.getCuratedPlaylists();
+      res.json(list);
+    } catch (e) {
+      console.error("[curated-playlists]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/curated-playlists/:slug", async (req, res) => {
+    const slug = req.params.slug;
+    if (!slug) return res.status(404).json({ message: "Not found" });
+    try {
+      const playlist = await storage.getCuratedPlaylistBySlug(slug);
+      if (!playlist) return res.status(404).json({ message: "Playlist not found" });
+      res.json(playlist);
+    } catch (e) {
+      console.error("[curated-playlists/:slug]", e);
+      res.status(500).json({ message: "Error loading playlist" });
+    }
   });
 
   app.get("/api/music/missing-files", async (_req, res) => {
@@ -1095,8 +1165,19 @@ export async function registerRoutes(
     const deviceType = getDeviceType(req.headers["user-agent"]);
     const refererDomainVal = refererDomain(req.headers["referer"]);
     const utmSource = typeof req.body?.utmSource === "string" ? req.body.utmSource : (typeof req.query?.utm_source === "string" ? req.query.utm_source : undefined);
+    let countryCode: string | undefined;
+    let region: string | undefined;
+    if (ip && !/^127\.|^10\.|^172\.(1[6-9]|2[0-9]|3[01])\.|^192\.168\.|^::1$|^fc00:/i.test(ip)) {
+      try {
+        const geo = geoip.lookup(ip);
+        if (geo) {
+          countryCode = geo.country ?? undefined;
+          region = geo.region ?? undefined;
+        }
+      } catch (_) {}
+    }
     try {
-      await storage.recordVisit(visitorKey, path, { ipHash, deviceType, refererDomain: refererDomainVal ?? undefined, utmSource });
+      await storage.recordVisit(visitorKey, path, { ipHash, deviceType, refererDomain: refererDomainVal ?? undefined, utmSource, countryCode, region });
     } catch (e) {
       console.error("[analytics/visit] recordVisit failed (table may be missing – run db:push):", e);
     }
@@ -1135,6 +1216,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/analytics/status", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const tableExists = await storage.checkAnalyticsTableExists();
+      res.json({ tableExists });
+    } catch (e) {
+      console.error("[admin/analytics/status]", e);
+      res.json({ tableExists: false });
+    }
+  });
+
   app.get("/api/admin/credits-charged", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const total = await storage.getTotalCreditsCharged();
@@ -1161,6 +1252,27 @@ export async function registerRoutes(
       res.json(rows);
     } catch (e) {
       console.error("[admin/stats/devices]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/admin/stats/sources", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const rows = await storage.getAdminStatsBySource();
+      res.json(rows);
+    } catch (e) {
+      console.error("[admin/stats/sources]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/admin/analytics/trend", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const days = Math.min(90, Math.max(1, parseInt(String(req.query.days), 10) || 7));
+      const rows = await storage.getAdminAnalyticsTrend(days);
+      res.json(rows);
+    } catch (e) {
+      console.error("[admin/analytics/trend]", e);
       res.json([]);
     }
   });
@@ -1352,6 +1464,70 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/guide-videos DELETE]", e);
       res.status(500).json({ message: "삭제에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/admin/curated-playlists", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await storage.getCuratedPlaylists();
+      res.json(list);
+    } catch (e) {
+      console.error("[admin/curated-playlists]", e);
+      res.json([]);
+    }
+  });
+
+  app.post("/api/admin/curated-playlists", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { name, description, slug } = req.body || {};
+      if (!name || typeof name !== "string" || !slug || typeof slug !== "string") {
+        return res.status(400).json({ message: "name, slug 이 필요합니다." });
+      }
+      const { id } = await storage.createCuratedPlaylist({ name: name.trim(), description: description?.trim() || null, slug: slug.trim() });
+      res.json({ success: true, id });
+    } catch (e: any) {
+      console.error("[admin/curated-playlists POST]", e);
+      res.status(500).json({ message: e?.message?.includes("unique") ? "이미 사용 중인 slug입니다." : "저장에 실패했습니다." });
+    }
+  });
+
+  app.put("/api/admin/curated-playlists/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { name, description, slug, sortOrder } = req.body || {};
+      await storage.updateCuratedPlaylist(id, {
+        ...(name !== undefined && { name: String(name).trim() }),
+        ...(description !== undefined && { description: description === "" ? null : String(description) }),
+        ...(slug !== undefined && { slug: String(slug).trim() }),
+        ...(typeof sortOrder === "number" && { sortOrder }),
+      });
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/curated-playlists PUT]", e);
+      res.status(500).json({ message: "수정에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/admin/curated-playlists/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      await storage.deleteCuratedPlaylist(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/curated-playlists DELETE]", e);
+      res.status(500).json({ message: "삭제에 실패했습니다." });
+    }
+  });
+
+  app.put("/api/admin/curated-playlists/:id/tracks", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { musicIds } = req.body || {};
+      const ids = Array.isArray(musicIds) ? musicIds.filter((x): x is number => typeof x === "number") : [];
+      await storage.setCuratedPlaylistTracks(id, ids);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("[admin/curated-playlists tracks PUT]", e);
+      res.status(500).json({ message: "트랙 저장에 실패했습니다." });
     }
   });
 

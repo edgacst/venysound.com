@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, User as UserIcon, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,15 @@ export default function Home() {
   const { data: musicResult, isLoading } = useMusicList();
   const musicList = musicResult?.data;
   const totalCount = musicResult?.total || 0;
+
+  const { data: weeklyTop } = useQuery<any[]>({
+    queryKey: ["/api/music/top-weekly"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/top-weekly?limit=10");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const banners = [
     { image: banner1, title: t('home.banner1Title'), subtitle: t('home.banner1Subtitle'), link: "/upload", buttonText: t('home.banner1Button') },
@@ -103,6 +112,78 @@ export default function Home() {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0 }
   };
+
+  function WeeklyTopArtistSection() {
+    const { t } = useTranslation();
+    const { data } = useQuery<{
+      userId: string;
+      firstName: string | null;
+      lastName: string | null;
+      profileImageUrl: string | null;
+      playCount: number;
+      totalSeconds: number;
+      tracks: any[];
+    } | null>({
+      queryKey: ["/api/artists/top-weekly"],
+      queryFn: async () => {
+        const res = await fetch("/api/artists/top-weekly");
+        if (!res.ok) return null;
+        return res.json();
+      },
+    });
+
+    if (!data || !data.tracks || data.tracks.length === 0) return null;
+
+    const minutes = Math.floor((data.totalSeconds || 0) / 60);
+
+    return (
+      <section className="container px-4 pt-8 pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+          <div>
+            <p className="text-sm md:text-base font-semibold tracking-wide text-primary mb-1">
+              {t('home.weeklyArtistLabel', '이번 주 아티스트')}
+            </p>
+            <h2 className="text-2xl md:text-3xl font-display font-bold mb-1" data-testid="text-weekly-artist-name">
+              {data.firstName || t('home.unknownArtist', '아티스트')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t('home.weeklyArtistDesc', '최근 7일 동안 가장 많이 재생된 아티스트입니다.')}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <UserIcon size={16} className="text-primary" />
+              <span>{t('home.weeklyArtistPlays', { defaultValue: '{{count}}회 재생', count: data.playCount })}</span>
+            </div>
+            {minutes > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Play size={14} className="text-emerald-400" />
+                <span>{t('home.weeklyArtistMinutes', { defaultValue: '{{minutes}}분 감상', minutes })}</span>
+              </div>
+            )}
+            <Link href={`/profile/${data.userId}`}>
+              <Button size="sm" className="gap-2">
+                <UserIcon size={14} />
+                {t('home.viewArtistProfile', '아티스트 프로필 보기')}
+              </Button>
+            </Link>
+          </div>
+        </div>
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold text-muted-foreground">
+            {t('home.weeklyArtistTracks', '이 아티스트의 인기 트랙')}
+          </h3>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {data.tracks.slice(0, 8).map((track) => (
+            <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
+              <MusicCard music={track} />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col pb-24">
@@ -300,9 +381,37 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="container px-4 py-16">
+      {Array.isArray(weeklyTop) && weeklyTop.length > 0 && (
+        <section className="container px-4 pt-16 pb-4">
+          <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+            <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-weekly-top-section">
+              {t('home.weeklyTop', '이번 주 많이 들은 곡')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t('home.weeklyTopDesc', '최근 7일 동안 재생이 많았던 트랙입니다.')}
+            </p>
+          </div>
+          <motion.div
+            variants={container}
+            initial="hidden"
+            whileInView="show"
+            viewport={{ once: true }}
+            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+          >
+            {weeklyTop.slice(0, 10).map((music) => (
+              <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
+                <MusicCard music={music} />
+              </motion.div>
+            ))}
+          </motion.div>
+        </section>
+      )}
+
+      <WeeklyTopArtistSection />
+
+      <section className="container px-4 py-12">
         <div className="flex items-center justify-between gap-4 mb-8 flex-wrap">
-          <h2 className="text-3xl font-display font-bold" data-testid="text-recent-section">{t('home.recentUploads')}</h2>
+          <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-recent-section">{t('home.recentUploads')}</h2>
           <Link href="/music">
             <Button variant="link" className="text-primary" data-testid="link-view-all">{t('home.viewAll')}</Button>
           </Link>
@@ -321,7 +430,7 @@ export default function Home() {
             className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
           >
             {musicList?.slice(0, 10).map((music) => (
-              <motion.div key={music.id} variants={item}>
+              <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
                 <MusicCard music={music} />
               </motion.div>
             ))}

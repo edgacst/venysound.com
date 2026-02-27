@@ -4,12 +4,15 @@ import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Play, ChevronLeft, ChevronRight, ListMusic } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from 'react-i18next';
+import { resolveStorageUrl } from "@/lib/utils";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -47,6 +50,15 @@ export default function Explore() {
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   const { playMusic, setPlaylist } = usePlayerStore();
+
+  const { data: curatedPlaylists } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[]>({
+    queryKey: ["/api/curated-playlists"],
+    queryFn: async () => {
+      const res = await fetch("/api/curated-playlists");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "케이팝", "발라드", "트로트", "재즈", "클래식", "기타"];
 
@@ -118,6 +130,41 @@ export default function Explore() {
           </div>
         </div>
 
+        {Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <ListMusic size={20} className="text-primary" />
+              {t('explore.themedPlaylists', '테마 플레이리스트')}
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {curatedPlaylists.map((pl) => (
+                <Link key={pl.id} href={`/curated/${pl.slug}`}>
+                  <div
+                    className="w-40 sm:w-48 flex-shrink-0 rounded-lg border border-border bg-card p-4 hover:bg-card/80 transition-colors cursor-pointer"
+                    data-testid={`curated-card-${pl.slug}`}
+                  >
+                    <div className="aspect-square rounded-md bg-muted/50 flex items-center justify-center mb-3 overflow-hidden">
+                      {pl.coverImageFilename ? (
+                        <img
+                          src={resolveStorageUrl(pl.coverImageFilename)}
+                          alt={pl.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <ListMusic size={32} className="text-muted-foreground" />
+                      )}
+                    </div>
+                    <p className="font-medium truncate" title={pl.name}>{pl.name}</p>
+                    {pl.description && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5" title={pl.description}>{pl.description}</p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide">
           {genres.map((genre) => (
             <button
@@ -136,9 +183,11 @@ export default function Explore() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {musicList?.map((music) => (
-            <MusicCard key={music.id} music={music} />
+            <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
+              <MusicCard music={music} />
+            </div>
           ))}
         </div>
 

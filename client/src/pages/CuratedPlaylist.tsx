@@ -1,0 +1,147 @@
+import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
+import { MusicCard } from "@/components/MusicCard";
+import { usePlayerStore } from "@/components/AudioPlayer";
+import { Button } from "@/components/ui/button";
+import { Play, ListMusic, ArrowLeft } from "lucide-react";
+import { useParams, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { PageTransition } from "@/components/PageTransition";
+import { useTranslation } from "react-i18next";
+
+export default function CuratedPlaylist() {
+  const { t } = useTranslation();
+  const params = useParams<{ slug: string }>();
+  const slug = params?.slug ?? "";
+  const { playMusic, setPlaylist } = usePlayerStore();
+
+  const { data: playlist, isLoading, isError } = useQuery<{
+    id: number;
+    name: string;
+    description: string | null;
+    slug: string;
+    tracks: any[];
+  }>({
+    queryKey: ["/api/curated-playlists", slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/curated-playlists/${encodeURIComponent(slug)}`);
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !!slug,
+  });
+
+  const handlePlayAll = () => {
+    if (!playlist?.tracks?.length) return;
+    const ids = playlist.tracks.map((m: any) => m.id);
+    setPlaylist(ids);
+    playMusic(playlist.tracks[0].id);
+  };
+
+  if (!slug) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-12 text-center text-muted-foreground">
+            <p>{t("curated.notFound", "플레이리스트를 찾을 수 없습니다.")}</p>
+            <Link href="/music">
+              <Button variant="link" className="mt-2">{t("curated.backToMusic", "음원 목록으로")}</Button>
+            </Link>
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col pb-24">
+          <Navigation />
+          <div className="container px-4 py-8">
+            <div className="h-8 w-48 bg-muted rounded animate-pulse mb-4" />
+            <div className="h-4 w-full max-w-xl bg-muted rounded animate-pulse mb-8" />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="aspect-square bg-muted rounded-lg animate-pulse" />
+              ))}
+            </div>
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  if (isError || !playlist) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-12 text-center text-muted-foreground">
+            <ListMusic size={48} className="mx-auto mb-4 opacity-50" />
+            <p>{t("curated.notFound", "플레이리스트를 찾을 수 없습니다.")}</p>
+            <Link href="/music">
+              <Button variant="outline" className="mt-4 gap-2">
+                <ArrowLeft size={16} />
+                {t("curated.backToMusic", "음원 목록으로")}
+              </Button>
+            </Link>
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  return (
+    <PageTransition>
+      <div className="min-h-screen bg-background flex flex-col pb-24">
+        <Navigation />
+        <div className="container px-4 py-8">
+          <Link href="/music">
+            <Button variant="ghost" size="sm" className="mb-4 gap-2 text-muted-foreground">
+              <ArrowLeft size={16} />
+              {t("curated.backToMusic", "음원 목록으로")}
+            </Button>
+          </Link>
+
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-8">
+            <div className="flex-1">
+              <h1 className="text-2xl sm:text-3xl font-display font-bold" data-testid="curated-playlist-title">
+                {playlist.name}
+              </h1>
+              {playlist.description && (
+                <p className="text-muted-foreground mt-1 max-w-2xl">{playlist.description}</p>
+              )}
+              <p className="text-sm text-muted-foreground mt-2">
+                {playlist.tracks.length} {t("curated.tracks", "곡")}
+              </p>
+            </div>
+            {playlist.tracks.length > 0 && (
+              <Button onClick={handlePlayAll} className="gap-2 shrink-0" data-testid="curated-play-all">
+                <Play size={18} />
+                {t("curated.playAll", "전체 재생")}
+              </Button>
+            )}
+          </div>
+
+          {playlist.tracks.length === 0 ? (
+            <p className="text-muted-foreground py-12 text-center">{t("curated.empty", "아직 수록곡이 없습니다.")}</p>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {playlist.tracks.map((track: any) => (
+                <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
+                  <MusicCard music={track} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <Footer />
+      </div>
+    </PageTransition>
+  );
+}

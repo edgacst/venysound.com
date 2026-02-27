@@ -1,14 +1,14 @@
 import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
-  analyticsVisits, siteAnnouncements, guideVideos,
+  analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
 } from "@shared/schema";
-import { eq, desc, and, ilike, inArray, sql, count, lte, gte } from "drizzle-orm";
+import { eq, desc, asc, and, ilike, inArray, sql, count, lte, gte, ne } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
@@ -87,9 +87,12 @@ export interface IStorage {
     totalComments: number;
   }>;
   recordVisit(visitorKey: string, path: string, extra?: { ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
+  checkAnalyticsTableExists(): Promise<boolean>;
   getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
   getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
+  getAdminStatsBySource(): Promise<{ source: string; count: number }[]>;
+  getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
   getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
@@ -100,6 +103,16 @@ export interface IStorage {
   createGuideVideo(data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void>;
   updateGuideVideo(id: number, data: { title: string; description?: string; youtubeUrl: string; sortOrder?: number | null }): Promise<void>;
   deleteGuideVideo(id: number): Promise<void>;
+  getCuratedPlaylists(): Promise<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[]>;
+  getCuratedPlaylistBySlug(slug: string): Promise<{ id: number; name: string; description: string | null; slug: string; tracks: MusicWithUploaderTier[] } | null>;
+  getSimilarMusic(musicId: number, limit?: number): Promise<MusicWithUploaderTier[]>;
+  getWeeklyTopTracks(limit?: number): Promise<(MusicWithUploaderTier & { playCount: number; totalSeconds: number })[]>;
+  getRecentMusic(days?: number, limit?: number): Promise<MusicWithUploaderTier[]>;
+  getWeeklyTopArtist(limitTracks?: number): Promise<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number; tracks: MusicWithUploaderTier[] } | null>;
+  createCuratedPlaylist(data: { name: string; description?: string | null; slug: string }): Promise<{ id: number }>;
+  updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number }): Promise<void>;
+  deleteCuratedPlaylist(id: number): Promise<void>;
+  setCuratedPlaylistTracks(curatedPlaylistId: number, musicIds: number[]): Promise<void>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePostAdmin(id: number): Promise<void>;
@@ -260,6 +273,272 @@ export class DatabaseStorage implements IStorage {
   async getMusicById(id: number): Promise<Music | undefined> {
     const [found] = await db.select().from(music).where(eq(music.id, id));
     return found;
+  }
+
+  async getSimilarMusic(musicId: number, limit: number = 8): Promise<MusicWithUploaderTier[]> {
+    const current = await this.getMusicById(musicId);
+    if (!current) return [];
+    const safeLimit = Math.min(20, Math.max(1, limit));
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+    const baseSelect = db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id));
+
+    // 1) 같은 세부 장르(예: 팝발라드) 우선
+    let sameGenreRows: any[] = [];
+    if (current.genre) {
+      sameGenreRows = await baseSelect
+        .where(and(ne(music.id, musicId), eq(music.genre, current.genre)))
+        .orderBy(desc(music.createdAt))
+        .limit(safeLimit);
+    }
+
+    // 2) 부족하면 같은 아티스트 곡으로 채우기 (장르 무관)
+    let rows: any[] = sameGenreRows;
+    if (rows.length < safeLimit) {
+      const remaining = safeLimit - rows.length;
+      const sameArtistRows = await baseSelect
+        .where(and(ne(music.id, musicId), eq(music.userId, current.userId)))
+        .orderBy(desc(music.createdAt))
+        .limit(remaining);
+      // 중복 제거
+      const existingIds = new Set(rows.map((r: any) => r.id));
+      for (const r of sameArtistRows) {
+        if (!existingIds.has((r as any).id)) {
+          rows.push(r);
+          existingIds.add((r as any).id);
+        }
+      }
+    }
+
+    const now = new Date();
+    return rows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
+      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+    });
+  }
+
+  async getWeeklyTopTracks(limit: number = 10): Promise<(MusicWithUploaderTier & { playCount: number; totalSeconds: number })[]> {
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const sqlResult = await db.execute(sql`
+      SELECT
+        m.id,
+        m.title,
+        m.artist,
+        m.filename,
+        m.image_filename,
+        m.genre,
+        m.tags,
+        m.lyrics,
+        m.is_ai,
+        m.price,
+        m.is_downloadable,
+        m.user_id,
+        m.created_at,
+        u.subscription_tier AS uploader_subscription_tier,
+        u.subscription_expires_at AS uploader_subscription_expires_at,
+        u.role AS uploader_role,
+        COUNT(sl.id)::int AS play_count,
+        COALESCE(SUM(sl.duration_seconds), 0)::int AS total_seconds
+      FROM streaming_logs sl
+      JOIN music m ON sl.music_id = m.id
+      LEFT JOIN users u ON m.user_id = u.id
+      WHERE sl.created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY
+        m.id, m.title, m.artist, m.filename, m.image_filename, m.genre, m.tags, m.lyrics,
+        m.is_ai, m.price, m.is_downloadable, m.user_id, m.created_at,
+        u.subscription_tier, u.subscription_expires_at, u.role
+      ORDER BY play_count DESC, total_seconds DESC
+      LIMIT ${safeLimit}
+    `);
+
+    const rows = sqlResult.rows as any[];
+    const now = new Date();
+    return rows.map((r) => {
+      const subscriptionPremium =
+        r.uploader_subscription_tier === "premium" &&
+        (r.uploader_subscription_expires_at == null || new Date(r.uploader_subscription_expires_at) > now);
+      const isPremium = r.uploader_role === "admin" || subscriptionPremium;
+      const base: MusicWithUploaderTier = {
+        id: r.id,
+        title: r.title,
+        artist: r.artist,
+        filename: r.filename,
+        imageFilename: r.image_filename,
+        genre: r.genre,
+        tags: r.tags,
+        lyrics: r.lyrics,
+        isAi: r.is_ai,
+        price: r.price,
+        isDownloadable: r.is_downloadable,
+        userId: r.user_id,
+        createdAt: r.created_at,
+        uploaderSubscriptionTier: isPremium ? "premium" : "free",
+        uploaderDonationBadge: null,
+      };
+      return {
+        ...base,
+        playCount: Number(r.play_count || 0),
+        totalSeconds: Number(r.total_seconds || 0),
+      };
+    });
+  }
+
+  async getRecentMusic(days: number = 7, limit: number = 12): Promise<MusicWithUploaderTier[]> {
+    const safeDays = Math.min(90, Math.max(1, Math.floor(days)));
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const since = new Date();
+    since.setDate(since.getDate() - safeDays);
+
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+
+    let query = db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(gte(music.createdAt, since))
+      .orderBy(desc(music.createdAt))
+      .limit(safeLimit);
+
+    let rows = await query;
+
+    // 만약 최근 N일에 곡이 거의 없다면, 단순 최신곡으로 보정
+    if (rows.length === 0) {
+      rows = await db
+        .select({
+          ...musicColumns,
+          _uploaderTier: users.subscriptionTier,
+          _uploaderExpiresAt: users.subscriptionExpiresAt,
+          _uploaderRole: users.role,
+        })
+        .from(music)
+        .leftJoin(users, eq(music.userId, users.id))
+        .orderBy(desc(music.createdAt))
+        .limit(safeLimit);
+    }
+
+    const now = new Date();
+    return rows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
+      const subscriptionPremium =
+        _uploaderTier === "premium" &&
+        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+    });
+  }
+
+  async getWeeklyTopArtist(limitTracks: number = 5): Promise<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number; tracks: MusicWithUploaderTier[] } | null> {
+    const safeLimitTracks = Math.min(20, Math.max(1, limitTracks));
+    const result = await db.execute(sql`
+      SELECT
+        m.user_id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.profile_image_url,
+        COUNT(sl.id)::int AS play_count,
+        COALESCE(SUM(sl.duration_seconds), 0)::int AS total_seconds
+      FROM streaming_logs sl
+      JOIN music m ON sl.music_id = m.id
+      LEFT JOIN users u ON m.user_id = u.id
+      WHERE sl.created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY m.user_id, u.first_name, u.last_name, u.profile_image_url
+      ORDER BY play_count DESC, total_seconds DESC
+      LIMIT 1
+    `);
+    const row = result.rows[0] as any;
+    if (!row || !row.user_id) return null;
+
+    const artistId = String(row.user_id);
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+
+    const trackRows = await db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(eq(music.userId, artistId))
+      .orderBy(desc(music.createdAt))
+      .limit(safeLimitTracks);
+
+    const now = new Date();
+    const tracks: MusicWithUploaderTier[] = trackRows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof trackRows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
+      const subscriptionPremium =
+        _uploaderTier === "premium" &&
+        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+    });
+
+    return {
+      userId: artistId,
+      firstName: row.first_name ?? null,
+      lastName: row.last_name ?? null,
+      profileImageUrl: row.profile_image_url ?? null,
+      playCount: Number(row.play_count || 0),
+      totalSeconds: Number(row.total_seconds || 0),
+      tracks,
+    };
   }
 
   async getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]> {
@@ -668,6 +947,15 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
+  async checkAnalyticsTableExists(): Promise<boolean> {
+    try {
+      await db.select({ one: sql<number>`1` }).from(analyticsVisits).limit(1);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]> {
     try {
       const rows = await db.select({
@@ -688,6 +976,47 @@ export class DatabaseStorage implements IStorage {
         count: sql<number>`count(*)::int`,
       }).from(analyticsVisits).groupBy(analyticsVisits.deviceType).orderBy(desc(sql`count(*)`)).limit(10);
       return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  async getAdminStatsBySource(): Promise<{ source: string; count: number }[]> {
+    try {
+      const result = await db.execute(sql`
+        SELECT
+          COALESCE(NULLIF(TRIM(referer_domain), ''), NULLIF(TRIM(utm_source), ''), 'direct') AS source,
+          count(*)::int AS count
+        FROM analytics_visits
+        GROUP BY 1
+        ORDER BY count DESC
+        LIMIT 15
+      `);
+      return (result.rows as { source: string; count: number }[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  async getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]> {
+    const safeDays = Math.min(Math.max(1, Math.floor(days)), 90);
+    try {
+      const rows = await db.execute(sql`
+        SELECT
+          to_char((visited_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') as date,
+          count(DISTINCT visitor_key)::int as unique_visitors,
+          count(*)::int as page_views
+        FROM analytics_visits
+        WHERE visited_at >= ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') - make_interval(days => ${safeDays}))
+        GROUP BY 1
+        ORDER BY 1
+      `);
+      const out = (rows.rows as { date: string; unique_visitors: number; page_views: number }[]).map((r) => ({
+        date: r.date,
+        uniqueVisitors: r.unique_visitors ?? 0,
+        pageViews: r.page_views ?? 0,
+      }));
+      return out;
     } catch {
       return [];
     }
@@ -1428,6 +1757,133 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGuideVideo(id: number): Promise<void> {
     await db.delete(guideVideos).where(eq(guideVideos.id, id));
+  }
+
+  async getCuratedPlaylists(): Promise<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[]> {
+    const baseRows = await db
+      .select({
+        id: curatedPlaylists.id,
+        name: curatedPlaylists.name,
+        description: curatedPlaylists.description,
+        slug: curatedPlaylists.slug,
+        sortOrder: curatedPlaylists.sortOrder,
+      })
+      .from(curatedPlaylists)
+      .orderBy(asc(curatedPlaylists.sortOrder), asc(curatedPlaylists.id));
+    const results: { id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[] = [];
+    for (const pl of baseRows) {
+      const [firstTrack] = await db
+        .select({ imageFilename: music.imageFilename })
+        .from(curatedPlaylistMusic)
+        .leftJoin(music, eq(curatedPlaylistMusic.musicId, music.id))
+        .where(eq(curatedPlaylistMusic.curatedPlaylistId, pl.id))
+        .orderBy(asc(curatedPlaylistMusic.sortOrder))
+        .limit(1);
+      results.push({
+        id: pl.id,
+        name: pl.name,
+        description: pl.description,
+        slug: pl.slug,
+        sortOrder: pl.sortOrder,
+        coverImageFilename: firstTrack?.imageFilename ?? null,
+      });
+    }
+    return results;
+  }
+
+  async getCuratedPlaylistBySlug(slug: string): Promise<{ id: number; name: string; description: string | null; slug: string; tracks: MusicWithUploaderTier[] } | null> {
+    const [pl] = await db.select().from(curatedPlaylists).where(eq(curatedPlaylists.slug, slug));
+    if (!pl) return null;
+    const entries = await db
+      .select({ musicId: curatedPlaylistMusic.musicId, sortOrder: curatedPlaylistMusic.sortOrder })
+      .from(curatedPlaylistMusic)
+      .where(eq(curatedPlaylistMusic.curatedPlaylistId, pl.id))
+      .orderBy(asc(curatedPlaylistMusic.sortOrder));
+    const musicIds = entries.map((e) => e.musicId);
+    if (musicIds.length === 0) {
+      return { id: pl.id, name: pl.name, description: pl.description, slug: pl.slug, tracks: [] };
+    }
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+    const rows = await db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(inArray(music.id, musicIds));
+    const orderMap = new Map(entries.map((e, i) => [e.musicId, i]));
+    const now = new Date();
+    const tracks: MusicWithUploaderTier[] = rows
+      .map((r) => {
+        const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
+        const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+        const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+        return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier & { _sortOrder: number };
+      })
+      .map((t) => {
+        const sortOrder = orderMap.get(t.id) ?? 999;
+        return { ...t, _sortOrder: sortOrder };
+      })
+      .sort((a, b) => a._sortOrder - b._sortOrder)
+      .map(({ _sortOrder, ...t }) => t as MusicWithUploaderTier);
+    return { id: pl.id, name: pl.name, description: pl.description, slug: pl.slug, tracks };
+  }
+
+  async createCuratedPlaylist(data: { name: string; description?: string | null; slug: string }): Promise<{ id: number }> {
+    const [row] = await db
+      .insert(curatedPlaylists)
+      .values({
+        name: data.name,
+        description: data.description ?? null,
+        slug: data.slug.trim().toLowerCase().replace(/\s+/g, "-"),
+      })
+      .returning({ id: curatedPlaylists.id });
+    if (!row) throw new Error("Failed to create curated playlist");
+    return { id: row.id };
+  }
+
+  async updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number }): Promise<void> {
+    const set: Record<string, unknown> = {};
+    if (data.name !== undefined) set.name = data.name;
+    if (data.description !== undefined) set.description = data.description;
+    if (data.slug !== undefined) set.slug = data.slug.trim().toLowerCase().replace(/\s+/g, "-");
+    if (data.sortOrder !== undefined) set.sortOrder = data.sortOrder;
+    if (Object.keys(set).length === 0) return;
+    await db.update(curatedPlaylists).set(set as any).where(eq(curatedPlaylists.id, id));
+  }
+
+  async deleteCuratedPlaylist(id: number): Promise<void> {
+    await db.delete(curatedPlaylistMusic).where(eq(curatedPlaylistMusic.curatedPlaylistId, id));
+    await db.delete(curatedPlaylists).where(eq(curatedPlaylists.id, id));
+  }
+
+  async setCuratedPlaylistTracks(curatedPlaylistId: number, musicIds: number[]): Promise<void> {
+    await db.delete(curatedPlaylistMusic).where(eq(curatedPlaylistMusic.curatedPlaylistId, curatedPlaylistId));
+    if (musicIds.length === 0) return;
+    await db.insert(curatedPlaylistMusic).values(
+      musicIds.map((musicId, i) => ({
+        curatedPlaylistId,
+        musicId,
+        sortOrder: i,
+      }))
+    );
   }
 }
 

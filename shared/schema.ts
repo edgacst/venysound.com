@@ -67,6 +67,23 @@ export const playlistMusic = pgTable("playlist_music", {
   primaryKey({ columns: [t.playlistId, t.musicId] }),
 ]);
 
+// 테마/무드 플레이리스트 (사이트 기획, 관리자 편집)
+export const curatedPlaylists = pgTable("curated_playlists", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  slug: text("slug").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [uniqueIndex("curated_playlists_slug_unique").on(t.slug)]);
+
+export const curatedPlaylistMusic = pgTable("curated_playlist_music", {
+  id: serial("id").primaryKey(),
+  curatedPlaylistId: integer("curated_playlist_id").references(() => curatedPlaylists.id, { onDelete: "cascade" }).notNull(),
+  musicId: integer("music_id").references(() => music.id, { onDelete: "cascade" }).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+});
+
 // Community Posts table
 export const posts = pgTable("posts", {
   id: serial("id").primaryKey(),
@@ -236,6 +253,21 @@ export const playlistMusicRelations = relations(playlistMusic, ({ one }) => ({
   }),
   music: one(music, {
     fields: [playlistMusic.musicId],
+    references: [music.id],
+  }),
+}));
+
+export const curatedPlaylistsRelations = relations(curatedPlaylists, ({ many }) => ({
+  tracks: many(curatedPlaylistMusic),
+}));
+
+export const curatedPlaylistMusicRelations = relations(curatedPlaylistMusic, ({ one }) => ({
+  curatedPlaylist: one(curatedPlaylists, {
+    fields: [curatedPlaylistMusic.curatedPlaylistId],
+    references: [curatedPlaylists.id],
+  }),
+  music: one(music, {
+    fields: [curatedPlaylistMusic.musicId],
     references: [music.id],
   }),
 }));
