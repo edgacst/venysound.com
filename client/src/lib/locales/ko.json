@@ -1,12 +1,12 @@
 {
   "nav": {
     "home": "홈",
-    "musicList": "음원 목록",
-    "popular": "인기 음원",
+    "musicList": "음악",
+    "popular": "인기",
     "community": "커뮤니티",
-    "about": "회사소개",
+    "about": "소개",
     "premium": "프리미엄",
-    "notices": "공지사항",
+    "notices": "공지",
     "menu": "메뉴",
     "myMenu": "나의 메뉴",
     "upload": "업로드",
@@ -55,10 +55,12 @@
   "explore": {
     "title": "음원 목록",
     "totalCount": "총 {{count}}곡",
+    "themedPlaylists": "테마 플레이리스트",
     "searchPlaceholder": "듣고 싶은 음악이나 아티스트 검색...",
     "playAll": "음원 전체재생",
     "noResults": "검색 결과가 없습니다.",
     "all": "전체",
+    "curatedPlaylist": {},
     "genres": {
       "팝뮤직": "팝뮤직",
       "국내가요": "국내가요",
@@ -69,8 +71,22 @@
       "트로트": "트로트",
       "재즈": "재즈",
       "클래식": "클래식",
+      "찬양": "찬양",
       "기타": "기타"
     }
+  },
+  "noticesPage": {
+    "title": "공지사항",
+    "subtitle": "업데이트 소식과 공지를 확인하세요.",
+    "loading": "불러오는 중입니다...",
+    "empty": "등록된 공지사항이 없습니다.",
+    "no": "번호",
+    "subject": "제목",
+    "date": "게시일",
+    "status": "상태",
+    "statusActive": "진행 중",
+    "statusEnded": "종료",
+    "exposurePeriod": "노출 기간"
   },
   "popular": {
     "title": "인기 음원 TOP 20",

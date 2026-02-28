@@ -60,7 +60,7 @@ export default function Explore() {
     },
   });
 
-  const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "케이팝", "발라드", "트로트", "재즈", "클래식", "기타"];
+  const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -154,15 +154,16 @@ export default function Explore() {
                         <ListMusic size={32} className="text-muted-foreground" />
                       )}
                     </div>
-                    <p className="font-medium truncate" title={pl.name}>{pl.name}</p>
+                    <p className="font-medium truncate" title={pl.name}>{t(`explore.curatedPlaylist.${pl.slug}.name`, pl.name)}</p>
                     {(pl.genreMain || pl.genreSub) && (
                       <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                         {[pl.genreMain, pl.genreSub].filter(Boolean).join(" / ")}
                       </p>
                     )}
-                    {pl.description && (
-                      <p className="text-xs text-muted-foreground truncate mt-0.5" title={pl.description}>{pl.description}</p>
-                    )}
+                    {(() => {
+                      const desc = t(`explore.curatedPlaylist.${pl.slug}.description`, pl.description || '');
+                      return desc ? <p className="text-xs text-muted-foreground truncate mt-0.5" title={desc}>{desc}</p> : null;
+                    })()}
                   </div>
                 </Link>
               ))}

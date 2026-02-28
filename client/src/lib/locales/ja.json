@@ -1,11 +1,11 @@
 {
   "nav": {
     "home": "ホーム",
-    "musicList": "音楽ライブラリ",
+    "musicList": "音楽",
     "popular": "人気",
-    "community": "コミュニティ",
-    "about": "会社概要",
-    "premium": "プレミアム",
+    "community": "コミュ",
+    "about": "概要",
+    "premium": "プレ",
     "notices": "お知らせ",
     "upload": "アップロード",
     "credits": "クレジット",
@@ -52,10 +52,15 @@
   "explore": {
     "title": "音楽ライブラリ",
     "totalCount": "全{{count}}曲",
+    "themedPlaylists": "テーマプレイリスト",
     "searchPlaceholder": "音楽やアーティストを検索...",
     "playAll": "全曲再生",
     "noResults": "検索結果がありません。",
     "all": "すべて",
+    "curatedPlaylist": {
+      "emotional-ballad": { "name": "感性・バラード", "description": "心に静かに響く音楽..." },
+      "before-sleep": { "name": "眠る前に聴くのに...", "description": "一日の疲れを癒して" }
+    },
     "genres": {
       "팝뮤직": "ポップミュージック",
       "국내가요": "韓国歌謡",
@@ -66,8 +71,22 @@
       "트로트": "トロット",
       "재즈": "ジャズ",
       "클래식": "クラシック",
+      "찬양": "賛美",
       "기타": "その他"
     }
+  },
+  "noticesPage": {
+    "title": "お知らせ",
+    "subtitle": "アップデートとお知らせをご確認ください。",
+    "loading": "読み込み中...",
+    "empty": "お知らせはまだありません。",
+    "no": "No.",
+    "subject": "タイトル",
+    "date": "掲載日",
+    "status": "状態",
+    "statusActive": "表示中",
+    "statusEnded": "終了",
+    "exposurePeriod": "表示期間"
   },
   "popular": {
     "title": "人気楽曲 TOP 20",

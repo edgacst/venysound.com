@@ -55,10 +55,15 @@
   "explore": {
     "title": "Music Library",
     "totalCount": "{{count}} tracks total",
+    "themedPlaylists": "Theme Playlists",
     "searchPlaceholder": "Search for music or artists...",
     "playAll": "Play All",
     "noResults": "No results found.",
     "all": "All",
+    "curatedPlaylist": {
+      "emotional-ballad": { "name": "Emotion, Ballad", "description": "Music that gently touches the heartstrings..." },
+      "before-sleep": { "name": "Good to listen before sleep...", "description": "Relax from the day's fatigue" }
+    },
     "genres": {
       "팝뮤직": "Pop",
       "국내가요": "K-Pop & Korean",
@@ -69,8 +74,22 @@
       "트로트": "Trot",
       "재즈": "Jazz",
       "클래식": "Classical",
+      "찬양": "Praise",
       "기타": "Other"
     }
+  },
+  "noticesPage": {
+    "title": "Notices",
+    "subtitle": "Check updates and announcements.",
+    "loading": "Loading...",
+    "empty": "No notices yet.",
+    "no": "No.",
+    "subject": "Title",
+    "date": "Date",
+    "status": "Status",
+    "statusActive": "Active",
+    "statusEnded": "Ended",
+    "exposurePeriod": "Exposure period"
   },
   "popular": {
     "title": "Popular Tracks TOP 20",
