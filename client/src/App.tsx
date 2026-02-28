@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Router, Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -7,22 +7,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { LoginModal } from "@/components/LoginModal";
+import { WsProvider } from "@/contexts/WsContext";
+import { useAuth } from "@/hooks/use-auth";
 
 const VISITOR_KEY = "vkey";
 
-/** 앱 전역에서 /ws 연결 1개 유지 → 접속자 수 집계에 포함 */
-function VisitorCountSocket() {
-  const wsRef = useRef<WebSocket | null>(null);
-  useEffect(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
-    return () => {
-      ws.close();
-      wsRef.current = null;
-    };
-  }, []);
-  return null;
+function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  return <WsProvider userId={user?.id ?? undefined}>{children}</WsProvider>;
 }
 
 /** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
@@ -83,11 +75,17 @@ import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 import Notices from "@/pages/Notices";
 import CuratedPlaylist from "@/pages/CuratedPlaylist";
+import Radio from "@/pages/Radio";
+import RadioCreate from "@/pages/RadioCreate";
+import RadioChannel from "@/pages/RadioChannel";
 
 function Routes() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/radio/create" component={RadioCreate} />
+      <Route path="/radio/:slug" component={RadioChannel} />
+      <Route path="/radio" component={Radio} />
       <Route path="/music/:id" component={MusicDetail} />
       <Route path="/music" component={Explore} />
       <Route path="/curated/:slug" component={CuratedPlaylist} />
@@ -127,13 +125,14 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <TooltipProvider>
-          <VisitorCountSocket />
-          <AnalyticsVisit />
-          <Routes />
-          <GlobalAudioPlayer />
-          <ScrollToTop />
-          <LoginModal />
-          <Toaster />
+          <WsProviderWithAuth>
+            <AnalyticsVisit />
+            <Routes />
+            <GlobalAudioPlayer />
+            <ScrollToTop />
+            <LoginModal />
+            <Toaster />
+          </WsProviderWithAuth>
         </TooltipProvider>
       </Router>
     </QueryClientProvider>

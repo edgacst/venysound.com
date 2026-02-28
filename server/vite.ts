@@ -33,6 +33,14 @@ export async function setupVite(server: Server, app: Express) {
     appType: "custom",
   });
 
+  // DJ 스튜디오 목업 HTML은 Vite catch-all 전에 직접 서빙 (그렇지 않으면 SPA index.html이 반환됨)
+  app.get("/radio-dj-ui-mockup.html", (_req, res, next) => {
+    const filePath = path.resolve(import.meta.dirname, "..", "client", "public", "radio-dj-ui-mockup.html");
+    res.sendFile(filePath, (err) => {
+      if (err) next(err);
+    });
+  });
+
   app.use(vite.middlewares);
 
   const serveSpa = async (req: express.Request, res: express.Response, next: express.NextFunction) => {

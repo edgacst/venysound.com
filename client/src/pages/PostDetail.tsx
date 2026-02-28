@@ -11,7 +11,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
-import { ko } from "date-fns/locale";
+import { ko, ja, zhCN } from "date-fns/locale";
 import { ArrowLeft, MessageSquare, Loader2, Send, Trash2, Reply, CornerDownRight, Pencil, X, ImagePlus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageTransition } from "@/components/PageTransition";
@@ -41,7 +41,7 @@ export default function PostDetail() {
   const [editImageUploading, setEditImageUploading] = useState(false);
   const [, setLocation] = useLocation();
 
-  const dateLocale = i18n.language === 'ko' ? ko : undefined;
+  const dateLocale = i18n.language === 'ko' ? ko : i18n.language === 'ja' ? ja : i18n.language === 'zh' ? zhCN : undefined;
   const categories = ["자유", "음악추천", "질문", "정보", "후기", "콜라보"];
   const IMAGE_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
 

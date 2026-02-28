@@ -647,7 +647,10 @@ export default function Admin() {
                 {t('admin.withdrawalManagement', '출금')}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-withdrawal-count">{adminWithdrawals?.length ?? 0}</Badge>
               </TabsTrigger>
-              <TabsTrigger value="announcement">{t('admin.siteAnnouncement', '공지 팝업')}</TabsTrigger>
+              <TabsTrigger value="announcement" className="gap-1.5">
+                <Megaphone size={14} className="shrink-0" />
+                {t('admin.siteAnnouncementLabel', '사이트 공지')}
+              </TabsTrigger>
               <TabsTrigger value="guide-videos">{t('admin.guideVideos', '동영상 가이드 관리')}</TabsTrigger>
               <TabsTrigger value="curated">{t('admin.curatedPlaylists', '테마 플레이리스트')}</TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
@@ -1437,10 +1440,11 @@ export default function Admin() {
             <TabsContent value="announcement">
         <Card className="p-4 sm:p-6" data-testid="card-site-announcement">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <Megaphone size={20} className="text-primary" /> {t('admin.siteAnnouncement', '공지 팝업')}
+            <Megaphone size={20} className="text-primary" /> {t('admin.siteAnnouncementLabel', '사이트 공지')}
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
             {t('admin.siteAnnouncementDesc', '공지 내용과 노출 시작·종료 일시를 설정하면, 메인 페이지(/) 접속 시 해당 기간에 팝업으로 표시됩니다.')}
+            {t('admin.siteAnnouncementDesc2', ' 동일 공지는 /notices, /radio 방송 관련 공지에도 노출됩니다.')}
           </p>
           <div className="space-y-4 max-w-xl">
             <div>
@@ -2100,7 +2104,7 @@ export default function Admin() {
                 </div>
                 {backupPwError && <p className="text-xs text-red-500 mb-3">{backupPwError}</p>}
                 <div className="flex gap-2 mt-4">
-                  <Button variant="outline" className="flex-1" onClick={() => setBackupPwOpen(false)}>취소</Button>
+                  <Button variant="outline" className="flex-1" onClick={() => setBackupPwOpen(false)}>{t('common.cancel', '취소')}</Button>
                   <Button
                     id="backup-pw-confirm"
                     className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"

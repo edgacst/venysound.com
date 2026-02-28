@@ -13,6 +13,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { resolveStorageUrl } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -315,6 +316,37 @@ export default function Home() {
             </Link>
           </motion.div>
         </div>
+      </section>
+
+      {/* 베니방송국 배너 — 배경 + 중앙 파형 애니메이션 */}
+      <section className="container px-4 py-4" data-testid="section-radio-banner">
+        <Link href="/radio">
+          <div
+            className="rounded-xl overflow-hidden h-[120px] md:h-[140px] flex items-center justify-between gap-4 px-6 md:px-10 border border-white/10 cursor-pointer hover:opacity-95 transition-opacity group relative bg-cover bg-center"
+            style={{
+              backgroundImage: "linear-gradient(to right, rgba(30,0,60,0.88) 0%, rgba(60,20,80,0.6) 50%, rgba(80,40,100,0.5) 100%), url('/radio-studio-bg.png'), linear-gradient(to right, rgb(88,28,135), rgb(126,34,206))",
+            }}
+          >
+            {/* 중앙 파형 영역 (동그라미 부분) */}
+            <RadioBannerWaveformCanvas className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[200px] h-[52px] md:w-[240px] md:h-[60px] pointer-events-none rounded-lg overflow-hidden" />
+            <div className="flex items-center gap-4 min-w-0 relative z-0">
+              <div className="flex-shrink-0 w-14 h-14 md:w-16 md:h-16 rounded-full bg-white/20 flex items-center justify-center">
+                <span className="text-2xl md:text-3xl">📻</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg md:text-xl font-bold text-white truncate">
+                  {t("home.radioBannerTitle", "베니방송국")}
+                </h3>
+                <p className="text-white/90 text-sm md:text-base truncate">
+                  {t("home.radioBannerSubtitle", "나만의 방송 채널을 만들고 실시간으로 음악을 송출하세요")}
+                </p>
+              </div>
+            </div>
+            <span className="flex-shrink-0 text-white/90 group-hover:translate-x-1 transition-transform text-sm font-medium relative z-0">
+              {t("home.radioBannerButton", "방송국 가기")} →
+            </span>
+          </div>
+        </Link>
       </section>
 
       <section className="container px-4 py-8" data-testid="section-banner">

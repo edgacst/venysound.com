@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>베니방송국 · DJ 송출실 (UI 목업)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f12;
+      color: #e4e4e7;
+      min-height: 100vh;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      grid-template-rows: auto 1fr;
+      height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 1.1rem; color: #a78bfa; }
+    .live-badge {
+      background: #ef4444;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .panel {
+      border-right: 1px solid #27272a;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .panel:last-of-type { border-right: none; border-left: 1px solid #27272a; }
+    .panel-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      margin-bottom: 12px;
+    }
+    /* 왼쪽: 재생 큐 + 곡 추가 */
+    .queue-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 16px 0;
+    }
+    .queue-list li {
+      padding: 10px 12px;
+      background: #27272a;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .queue-list li .num { color: #71717a; font-size: 0.8rem; width: 20px; }
+    .queue-list li.playing { border-left: 3px solid #a78bfa; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+      width: 100%;
+      margin-bottom: 8px;
+    }
+    .btn-primary { background: #7c3aed; color: #fff; }
+    .btn-secondary { background: #3f3f46; color: #e4e4e7; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-secondary:hover { background: #52525b; }
+    /* 가운데: 현재 재생 + 컨트롤 */
+    .main {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    .now-playing {
+      text-align: center;
+      max-width: 400px;
+    }
+    .now-playing .artwork {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, #3f3f46 0%, #27272a 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      color: #52525b;
+    }
+    .now-playing .title { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
+    .now-playing .artist { color: #71717a; font-size: 0.95rem; }
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .controls button {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      background: #3f3f46;
+      color: #e4e4e7;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    .controls button:hover { background: #52525b; }
+    .controls button.play { width: 56px; height: 56px; background: #7c3aed; font-size: 1.5rem; }
+    .controls button.play:hover { background: #6d28d9; }
+    .source-tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 24px;
+    }
+    .source-tabs button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: transparent;
+      color: #a1a1aa;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .source-tabs button.active { background: #3f3f46; color: #fff; border-color: #52525b; }
+    /* 오른쪽: 채팅 + 신청곡 */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .tabs button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: #71717a;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .tabs button.active { background: #3f3f46; color: #fff; }
+    .chat-list, .request-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .chat-list li, .request-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.85rem;
+    }
+    .chat-list .name { color: #a78bfa; margin-right: 6px; }
+    .request-list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .request-list .song { flex: 1; min-width: 0; }
+    .request-list .by { color: #71717a; font-size: 0.75rem; }
+    .chat-input-wrap {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .chat-input-wrap input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+      font-size: 0.875rem;
+    }
+    .chat-input-wrap button { padding: 10px 16px; }
+    .foot-note {
+      grid-column: 1 / -1;
+      padding: 8px 20px;
+      background: #18181b;
+      border-top: 1px solid #27272a;
+      font-size: 0.75rem;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <div style="background: #422; color: #fcc; padding: 10px 20px; text-align: center; font-size: 0.9rem;">
+    ⚠ 이 파일(docs)은 <strong>UI 목업</strong>입니다. 실제 로그인·음원 검색·송출은 <strong>사이트에서 열어야</strong> 합니다. 방송국 → 내 채널 → 「방송 스튜디오」 클릭 시 열리는 주소: <code>http://localhost:5000/radio-dj-ui-mockup.html</code>
+  </div>
+  <div class="layout">
+    <header>
+      <h1>🎙️ 베니방송국 · DJ 송출실</h1>
+      <span class="live-badge">● LIVE</span>
+    </header>
+
+    <!-- 왼쪽: 재생 큐 + 곡 추가 -->
+    <aside class="panel">
+      <div class="panel-title">재생 큐</div>
+      <ul class="queue-list" id="queue">
+        <li class="playing"><span class="num">1</span> 🎵 지금 재생 중인 곡 (예시)</li>
+        <li><span class="num">2</span> 다음 곡 A</li>
+        <li><span class="num">3</span> 다음 곡 B</li>
+      </ul>
+      <div class="panel-title">곡 추가</div>
+      <button type="button" class="btn btn-primary">📂 사이트 음원에서 선택</button>
+      <button type="button" class="btn btn-secondary">💾 로컬 파일 재생 (브라우저)</button>
+      <p style="font-size: 0.75rem; color: #71717a; margin-top: 12px;">
+        · 사이트 음원: 업로드된 곡을 선택해 큐에 넣고 송출<br>
+        · 로컬: 내 PC 파일을 재생하며 오디오를 실시간 송출
+      </p>
+    </aside>
+
+    <!-- 가운데: 현재 재생 + 컨트롤 -->
+    <main class="main">
+      <div class="now-playing">
+        <div class="artwork">🎵</div>
+        <div class="title" id="nowTitle">지금 재생 중인 곡 (예시)</div>
+        <div class="artist" id="nowArtist">아티스트명</div>
+      </div>
+      <div class="controls">
+        <button type="button" title="이전">⏮</button>
+        <button type="button" class="play" title="재생/일시정지">▶</button>
+        <button type="button" title="다음">⏭</button>
+      </div>
+      <div class="source-tabs">
+        <button type="button" class="active">사이트 음원</button>
+        <button type="button">로컬 파일</button>
+      </div>
+    </main>
+
+    <!-- 오른쪽: 채팅 + 신청곡 -->
+    <aside class="panel">
+      <div class="tabs">
+        <button type="button" class="active" data-tab="chat">채팅</button>
+        <button type="button" data-tab="requests">신청곡</button>
+      </div>
+      <div id="chat-panel">
+        <ul class="chat-list" id="chatList">
+          <li><span class="name">user1</span> 안녕하세요!</li>
+          <li><span class="name">user2</span> 신청곡 부탁해요~</li>
+        </ul>
+        <div class="chat-input-wrap">
+          <input type="text" placeholder="메시지 입력..." id="chatInput" />
+          <button type="button" class="btn btn-secondary" id="chatSend">전송</button>
+        </div>
+      </div>
+      <div id="requests-panel" style="display: none;">
+        <ul class="request-list" id="requestList">
+          <li>
+            <span class="song">○○○ - △△△</span>
+            <span class="by">user3 신청</span>
+            <button type="button" class="btn btn-secondary" style="width: auto; margin: 0;">추가</button>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <footer class="foot-note">
+      ※ 이 화면은 송출 시스템 UI 목업입니다. 실제 연동 없이 레이아웃만 확인할 수 있습니다.
+    </footer>
+  </div>
+
+  <script>
+    // 탭 전환
+    document.querySelectorAll('.tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        var tab = this.getAttribute('data-tab');
+        document.getElementById('chat-panel').style.display = tab === 'chat' ? 'block' : 'none';
+        document.getElementById('requests-panel').style.display = tab === 'requests' ? 'block' : 'none';
+      });
+    });
+    document.getElementById('chatSend').addEventListener('click', function() {
+      var inp = document.getElementById('chatInput');
+      if (inp.value.trim()) {
+        var li = document.createElement('li');
+        li.innerHTML = '<span class="name">나</span> ' + inp.value.trim();
+        document.getElementById('chatList').appendChild(li);
+        inp.value = '';
+      }
+    });
+  </script>
+</body>
+</html>

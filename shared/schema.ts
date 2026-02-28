@@ -87,6 +87,56 @@ export const curatedPlaylistMusic = pgTable("curated_playlist_music", {
   sortOrder: integer("sort_order").default(0).notNull(),
 });
 
+// 베니방송국 채널
+export const radioChannels = pgTable("radio_channels", {
+  id: serial("id").primaryKey(),
+  ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  description: text("description"),
+  coverFilename: text("cover_filename"),
+  visibility: text("visibility").default("public").notNull(), // public | link_only | private
+  inviteToken: text("invite_token"),
+  status: text("status").default("draft").notNull(), // draft | live | ended
+  notice: text("notice"),
+  nowPlayingMusicId: integer("now_playing_music_id").references(() => music.id, { onDelete: "set null" }),
+  nowPlayingStartedAt: timestamp("now_playing_started_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [uniqueIndex("radio_channels_slug_unique").on(t.slug), uniqueIndex("radio_channels_owner_id").on(t.ownerId)]);
+
+// 베니방송국 채널 채팅
+export const radioChatMessages = pgTable("radio_chat_messages", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => radioChannels.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// 베니방송국 신청곡
+export const radioSongRequests = pgTable("radio_song_requests", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => radioChannels.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  musicId: integer("music_id").references(() => music.id, { onDelete: "set null" }),
+  title: text("title"),
+  artist: text("artist"),
+  message: text("message"),
+  status: text("status").default("pending").notNull(), // pending | playing | played | cancelled
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// 베니방송국 채널 스텝(부방장 등)
+export const radioChannelStaff = pgTable("radio_channel_staff", {
+  id: serial("id").primaryKey(),
+  channelId: integer("channel_id").references(() => radioChannels.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  role: text("role").default("staff").notNull(), // sub_host | staff
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [uniqueIndex("radio_channel_staff_channel_user").on(t.channelId, t.userId)]);
+
 // Community Posts table
 export const posts = pgTable("posts", {
   id: serial("id").primaryKey(),

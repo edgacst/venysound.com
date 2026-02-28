@@ -1,0 +1,699 @@
+import { useRef, useState, useEffect } from "react";
+import { useRoute } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Link } from "wouter";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus } from "lucide-react";
+import { PageTransition } from "@/components/PageTransition";
+import { useTranslation } from "react-i18next";
+import { useAuth } from "@/hooks/use-auth";
+import { resolveStorageUrl } from "@/lib/utils";
+import { useRadioRoom } from "@/hooks/use-radio-room";
+import { useWs } from "@/contexts/WsContext";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+
+export default function RadioChannel() {
+  const [, params] = useRoute("/radio/:slug");
+  const slug = params?.slug ?? "";
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const { data: channel, isLoading, error } = useQuery<{
+    id: number;
+    ownerId: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    coverFilename: string | null;
+    status: string;
+    nowPlayingMusicId: number | null;
+    nowPlayingStartedAt: string | null;
+    canManage?: boolean;
+  }>({
+    queryKey: ["/api/radio/channels", slug],
+    queryFn: async () => {
+      const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !!slug,
+    refetchInterval: (data) => (data?.status === "live" ? 5000 : false),
+  });
+
+  const isOwner = user?.id === channel?.ownerId;
+  const canManage = !!channel?.canManage;
+  const isLive = channel?.status === "live";
+  const nowPlayingId = channel?.nowPlayingMusicId ?? null;
+  const { listenerCount } = useRadioRoom(slug);
+
+  const { data: nowPlayingMusic } = useQuery<{ id: number; filename?: string | null }>({
+    queryKey: ["/api/music", nowPlayingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/music/${nowPlayingId}`);
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !!nowPlayingId && !!isLive,
+  });
+  const rawAudioUrl =
+    nowPlayingId == null
+      ? null
+      : nowPlayingMusic?.filename?.startsWith("/objects/")
+        ? nowPlayingMusic.filename
+        : `/api/music/${nowPlayingId}/stream`;
+  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!rawAudioUrl) {
+      setAudioBlobUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let blobUrl: string | null = null;
+    fetch(rawAudioUrl, { credentials: "include" })
+      .then((res) => {
+        if (!res.ok) throw new Error(res.status === 404 ? "파일 없음" : `오류 ${res.status}`);
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.startsWith("audio/") && !ct.includes("octet-stream")) return res.json().then(() => { throw new Error("음원이 아님"); });
+        return res.blob();
+      })
+      .then((blob) => {
+        if (!cancelled) {
+          blobUrl = URL.createObjectURL(blob);
+          setAudioBlobUrl(blobUrl);
+        } else if (blobUrl) URL.revokeObjectURL(blobUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setAudioBlobUrl(null);
+      });
+    return () => {
+      cancelled = true;
+      setAudioBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    };
+  }, [rawAudioUrl]);
+  const audioStreamUrl = audioBlobUrl ?? rawAudioUrl;
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
+  useEffect(() => {
+    const audio = audioRef.current;
+    const canvas = canvasRef.current;
+    if (!audio || !canvas || !audioStreamUrl) return;
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const source = ctx.createMediaElementSource(audio);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+    source.connect(analyser);
+    analyser.connect(ctx.destination);
+    analyserRef.current = { ctx, analyser };
+    let rafId = 0;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    function draw() {
+      rafId = requestAnimationFrame(draw);
+      if (!analyserRef.current) return;
+      analyser.getByteTimeDomainData(data);
+      const w = canvas.width;
+      const h = canvas.height;
+      const g = canvas.getContext("2d");
+      if (!g) return;
+      g.fillStyle = "rgba(15,15,18,0.4)";
+      g.fillRect(0, 0, w, h);
+      g.strokeStyle = "#7c3aed";
+      g.lineWidth = 2;
+      g.beginPath();
+      const step = w / data.length;
+      for (let i = 0; i < data.length; i++) {
+        const x = i * step;
+        const y = (data[i] / 128) * (h / 2) + h / 2;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    draw();
+    return () => {
+      cancelAnimationFrame(rafId);
+      analyserRef.current = null;
+      ctx.close();
+    };
+  }, [audioStreamUrl]);
+  const { toast } = useToast();
+  const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
+
+  type ChatMsg = { id: number; userId: string; username?: string | null; content: string; createdAt: string };
+  const { data: chatList } = useQuery<ChatMsg[]>({
+    queryKey: ["/api/radio/channels", slug, "chat"],
+    queryFn: async () => {
+      const res = await fetch(`/api/radio/channels/${slug}/chat`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!slug,
+  });
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const subscribeRef = useRef(subscribe);
+  subscribeRef.current = subscribe;
+  useEffect(() => {
+    if (!Array.isArray(chatList)) return;
+    const normalized = chatList.map((m) => ({
+      ...m,
+      createdAt: typeof m.createdAt === "string" ? m.createdAt : (m.createdAt as Date).toISOString(),
+    }));
+    setMessages(normalized);
+  }, [chatList]);
+  useEffect(() => {
+    if (!slug) return;
+    const unsub = subscribeRef.current((msg) => {
+      if (msg.type !== "radio_chat" || !msg.message) return;
+      const incoming = msg.message as ChatMsg;
+      setMessages((prev) => {
+        const withoutOptimistic = prev.filter(
+          (m) => !(m.id < 0 && m.userId === incoming.userId && m.content === incoming.content)
+        );
+        if (withoutOptimistic.some((m) => m.id === incoming.id)) return prev;
+        return [...withoutOptimistic, incoming];
+      });
+    });
+    return unsub;
+  }, [slug]);
+
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipAmount, setTipAmount] = useState(1000);
+  const [tipMessage, setTipMessage] = useState("");
+  const tipMutation = useMutation({
+    mutationFn: async (data: { toUserId: string; amount: number; message?: string }) => {
+      const res = await fetch("/api/tips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Tip failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
+      setTipOpen(false);
+      setTipAmount(1000);
+      setTipMessage("");
+    },
+    onError: (e: Error) => toast({ title: t("music.tipFailed"), description: e.message, variant: "destructive" }),
+  });
+
+  const [chatInput, setChatInput] = useState("");
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const [requestSearch, setRequestSearch] = useState("");
+  const [requestResults, setRequestResults] = useState<{ id: number; title: string; artist: string }[]>([]);
+  const [selectedRequest, setSelectedRequest] = useState<{ id: number; title: string; artist: string } | null>(null);
+  const requestSearchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (requestSearchTimeout.current) clearTimeout(requestSearchTimeout.current);
+    if (!slug) return;
+    requestSearchTimeout.current = setTimeout(() => {
+      const q = requestSearch.trim();
+      const url = q ? `/api/music?search=${encodeURIComponent(q)}&limit=20` : "/api/music?limit=20";
+      fetch(url, { credentials: "include" })
+        .then((r) => r.ok ? r.json() : { data: [] })
+        .then((data: { data?: { id: number; title: string; artist: string }[] }) => {
+          const list = Array.isArray(data?.data) ? data.data : [];
+          setRequestResults(list);
+        })
+        .catch(() => setRequestResults([]));
+    }, 300);
+    return () => {
+      if (requestSearchTimeout.current) clearTimeout(requestSearchTimeout.current);
+    };
+  }, [requestSearch, slug]);
+
+  const requestMutation = useMutation({
+    mutationFn: async (song: { id: number; title: string; artist: string }) => {
+      const normalizedSlug = slug.trim().toLowerCase();
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(normalizedSlug)}/requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ musicId: song.id, title: song.title, artist: song.artist }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let message = "신청 실패";
+        try {
+          const err = await res.json();
+          if (err && typeof err.message === "string") message = err.message;
+        } catch {
+          if (res.status === 401) message = "로그인이 필요합니다.";
+          else if (res.status === 404) message = "채널을 찾을 수 없습니다.";
+        }
+        throw new Error(message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: t("radio.requestSubmitted", "신청곡이 접수되었습니다.") });
+      setSelectedRequest(null);
+    },
+    onError: (e: Error) => toast({ title: t("radio.requestFailed", "신청 실패"), description: e.message, variant: "destructive" }),
+  });
+
+  const normalizedSlug = slug.trim().toLowerCase();
+  const { data: staffList = [], refetch: refetchStaff } = useQuery<{ id: number; userId: string; role: string; username?: string | null }[]>({
+    queryKey: ["/api/radio/channels", normalizedSlug, "staff"],
+    queryFn: async () => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(normalizedSlug)}/staff`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!normalizedSlug && canManage,
+  });
+  const [staffUsername, setStaffUsername] = useState("");
+  const [staffRole, setStaffRole] = useState<"staff" | "sub_host">("staff");
+  const addStaffMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(normalizedSlug)}/staff`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: staffUsername.trim(), role: staffRole }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "추가 실패");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "스텝이 추가되었습니다." });
+      setStaffUsername("");
+      refetchStaff();
+    },
+    onError: (e: Error) => toast({ title: "스텝 추가 실패", description: e.message, variant: "destructive" }),
+  });
+  const removeStaffMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(normalizedSlug)}/staff/${encodeURIComponent(userId)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "제거 실패");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "스텝이 제거되었습니다." });
+      refetchStaff();
+    },
+    onError: (e: Error) => toast({ title: "스텝 제거 실패", description: e.message, variant: "destructive" }),
+  });
+
+  if (!slug) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-10 text-center">
+            <p className="text-muted-foreground">{t("radio.channelNotFound", "??? ?? ? ????.")}</p>
+            <Link href="/radio">
+              <Button variant="outline" className="mt-4">?????</Button>
+            </Link>
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-20 text-center text-muted-foreground">
+            {t("radio.loading", "???? ?...")}
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  if (error || !channel) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-10 text-center">
+            <p className="text-muted-foreground">{t("radio.channelNotFound", "??? ?? ? ????.")}</p>
+            <Link href="/radio">
+              <Button variant="outline" className="mt-4">?????</Button>
+            </Link>
+          </div>
+          <Footer />
+        </div>
+      </PageTransition>
+    );
+  }
+
+  return (
+    <PageTransition>
+      <div className="min-h-screen bg-background flex flex-col pb-24">
+        <Navigation />
+        <div className="container px-4 py-10 max-w-2xl mx-auto">
+          <Link href="/radio">
+            <Button variant="ghost" size="sm" className="mb-4 gap-2 text-muted-foreground">
+              <ArrowLeft size={16} />
+              {t("radio.backToRadio", "?????")}
+            </Button>
+          </Link>
+          <Card className="border-white/5 bg-card/50 overflow-hidden">
+            <CardContent className="p-0">
+              <div className="aspect-video bg-muted/30 flex items-center justify-center relative overflow-hidden">
+                {isLive && nowPlayingId != null && audioStreamUrl && !isOwner ? (
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full"
+                    width={640}
+                    height={360}
+                    style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                  />
+                ) : channel.coverFilename ? (
+                  <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />
+                ) : (
+                  <RadioIcon size={64} className="text-muted-foreground" />
+                )}
+              </div>
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h1 className="text-2xl font-bold">{channel.name}</h1>
+                  {channel.status === "live" && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      LIVE
+                    </span>
+                  )}
+                  {channel.status === "live" && (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
+                      <Users size={14} />
+                      {t("radio.listenersCount", "{{count}}명 시청 중", { count: listenerCount })}
+                    </span>
+                  )}
+                </div>
+                {channel.description && (
+                  <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
+                )}
+                {!isOwner && (
+                  <Dialog open={tipOpen} onOpenChange={setTipOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="gap-2 mb-4">
+                        <Gift size={16} />
+                        {t("radio.tipToDj", "DJ에게 후원")}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{t("radio.tipToDj", "DJ에게 후원")}</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-2">
+                        <div>
+                          <Label>{t("music.tipAmount")}</Label>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {[500, 1000, 2000, 5000].map((amt) => (
+                              <Button key={amt} type="button" variant={tipAmount === amt ? "default" : "outline"} size="sm" onClick={() => setTipAmount(amt)}>
+                                {amt.toLocaleString()}
+                              </Button>
+                            ))}
+                          </div>
+                          <Input type="number" min={100} value={tipAmount} onChange={(e) => setTipAmount(Math.max(100, parseInt(e.target.value, 10) || 100))} className="mt-2" />
+                        </div>
+                        <div>
+                          <Label>{t("music.tipMessage")}</Label>
+                          <Input value={tipMessage} onChange={(e) => setTipMessage(e.target.value)} placeholder={t("music.tipMessagePlaceholder")} className="mt-1" />
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={() => tipMutation.mutate({ toUserId: channel.ownerId, amount: tipAmount, message: tipMessage.trim() || undefined })}
+                          disabled={tipMutation.isPending || tipAmount < 100}
+                        >
+                          {tipMutation.isPending ? t("music.tipping") : `${tipAmount.toLocaleString()} ${t("common.won")} ${t("music.tipSubmit")}`}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+                {canManage ? (
+                  <a href="/radio-dj-ui-mockup.html" target="_blank" rel="noopener noreferrer">
+                    <Button className="gap-2 w-full sm:w-auto">
+                      <Mic2 size={18} />
+                      {t("radio.goToStudio", "방송 스튜디오")}
+                    </Button>
+                  </a>
+                ) : isLive && nowPlayingId != null && audioStreamUrl ? (
+                  <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Headphones size={18} />
+                      {t("radio.listeningTo", "지금 재생 중")}
+                    </p>
+                    <audio
+                      key={audioStreamUrl}
+                      ref={audioRef}
+                      src={audioStreamUrl}
+                      controls
+                      className="w-full h-10"
+                      autoPlay
+                      onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Headphones size={18} />
+                    <span>
+                      {isLive
+                        ? t("radio.listenComingSoon", "?? ??? ?? ????.")
+                        : t("radio.listenComingSoon", "?? ??? ?? ????.")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {canManage && isOwner && (
+            <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
+              <CardContent className="p-0">
+                <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
+                  <UserPlus size={18} className="text-muted-foreground" />
+                  <span className="font-medium text-sm">스텝 관리 (부방장·스텝)</span>
+                </div>
+                <p className="text-muted-foreground text-xs px-4 pt-2">스텝은 방송 스튜디오 접속이 가능합니다. 아이디로 추가하세요.</p>
+                <div className="p-4 space-y-3">
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <Input
+                      placeholder="사용자 아이디 (username)"
+                      value={staffUsername}
+                      onChange={(e) => setStaffUsername(e.target.value)}
+                      className="flex-1 min-w-[120px]"
+                    />
+                    <select
+                      value={staffRole}
+                      onChange={(e) => setStaffRole(e.target.value as "staff" | "sub_host")}
+                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="staff">스텝</option>
+                      <option value="sub_host">부방장</option>
+                    </select>
+                    <Button
+                      size="sm"
+                      onClick={() => addStaffMutation.mutate()}
+                      disabled={!staffUsername.trim() || addStaffMutation.isPending}
+                    >
+                      {addStaffMutation.isPending ? "추가 중..." : "추가"}
+                    </Button>
+                  </div>
+                  {staffList.length > 0 ? (
+                    <ul className="space-y-1.5 text-sm">
+                      {staffList.map((s) => (
+                        <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/5 last:border-0">
+                          <span>
+                            {s.username || s.userId.slice(0, 8)}
+                            <span className="text-muted-foreground ml-2 text-xs">({s.role === "sub_host" ? "부방장" : "스텝"})</span>
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive h-8"
+                            onClick={() => removeStaffMutation.mutate(s.userId)}
+                            disabled={removeStaffMutation.isPending}
+                          >
+                            <UserMinus size={14} />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">등록된 스텝이 없습니다.</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
+            <CardContent className="p-0">
+              <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
+                <MessageCircle size={18} className="text-muted-foreground" />
+                <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} (단체)</span>
+                {typeof listenerCount === "number" && (
+                  <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
+                )}
+              </div>
+              <p className="text-muted-foreground text-xs px-4 pt-1">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+              <div className="min-h-[200px] max-h-[280px] overflow-y-auto p-3 space-y-2">
+                {messages.length === 0 ? (
+                  <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
+                ) : (
+                  messages.map((m) => (
+                    <div key={m.id} className="text-sm">
+                      <span className="font-medium text-muted-foreground mr-2">{m.username ?? m.userId.slice(0, 8)}</span>
+                      <span className="text-foreground">{m.content}</span>
+                    </div>
+                  ))
+                )}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="p-3 border-t border-white/10 flex gap-2">
+                <Input
+                  placeholder={t("radio.chatPlaceholder", "메시지를 입력하세요...")}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      const c = chatInput.trim();
+                      if (c && user && wsReady && wsAuthenticated) {
+                        setMessages((prev) => [
+                          ...prev,
+                          {
+                            id: -Date.now(),
+                            userId: user.id,
+                            username: user.username ?? user.firstName ?? null,
+                            content: c,
+                            createdAt: new Date().toISOString(),
+                          },
+                        ]);
+                        setChatInput("");
+                        wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
+                      }
+                    }
+                  }}
+                  disabled={!user || !wsReady || !wsAuthenticated}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    const c = chatInput.trim();
+                    if (c && user && wsReady && wsAuthenticated) {
+                      setMessages((prev) => [
+                        ...prev,
+                        {
+                          id: -Date.now(),
+                          userId: user.id,
+                          username: user.username ?? user.firstName ?? null,
+                          content: c,
+                          createdAt: new Date().toISOString(),
+                        },
+                      ]);
+                      setChatInput("");
+                      wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
+                    }
+                  }}
+                  disabled={!user || !wsReady || !wsAuthenticated || !chatInput.trim()}
+                >
+                  {t("radio.chatSend", "전송")}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
+            <CardContent className="p-0">
+              <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
+                <Music2 size={18} className="text-muted-foreground" />
+                <span className="font-medium text-sm">{t("radio.songRequest", "신청곡")}</span>
+              </div>
+              <p className="text-muted-foreground text-xs px-4 pt-2">{t("radio.songRequestHint", "곡을 검색해 선택한 뒤 신청하면 DJ가 확인합니다.")}</p>
+              <div className="p-4 space-y-3">
+                {!user ? (
+                  <p className="text-sm text-muted-foreground">{t("radio.loginToRequest", "로그인 후 신청할 수 있습니다.")}</p>
+                ) : (
+                  <>
+                    <Input
+                      placeholder={t("radio.searchSongToRequest", "곡 검색...")}
+                      value={requestSearch}
+                      onChange={(e) => setRequestSearch(e.target.value)}
+                      className="bg-muted/30"
+                    />
+                    {requestResults.length > 0 && (
+                      <div className="max-h-40 overflow-y-auto rounded-md border border-white/10 divide-y divide-white/5">
+                        {requestResults.map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 flex justify-between items-center gap-2"
+                            onClick={() => setSelectedRequest({ id: m.id, title: m.title, artist: m.artist })}
+                          >
+                            <span className="truncate">{m.title} – {m.artist}</span>
+                            {selectedRequest?.id === m.id && <span className="text-primary text-xs">{t("radio.selected", "선택됨")}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {selectedRequest && (
+                      <div className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
+                        <span className="truncate">{selectedRequest.title} – {selectedRequest.artist}</span>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <Button variant="ghost" size="sm" onClick={() => setSelectedRequest(null)}>
+                            {t("common.cancel", "취소")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => requestMutation.mutate(selectedRequest)}
+                            disabled={requestMutation.isPending}
+                          >
+                            {requestMutation.isPending ? t("radio.requesting", "신청 중...") : t("radio.submitRequest", "신청하기")}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <Footer />
+      </div>
+    </PageTransition>
+  );
+}

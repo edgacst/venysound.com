@@ -12,7 +12,7 @@ import { PageTransition } from "@/components/PageTransition";
 import { MessageSquare, Send, ArrowLeft, Search, Loader2, Settings2, Ban, Flag, MoreVertical } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { formatDistanceToNow } from "date-fns";
-import { ko } from "date-fns/locale";
+import { ko, ja, zhCN } from "date-fns/locale";
 import { Link, useLocation, useParams } from "wouter";
 import { useTranslation } from 'react-i18next';
 import { useToast } from "@/hooks/use-toast";
@@ -52,7 +52,7 @@ export default function Messages() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  const dateLocale = i18n.language === 'ko' ? ko : undefined;
+  const dateLocale = i18n.language === 'ko' ? ko : i18n.language === 'ja' ? ja : i18n.language === 'zh' ? zhCN : undefined;
 
   const { data: messageSettings, refetch: refetchMessageSettings } = useQuery<{ allowDirectMessages: boolean }>({
     queryKey: ["/api/users/me/message-settings"],

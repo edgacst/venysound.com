@@ -24,6 +24,9 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "guide-videos.sql", name: "guide_videos" },
   { file: "create-curated-playlists.sql", name: "curated_playlists" },
   { file: "create-push-subscriptions-and-notify-prefs.sql", name: "push_subscriptions + user 알림 설정" },
+  { file: "radio-channels.sql", name: "radio_channels" },
+  { file: "radio-chat-and-requests.sql", name: "radio_chat_messages + radio_song_requests" },
+  { file: "radio-channel-staff.sql", name: "radio_channel_staff" },
 ];
 
 async function main() {

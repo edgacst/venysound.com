@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>베니방송국 · DJ 송출실</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f12;
+      color: #e4e4e7;
+      min-height: 100vh;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 280px 1fr 420px;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { margin: 0; font-size: 1.1rem; color: #a78bfa; }
+    header .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .live-badge {
+      background: #ef4444;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .live-badge.hidden { display: none; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+    .btn-primary { background: #7c3aed; color: #fff; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-secondary { background: #3f3f46; color: #e4e4e7; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-secondary:hover { background: #52525b; }
+    .panel {
+      border-right: 1px solid #27272a;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .panel:last-of-type { border-right: none; border-left: 1px solid #27272a; }
+    .panel-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      margin-bottom: 12px;
+    }
+    .queue-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 16px 0;
+    }
+    .queue-list li {
+      padding: 10px 12px;
+      background: #27272a;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .queue-list li .num { color: #71717a; font-size: 0.8rem; width: 22px; flex-shrink: 0; }
+    .queue-list li .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-list li.playing { border-left: 3px solid #a78bfa; }
+    .queue-list li .actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .main {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    .now-playing { text-align: center; width: 100%; max-width: 100%; }
+    .now-playing .artwork {
+      width: 200px;
+      height: 200px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, #3f3f46 0%, #27272a 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      color: #52525b;
+    }
+    .now-playing .title { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
+    .now-playing .artist { color: #71717a; font-size: 0.95rem; }
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .controls button {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      background: #3f3f46;
+      color: #e4e4e7;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    .controls button:hover { background: #52525b; }
+    .controls button.play { width: 56px; height: 56px; background: #7c3aed; font-size: 1.5rem; }
+    .source-tabs { display: flex; gap: 8px; margin-top: 24px; }
+    .source-tabs button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: transparent;
+      color: #a1a1aa;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .source-tabs button.active { background: #3f3f46; color: #fff; border-color: #52525b; }
+    .search-wrap { margin-top: 8px; }
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+      font-size: 0.875rem;
+      margin-bottom: 8px;
+    }
+    .search-results {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+    }
+    .search-results div {
+      padding: 10px 12px;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-results div:hover { background: #27272a; }
+    .search-results div:last-child { border-bottom: none; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tabs button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: #71717a;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .tabs button.active { background: #3f3f46; color: #fff; }
+    .chat-list, .request-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .chat-list li, .request-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.85rem;
+    }
+    .chat-list .name { color: #a78bfa; margin-right: 6px; }
+    .chat-input-wrap { display: flex; gap: 8px; margin-top: 12px; }
+    .chat-input-wrap input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+      font-size: 0.875rem;
+    }
+    .mic-setup { width: 100%; max-width: 480px; margin: 0 auto; text-align: left; }
+    .mic-hint { font-size: 0.75rem; color: #71717a; margin-bottom: 10px; }
+    .mic-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+    .mic-select {
+      flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid #3f3f46;
+      background: #18181b; color: #e4e4e7; font-size: 0.875rem;
+    }
+    .mic-status { font-size: 0.8rem; color: #71717a; margin: 0 0 8px 0; }
+    .mic-level-wrap { margin-top: 8px; }
+    .mic-level-label { font-size: 0.75rem; color: #71717a; display: block; margin-bottom: 4px; }
+    .mic-level-bar { height: 6px; background: #27272a; border-radius: 3px; overflow: hidden; }
+    .mic-level-fill { height: 100%; width: 0%; background: #7c3aed; border-radius: 3px; transition: width 0.05s; }
+    .foot-note {
+      grid-column: 1 / -1;
+      padding: 8px 20px;
+      background: #18181b;
+      border-top: 1px solid #27272a;
+      font-size: 0.75rem;
+      color: #71717a;
+    }
+    .init-message {
+      grid-column: 1 / -1;
+      padding: 40px 20px;
+      text-align: center;
+      color: #a1a1aa;
+    }
+    .init-message a { color: #a78bfa; }
+    .init-message.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="initMessage" class="init-message">
+    로딩 중...
+  </div>
+  <div id="layout" class="layout" style="display: none;">
+    <header>
+      <div>
+        <h1 id="headerTitle">🎙️ 베니방송국 · DJ 송출실</h1>
+        <a href="/radio" style="font-size: 0.8rem; color: #71717a; text-decoration: none;">← 방송국으로</a>
+        <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a;">API 주소: <span id="apiOrigin">-</span> <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="margin-left: 6px; padding: 2px 8px;">연결 테스트</button></p>
+      </div>
+      <div class="header-actions">
+        <span id="liveBadge" class="live-badge hidden">● LIVE</span>
+        <button type="button" id="btnStartBroadcast" class="btn btn-danger">방송 시작</button>
+        <button type="button" id="btnEndBroadcast" class="btn btn-secondary" style="display: none;">방송 종료</button>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel-title">재생 큐</div>
+      <ul class="queue-list" id="queue"></ul>
+      <div class="panel-title">곡 추가</div>
+      <button type="button" id="btnToggleSearch" class="btn btn-primary" style="width: 100%; margin-bottom: 8px;">📂 사이트 음원에서 선택</button>
+      <div id="searchWrap" class="search-wrap" style="display: none;">
+        <input type="text" id="searchInput" placeholder="곡 검색..." />
+        <div id="searchResults" class="search-results"></div>
+      </div>
+      <button type="button" class="btn btn-secondary" style="width: 100%;" disabled title="준비 중">💾 로컬 파일 (준비 중)</button>
+      <p style="font-size: 0.75rem; color: #71717a; margin-top: 12px;">
+        · 사이트 음원: 검색 후 큐에 추가 → 지금 재생으로 송출
+      </p>
+    </aside>
+
+    <main class="main">
+      <div class="now-playing">
+        <div class="artwork">🎵</div>
+        <div class="title" id="nowTitle">재생 중인 곡 없음</div>
+        <div class="artist" id="nowArtist">큐에서 곡을 선택하고 「지금 재생」을 누르세요</div>
+        <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
+          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡)</p>
+          <audio id="djMonitorAudio" controls style="width: 100%; height: 56px; min-height: 56px;" preload="metadata"></audio>
+        </div>
+        <div class="mic-setup">
+          <p class="panel-title" style="margin-top: 20px; margin-bottom: 4px;">마이크 설정</p>
+          <p class="mic-hint">현재 방송에는 <strong>사이트 음원만</strong> 송출됩니다. 마이크 음성 송출은 추후 지원 예정입니다.</p>
+          <div class="mic-controls">
+            <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
+            <button type="button" id="btnMicConnect" class="btn btn-secondary btn-sm">마이크 연결</button>
+          </div>
+          <p id="micStatus" class="mic-status">연결되지 않음</p>
+          <div id="micLevelWrap" class="mic-level-wrap" style="display: none;">
+            <span class="mic-level-label">입력 레벨</span>
+            <div class="mic-level-bar"><div id="micLevelBar" class="mic-level-fill"></div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <div class="tabs">
+        <button type="button" class="active" data-tab="chat">채팅 (단체)</button>
+        <button type="button" data-tab="requests">신청곡</button>
+      </div>
+      <div id="chat-panel">
+        <p class="panel-title" style="margin-top:0;">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+        <ul class="chat-list" id="chatList">
+          <li style="color:#71717a;">로딩 중...</li>
+        </ul>
+        <div class="chat-input-wrap">
+          <input type="text" placeholder="메시지 입력..." id="chatInput" disabled />
+          <button type="button" class="btn btn-secondary" id="chatSend" disabled>전송</button>
+        </div>
+      </div>
+      <div id="requests-panel" style="display: none;">
+        <p class="panel-title" style="margin-top:0;">청취자가 채널 페이지에서 신청한 곡 목록입니다. 「큐에 추가」로 재생 큐에 넣을 수 있습니다.</p>
+        <ul class="request-list" id="requestList">
+          <li style="color:#71717a;">로딩 중...</li>
+        </ul>
+      </div>
+    </aside>
+
+    <footer class="foot-note">
+      베니방송국 DJ 송출실 · 방송 시작 후 큐에 곡을 넣고 「지금 재생」으로 청취자에게 송출됩니다. (네트워크/결과 없음 시: 이 페이지를 <strong>사이트와 같은 주소</strong>에서 열어주세요. 예: http://localhost:5000/radio-dj-ui-mockup.html)
+    </footer>
+  </div>
+
+  <script>
+(function() {
+  var channel = null;
+  var queue = [];
+  var pollTimer = null;
+  var searchDebounce = null;
+  var chatMessages = [];
+  var songRequests = [];
+  var ws = null;
+  var wsAuthenticated = false;
+  var micStream = null;
+  var micAudioContext = null;
+  var micLevelAnimationId = null;
+  var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+
+  function api(path, options) {
+    options = options || {};
+    options.credentials = 'include';
+    options.headers = options.headers || {};
+    if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(options.body);
+    }
+    var url = (path.indexOf('http') === 0) ? path : (API_BASE + path);
+    return fetch(url, options);
+  }
+
+  function networkErrorMsg(e) {
+    var msg = (e && e.message) ? String(e.message) : '';
+    if (msg.indexOf('fetch') !== -1 || msg === 'Failed to fetch' || msg.indexOf('NetworkError') !== -1) {
+      return '서버에 연결할 수 없습니다. 터미널에서 npm run dev 로 서버를 실행했는지 확인하고, 이 페이지를 http://localhost:5000/radio-dj-ui-mockup.html 에서 열어주세요.';
+    }
+    return msg;
+  }
+
+  function showInit(msg, isError) {
+    var el = document.getElementById('initMessage');
+    var layout = document.getElementById('layout');
+    el.className = 'init-message' + (isError ? '' : '');
+    el.innerHTML = msg;
+    el.style.display = 'block';
+    layout.style.display = isError ? 'none' : 'grid';
+  }
+
+  function showLayout() {
+    document.getElementById('initMessage').style.display = 'none';
+    document.getElementById('layout').style.display = 'grid';
+    var el = document.getElementById('apiOrigin');
+    if (el) el.textContent = API_BASE || '(상대경로)';
+  }
+
+  var currentUser = null;
+
+  function loadSession() {
+    return api('/api/auth/me').then(function(r) {
+      if (r.status === 401) {
+        showInit('로그인이 필요합니다. <a href="/login">로그인</a> 후 이용해 주세요.', true);
+        return Promise.reject(new Error('not logged in'));
+      }
+      if (!r.ok) throw new Error('auth failed');
+      return r.json();
+    }).then(function(user) {
+      currentUser = user;
+      return api('/api/radio/channels/me');
+    }).then(function(r) {
+      if (!r.ok) throw new Error('channel fetch failed');
+      return r.json();
+    }).then(function(data) {
+      if (!data || !data.slug) {
+        showInit('채널이 없습니다. <a href="/radio">방송국</a>에서 먼저 채널을 만들어 주세요.', true);
+        return Promise.reject(new Error('no channel'));
+      }
+      channel = data;
+      showLayout();
+      renderHeader();
+      renderQueue();
+      fetchChannelAndUpdate();
+      if (channel.status === 'live') startPolling();
+      connectWs();
+      loadChat();
+      loadRequests();
+      bindEvents();
+    }).catch(function(err) {
+      if (err.message === 'not logged in' || err.message === 'no channel') return;
+      var msg = err.message || '알 수 없음';
+      if (msg.indexOf('fetch') !== -1 || msg === 'Failed to fetch' || msg.indexOf('NetworkError') !== -1) {
+        showInit('서버에 연결할 수 없습니다. 이 페이지를 <strong>서버 주소</strong>에서 열어주세요.<br><br>예: <a href="http://localhost:5000/radio-dj-ui-mockup.html">http://localhost:5000/radio-dj-ui-mockup.html</a><br><br>터미널에서 <code>npm run dev</code> 로 서버를 실행한 뒤, 위 주소로 접속하세요.<br><br><a href="/radio">방송국으로</a>', true);
+      } else {
+        showInit('오류: ' + msg + ' <a href="/radio">방송국으로</a>', true);
+      }
+    });
+  }
+
+  function renderHeader() {
+    document.getElementById('headerTitle').textContent = '🎙️ ' + (channel.name || 'DJ 송출실');
+    var liveBadge = document.getElementById('liveBadge');
+    var btnStart = document.getElementById('btnStartBroadcast');
+    var btnEnd = document.getElementById('btnEndBroadcast');
+    if (channel.status === 'live') {
+      liveBadge.classList.remove('hidden');
+      btnStart.style.display = 'none';
+      btnEnd.style.display = 'inline-flex';
+    } else {
+      liveBadge.classList.add('hidden');
+      btnStart.style.display = 'inline-flex';
+      btnEnd.style.display = 'none';
+    }
+  }
+
+  function renderQueue() {
+    var ul = document.getElementById('queue');
+    var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
+    if (queue.length === 0) {
+      ul.innerHTML = '<li class="queue-empty" style="color:#71717a; font-size:0.85rem;">큐가 비어 있습니다. 사이트 음원에서 추가하세요.</li>';
+      return;
+    }
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    ul.innerHTML = queue.map(function(item, i) {
+      var isPlaying = item.id === nowId;
+      var num = i + 1;
+      var title = item.title || '제목 없음';
+      var artist = item.artist || '';
+      var label = title + ' – ' + artist;
+      return '<li class="queue-item' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '">' +
+        '<span class="num">' + num + '</span>' +
+        '<span class="label" title="' + esc(label) + '">' + esc(label) + '</span>' +
+        '<span class="actions">' +
+          '<button type="button" class="btn btn-primary btn-sm btn-set-now" data-id="' + item.id + '">지금 재생</button>' +
+          '<button type="button" class="btn btn-secondary btn-sm btn-remove" data-id="' + item.id + '">삭제</button>' +
+        '</span></li>';
+    }).join('');
+    ul.querySelectorAll('.btn-set-now').forEach(function(btn) {
+      btn.addEventListener('click', function() { setNowPlaying(parseInt(btn.getAttribute('data-id'), 10)); });
+    });
+    ul.querySelectorAll('.btn-remove').forEach(function(btn) {
+      btn.addEventListener('click', function() { removeFromQueue(parseInt(btn.getAttribute('data-id'), 10)); });
+    });
+  }
+
+  function updateNowPlayingDisplay() {
+    var titleEl = document.getElementById('nowTitle');
+    var artistEl = document.getElementById('nowArtist');
+    var audioEl = document.getElementById('djMonitorAudio');
+    var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
+    if (!nowId) {
+      titleEl.textContent = '재생 중인 곡 없음';
+      artistEl.textContent = '큐에서 곡을 선택하고 「지금 재생」을 누르세요';
+      if (audioEl) {
+        audioEl.removeAttribute('src');
+        audioEl.removeAttribute('data-current-id');
+        audioEl.load();
+      }
+      return;
+    }
+    var item = queue.filter(function(q) { return q.id === nowId; })[0];
+    if (item) {
+      titleEl.textContent = item.title || '제목 없음';
+      artistEl.textContent = item.artist || '';
+    } else {
+      titleEl.textContent = '곡 #' + nowId;
+      artistEl.textContent = '로딩 중...';
+    }
+    if (audioEl) {
+      var currentId = audioEl.getAttribute('data-current-id');
+      if (currentId !== String(nowId)) {
+        audioEl.setAttribute('data-current-id', String(nowId));
+        audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
+        audioEl.load();
+        // 사용자 제스처(지금 재생 클릭) 체인 안에서 바로 재생 시도
+        var playPromise = audioEl.play();
+        if (playPromise && typeof playPromise.then === 'function') playPromise.catch(function() {});
+        function onCanPlay() {
+          audioEl.removeEventListener('canplay', onCanPlay);
+          audioEl.removeEventListener('error', onError);
+          if (audioEl.paused) {
+            var p = audioEl.play();
+            if (p && typeof p.then === 'function') p.catch(function() {});
+          }
+        }
+        function onError() {
+          audioEl.removeEventListener('canplay', onCanPlay);
+        }
+        audioEl.addEventListener('canplay', onCanPlay, { once: true });
+        audioEl.addEventListener('error', onError, { once: true });
+      }
+    }
+  }
+
+  function fetchChannelAndUpdate() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug)).then(function(r) {
+      if (!r.ok) return;
+      return r.json();
+    }).then(function(data) {
+      if (data) {
+        channel = data;
+        renderHeader();
+        renderQueue();
+        updateNowPlayingDisplay();
+      }
+    });
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function() {
+      if (channel && channel.status === 'live') fetchChannelAndUpdate();
+    }, 5000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function setNowPlaying(musicId) {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
+    if (Number.isNaN(musicIdNum)) { alert('잘못된 곡 ID입니다.'); return; }
+    api('/api/radio/channels/' + encodeURIComponent(slug), {
+      method: 'PATCH',
+      body: { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() }
+    }).then(function(r) {
+      if (r.ok) return r.json();
+      return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+    }).then(function(data) {
+      if (data) channel = data;
+      renderQueue();
+      updateNowPlayingDisplay();
+    }).catch(function(e) { alert(networkErrorMsg(e) || '지금 재생 설정 실패'); });
+  }
+
+  function removeFromQueue(musicId) {
+    queue = queue.filter(function(q) { return q.id !== musicId; });
+    renderQueue();
+  }
+
+  function startBroadcast() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { status: 'live' } })
+      .then(function(r) {
+        if (r.ok) return r.json();
+        return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+      })
+      .then(function(data) {
+        channel = data;
+        renderHeader();
+        startPolling();
+      })
+      .catch(function(e) { alert(networkErrorMsg(e) || '방송 시작 실패'); });
+  }
+
+  function endBroadcast() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { status: 'ended' } })
+      .then(function(r) {
+        if (r.ok) return r.json();
+        return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+      })
+      .then(function(data) {
+        channel = data;
+        renderHeader();
+        stopPolling();
+      })
+      .catch(function(e) { alert(networkErrorMsg(e) || '방송 종료 실패'); });
+  }
+
+  function doSearch(q) {
+    var query = (q && typeof q === 'string') ? q.trim() : '';
+    var url = '/api/music?page=1&limit=30';
+    if (query.length > 0) url += '&search=' + encodeURIComponent(query);
+    document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#71717a;">로딩 중...</div>';
+    api(url).then(function(r) {
+      if (!r.ok) return r.json().then(function() { return { data: [] }; }).catch(function() { return { data: [] }; });
+      return r.json();
+    }).then(function(data) {
+      var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+      var html;
+      if (list.length === 0) {
+        html = '<div style="padding:12px; color:#71717a;">' +
+          (query ? '검색 결과 없음. 다른 검색어를 입력해 보세요.' : '등록된 음원이 없습니다. 사이트에서 음원을 업로드한 뒤 다시 시도하세요.') +
+          '</div>';
+      } else {
+        html = list.map(function(m) {
+          var label = (m.title || '') + ' – ' + (m.artist || '');
+          var title = (m.title || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          var artist = (m.artist || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          return '<div class="search-hit" data-id="' + m.id + '" data-title="' + title + '" data-artist="' + artist + '">' + label + ' <span style="color:#71717a;">+ 추가</span></div>';
+        }).join('');
+      }
+      document.getElementById('searchResults').innerHTML = html;
+      document.getElementById('searchResults').querySelectorAll('.search-hit').forEach(function(div) {
+        div.addEventListener('click', function() {
+          var id = parseInt(div.getAttribute('data-id'), 10);
+          var title = div.getAttribute('data-title') || '';
+          var artist = div.getAttribute('data-artist') || '';
+          if (queue.some(function(item) { return item.id === id; })) return;
+          queue.push({ id: id, title: title, artist: artist });
+          renderQueue();
+        });
+      });
+    }).catch(function() {
+      var hint = (window.location.protocol === 'file:' || !window.location.origin)
+        ? ' 이 페이지는 반드시 사이트와 같은 주소에서 열어야 합니다. (예: http://localhost:5000/radio-dj-ui-mockup.html)'
+        : ' 서버가 켜져 있는지, 같은 주소에서 열었는지 확인하세요.';
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#b91c1c;">목록을 불러올 수 없습니다.' + hint + '</div>';
+    });
+  }
+
+  function connectWs() {
+    if (!channel || !channel.slug || !currentUser || !currentUser.id) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+    ws.onopen = function() {
+      ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
+      ws.send(JSON.stringify({ type: 'radio_join', slug: slug }));
+    };
+    ws.onmessage = function(ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        if (msg.type === 'auth_ack') {
+          wsAuthenticated = true;
+          var inp = document.getElementById('chatInput');
+          var btn = document.getElementById('chatSend');
+          if (inp) { inp.disabled = false; inp.placeholder = '메시지 입력...'; }
+          if (btn) btn.disabled = false;
+        }
+        if (msg.type === 'radio_chat' && msg.message) {
+          var m = msg.message;
+          var same = chatMessages.find(function(x) { return x.id === m.id || (String(x.id).indexOf('temp-') === 0 && x.userId === m.userId && x.content === m.content); });
+          if (same) {
+            if (String(same.id).indexOf('temp-') === 0) { same.id = m.id; same.createdAt = m.createdAt || same.createdAt; }
+          } else {
+            chatMessages.push(m);
+          }
+          renderChat();
+        }
+      } catch (e) {}
+    };
+    ws.onclose = function() { wsAuthenticated = false; };
+  }
+
+  function loadChat() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/chat').then(function(r) {
+      if (!r.ok) throw new Error('채팅 목록을 불러올 수 없습니다.');
+      return r.json();
+    }).then(function(list) {
+      if (Array.isArray(list)) chatMessages = list.map(function(m) {
+        return { id: m.id, userId: m.userId, username: m.username || null, content: m.content, createdAt: typeof m.createdAt === 'string' ? m.createdAt : (m.createdAt && m.createdAt.toISOString ? m.createdAt.toISOString() : '') };
+      });
+      renderChat();
+    }).catch(function() {
+      chatMessages = [];
+      renderChat();
+      var ul = document.getElementById('chatList');
+      if (ul) ul.innerHTML = '<li style="color:#b91c1c;">채팅 목록을 불러올 수 없습니다. 새로고침해 보세요.</li>';
+    });
+  }
+
+  function renderChat() {
+    var ul = document.getElementById('chatList');
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    if (chatMessages.length === 0) {
+      ul.innerHTML = '<li style="color:#71717a;">아직 메시지가 없습니다.</li>';
+    } else {
+      ul.innerHTML = chatMessages.map(function(m) {
+        var name = m.username || (m.userId ? String(m.userId).slice(0, 8) : '?');
+        return '<li><span class="name">' + esc(name) + '</span>' + esc(m.content) + '</li>';
+      }).join('');
+      var panel = ul.closest('.panel');
+      if (panel) panel.scrollTop = panel.scrollHeight;
+    }
+  }
+
+  function loadRequests() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/requests').then(function(r) {
+      if (!r.ok) return;
+      return r.json();
+    }).then(function(list) {
+      songRequests = Array.isArray(list) ? list : [];
+      renderRequests();
+    });
+  }
+
+  function renderRequests() {
+    var ul = document.getElementById('requestList');
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    if (songRequests.length === 0) {
+      ul.innerHTML = '<li style="color:#71717a;">아직 신청곡이 없습니다.</li>';
+    } else {
+      function attrEsc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    ul.innerHTML = songRequests.map(function(r) {
+        var label = (r.musicTitle || r.title || '') + (r.musicArtist || r.artist ? ' – ' + (r.musicArtist || r.artist) : '');
+        var status = r.status || 'pending';
+        var musicId = r.musicId ? Number(r.musicId) : null;
+        var titleRaw = (r.musicTitle || r.title || '').slice(0, 200);
+        var artistRaw = (r.musicArtist || r.artist || '').slice(0, 200);
+        var addBtn = musicId ? ' <button type="button" class="btn btn-primary btn-sm btn-add-request" data-music-id="' + musicId + '" data-title="' + attrEsc(titleRaw) + '" data-artist="' + attrEsc(artistRaw) + '">큐에 추가</button>' : '';
+        return '<li data-id="' + r.id + '"><span class="song">' + (label ? esc(label) : '제목 없음') + '</span> <span style="color:#71717a; font-size:0.75rem;">(' + status + ')</span>' + addBtn + '</li>';
+      }).join('');
+    ul.querySelectorAll('.btn-add-request').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var id = parseInt(btn.getAttribute('data-music-id'), 10);
+        var title = btn.getAttribute('data-title') || '';
+        var artist = btn.getAttribute('data-artist') || '';
+        if (Number.isNaN(id)) return;
+        if (queue.some(function(q) { return q.id === id; })) return;
+        queue.push({ id: id, title: title, artist: artist });
+        renderQueue();
+      });
+    });
+    }
+  }
+
+  function sendChat() {
+    var input = document.getElementById('chatInput');
+    var text = (input && input.value) ? input.value.trim() : '';
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN || !wsAuthenticated || !channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var optimistic = { id: 'temp-' + Date.now(), userId: currentUser.id, username: (currentUser.username || currentUser.firstName || null), content: text.slice(0, 500), createdAt: new Date().toISOString() };
+    chatMessages.push(optimistic);
+    renderChat();
+    input.value = '';
+    ws.send(JSON.stringify({ type: 'radio_chat', slug: slug, content: text.slice(0, 500) }));
+  }
+
+  function loadMicDevices() {
+    var select = document.getElementById('micSelect');
+    if (!select) return;
+    select.innerHTML = '<option value="">마이크 불러오는 중...</option>';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      select.innerHTML = '<option value="">지원하지 않는 브라우저</option>';
+      return;
+    }
+    navigator.mediaDevices.enumerateDevices().then(function(devices) {
+      var inputs = devices.filter(function(d) { return d.kind === 'audioinput'; });
+      select.innerHTML = '<option value="">마이크 선택...</option>';
+      inputs.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('마이크 ' + (select.options.length));
+        select.appendChild(opt);
+      });
+    }).catch(function() {
+      select.innerHTML = '<option value="">목록 조회 실패</option>';
+    });
+  }
+
+  function disconnectMic() {
+    if (micLevelAnimationId) {
+      cancelAnimationFrame(micLevelAnimationId);
+      micLevelAnimationId = null;
+    }
+    if (micAudioContext && micAudioContext.state !== 'closed') micAudioContext.close();
+    micAudioContext = null;
+    if (micStream) {
+      micStream.getTracks().forEach(function(t) { t.stop(); });
+      micStream = null;
+    }
+    document.getElementById('micStatus').textContent = '연결되지 않음';
+    document.getElementById('micLevelWrap').style.display = 'none';
+    var btn = document.getElementById('btnMicConnect');
+    if (btn) { btn.textContent = '마이크 연결'; btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary'); }
+  }
+
+  function updateMicLevel(analyser) {
+    var bar = document.getElementById('micLevelBar');
+    if (!bar) return;
+    var data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    var sum = 0;
+    for (var i = 0; i < data.length; i++) sum += data[i];
+    var avg = data.length ? sum / data.length : 0;
+    var pct = Math.min(100, Math.round((avg / 255) * 100));
+    bar.style.width = pct + '%';
+  }
+
+  function connectMic() {
+    if (micStream) { disconnectMic(); return; }
+    var select = document.getElementById('micSelect');
+    var deviceId = select && select.value ? select.value : null;
+    var constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('이 브라우저는 마이크 사용을 지원하지 않습니다.');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+      micStream = stream;
+      var statusEl = document.getElementById('micStatus');
+      var label = (select && select.options[select.selectedIndex]) ? select.options[select.selectedIndex].textContent : '기본 마이크';
+      statusEl.textContent = '연결됨: ' + label;
+      document.getElementById('micLevelWrap').style.display = 'block';
+      var btn = document.getElementById('btnMicConnect');
+      if (btn) { btn.textContent = '마이크 연결 해제'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
+      try {
+        micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        var source = micAudioContext.createMediaStreamSource(stream);
+        var analyser = micAudioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        function tick() {
+          if (!micStream) return;
+          updateMicLevel(analyser);
+          micLevelAnimationId = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch (e) {}
+    }).catch(function(err) {
+      alert('마이크 접근이 거부되었거나 장치를 사용할 수 없습니다.\n' + (err.message || ''));
+    });
+  }
+
+  function testConnection() {
+    var url = (API_BASE || '') + '/api/music?page=1&limit=1';
+    fetch(url, { credentials: 'include' }).then(function(r) {
+      return r.json().then(function(data) {
+        var total = (data && typeof data.total === 'number') ? data.total : (data && data.data ? data.data.length : '?');
+        alert('연결 성공!\n요청: ' + url + '\n음원 수: ' + total);
+      }).catch(function() { alert('연결 실패 (응답이 JSON이 아님)\n요청: ' + url + '\n상태: ' + r.status); });
+    }).catch(function(e) {
+      alert('연결 실패 (네트워크 오류)\n요청: ' + url + '\n\n이 페이지를 반드시 서버 주소에서 열어주세요.\n예: http://localhost:5000/radio-dj-ui-mockup.html\n\n서버 실행: npm run dev');
+    });
+  }
+
+  function bindEvents() {
+    var btnTest = document.getElementById('btnTestApi');
+    if (btnTest) btnTest.addEventListener('click', testConnection);
+    document.getElementById('btnStartBroadcast').addEventListener('click', startBroadcast);
+    document.getElementById('btnEndBroadcast').addEventListener('click', endBroadcast);
+    document.getElementById('btnToggleSearch').addEventListener('click', function() {
+      var wrap = document.getElementById('searchWrap');
+      wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+      if (wrap.style.display === 'block') {
+        document.getElementById('searchInput').focus();
+        doSearch(document.getElementById('searchInput').value || '');
+      }
+    });
+    document.getElementById('searchInput').addEventListener('input', function() {
+      var q = this.value.trim();
+      if (searchDebounce) clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(function() { doSearch(q); }, 300);
+    });
+    document.querySelectorAll('.tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        var tab = this.getAttribute('data-tab');
+        document.getElementById('chat-panel').style.display = tab === 'chat' ? 'block' : 'none';
+        document.getElementById('requests-panel').style.display = tab === 'requests' ? 'block' : 'none';
+        if (tab === 'requests') loadRequests();
+      });
+    });
+    var chatInputEl = document.getElementById('chatInput');
+    var chatSendEl = document.getElementById('chatSend');
+    if (chatInputEl) {
+      chatInputEl.placeholder = '채팅 연결 중...';
+      chatInputEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+      });
+    }
+    if (chatSendEl) chatSendEl.addEventListener('click', sendChat);
+    loadMicDevices();
+    var btnMic = document.getElementById('btnMicConnect');
+    if (btnMic) btnMic.addEventListener('click', connectMic);
+  }
+
+  loadSession();
+})();
+  </script>
+</body>
+</html>

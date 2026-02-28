@@ -87,13 +87,31 @@ export async function registerRoutes(
   });
   let visitorCount = 0;
   const userSockets = new Map<string, Set<WebSocket>>();
+  const radioChannelRooms = new Map<string, Set<WebSocket>>();
+  const wsRadioSlugs = new WeakMap<WebSocket, Set<string>>();
+
+  function broadcastToRadioChannel(slug: string, data: object) {
+    const room = radioChannelRooms.get(slug);
+    if (!room) return;
+    const message = JSON.stringify(data);
+    room.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) client.send(message);
+    });
+  }
+
+  function broadcastRadioListeners(slug: string) {
+    const room = radioChannelRooms.get(slug);
+    const count = room ? room.size : 0;
+    broadcastToRadioChannel(slug, { type: "radio_listeners", slug, count });
+  }
 
   wss.on("connection", (ws) => {
     visitorCount++;
     broadcastVisitorCount();
     let wsUserId: string | null = null;
+    wsRadioSlugs.set(ws, new Set());
 
-    ws.on("message", (data) => {
+    ws.on("message", async (data) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "auth" && msg.userId) {
@@ -102,13 +120,65 @@ export async function registerRoutes(
             userSockets.set(wsUserId!, new Set());
           }
           userSockets.get(wsUserId!)!.add(ws);
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "auth_ack" }));
         }
-      } catch {}
+        if (msg.type === "radio_join" && typeof msg.slug === "string" && msg.slug) {
+          const slug = String(msg.slug).trim().toLowerCase();
+          if (!radioChannelRooms.has(slug)) radioChannelRooms.set(slug, new Set());
+          radioChannelRooms.get(slug)!.add(ws);
+          wsRadioSlugs.get(ws)!.add(slug);
+          broadcastRadioListeners(slug);
+        }
+        if (msg.type === "radio_leave" && typeof msg.slug === "string" && msg.slug) {
+          const slug = String(msg.slug).trim().toLowerCase();
+          const room = radioChannelRooms.get(slug);
+          if (room) {
+            room.delete(ws);
+            if (room.size === 0) radioChannelRooms.delete(slug);
+          }
+          wsRadioSlugs.get(ws)?.delete(slug);
+          broadcastRadioListeners(slug);
+        }
+        if (msg.type === "radio_chat" && typeof msg.slug === "string" && typeof msg.content === "string" && msg.slug && String(msg.content).trim()) {
+          if (!wsUserId) {
+            console.warn("[ws] radio_chat ignored: not authenticated");
+            return;
+          }
+          const slug = String(msg.slug).trim().toLowerCase();
+          const channel = await storage.getRadioChannelBySlug(slug);
+          if (!channel) {
+            console.warn("[ws] radio_chat ignored: channel not found", slug);
+            return;
+          }
+          const content = String(msg.content).trim().slice(0, 500);
+          try {
+            const row = await storage.createRadioChatMessage(channel.id, wsUserId, content);
+            const user = await storage.getUserById(wsUserId);
+            const username = (user?.username ?? user?.firstName ?? null) as string | null;
+            broadcastToRadioChannel(slug, { type: "radio_chat", message: { id: row.id, userId: wsUserId, username, content: row.content, createdAt: (row.createdAt as Date).toISOString() } });
+          } catch (e) {
+            console.error("[ws] radio_chat create/broadcast failed", e);
+          }
+        }
+      } catch (e) {
+        console.error("[ws] message handler error", e);
+      }
     });
 
     ws.on("close", () => {
       visitorCount--;
       broadcastVisitorCount();
+      const slugs = wsRadioSlugs.get(ws);
+      if (slugs) {
+        slugs.forEach((slug) => {
+          const room = radioChannelRooms.get(slug);
+          if (room) {
+            room.delete(ws);
+            if (room.size === 0) radioChannelRooms.delete(slug);
+          }
+          broadcastRadioListeners(slug);
+        });
+      }
       if (wsUserId && userSockets.has(wsUserId)) {
         userSockets.get(wsUserId)!.delete(ws);
         if (userSockets.get(wsUserId)!.size === 0) {
@@ -324,91 +394,102 @@ export async function registerRoutes(
 
   /** 음원 스트리밍 (더 구체적인 경로이므로 api.music.get보다 먼저 등록) */
   app.get("/api/music/:id/stream", async (req, res) => {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const music = await storage.getMusicById(Number(id));
-    if (!music) {
-      return res.status(404).json({ error: "Music not found" });
-    }
-    const fn = music.filename || "";
-    let fileId = "";
-    const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
-    if (objMatch) {
-      fileId = objMatch[1];
-    } else if (fn.startsWith("uploads/")) {
-      fileId = fn.replace(/^uploads\//, "");
-    } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
-      fileId = fn.trim();
-    } else if (fn.includes("/")) {
-      fileId = fn.split("/").pop() || "";
-    } else {
-      fileId = fn;
-    }
-    fileId = fileId.replace(/^\//, "");
-    if (!fileId) {
-      return res.status(404).json({
-        error: "파일 경로를 찾을 수 없습니다",
-        hint: "DB의 filename 형식을 확인해 주세요. /file-guide 에서 연결 방법을 안내합니다.",
-      });
-    }
-    const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
-    const candidates = [
-      path.join(uploadsDir, fileId),
-      path.join(uploadsDir, `${baseId}.mp3`),
-      path.join(uploadsDir, `${baseId}.wav`),
-      path.join(uploadsDir, `${baseId}.ogg`),
-    ];
-    const localPath = candidates.find((p) => existsSync(p));
-    if (!localPath) {
-      return res.status(404).json({
-        error: "음원 파일을 찾을 수 없습니다",
-        hint: `local-uploads/uploads/ 에 ${baseId}.mp3 (또는 .wav, .ogg) 파일을 넣어 주세요. /file-guide 에서 전체 목록을 확인할 수 있습니다.`,
-      });
-    }
-    const ext = path.extname(localPath).toLowerCase();
-    const mime: Record<string, string> = {
-      ".mp3": "audio/mpeg",
-      ".wav": "audio/wav",
-      ".ogg": "audio/ogg",
-    };
-    const contentType = mime[ext] || "audio/mpeg";
-    const stat = statSync(localPath);
-    const fileSize = stat.size;
-    const rangeHeader = req.headers.range;
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const music = await storage.getMusicById(Number(id));
+      if (!music) {
+        return res.status(404).json({ error: "Music not found" });
+      }
+      const fn = music.filename || "";
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) {
+        fileId = objMatch[1];
+      } else if (fn.startsWith("uploads/")) {
+        fileId = fn.replace(/^uploads\//, "");
+      } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+        fileId = fn.trim();
+      } else if (fn.includes("/")) {
+        fileId = fn.split("/").pop() || "";
+      } else {
+        fileId = fn;
+      }
+      fileId = fileId.replace(/^\//, "");
+      if (!fileId) {
+        return res.status(404).json({
+          error: "파일 경로를 찾을 수 없습니다",
+          hint: "DB의 filename 형식을 확인해 주세요. /file-guide 에서 연결 방법을 안내합니다.",
+        });
+      }
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDir, fileId),
+        path.join(uploadsDir, `${baseId}.mp3`),
+        path.join(uploadsDir, `${baseId}.wav`),
+        path.join(uploadsDir, `${baseId}.ogg`),
+      ];
+      const localPath = candidates.find((p) => existsSync(p));
+      if (!localPath) {
+        return res.status(404).json({
+          error: "음원 파일을 찾을 수 없습니다",
+          hint: `local-uploads/uploads/ 에 ${baseId}.mp3 (또는 .wav, .ogg) 파일을 넣어 주세요. /file-guide 에서 전체 목록을 확인할 수 있습니다.`,
+        });
+      }
+      const ext = path.extname(localPath).toLowerCase();
+      const mime: Record<string, string> = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+      };
+      const contentType = mime[ext] || "audio/mpeg";
+      const stat = statSync(localPath);
+      const fileSize = stat.size;
+      const rangeHeader = req.headers.range;
 
-    res.set("Accept-Ranges", "bytes");
-    res.set("Content-Type", contentType);
+      res.set("Accept-Ranges", "bytes");
+      res.set("Content-Type", contentType);
 
-    if (rangeHeader) {
-      const parts = rangeHeader.replace(/bytes=/, "").split("-");
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-      const chunkSize = end - start + 1;
+      if (rangeHeader) {
+        const parts = rangeHeader.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
 
-      res.status(206);
-      res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
-      res.set("Content-Length", String(chunkSize));
-      createReadStream(localPath, { start, end }).pipe(res);
-    } else {
-      res.set("Content-Length", String(fileSize));
-      createReadStream(localPath).pipe(res);
+        res.status(206);
+        res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+        res.set("Content-Length", String(chunkSize));
+        createReadStream(localPath, { start, end }).pipe(res);
+      } else {
+        res.set("Content-Length", String(fileSize));
+        createReadStream(localPath).pipe(res);
+      }
+    } catch (e) {
+      if (res.headersSent) return;
+      console.error("[api/music/:id/stream]", e);
+      res.status(500).json({ error: "음원 스트리밍 중 오류가 발생했습니다" });
     }
   });
 
   app.get(api.music.get.path, async (req, res) => {
-    const music = await storage.getMusicById(Number(req.params.id));
-    if (!music) {
-      return res.status(404).json({ message: "Music not found" });
+    try {
+      const music = await storage.getMusicById(Number(req.params.id));
+      if (!music) {
+        return res.status(404).json({ message: "Music not found" });
+      }
+      const uploader = await storage.getUserById(music.userId);
+      const now = new Date();
+      const subscriptionPremium = uploader?.subscriptionTier === "premium" && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+      const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
+      res.json({
+        ...music,
+        uploaderSubscriptionTier: uploaderIsPremium ? "premium" : "free",
+        uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
+        uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
+      });
+    } catch (e) {
+      console.error("[api/music GET]", e);
+      res.status(500).json({ message: "음원 정보를 불러올 수 없습니다" });
     }
-    const uploader = await storage.getUserById(music.userId);
-    const now = new Date();
-    const subscriptionPremium = uploader?.subscriptionTier === "premium" && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
-    const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
-    res.json({
-      ...music,
-      uploaderSubscriptionTier: uploaderIsPremium ? "premium" : "free",
-      uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
-      uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
-    });
   });
 
   app.get("/api/music/:id/similar", async (req, res) => {
@@ -2341,6 +2422,259 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Credits request-bank error:", err);
       res.status(500).json({ message: err?.message || "입금 신청에 실패했습니다" });
+    }
+  });
+
+  // === Radio (베니방송국) Routes ===
+  app.get("/api/radio/channels/live", async (_req, res) => {
+    try {
+      const list = await storage.listLiveRadioChannels();
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/live]", e);
+      res.status(500).json({ message: "라이브 채널 목록을 불러올 수 없습니다" });
+    }
+  });
+
+  app.get("/api/radio/channels/me", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const channel = await storage.getRadioChannelByOwnerId(userId);
+      res.json(channel ?? null);
+    } catch (e) {
+      console.error("[radio/channels/me]", e);
+      res.status(500).json({ message: "내 채널 정보를 불러올 수 없습니다" });
+    }
+  });
+
+  app.get("/api/radio/channels/:slug/staff", async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const list = await storage.getRadioChannelStaff(channel.id);
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/:slug/staff GET]", e);
+      res.status(500).json({ message: "스텝 목록을 불러올 수 없습니다" });
+    }
+  });
+
+  app.post("/api/radio/channels/:slug/staff", isAuthenticated, async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const userId = (req as any).user?.claims?.sub;
+      if (channel.ownerId !== userId) return res.status(403).json({ message: "방장만 스텝을 추가할 수 있습니다." });
+      const { username, userId: bodyUserId, role } = req.body || {};
+      const targetUserId = typeof bodyUserId === "string" && bodyUserId ? bodyUserId : (username ? await storage.getUserIdByUsername(String(username)) : undefined);
+      if (!targetUserId) return res.status(400).json({ message: "사용자를 찾을 수 없습니다. 아이디(username)를 확인해 주세요." });
+      if (targetUserId === channel.ownerId) return res.status(400).json({ message: "방장은 스텝으로 추가할 수 없습니다." });
+      await storage.addRadioChannelStaff(channel.id, targetUserId, role === "sub_host" ? "sub_host" : "staff");
+      const list = await storage.getRadioChannelStaff(channel.id);
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/:slug/staff POST]", e);
+      res.status(500).json({ message: "스텝 추가에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/radio/channels/:slug/staff/:userId", isAuthenticated, async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      const targetUserId = req.params.userId;
+      if (!slug || !targetUserId) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const userId = (req as any).user?.claims?.sub;
+      if (channel.ownerId !== userId) return res.status(403).json({ message: "방장만 스텝을 제거할 수 있습니다." });
+      await storage.removeRadioChannelStaff(channel.id, targetUserId);
+      const list = await storage.getRadioChannelStaff(channel.id);
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/:slug/staff DELETE]", e);
+      res.status(500).json({ message: "스텝 제거에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/radio/channels/:slug", async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const out: any = { ...channel };
+      if (req.isAuthenticated() && (req as any).user?.claims?.sub) {
+        const uid = (req as any).user.claims.sub;
+        if (channel.ownerId === uid) out.canManage = true;
+        else out.canManage = await storage.isRadioChannelStaff(channel.id, uid);
+      } else {
+        out.canManage = false;
+      }
+      res.json(out);
+    } catch (e) {
+      console.error("[radio/channels/:slug]", e);
+      res.status(500).json({ message: "채널 정보를 불러올 수 없습니다" });
+    }
+  });
+
+  app.post("/api/radio/channels", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const existing = await storage.getRadioChannelByOwnerId(userId);
+      if (existing) {
+        return res.status(400).json({ message: "이미 채널이 있습니다. 한 계정당 하나의 채널만 만들 수 있습니다." });
+      }
+      const { name, slug, description, coverFilename } = req.body || {};
+      if (!name || !slug || typeof name !== "string" || typeof slug !== "string") {
+        return res.status(400).json({ message: "채널 이름과 슬러그를 입력하세요." });
+      }
+      const safeSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "channel";
+      const { id } = await storage.createRadioChannel({
+        ownerId: userId,
+        name: name.trim(),
+        slug: safeSlug,
+        description: description?.trim() || null,
+        coverFilename: coverFilename || null,
+      });
+      res.status(201).json({ id, slug: safeSlug });
+    } catch (e) {
+      console.error("[radio/channels create]", e);
+      res.status(500).json({ message: "채널 생성에 실패했습니다" });
+    }
+  });
+
+  app.patch("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+      if (channel.ownerId !== userId) return res.status(403).json({ message: "채널 소유자만 수정할 수 있습니다." });
+      const { status, nowPlayingMusicId, nowPlayingStartedAt } = req.body || {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null } = {};
+      if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) updates.status = String(status);
+      if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
+      if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
+      if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
+      if (Object.keys(updates).length > 0) {
+        await storage.updateRadioChannel(channel.id, userId, updates);
+      }
+      const updated = await storage.getRadioChannelBySlug(slug);
+      if (updates.nowPlayingMusicId !== undefined && updated) {
+        broadcastToRadioChannel(slug, {
+          type: "radio_now_playing",
+          musicId: updated.nowPlayingMusicId ?? null,
+          startedAt: updated.nowPlayingStartedAt ? (updated.nowPlayingStartedAt as Date).toISOString() : null,
+        });
+      }
+      res.json(updated);
+    } catch (e) {
+      console.error("[radio/channels PATCH]", e);
+      res.status(500).json({ message: "채널 수정에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/radio/channels/:slug/chat", async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit), 10) || 50));
+      const messages = await storage.getRadioChatMessages(channel.id, limit);
+      res.json(messages);
+    } catch (e) {
+      console.error("[radio/channels/:slug/chat]", e);
+      if ((e as any)?.code === "42P01" || String((e as any)?.message || "").includes("does not exist")) {
+        return res.json([]);
+      }
+      res.status(500).json({ message: "채팅 내역을 불러올 수 없습니다" });
+    }
+  });
+
+  app.get("/api/radio/channels/:slug/requests", async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const list = await storage.getRadioSongRequestsByChannel(channel.id, status);
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/:slug/requests]", e);
+      if ((e as any)?.code === "42P01" || String((e as any)?.message || "").includes("does not exist")) {
+        return res.json([]);
+      }
+      res.status(500).json({ message: "신청곡 목록을 불러올 수 없습니다" });
+    }
+  });
+
+  app.post("/api/radio/channels/:slug/requests", isAuthenticated, async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const { musicId, title, artist, message } = req.body || {};
+      const musicIdNum = musicId != null ? Number(musicId) : null;
+      if (musicIdNum != null && !Number.isNaN(musicIdNum)) {
+        const musicExists = await storage.getMusicById(musicIdNum);
+        if (!musicExists) return res.status(400).json({ message: "해당 음원을 찾을 수 없습니다." });
+      }
+      const row = await storage.createRadioSongRequest({
+        channelId: channel.id,
+        userId,
+        musicId: musicIdNum != null && !Number.isNaN(musicIdNum) ? musicIdNum : null,
+        title: title != null ? String(title).trim().slice(0, 200) : null,
+        artist: artist != null ? String(artist).trim().slice(0, 200) : null,
+        message: message != null ? String(message).trim().slice(0, 300) : null,
+      });
+      res.status(201).json(row);
+    } catch (e: any) {
+      console.error("[radio/channels/:slug/requests POST]", e);
+      const code = e?.code;
+      const msg = e?.message || "";
+      if (code === "42P01" || msg.includes("does not exist")) {
+        return res.status(500).json({ message: "신청곡 테이블이 없습니다. npm run db:deploy 또는 deploy/radio-chat-and-requests.sql 을 실행해 주세요." });
+      }
+      if (code === "23503") {
+        return res.status(400).json({ message: "채널 또는 음원 정보가 올바르지 않습니다." });
+      }
+      res.status(500).json({ message: e?.message || "신청곡 등록에 실패했습니다" });
+    }
+  });
+
+  app.patch("/api/radio/channels/:slug/requests/:id", isAuthenticated, async (req, res) => {
+    try {
+      const { slug, id } = req.params;
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      if (channel.ownerId !== userId) return res.status(403).json({ message: "채널 소유자만 수정할 수 있습니다" });
+      const requestId = parseInt(id, 10);
+      if (Number.isNaN(requestId)) return res.status(400).json({ message: "잘못된 요청입니다" });
+      const { status, sortOrder } = req.body || {};
+      const updates: { status?: string; sortOrder?: number } = {};
+      if (status !== undefined && ["pending", "playing", "played", "cancelled"].includes(String(status))) updates.status = String(status);
+      if (sortOrder !== undefined) updates.sortOrder = Number(sortOrder);
+      if (Object.keys(updates).length > 0) await storage.updateRadioSongRequest(requestId, channel.id, updates);
+      const list = await storage.getRadioSongRequestsByChannel(channel.id);
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels/:slug/requests PATCH]", e);
+      res.status(500).json({ message: "수정에 실패했습니다" });
     }
   });
 

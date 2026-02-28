@@ -24,7 +24,7 @@ function excerpt(text: string, maxLen = 80) {
 export default function Notices() {
   const { t, i18n } = useTranslation();
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const locale = i18n.language === "ja" ? "ja-JP" : i18n.language === "en" ? "en-US" : "ko-KR";
+  const locale = i18n.language === "ja" ? "ja-JP" : i18n.language === "en" ? "en-US" : i18n.language === "zh" ? "zh-CN" : "ko-KR";
   const { data, isLoading } = useQuery<SiteAnnouncement[]>({
     queryKey: ["/api/announcements/site"],
     queryFn: async () => {

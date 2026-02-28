@@ -2,6 +2,7 @@ import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
   analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
+  radioChannels, radioChatMessages, radioSongRequests, radioChannelStaff,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
   pushSubscriptions,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
@@ -121,6 +122,26 @@ export interface IStorage {
   deleteCuratedPlaylist(id: number): Promise<void>;
   setCuratedPlaylistTracks(curatedPlaylistId: number, musicIds: number[]): Promise<void>;
   getCuratedPlaylistTrackIds(curatedPlaylistId: number): Promise<number[]>;
+
+  // Radio channels (베니방송국)
+  createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
+  getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
+  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
+  listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null }[]>;
+  updateRadioChannel(id: number, ownerId: string, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null }): Promise<void>;
+
+  createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
+  getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
+  createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date }>;
+  getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date; musicTitle?: string | null; musicArtist?: string | null }[]>;
+  updateRadioSongRequest(id: number, channelId: number, data: { status?: string; sortOrder?: number }): Promise<void>;
+
+  getRadioChannelStaff(channelId: number): Promise<{ id: number; channelId: number; userId: string; role: string; username?: string | null }[]>;
+  isRadioChannelStaff(channelId: number, userId: string): Promise<boolean>;
+  addRadioChannelStaff(channelId: number, userId: string, role: string): Promise<void>;
+  removeRadioChannelStaff(channelId: number, userId: string): Promise<void>;
+  getUserIdByUsername(username: string): Promise<string | undefined>;
+
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePostAdmin(id: number): Promise<void>;
@@ -2076,6 +2097,201 @@ export class DatabaseStorage implements IStorage {
       .where(eq(curatedPlaylistMusic.curatedPlaylistId, curatedPlaylistId))
       .orderBy(asc(curatedPlaylistMusic.sortOrder));
     return rows.map((r) => r.musicId);
+  }
+
+  // Radio channels
+  async createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; coverFilename?: string | null }): Promise<{ id: number }> {
+    const [row] = await db.insert(radioChannels).values({
+      ownerId: data.ownerId,
+      name: data.name,
+      slug: data.slug,
+      description: data.description ?? null,
+      coverFilename: data.coverFilename ?? null,
+    }).returning({ id: radioChannels.id });
+    return { id: row!.id };
+  }
+
+  async getRadioChannelByOwnerId(ownerId: string) {
+    const [row] = await db.select({
+      id: radioChannels.id,
+      name: radioChannels.name,
+      slug: radioChannels.slug,
+      description: radioChannels.description,
+      coverFilename: radioChannels.coverFilename,
+      status: radioChannels.status,
+      visibility: radioChannels.visibility,
+      nowPlayingMusicId: radioChannels.nowPlayingMusicId,
+      nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
+    }).from(radioChannels).where(eq(radioChannels.ownerId, ownerId));
+    return row;
+  }
+
+  async getRadioChannelBySlug(slug: string) {
+    const [row] = await db.select({
+      id: radioChannels.id,
+      ownerId: radioChannels.ownerId,
+      name: radioChannels.name,
+      slug: radioChannels.slug,
+      description: radioChannels.description,
+      coverFilename: radioChannels.coverFilename,
+      status: radioChannels.status,
+      visibility: radioChannels.visibility,
+      nowPlayingMusicId: radioChannels.nowPlayingMusicId,
+      nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
+    }).from(radioChannels).where(eq(radioChannels.slug, slug));
+    return row;
+  }
+
+  async listLiveRadioChannels() {
+    return db.select({
+      id: radioChannels.id,
+      ownerId: radioChannels.ownerId,
+      name: radioChannels.name,
+      slug: radioChannels.slug,
+      description: radioChannels.description,
+      coverFilename: radioChannels.coverFilename,
+    }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
+  }
+
+  async updateRadioChannel(id: number, ownerId: string, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null }): Promise<void> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+    if (data.name !== undefined) set.name = data.name;
+    if (data.slug !== undefined) set.slug = data.slug;
+    if (data.description !== undefined) set.description = data.description;
+    if (data.coverFilename !== undefined) set.coverFilename = data.coverFilename;
+    if (data.status !== undefined) set.status = data.status;
+    if (data.visibility !== undefined) set.visibility = data.visibility;
+    if (data.nowPlayingMusicId !== undefined) set.nowPlayingMusicId = data.nowPlayingMusicId;
+    if (data.nowPlayingStartedAt !== undefined) set.nowPlayingStartedAt = data.nowPlayingStartedAt;
+    await db.update(radioChannels).set(set as any).where(and(eq(radioChannels.id, id), eq(radioChannels.ownerId, ownerId)));
+  }
+
+  async createRadioChatMessage(channelId: number, userId: string, content: string) {
+    const [row] = await db.insert(radioChatMessages).values({ channelId, userId, content }).returning();
+    return row as { id: number; channelId: number; userId: string; content: string; createdAt: Date };
+  }
+
+  async getRadioChatMessages(channelId: number, limit = 100) {
+    const rows = await db.select({
+      id: radioChatMessages.id,
+      channelId: radioChatMessages.channelId,
+      userId: radioChatMessages.userId,
+      content: radioChatMessages.content,
+      createdAt: radioChatMessages.createdAt,
+      username: users.username,
+    })
+      .from(radioChatMessages)
+      .leftJoin(users, eq(radioChatMessages.userId, users.id))
+      .where(eq(radioChatMessages.channelId, channelId))
+      .orderBy(desc(radioChatMessages.createdAt))
+      .limit(limit);
+    return rows.reverse().map((r) => ({
+      id: r.id,
+      channelId: r.channelId,
+      userId: r.userId,
+      content: r.content,
+      createdAt: r.createdAt,
+      username: r.username ?? null,
+    }));
+  }
+
+  async createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }) {
+    const [row] = await db.insert(radioSongRequests).values({
+      channelId: data.channelId,
+      userId: data.userId,
+      musicId: data.musicId ?? null,
+      title: data.title ?? null,
+      artist: data.artist ?? null,
+      message: data.message ?? null,
+    }).returning();
+    return row as { id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date };
+  }
+
+  async getRadioSongRequestsByChannel(channelId: number, status?: string) {
+    const rows = await db.select({
+      id: radioSongRequests.id,
+      channelId: radioSongRequests.channelId,
+      userId: radioSongRequests.userId,
+      musicId: radioSongRequests.musicId,
+      title: radioSongRequests.title,
+      artist: radioSongRequests.artist,
+      message: radioSongRequests.message,
+      status: radioSongRequests.status,
+      sortOrder: radioSongRequests.sortOrder,
+      createdAt: radioSongRequests.createdAt,
+      musicTitle: music.title,
+      musicArtist: music.artist,
+    })
+      .from(radioSongRequests)
+      .leftJoin(music, eq(radioSongRequests.musicId, music.id))
+      .where(status ? and(eq(radioSongRequests.channelId, channelId), eq(radioSongRequests.status, status)) : eq(radioSongRequests.channelId, channelId))
+      .orderBy(asc(radioSongRequests.sortOrder), asc(radioSongRequests.createdAt));
+    return rows.map((r) => ({
+      id: r.id,
+      channelId: r.channelId,
+      userId: r.userId,
+      musicId: r.musicId,
+      title: r.title,
+      artist: r.artist,
+      message: r.message,
+      status: r.status,
+      sortOrder: r.sortOrder,
+      createdAt: r.createdAt,
+      musicTitle: r.musicTitle ?? null,
+      musicArtist: r.musicArtist ?? null,
+    }));
+  }
+
+  async updateRadioSongRequest(id: number, channelId: number, data: { status?: string; sortOrder?: number }) {
+    const set: Record<string, unknown> = {};
+    if (data.status !== undefined) set.status = data.status;
+    if (data.sortOrder !== undefined) set.sortOrder = data.sortOrder;
+    if (Object.keys(set).length === 0) return;
+    await db.update(radioSongRequests).set(set as any).where(and(eq(radioSongRequests.id, id), eq(radioSongRequests.channelId, channelId)));
+  }
+
+  async getRadioChannelStaff(channelId: number) {
+    const rows = await db.select({
+      id: radioChannelStaff.id,
+      channelId: radioChannelStaff.channelId,
+      userId: radioChannelStaff.userId,
+      role: radioChannelStaff.role,
+      username: users.username,
+    })
+      .from(radioChannelStaff)
+      .leftJoin(users, eq(radioChannelStaff.userId, users.id))
+      .where(eq(radioChannelStaff.channelId, channelId));
+    return rows.map((r) => ({
+      id: r.id,
+      channelId: r.channelId,
+      userId: r.userId,
+      role: r.role,
+      username: r.username ?? null,
+    }));
+  }
+
+  async isRadioChannelStaff(channelId: number, userId: string): Promise<boolean> {
+    const [row] = await db.select({ id: radioChannelStaff.id })
+      .from(radioChannelStaff)
+      .where(and(eq(radioChannelStaff.channelId, channelId), eq(radioChannelStaff.userId, userId)));
+    return !!row;
+  }
+
+  async addRadioChannelStaff(channelId: number, userId: string, role: string): Promise<void> {
+    await db.insert(radioChannelStaff).values({
+      channelId,
+      userId,
+      role: role === "sub_host" ? "sub_host" : "staff",
+    }).onConflictDoNothing({ target: [radioChannelStaff.channelId, radioChannelStaff.userId] });
+  }
+
+  async removeRadioChannelStaff(channelId: number, userId: string): Promise<void> {
+    await db.delete(radioChannelStaff).where(and(eq(radioChannelStaff.channelId, channelId), eq(radioChannelStaff.userId, userId)));
+  }
+
+  async getUserIdByUsername(username: string): Promise<string | undefined> {
+    const [row] = await db.select({ id: users.id }).from(users).where(eq(users.username, username.trim()));
+    return row?.id;
   }
 }
 
