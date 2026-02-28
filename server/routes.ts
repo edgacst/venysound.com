@@ -1388,6 +1388,7 @@ export async function registerRoutes(
           id: a.id,
           content: a.content,
           imageUrl: a.imageUrl ?? null,
+          showAsPopup: (a as any).showAsPopup !== false,
           startsAt: a.startsAt.toISOString(),
           endsAt: a.endsAt.toISOString(),
           createdAt: a.createdAt.toISOString(),
@@ -1432,7 +1433,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/site-announcements", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const { content, imageUrl, textSize, startsAt, endsAt } = req.body;
+      const { content, imageUrl, textSize, showAsPopup, startsAt, endsAt } = req.body;
       if (!content || typeof content !== "string" || !startsAt || !endsAt) {
         return res.status(400).json({ message: "content, startsAt, endsAt가 필요합니다" });
       }
@@ -1443,7 +1444,7 @@ export async function registerRoutes(
       }
       const imageUrlVal = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : null;
       const textSizeVal = typeof textSize === "string" && ["sm", "md", "lg"].includes(textSize) ? textSize : null;
-      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), imageUrl: imageUrlVal, textSize: textSizeVal, startsAt: start, endsAt: end });
+      const saved = await storage.saveSiteAnnouncement({ content: content.trim(), imageUrl: imageUrlVal, textSize: textSizeVal, showAsPopup: showAsPopup !== false, startsAt: start, endsAt: end });
       // 언어별 자동 번역 후 DB 반영 (번역 실패 시에도 공지는 저장됨)
       try {
         const translations = await translateAnnouncementContent(content.trim());

@@ -14,3 +14,5 @@ ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS image_url TEXT;
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS content_translations JSONB DEFAULT '{}';
 -- 공지 본문 텍스트 크기 (sm, md, lg)
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS text_size TEXT DEFAULT 'md';
+-- true=메인 팝업 노출, false=게시판(/notices)에만 노출
+ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS show_as_popup BOOLEAN DEFAULT true;

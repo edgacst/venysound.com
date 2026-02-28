@@ -180,13 +180,14 @@ export const analyticsVisits = pgTable("analytics_visits", {
   utmSource: text("utm_source"),
 });
 
-// 사이트 공지 팝업 (관리자 설정, 메인 접속 시 노출). content = 원문(기본 ko), contentTranslations = { en, ja, zh } 번역, textSize = sm|md|lg
+// 사이트 공지 (관리자 설정). showAsPopup=true면 메인 접속 시 팝업, false면 /notices 게시판에만 노출
 export const siteAnnouncements = pgTable("site_announcements", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
   contentTranslations: jsonb("content_translations").$type<Record<string, string>>().default({}),
   textSize: text("text_size").default("md"),
   imageUrl: text("image_url"),
+  showAsPopup: boolean("show_as_popup").default(true), // true=메인 팝업, false=게시판(/notices)에만
   startsAt: timestamp("starts_at").notNull(),
   endsAt: timestamp("ends_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),

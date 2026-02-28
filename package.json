@@ -15,6 +15,7 @@
     "db:analytics": "tsx script/run-analytics-table.ts",
     "db:curated": "tsx script/run-curated-playlists-table.ts",
     "db:push-notify": "tsx script/run-push-notify-prefs.ts",
+    "db:deploy": "tsx script/run-all-deploy-migrations.ts",
     "download-files": "tsx script/download-from-production.ts",
     "make-deploy": "tsx script/make-deploy.ts"
   },

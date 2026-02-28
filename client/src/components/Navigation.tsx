@@ -80,14 +80,14 @@ export function Navigation() {
       <div
         data-testid={`nav-link-${href.replace(/\//g, '') || 'home'}`}
         className={`
-        flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 cursor-pointer
+        flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 cursor-pointer shrink-0
         ${isActive(href) 
           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold" 
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
         }
       `}>
-        <Icon size={18} />
-        <span>{children}</span>
+        <Icon size={18} className="flex-shrink-0" />
+        <span className="whitespace-nowrap">{children}</span>
       </div>
     </Link>
   );

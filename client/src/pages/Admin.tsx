@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from 'react-i18next';
@@ -99,6 +100,7 @@ export default function Admin() {
   const [announcementTextSize, setAnnouncementTextSize] = useState<"sm" | "md" | "lg">("md");
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
+  const [announcementShowAsPopup, setAnnouncementShowAsPopup] = useState(true);
   const [guideVideoTitle, setGuideVideoTitle] = useState("");
   const [guideVideoDescription, setGuideVideoDescription] = useState("");
   const [guideVideoYoutubeUrl, setGuideVideoYoutubeUrl] = useState("");
@@ -229,7 +231,7 @@ export default function Admin() {
     refetchInterval: 60000,
   });
 
-  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; startsAt: string; endsAt: string; createdAt: string }[]>({
+  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; showAsPopup?: boolean; startsAt: string; endsAt: string; createdAt: string }[]>({
     queryKey: ["/api/admin/site-announcements"],
     queryFn: async () => {
       const res = await fetch("/api/admin/site-announcements", { credentials: "include" });
@@ -359,7 +361,7 @@ export default function Admin() {
   });
 
   const saveAnnouncementMutation = useMutation({
-    mutationFn: async (body: { content: string; imageUrl?: string | null; startsAt: string; endsAt: string }) => {
+    mutationFn: async (body: { content: string; imageUrl?: string | null; textSize?: string; showAsPopup?: boolean; startsAt: string; endsAt: string }) => {
       const res = await fetch("/api/admin/site-announcements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -372,7 +374,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/site-announcements"] });
-      toast({ title: t('admin.announcementSaved', '공지가 저장되었습니다. 설정한 기간에 메인 접속 시 팝업으로 노출됩니다.') });
+      toast({ title: t('admin.announcementSaved', '공지가 저장되었습니다.') });
       setAnnouncementContent("");
       setAnnouncementImageUrl("");
       setAnnouncementStartsAt("");
@@ -1505,6 +1507,20 @@ export default function Admin() {
                 <p className="text-xs text-muted-foreground mt-1 truncate">{announcementImageUrl}</p>
               ) : null}
             </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="announcement-show-as-popup"
+                checked={announcementShowAsPopup}
+                onCheckedChange={(v) => setAnnouncementShowAsPopup(v === true)}
+                data-testid="checkbox-announcement-popup"
+              />
+              <label htmlFor="announcement-show-as-popup" className="text-sm font-medium leading-none cursor-pointer">
+                {t('admin.announcementShowAsPopup', '메인 페이지 접속 시 팝업으로 띄우기')}
+              </label>
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">
+              {t('admin.announcementShowAsPopupHint', '체크 해제 시 공지사항 게시판(/notices)에만 노출됩니다.')}
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium mb-1 block">{t('admin.announcementStartsAt', '노출 시작')}</label>
@@ -1549,6 +1565,7 @@ export default function Admin() {
                   content: announcementContent.trim(),
                   imageUrl: announcementImageUrl.trim() || null,
                   textSize: announcementTextSize,
+                  showAsPopup: announcementShowAsPopup,
                   startsAt: start.toISOString(),
                   endsAt: end.toISOString(),
                 });
@@ -1567,7 +1584,12 @@ export default function Admin() {
                 {siteAnnouncementsList.map((a) => (
                   <li key={a.id} className="flex items-start justify-between gap-2 p-3 rounded-lg bg-muted/30 text-sm">
                     <div className="min-w-0 flex-1">
-                      <p className="line-clamp-2 text-foreground">{a.content}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="line-clamp-2 text-foreground">{a.content}</p>
+                        <Badge variant={a.showAsPopup !== false ? "default" : "secondary"} className="text-[10px] shrink-0">
+                          {a.showAsPopup !== false ? t('admin.announcementTypePopup', '팝업') : t('admin.announcementTypeBoard', '게시판만')}
+                        </Badge>
+                      </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {t('admin.announcementStartsAt', '노출 시작')}: {isNaN(new Date(a.startsAt).getTime()) ? String(a.startsAt) : new Date(a.startsAt).toLocaleString("ko-KR")} ~ {t('admin.announcementEndsAt', '노출 종료')}: {isNaN(new Date(a.endsAt).getTime()) ? String(a.endsAt) : new Date(a.endsAt).toLocaleString("ko-KR")}
                       </p>

@@ -102,8 +102,8 @@ export interface IStorage {
   getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
-  getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
-  saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
+  getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
+  saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
   updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void>;
   deleteSiteAnnouncement(id: number): Promise<void>;
   getGuideVideos(): Promise<{ id: number; title: string; description: string | null; youtubeUrl: string; sortOrder: number | null; createdAt: Date; updatedAt: Date }[]>;
@@ -1786,7 +1786,11 @@ export class DatabaseStorage implements IStorage {
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
     }).from(siteAnnouncements)
-      .where(and(lte(siteAnnouncements.startsAt, now), gte(siteAnnouncements.endsAt, now)))
+      .where(and(
+        lte(siteAnnouncements.startsAt, now),
+        gte(siteAnnouncements.endsAt, now),
+        eq(siteAnnouncements.showAsPopup, true)
+      ))
       .orderBy(desc(siteAnnouncements.createdAt))
       .limit(1);
     if (!row) return null;
@@ -1805,24 +1809,26 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
     const rows = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
       imageUrl: siteAnnouncements.imageUrl,
+      showAsPopup: siteAnnouncements.showAsPopup,
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
       createdAt: siteAnnouncements.createdAt,
     }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
-    return rows.map((r) => ({ ...r, createdAt: r.createdAt ?? new Date() }));
+    return rows.map((r) => ({ ...r, showAsPopup: r.showAsPopup ?? true, createdAt: r.createdAt ?? new Date() }));
   }
 
-  async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
+  async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
     const textSizeVal = data.textSize && ["sm", "md", "lg"].includes(data.textSize) ? data.textSize : "md";
     const inserted = await db.insert(siteAnnouncements).values({
       content: data.content,
       imageUrl: data.imageUrl ?? null,
       textSize: textSizeVal,
+      showAsPopup: data.showAsPopup !== false,
       startsAt: data.startsAt,
       endsAt: data.endsAt,
       updatedAt: new Date(),
