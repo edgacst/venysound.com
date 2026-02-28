@@ -202,6 +202,7 @@
     "aiCoverGenerating": "Generating AI Cover...",
     "pleaseWait": "Please wait.",
     "randomCoverFetched": "Random cover image fetched",
+    "embeddedCoverUsed": "Using cover art from MP3.",
     "fetchFailed": "Failed to fetch image. Please try again.",
     "selectAudioFile": "Please select an audio file",
     "uploadLimitReached": "Monthly upload limit ({{limit}} tracks) reached.",
@@ -650,7 +651,8 @@
     "tipWithMessage": "{{fromName}} sent you {{amount}} credits: \"{{tipMessage}}\"",
     "badge": "Congratulations! You earned the {{badgeName}} donor badge!",
     "copyright": "A copyright report was received for \"{{musicTitle}}\"",
-    "purchase": "{{fromName}} purchased \"{{musicTitle}}\" for {{price}} credits"
+    "purchase": "{{fromName}} purchased \"{{musicTitle}}\" for {{price}} credits",
+    "new_music_for_you": "A new track you might like has been added: \"{{musicTitle}}\" by {{artist}}"
   },
   "toast": {
     "success": "Success",

@@ -24,7 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, ImagePlus, DollarSign, Download, AlertCircle, Crown } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import jsmediatags from "jsmediatags";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/PageTransition";
@@ -77,6 +78,37 @@ export default function Upload() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [unsplashUrl, setUnsplashUrl] = useState<string | null>(null);
+  const [extractedCoverUrl, setExtractedCoverUrl] = useState<string | null>(null);
+
+  const tryExtractMp3Cover = useCallback((file: File) => {
+    setExtractedCoverUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (!file || !(file.type === "audio/mpeg" || file.name.toLowerCase().endsWith(".mp3"))) {
+      setImageFile(null);
+      return;
+    }
+    jsmediatags.read(file, {
+      onSuccess: (tag: { tags?: { picture?: { data: number[]; format: string } } }) => {
+        const picture = tag.tags?.picture;
+        if (!picture?.data?.length) {
+          setImageFile(null);
+          return;
+        }
+        const blob = new Blob([new Uint8Array(picture.data)], { type: picture.format });
+        const ext = picture.format === "image/jpeg" || picture.format === "image/jpg" ? "jpg" : "png";
+        const coverFile = new File([blob], `cover.${ext}`, { type: picture.format });
+        setImageFile(coverFile);
+        setUnsplashUrl(null);
+        setExtractedCoverUrl(URL.createObjectURL(blob));
+        toast({ title: t("upload.embeddedCoverUsed", "MP3에 포함된 커버를 사용합니다.") });
+      },
+      onError: () => {
+        setImageFile(null);
+      },
+    });
+  }, [t]);
   const [isFetchingUnsplash, setIsFetchingUnsplash] = useState(false);
   const [selectedMainGenre, setSelectedMainGenre] = useState("");
   const [selectedSubGenre, setSelectedSubGenre] = useState("");
@@ -102,6 +134,12 @@ export default function Upload() {
       setLocation("/login");
     }
   }, [isAuthLoading, isAuthenticated, setLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (extractedCoverUrl) URL.revokeObjectURL(extractedCoverUrl);
+    };
+  }, [extractedCoverUrl]);
 
   if (isAuthLoading || !isAuthenticated) return null;
 
@@ -141,6 +179,10 @@ export default function Upload() {
       const data = await res.json();
       setUnsplashUrl(data.imageUrl);
       setImageFile(null);
+      setExtractedCoverUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       toast({ title: t('upload.randomCoverFetched', '랜덤 커버 이미지를 가져왔습니다') });
     } catch (err) {
       toast({ title: t('upload.imageFetchFailed', '이미지를 가져오는데 실패했습니다. 다시 시도해주세요.'), variant: "destructive" });
@@ -246,12 +288,12 @@ export default function Upload() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:items-start">
                   <div className="space-y-2">
                     <FormLabel>{t('upload.audioFile', '음원 파일')}</FormLabel>
                     <div 
                       className={`
-                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors min-h-[160px] flex flex-col items-center justify-center
                         ${audioFile ? 'border-primary bg-primary/5' : 'border-white/10 hover:border-white/20 hover:bg-white/5'}
                       `}
                       onClick={() => document.getElementById('audio-input')?.click()}
@@ -268,6 +310,7 @@ export default function Upload() {
                           if (file) {
                             const titleFromName = file.name.replace(/\.[^/.]+$/, "");
                             form.setValue("title", titleFromName);
+                            tryExtractMp3Cover(file);
                           }
                         }}
                       />
@@ -290,7 +333,7 @@ export default function Upload() {
                     <FormLabel>{t('upload.albumCover', '앨범 커버 (선택)')}</FormLabel>
                     <div 
                       className={`
-                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
+                        border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors min-h-[160px] flex flex-col items-center justify-center
                         ${imageFile || unsplashUrl ? 'border-primary bg-primary/5' : 'border-white/10 hover:border-white/20 hover:bg-white/5'}
                       `}
                       onClick={() => !unsplashUrl && document.getElementById('image-input')?.click()}
@@ -302,6 +345,10 @@ export default function Upload() {
                         accept="image/*" 
                         className="hidden" 
                         onChange={(e) => {
+                          setExtractedCoverUrl((prev) => {
+                            if (prev) URL.revokeObjectURL(prev);
+                            return null;
+                          });
                           setImageFile(e.target.files?.[0] || null);
                           setUnsplashUrl(null);
                         }}
@@ -321,7 +368,11 @@ export default function Upload() {
                         </div>
                       ) : imageFile ? (
                         <div className="text-primary flex flex-col items-center">
-                          <CheckCircle className="mb-2" />
+                          {extractedCoverUrl ? (
+                            <img src={extractedCoverUrl} alt="" className="w-20 h-20 rounded-md object-cover mb-2" />
+                          ) : (
+                            <CheckCircle className="mb-2" />
+                          )}
                           <span className="text-sm truncate max-w-full">{imageFile.name}</span>
                         </div>
                       ) : (

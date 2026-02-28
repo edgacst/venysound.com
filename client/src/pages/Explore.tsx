@@ -51,7 +51,7 @@ export default function Explore() {
 
   const { playMusic, setPlaylist } = usePlayerStore();
 
-  const { data: curatedPlaylists } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[]>({
+  const { data: curatedPlaylists } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
     queryKey: ["/api/curated-playlists"],
     queryFn: async () => {
       const res = await fetch("/api/curated-playlists");
@@ -155,6 +155,11 @@ export default function Explore() {
                       )}
                     </div>
                     <p className="font-medium truncate" title={pl.name}>{pl.name}</p>
+                    {(pl.genreMain || pl.genreSub) && (
+                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                        {[pl.genreMain, pl.genreSub].filter(Boolean).join(" / ")}
+                      </p>
+                    )}
                     {pl.description && (
                       <p className="text-xs text-muted-foreground truncate mt-0.5" title={pl.description}>{pl.description}</p>
                     )}

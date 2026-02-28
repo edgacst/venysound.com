@@ -3,6 +3,7 @@ import {
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
   analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
+  pushSubscriptions,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
@@ -59,7 +60,13 @@ export interface IStorage {
 
   // Users
   getUserById(id: string): Promise<any | undefined>;
-  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean }): Promise<any | undefined>;
+  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }): Promise<any | undefined>;
+
+  // New music notifications (email + push)
+  getUsersToNotifyForNewMusic(music: { id: number; title: string; artist: string; genre?: string | null; userId: string }): Promise<{ userId: string; email: string | null; notifyNewMusicEmail: boolean; notifyNewMusicPush: boolean }[]>;
+  getPushSubscriptions(userId: string): Promise<{ id: number; endpoint: string; p256dh: string; auth: string }[]>;
+  getPushSubscriptionsByUserIds(userIds: string[]): Promise<{ userId: string; endpoint: string; p256dh: string; auth: string }[]>;
+  addPushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void>;
 
   // Follows - counts
   getFollowerCount(userId: string): Promise<number>;
@@ -275,7 +282,62 @@ export class DatabaseStorage implements IStorage {
     return found;
   }
 
+  /** "이 곡을 좋아한 사람이 좋아한 다른 곡" — 좋아요 기반 추천 */
+  async getSimilarMusicByLikes(musicId: number, limit: number = 8): Promise<MusicWithUploaderTier[]> {
+    const safeLimit = Math.min(20, Math.max(1, limit));
+    const idResult = await db.execute(sql`
+      SELECT l2.music_id AS id
+      FROM likes l1
+      JOIN likes l2 ON l1.user_id = l2.user_id AND l2.music_id <> ${musicId}
+      WHERE l1.music_id = ${musicId}
+      GROUP BY l2.music_id
+      ORDER BY COUNT(*) DESC
+      LIMIT ${safeLimit}
+    `);
+    const ids = (idResult.rows as { id: number }[]).map((r) => r.id);
+    if (ids.length === 0) return [];
+
+    const musicColumns = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      createdAt: music.createdAt,
+    };
+    const rows = await db
+      .select({
+        ...musicColumns,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(inArray(music.id, ids));
+
+    const orderMap = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999));
+    const now = new Date();
+    return rows.map((r) => {
+      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as (typeof rows)[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
+      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+    });
+  }
+
   async getSimilarMusic(musicId: number, limit: number = 8): Promise<MusicWithUploaderTier[]> {
+    const byLikes = await this.getSimilarMusicByLikes(musicId, limit);
+    if (byLikes.length > 0) return byLikes;
+
     const current = await this.getMusicById(musicId);
     if (!current) return [];
     const safeLimit = Math.min(20, Math.max(1, limit));
@@ -321,7 +383,6 @@ export class DatabaseStorage implements IStorage {
         .where(and(ne(music.id, musicId), eq(music.userId, current.userId)))
         .orderBy(desc(music.createdAt))
         .limit(remaining);
-      // 중복 제거
       const existingIds = new Set(rows.map((r: any) => r.id));
       for (const r of sameArtistRows) {
         if (!existingIds.has((r as any).id)) {
@@ -831,16 +892,86 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean }): Promise<any | undefined> {
-    const set: { firstName?: string | null; lastName?: string | null; profileImageUrl?: string | null; username?: string | null; allowDirectMessages?: boolean; updatedAt: Date } = { updatedAt: new Date() };
+  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }): Promise<any | undefined> {
+    const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.firstName !== undefined) set.firstName = data.firstName.trim() || null;
     if (data.lastName !== undefined) set.lastName = data.lastName.trim() || null;
     if (data.profileImageUrl !== undefined) set.profileImageUrl = data.profileImageUrl.trim() || null;
     if (data.username !== undefined) set.username = data.username.trim() || null;
     if (data.allowDirectMessages !== undefined) set.allowDirectMessages = data.allowDirectMessages;
+    if (data.notifyNewMusicEmail !== undefined) set.notifyNewMusicEmail = data.notifyNewMusicEmail;
+    if (data.notifyNewMusicPush !== undefined) set.notifyNewMusicPush = data.notifyNewMusicPush;
     if (Object.keys(set).length <= 1) return this.getUserById(userId);
     const [user] = await db.update(users).set(set).where(eq(users.id, userId)).returning();
     return user;
+  }
+
+    /** 신곡 업로드 시 알림 보낼 회원: 같은 장르 또는 같은 아티스트(업로더) 곡을 좋아한 유저 (업로더 본인 제외, 최대 300명) */
+  async getUsersToNotifyForNewMusic(m: { id: number; title: string; artist: string; genre?: string | null; userId: string }): Promise<{ userId: string; email: string | null; notifyNewMusicEmail: boolean; notifyNewMusicPush: boolean }[]> {
+    const limit = 300;
+    const uploaderId = m.userId;
+    const hasGenre = m.genre != null && m.genre !== "";
+    const result = await db.execute(hasGenre
+      ? sql`
+          SELECT DISTINCT u.id AS user_id, u.email, COALESCE(u.notify_new_music_email, true) AS notify_email, COALESCE(u.notify_new_music_push, true) AS notify_push
+          FROM likes l
+          JOIN music mus ON mus.id = l.music_id
+          JOIN users u ON u.id = l.user_id
+          WHERE l.user_id <> ${uploaderId}
+            AND (mus.user_id = ${uploaderId} OR mus.genre = ${m.genre!})
+          LIMIT ${limit}
+        `
+      : sql`
+          SELECT DISTINCT u.id AS user_id, u.email, COALESCE(u.notify_new_music_email, true) AS notify_email, COALESCE(u.notify_new_music_push, true) AS notify_push
+          FROM likes l
+          JOIN music mus ON mus.id = l.music_id
+          JOIN users u ON u.id = l.user_id
+          WHERE l.user_id <> ${uploaderId}
+            AND mus.user_id = ${uploaderId}
+          LIMIT ${limit}
+        `
+    );
+    const rows = result.rows as { user_id: string; email: string | null; notify_email: boolean; notify_push: boolean }[];
+    const seen = new Set<string>();
+    const out: { userId: string; email: string | null; notifyNewMusicEmail: boolean; notifyNewMusicPush: boolean }[] = [];
+    for (const r of rows) {
+      if (seen.has(r.user_id)) continue;
+      seen.add(r.user_id);
+      out.push({
+        userId: r.user_id,
+        email: r.email,
+        notifyNewMusicEmail: r.notify_email,
+        notifyNewMusicPush: r.notify_push,
+      });
+    }
+    return out;
+  }
+
+  async getPushSubscriptions(userId: string): Promise<{ id: number; endpoint: string; p256dh: string; auth: string }[]> {
+    const rows = await db.select({ id: pushSubscriptions.id, endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.userId, userId));
+    return rows;
+  }
+
+  async getPushSubscriptionsByUserIds(userIds: string[]): Promise<{ userId: string; endpoint: string; p256dh: string; auth: string }[]> {
+    if (userIds.length === 0) return [];
+    const rows = await db.select({ userId: pushSubscriptions.userId, endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth })
+      .from(pushSubscriptions)
+      .where(inArray(pushSubscriptions.userId, userIds));
+    return rows;
+  }
+
+  async addPushSubscription(userId: string, sub: { endpoint: string; p256dh: string; auth: string }): Promise<void> {
+    await db.insert(pushSubscriptions).values({
+      userId,
+      endpoint: sub.endpoint,
+      p256dh: sub.p256dh,
+      auth: sub.auth,
+    }).onConflictDoUpdate({
+      target: [pushSubscriptions.endpoint],
+      set: { userId, p256dh: sub.p256dh, auth: sub.auth },
+    });
   }
 
   // Notifications
@@ -1759,7 +1890,7 @@ export class DatabaseStorage implements IStorage {
     await db.delete(guideVideos).where(eq(guideVideos.id, id));
   }
 
-  async getCuratedPlaylists(): Promise<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[]> {
+  async getCuratedPlaylists(): Promise<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null; genreMain: string | null; genreSub: string | null }[]> {
     const baseRows = await db
       .select({
         id: curatedPlaylists.id,
@@ -1767,32 +1898,53 @@ export class DatabaseStorage implements IStorage {
         description: curatedPlaylists.description,
         slug: curatedPlaylists.slug,
         sortOrder: curatedPlaylists.sortOrder,
+        coverImageFilename: curatedPlaylists.coverImageFilename,
+        genreMain: curatedPlaylists.genreMain,
+        genreSub: curatedPlaylists.genreSub,
       })
       .from(curatedPlaylists)
       .orderBy(asc(curatedPlaylists.sortOrder), asc(curatedPlaylists.id));
-    const results: { id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null }[] = [];
+    const results: { id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null; genreMain: string | null; genreSub: string | null }[] = [];
     for (const pl of baseRows) {
-      const [firstTrack] = await db
-        .select({ imageFilename: music.imageFilename })
-        .from(curatedPlaylistMusic)
-        .leftJoin(music, eq(curatedPlaylistMusic.musicId, music.id))
-        .where(eq(curatedPlaylistMusic.curatedPlaylistId, pl.id))
-        .orderBy(asc(curatedPlaylistMusic.sortOrder))
-        .limit(1);
+      const explicitCover = pl.coverImageFilename;
+      let coverImageFilename: string | null = explicitCover ?? null;
+      if (!coverImageFilename) {
+        const [firstTrack] = await db
+          .select({ imageFilename: music.imageFilename })
+          .from(curatedPlaylistMusic)
+          .leftJoin(music, eq(curatedPlaylistMusic.musicId, music.id))
+          .where(eq(curatedPlaylistMusic.curatedPlaylistId, pl.id))
+          .orderBy(asc(curatedPlaylistMusic.sortOrder))
+          .limit(1);
+        coverImageFilename = firstTrack?.imageFilename ?? null;
+      }
       results.push({
         id: pl.id,
         name: pl.name,
         description: pl.description,
         slug: pl.slug,
         sortOrder: pl.sortOrder,
-        coverImageFilename: firstTrack?.imageFilename ?? null,
+        coverImageFilename,
+        genreMain: pl.genreMain ?? null,
+        genreSub: pl.genreSub ?? null,
       });
     }
     return results;
   }
 
-  async getCuratedPlaylistBySlug(slug: string): Promise<{ id: number; name: string; description: string | null; slug: string; tracks: MusicWithUploaderTier[] } | null> {
-    const [pl] = await db.select().from(curatedPlaylists).where(eq(curatedPlaylists.slug, slug));
+  async getCuratedPlaylistBySlug(slug: string): Promise<{ id: number; name: string; description: string | null; slug: string; coverImageFilename: string | null; genreMain: string | null; genreSub: string | null; tracks: MusicWithUploaderTier[] } | null> {
+    const [pl] = await db
+      .select({
+        id: curatedPlaylists.id,
+        name: curatedPlaylists.name,
+        description: curatedPlaylists.description,
+        slug: curatedPlaylists.slug,
+        coverImageFilename: curatedPlaylists.coverImageFilename,
+        genreMain: curatedPlaylists.genreMain,
+        genreSub: curatedPlaylists.genreSub,
+      })
+      .from(curatedPlaylists)
+      .where(eq(curatedPlaylists.slug, slug));
     if (!pl) return null;
     const entries = await db
       .select({ musicId: curatedPlaylistMusic.musicId, sortOrder: curatedPlaylistMusic.sortOrder })
@@ -1801,7 +1953,16 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(curatedPlaylistMusic.sortOrder));
     const musicIds = entries.map((e) => e.musicId);
     if (musicIds.length === 0) {
-      return { id: pl.id, name: pl.name, description: pl.description, slug: pl.slug, tracks: [] };
+      return {
+        id: pl.id,
+        name: pl.name,
+        description: pl.description,
+        slug: pl.slug,
+        coverImageFilename: pl.coverImageFilename ?? null,
+        genreMain: pl.genreMain ?? null,
+        genreSub: pl.genreSub ?? null,
+        tracks: [],
+      };
     }
     const musicColumns = {
       id: music.id,
@@ -1843,28 +2004,43 @@ export class DatabaseStorage implements IStorage {
       })
       .sort((a, b) => a._sortOrder - b._sortOrder)
       .map(({ _sortOrder, ...t }) => t as MusicWithUploaderTier);
-    return { id: pl.id, name: pl.name, description: pl.description, slug: pl.slug, tracks };
+    return {
+      id: pl.id,
+      name: pl.name,
+      description: pl.description,
+      slug: pl.slug,
+      coverImageFilename: pl.coverImageFilename ?? null,
+      genreMain: pl.genreMain ?? null,
+      genreSub: pl.genreSub ?? null,
+      tracks,
+    };
   }
 
-  async createCuratedPlaylist(data: { name: string; description?: string | null; slug: string }): Promise<{ id: number }> {
+  async createCuratedPlaylist(data: { name: string; description?: string | null; slug: string; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }): Promise<{ id: number }> {
     const [row] = await db
       .insert(curatedPlaylists)
       .values({
         name: data.name,
         description: data.description ?? null,
         slug: data.slug.trim().toLowerCase().replace(/\s+/g, "-"),
+        coverImageFilename: data.coverImageFilename ?? null,
+        genreMain: data.genreMain ?? null,
+        genreSub: data.genreSub ?? null,
       })
       .returning({ id: curatedPlaylists.id });
     if (!row) throw new Error("Failed to create curated playlist");
     return { id: row.id };
   }
 
-  async updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number }): Promise<void> {
+  async updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }): Promise<void> {
     const set: Record<string, unknown> = {};
     if (data.name !== undefined) set.name = data.name;
     if (data.description !== undefined) set.description = data.description;
     if (data.slug !== undefined) set.slug = data.slug.trim().toLowerCase().replace(/\s+/g, "-");
     if (data.sortOrder !== undefined) set.sortOrder = data.sortOrder;
+    if (data.coverImageFilename !== undefined) set.coverImageFilename = data.coverImageFilename;
+    if (data.genreMain !== undefined) set.genreMain = data.genreMain;
+    if (data.genreSub !== undefined) set.genreSub = data.genreSub;
     if (Object.keys(set).length === 0) return;
     await db.update(curatedPlaylists).set(set as any).where(eq(curatedPlaylists.id, id));
   }

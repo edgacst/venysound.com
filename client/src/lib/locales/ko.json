@@ -202,6 +202,7 @@
     "aiCoverGenerating": "AI 커버 생성 중...",
     "pleaseWait": "잠시만 기다려주세요.",
     "randomCoverFetched": "랜덤 커버 이미지를 가져왔습니다",
+    "embeddedCoverUsed": "MP3에 포함된 커버를 사용합니다.",
     "fetchFailed": "이미지를 가져오는데 실패했습니다. 다시 시도해주세요.",
     "selectAudioFile": "음원 파일을 선택해주세요",
     "uploadLimitReached": "이번 달 업로드 한도({{limit}}곡)에 도달했습니다.",
@@ -650,7 +651,8 @@
     "tipWithMessage": "{{fromName}}님이 {{amount}} 크레딧을 후원했습니다: \"{{tipMessage}}\"",
     "badge": "축하합니다! {{badgeName}} 후원 뱃지를 획득했습니다!",
     "copyright": "\"{{musicTitle}}\" 음원에 대한 저작권 신고가 접수되었습니다",
-    "purchase": "{{fromName}}님이 \"{{musicTitle}}\"을(를) {{price}} 크레딧에 구매했습니다"
+    "purchase": "{{fromName}}님이 \"{{musicTitle}}\"을(를) {{price}} 크레딧에 구매했습니다",
+    "new_music_for_you": "{{fromName}}님이 좋아할 만한 음악이 신곡으로 등록되었어요: \"{{musicTitle}}\" - {{artist}}"
   },
   "toast": {
     "success": "성공",

@@ -51,6 +51,7 @@ import {
   ListMusic,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
+import { useUpload } from "@/hooks/use-upload";
 
 const reasonLabels: Record<string, string> = {
   unauthorized_use: "무단 사용",
@@ -67,11 +68,20 @@ const statusLabels: Record<string, string> = {
   rejected: "반려",
 };
 
+const curatedMainGenres: Record<string, string[]> = {
+  "팝뮤직": ["팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
+  "국내가요": ["케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요"],
+  "월드뮤직": ["라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
+  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악"],
+  "기타": [],
+};
+
 export default function Admin() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { uploadFile: uploadCuratedImage, isUploading: isUploadingCuratedImage } = useUpload();
   const [userSearch, setUserSearch] = useState("");
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
@@ -98,7 +108,13 @@ export default function Admin() {
   const [curatedSlug, setCuratedSlug] = useState("");
   const [curatedTracksDialogId, setCuratedTracksDialogId] = useState<number | null>(null);
   const [curatedTracksText, setCuratedTracksText] = useState("");
-  const [curatedGenre, setCuratedGenre] = useState<string>("");
+  const [curatedGenreMainForFill, setCuratedGenreMainForFill] = useState<string>("");
+  const [curatedGenreSubForFill, setCuratedGenreSubForFill] = useState<string>("");
+  const [curatedCoverFile, setCuratedCoverFile] = useState<File | null>(null);
+  const [curatedCoverPreview, setCuratedCoverPreview] = useState<string | null>(null);
+  const [curatedMainGenre, setCuratedMainGenre] = useState<string>("");
+  const [curatedSubGenre, setCuratedSubGenre] = useState<string>("");
+  const curatedSubGenres = curatedMainGenre ? curatedMainGenres[curatedMainGenre] || [] : [];
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -234,7 +250,7 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
-  const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number }[]>({
+  const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
     queryKey: ["/api/admin/curated-playlists"],
     queryFn: async () => {
       const res = await fetch("/api/admin/curated-playlists", { credentials: "include" });
@@ -245,7 +261,7 @@ export default function Admin() {
   });
 
   const createCuratedMutation = useMutation({
-    mutationFn: async (body: { name: string; description?: string; slug: string }) => {
+    mutationFn: async (body: { name: string; description?: string | null; slug: string; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }) => {
       const res = await fetch("/api/admin/curated-playlists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -262,6 +278,10 @@ export default function Admin() {
       setCuratedName("");
       setCuratedDesc("");
       setCuratedSlug("");
+      setCuratedMainGenre("");
+      setCuratedSubGenre("");
+      setCuratedCoverFile(null);
+      setCuratedCoverPreview(null);
       toast({ title: t('admin.curatedCreated', '테마 플레이리스트가 추가되었습니다.') });
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
@@ -1673,9 +1693,9 @@ export default function Admin() {
             <ListMusic size={20} className="text-primary" /> {t('admin.curatedPlaylists', '테마 플레이리스트')}
           </h2>
           <p className="text-sm text-muted-foreground mb-4">
-            {t('admin.curatedPlaylistsDesc', '음원 목록(/music) 상단에 노출되는 테마/무드 플레이리스트입니다. 이름·슬러그·설명을 입력하고 트랙(음원 ID)을 설정하세요.')}
+            {t('admin.curatedPlaylistsDesc', '음원 목록(/music) 상단에 노출되는 테마/무드 플레이리스트입니다. 이름·슬러그·설명·장르·커버 이미지를 설정하고 트랙(음원 ID)을 지정하세요.')}
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 max-w-2xl">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 max-w-2xl">
             <div>
               <label className="text-sm font-medium mb-1 block">{t('admin.curatedName', '이름')}</label>
               <Input value={curatedName} onChange={(e) => setCuratedName(e.target.value)} placeholder="예: 작업할 때" />
@@ -1689,22 +1709,108 @@ export default function Admin() {
               <Input value={curatedDesc} onChange={(e) => setCuratedDesc(e.target.value)} placeholder="집중이 잘 될 곡들" />
             </div>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 max-w-2xl">
+            <div>
+              <label className="text-sm font-medium mb-1 block">대표 장르 (대분류)</label>
+              <Select
+                value={curatedMainGenre}
+                onValueChange={(v) => {
+                  setCuratedMainGenre(v);
+                  setCuratedSubGenre("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="대분류 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(curatedMainGenres).map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">상세 장르 (소분류)</label>
+              <Select
+                value={curatedSubGenre}
+                onValueChange={(v) => setCuratedSubGenre(v)}
+                disabled={!curatedMainGenre || curatedSubGenres.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={curatedMainGenre && curatedSubGenres.length === 0 ? "세부분류 없음" : "소분류 선택"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {curatedSubGenres.map((g) => (
+                    <SelectItem key={g} value={g}>
+                      {g}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1 block">커버 이미지</label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-md bg-muted overflow-hidden border border-border flex items-center justify-center">
+                  {curatedCoverPreview ? (
+                    <img src={curatedCoverPreview} alt="커버 미리보기" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">미리보기</span>
+                  )}
+                </div>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="text-sm"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    setCuratedCoverFile(file);
+                    if (file) {
+                      const url = URL.createObjectURL(file);
+                      setCuratedCoverPreview(url);
+                    } else {
+                      setCuratedCoverPreview(null);
+                    }
+                  }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">권장: 정사각형 이미지, 최대 2MB</p>
+            </div>
+          </div>
           <Button
             onClick={() => {
-              if (!curatedName.trim() || !curatedSlug.trim()) {
-                toast({ title: t('admin.curatedNameSlugRequired', '이름과 슬러그를 입력하세요'), variant: "destructive" });
-                return;
-              }
-              createCuratedMutation.mutate({
-                name: curatedName.trim(),
-                description: curatedDesc.trim() || undefined,
-                slug: curatedSlug.trim(),
-              });
+              (async () => {
+                if (!curatedName.trim() || !curatedSlug.trim()) {
+                  toast({ title: t('admin.curatedNameSlugRequired', '이름과 슬러그를 입력하세요'), variant: "destructive" });
+                  return;
+                }
+
+                let coverImageFilename: string | null | undefined = null;
+                if (curatedCoverFile) {
+                  const uploadRes = await uploadCuratedImage(curatedCoverFile);
+                  if (!uploadRes) {
+                    toast({ title: "커버 이미지 업로드 실패", variant: "destructive" });
+                    return;
+                  }
+                  coverImageFilename = uploadRes.objectPath;
+                }
+
+                createCuratedMutation.mutate({
+                  name: curatedName.trim(),
+                  description: curatedDesc.trim() || null,
+                  slug: curatedSlug.trim(),
+                  coverImageFilename,
+                  genreMain: curatedMainGenre || null,
+                  genreSub: curatedSubGenre || null,
+                });
+              })();
             }}
-            disabled={createCuratedMutation.isPending}
+            disabled={createCuratedMutation.isPending || isUploadingCuratedImage}
             className="gap-2"
           >
-            {createCuratedMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : null}
+            {createCuratedMutation.isPending || isUploadingCuratedImage ? <Loader2 size={14} className="animate-spin" /> : null}
             {t('admin.addCurated', '플레이리스트 추가')}
           </Button>
           {curatedPlaylistsList && curatedPlaylistsList.length > 0 && (
@@ -1769,34 +1875,60 @@ export default function Admin() {
             <div className="mt-4 space-y-2">
               <label className="text-sm font-medium block">{t('admin.curatedFillByGenre', '카테고리(장르)로 채우기')}</label>
               <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end">
-                <Select value={curatedGenre} onValueChange={(v) => setCuratedGenre(v)}>
-                  <SelectTrigger className="w-full sm:w-48">
-                    <SelectValue placeholder={t('admin.selectGenre', '장르 선택')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="팝뮤직">팝뮤직</SelectItem>
-                    <SelectItem value="국내가요">국내가요</SelectItem>
-                    <SelectItem value="월드뮤직">월드뮤직</SelectItem>
-                    <SelectItem value="경음악">경음악</SelectItem>
-                    <SelectItem value="케이팝">케이팝</SelectItem>
-                    <SelectItem value="발라드">발라드</SelectItem>
-                    <SelectItem value="트로트">트로트</SelectItem>
-                    <SelectItem value="재즈">재즈</SelectItem>
-                    <SelectItem value="클래식">클래식</SelectItem>
-                    <SelectItem value="기타">기타</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-col gap-2 w-full sm:w-80">
+                  <Select
+                    value={curatedGenreMainForFill}
+                    onValueChange={(v) => {
+                      setCuratedGenreMainForFill(v);
+                      setCuratedGenreSubForFill("");
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="대분류 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(curatedMainGenres).map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={curatedGenreSubForFill}
+                    onValueChange={(v) => setCuratedGenreSubForFill(v)}
+                    disabled={!curatedGenreMainForFill || (curatedMainGenres[curatedGenreMainForFill] || []).length === 0}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue
+                        placeholder={
+                          curatedGenreMainForFill && (curatedMainGenres[curatedGenreMainForFill] || []).length === 0
+                            ? "세부분류 없음"
+                            : "소분류 선택"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(curatedMainGenres[curatedGenreMainForFill] || []).map((g) => (
+                        <SelectItem key={g} value={g}>
+                          {g}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!curatedGenre}
+                  disabled={!curatedGenreMainForFill && !curatedGenreSubForFill}
                   onClick={async () => {
-                    if (!curatedGenre) {
+                    const genreForQuery = curatedGenreSubForFill || curatedGenreMainForFill;
+                    if (!genreForQuery) {
                       toast({ title: t('admin.selectGenreFirst', '장르를 먼저 선택하세요'), variant: "destructive" });
                       return;
                     }
                     try {
-                      const res = await fetch(`/api/music?genre=${encodeURIComponent(curatedGenre)}&limit=50`, { credentials: "include" });
+                      const res = await fetch(`/api/music?genre=${encodeURIComponent(genreForQuery)}&limit=50`, { credentials: "include" });
                       if (!res.ok) {
                         toast({ title: t('admin.curatedGenreFetchFailed', '해당 장르의 곡을 불러오지 못했습니다.'), variant: "destructive" });
                         return;

@@ -20,6 +20,9 @@ export default function CuratedPlaylist() {
     name: string;
     description: string | null;
     slug: string;
+    coverImageFilename?: string | null;
+    genreMain?: string | null;
+    genreSub?: string | null;
     tracks: any[];
   }>({
     queryKey: ["/api/curated-playlists", slug],
@@ -108,30 +111,38 @@ export default function CuratedPlaylist() {
             </Button>
           </Link>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-8">
-            <div className="flex-1">
+          <div className="flex flex-col gap-3 mb-8">
+            <div>
               <h1 className="text-2xl sm:text-3xl font-display font-bold" data-testid="curated-playlist-title">
                 {playlist.name}
               </h1>
               {playlist.description && (
                 <p className="text-muted-foreground mt-1 max-w-2xl">{playlist.description}</p>
               )}
-              <p className="text-sm text-muted-foreground mt-2">
+            </div>
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-muted-foreground">
                 {playlist.tracks.length} {t("curated.tracks", "곡")}
               </p>
+              {playlist.tracks.length > 0 && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={handlePlayAll}
+                  className="gap-1 h-5 px-0 text-sm text-primary"
+                  data-testid="curated-play-all"
+                >
+                  <Play size={14} />
+                  {t("curated.playAll", "전체 재생")}
+                </Button>
+              )}
             </div>
-            {playlist.tracks.length > 0 && (
-              <Button onClick={handlePlayAll} className="gap-2 shrink-0" data-testid="curated-play-all">
-                <Play size={18} />
-                {t("curated.playAll", "전체 재생")}
-              </Button>
-            )}
           </div>
 
           {playlist.tracks.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center">{t("curated.empty", "아직 수록곡이 없습니다.")}</p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-10 gap-4">
               {playlist.tracks.map((track: any) => (
                 <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
                   <MusicCard music={track} />

@@ -12,6 +12,8 @@ import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
+import { sendNewMusicNotificationEmail } from "./email";
+import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments } from "../shared/models/auth";
 import { db } from "./db";
@@ -556,6 +558,57 @@ export async function registerRoutes(
         payload: { musicTitle: music.title, amount: 200 },
         url: "/credits",
       });
+      // 비동기로 "좋아할 만한 신곡" 알림 (이메일 + 푸시 + 앱 내 알림)
+      const baseUrl = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+      const musicUrl = `${baseUrl}/music/${music.id}`;
+      setImmediate(async () => {
+        try {
+          const recipients = await storage.getUsersToNotifyForNewMusic({
+            id: music.id,
+            title: music.title,
+            artist: music.artist,
+            genre: music.genre ?? undefined,
+            userId,
+          });
+          for (const r of recipients) {
+            const u = await storage.getUserById(r.userId);
+            const displayName = u?.firstName || "회원";
+            await storage.createNotification({
+              userId: r.userId,
+              type: "new_music_for_you",
+              message: `${displayName}님이 좋아할 만한 음악이 신곡으로 등록되었습니다`,
+              payload: { fromName: displayName, musicTitle: music.title, artist: music.artist, musicId: music.id },
+              url: `/music/${music.id}`,
+            });
+            if (r.notifyNewMusicEmail && r.email) {
+              await sendNewMusicNotificationEmail(r.email, {
+                userName: displayName,
+                musicTitle: music.title,
+                artist: music.artist,
+                musicUrl,
+              });
+            }
+          }
+          const pushUserIds = recipients.filter((r) => r.notifyNewMusicPush).map((r) => r.userId);
+          if (pushUserIds.length > 0) {
+            const subs = await storage.getPushSubscriptionsByUserIds(pushUserIds);
+            for (const sub of subs) {
+              const u = await storage.getUserById(sub.userId);
+              const name = u?.firstName || "회원";
+              await sendPushNotification(
+                { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+                {
+                  title: "신곡 알림",
+                  body: `${name}님이 좋아할 만한 음악이 등록되었어요: ${music.title} - ${music.artist}`,
+                  url: musicUrl,
+                }
+              );
+            }
+          }
+        } catch (e) {
+          console.error("[new-music-notify]", e);
+        }
+      });
       res.status(201).json(music);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -1070,12 +1123,41 @@ export async function registerRoutes(
         ...(lastName !== undefined && { lastName: String(lastName) }),
         ...(profileImageUrl !== undefined && { profileImageUrl: profileImageUrl ? String(profileImageUrl) : "" }),
         ...(username !== undefined && { username: username ? String(username) : "" }),
+        ...(req.body.notifyNewMusicEmail !== undefined && { notifyNewMusicEmail: Boolean(req.body.notifyNewMusicEmail) }),
+        ...(req.body.notifyNewMusicPush !== undefined && { notifyNewMusicPush: Boolean(req.body.notifyNewMusicPush) }),
       });
       if (!updated) return res.status(404).json({ message: "프로필을 찾을 수 없습니다" });
       res.json(updated);
     } catch (err) {
       console.error("Profile update error:", err);
       res.status(500).json({ message: "프로필 수정에 실패했습니다" });
+    }
+  });
+
+  // Web Push: VAPID public key (for client to subscribe)
+  app.get("/api/push-vapid-public", (_req, res) => {
+    const key = process.env.VAPID_PUBLIC_KEY;
+    res.json({ publicKey: key || null });
+  });
+
+  // Web Push: save subscription for "new music for you" push
+  app.post("/api/push-subscribe", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const { endpoint, keys } = req.body;
+      if (!endpoint || !keys?.p256dh || !keys?.auth) {
+        return res.status(400).json({ message: "endpoint and keys.p256dh, keys.auth required" });
+      }
+      await storage.addPushSubscription(userId, {
+        endpoint: String(endpoint),
+        p256dh: String(keys.p256dh),
+        auth: String(keys.auth),
+      });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("Push subscribe error:", err);
+      res.status(500).json({ message: "푸시 구독 저장에 실패했습니다" });
     }
   });
 
@@ -1479,11 +1561,18 @@ export async function registerRoutes(
 
   app.post("/api/admin/curated-playlists", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const { name, description, slug } = req.body || {};
+      const { name, description, slug, coverImageFilename, genreMain, genreSub } = req.body || {};
       if (!name || typeof name !== "string" || !slug || typeof slug !== "string") {
         return res.status(400).json({ message: "name, slug 이 필요합니다." });
       }
-      const { id } = await storage.createCuratedPlaylist({ name: name.trim(), description: description?.trim() || null, slug: slug.trim() });
+      const { id } = await storage.createCuratedPlaylist({
+        name: String(name).trim(),
+        description: typeof description === "string" && description.trim() ? description.trim() : null,
+        slug: String(slug).trim(),
+        coverImageFilename: typeof coverImageFilename === "string" && coverImageFilename.trim() ? coverImageFilename.trim() : null,
+        genreMain: typeof genreMain === "string" && genreMain.trim() ? genreMain.trim() : null,
+        genreSub: typeof genreSub === "string" && genreSub.trim() ? genreSub.trim() : null,
+      });
       res.json({ success: true, id });
     } catch (e: any) {
       console.error("[admin/curated-playlists POST]", e);
@@ -1494,12 +1583,17 @@ export async function registerRoutes(
   app.put("/api/admin/curated-playlists/:id", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { name, description, slug, sortOrder } = req.body || {};
+      const { name, description, slug, sortOrder, coverImageFilename, genreMain, genreSub } = req.body || {};
       await storage.updateCuratedPlaylist(id, {
         ...(name !== undefined && { name: String(name).trim() }),
         ...(description !== undefined && { description: description === "" ? null : String(description) }),
         ...(slug !== undefined && { slug: String(slug).trim() }),
         ...(typeof sortOrder === "number" && { sortOrder }),
+        ...(coverImageFilename !== undefined && {
+          coverImageFilename: coverImageFilename === "" ? null : String(coverImageFilename),
+        }),
+        ...(genreMain !== undefined && { genreMain: genreMain === "" ? null : String(genreMain) }),
+        ...(genreSub !== undefined && { genreSub: genreSub === "" ? null : String(genreSub) }),
       });
       res.json({ success: true });
     } catch (e) {

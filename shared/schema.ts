@@ -74,6 +74,9 @@ export const curatedPlaylists = pgTable("curated_playlists", {
   description: text("description"),
   slug: text("slug").notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
+  coverImageFilename: text("cover_image_filename"),
+  genreMain: text("genre_main"),
+  genreSub: text("genre_sub"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [uniqueIndex("curated_playlists_slug_unique").on(t.slug)]);
 
@@ -104,6 +107,16 @@ export const postComments = pgTable("post_comments", {
   parentId: integer("parent_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Web Push subscriptions (for "new music for you" push notifications)
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [uniqueIndex("push_subscriptions_endpoint_unique").on(t.endpoint)]);
 
 // Notifications table
 export const notifications = pgTable("notifications", {
@@ -200,6 +213,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
   postComments: many(postComments),
   notifications: many(notifications),
+  pushSubscriptions: many(pushSubscriptions),
   likes: many(likes),
   followers: many(follows, { relationName: "follower" }),
   following: many(follows, { relationName: "following" }),
@@ -288,6 +302,13 @@ export const postCommentsRelations = relations(postComments, ({ one }) => ({
   post: one(posts, {
     fields: [postComments.postId],
     references: [posts.id],
+  }),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one }) => ({
+  user: one(users, {
+    fields: [pushSubscriptions.userId],
+    references: [users.id],
   }),
 }));
 

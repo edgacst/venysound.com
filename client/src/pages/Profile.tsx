@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { MusicCard } from "@/components/MusicCard";
 import { DonationBadge } from "@/components/DonationBadge";
 import { useTranslation } from 'react-i18next';
@@ -315,10 +317,61 @@ function PostsSection({ userPosts }: { userPosts: any[] }) {
   );
 }
 
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
 function NotificationsSection() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { data: myProfile } = useUserProfile(user?.id ?? "");
+  const updateNotifyPrefs = useMutation({
+    mutationFn: async (prefs: { notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }) => {
+      const res = await fetch(`/api/users/${user!.id}/profile`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(prefs),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users/profile", user?.id] });
+      toast({ title: t("profile.saved", "저장됨"), description: t("profile.notificationPrefsSaved", "알림 설정이 저장되었습니다") });
+    },
+    onError: () => toast({ title: t("profile.failed", "실패"), variant: "destructive" }),
+  });
+  const subscribePush = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/push-vapid-public", { credentials: "include" });
+      const { publicKey } = await res.json();
+      if (!publicKey) throw new Error("Push not configured");
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      });
+      const toBase64Url = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+      const payload = { endpoint: sub.endpoint, keys: { p256dh: toBase64Url(sub.getKey("p256dh")!), auth: toBase64Url(sub.getKey("auth")!) } };
+      const saveRes = await fetch("/api/push-subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!saveRes.ok) throw new Error("Subscribe failed");
+    },
+    onSuccess: () => toast({ title: t("profile.pushEnabled", "푸시 알림이 켜졌습니다") }),
+    onError: (e) => toast({ title: t("profile.pushEnableFailed", "푸시 켜기 실패"), description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
   const { data: notifications, isLoading } = useQuery({
     queryKey: [api.notifications.list.path],
     queryFn: async () => {
@@ -356,9 +409,48 @@ function NotificationsSection() {
   }
 
   const unreadCount = notifications?.filter((n: any) => !n.isRead).length || 0;
+  const profileUser = (myProfile as any)?.user;
+  const notifyEmail = profileUser?.notifyNewMusicEmail !== false;
+  const notifyPush = profileUser?.notifyNewMusicPush !== false;
 
   return (
     <div>
+      {user?.id && (
+        <Card className="p-4 mb-6">
+          <h3 className="font-medium text-sm mb-3">{t("profile.newMusicNotificationSettings", "신곡 알림 설정")}</h3>
+          <p className="text-xs text-muted-foreground mb-4">{t("profile.newMusicNotificationDesc", "많이 들은 스타일의 신곡이 올라오면 알려드립니다.")}</p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="notify-email" className="text-sm">{t("profile.notifyNewMusicEmail", "이메일로 신곡 알림 받기")}</Label>
+              <Switch
+                id="notify-email"
+                checked={notifyEmail}
+                onCheckedChange={(checked) => updateNotifyPrefs.mutate({ notifyNewMusicEmail: checked })}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="notify-push" className="text-sm">{t("profile.notifyNewMusicPush", "푸시로 신곡 알림 받기")}</Label>
+              <Switch
+                id="notify-push"
+                checked={notifyPush}
+                onCheckedChange={(checked) => updateNotifyPrefs.mutate({ notifyNewMusicPush: checked })}
+              />
+            </div>
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={subscribePush.isPending || !("PushManager" in window) || !("serviceWorker" in navigator)}
+                onClick={() => subscribePush.mutate()}
+              >
+                {subscribePush.isPending ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
+                {t("profile.enablePushNotifications", "푸시 알림 켜기")}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-1">{t("profile.enablePushHint", "브라우저에서 푸시 권한을 허용하면 이 기기로 알림을 받을 수 있습니다.")}</p>
+            </div>
+          </div>
+        </Card>
+      )}
       <p className="text-xs text-muted-foreground mb-3" data-testid="text-notifications-limit-notice">
         {t('profile.notificationsLimitNotice', '알림목록은 20개까지만 보여집니다.')}
       </p>

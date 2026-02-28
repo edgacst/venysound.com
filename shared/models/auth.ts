@@ -32,6 +32,8 @@ export const users = pgTable("users", {
   donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'
   registerSource: varchar("register_source"), // 'email' | 'google' | 'naver' | 'kakao' | 'facebook' | 'tiktok'
   allowDirectMessages: boolean("allow_direct_messages").default(true), // false면 새 대화 요청 거절
+  notifyNewMusicEmail: boolean("notify_new_music_email").default(true),
+  notifyNewMusicPush: boolean("notify_new_music_push").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

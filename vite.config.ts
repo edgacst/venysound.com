@@ -9,7 +9,11 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      jsmediatags: path.resolve(import.meta.dirname, "node_modules", "jsmediatags", "dist", "jsmediatags.min.js"),
     },
+  },
+  optimizeDeps: {
+    include: ["jsmediatags"],
   },
   root: path.resolve(import.meta.dirname, "client"),
   build: {

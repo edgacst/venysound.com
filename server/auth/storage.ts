@@ -69,10 +69,7 @@ class AuthStorage implements IAuthStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          email: userData.email,
-          firstName: userData.firstName,
-          lastName: userData.lastName,
-          profileImageUrl: userData.profileImageUrl,
+          ...(userData.email != null && { email: userData.email }),
           updatedAt: new Date(),
           ...(isAdmin ? { role: "admin" } : {}),
         },
