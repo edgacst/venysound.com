@@ -1612,6 +1612,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/admin/curated-playlists/:id/tracks", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const musicIds = await storage.getCuratedPlaylistTrackIds(id);
+      res.json({ musicIds });
+    } catch (e) {
+      console.error("[admin/curated-playlists tracks GET]", e);
+      res.status(500).json({ message: "트랙 목록을 불러올 수 없습니다." });
+    }
+  });
+
   app.put("/api/admin/curated-playlists/:id/tracks", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -1619,9 +1630,9 @@ export async function registerRoutes(
       const ids = Array.isArray(musicIds) ? musicIds.filter((x): x is number => typeof x === "number") : [];
       await storage.setCuratedPlaylistTracks(id, ids);
       res.json({ success: true });
-    } catch (e) {
+    } catch (e: any) {
       console.error("[admin/curated-playlists tracks PUT]", e);
-      res.status(500).json({ message: "트랙 저장에 실패했습니다." });
+      res.status(500).json({ message: e?.message ?? "트랙 저장에 실패했습니다." });
     }
   });
 

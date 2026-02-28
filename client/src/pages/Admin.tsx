@@ -306,7 +306,8 @@ export default function Admin() {
         credentials: "include",
         body: JSON.stringify({ musicIds }),
       });
-      if (!res.ok) throw new Error("Failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || "저장 실패");
     },
     onSuccess: () => {
       setCuratedTracksDialogId(null);
@@ -1834,9 +1835,15 @@ export default function Admin() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`/api/admin/curated-playlists/${pl.id}/tracks`, { credentials: "include" });
+                                const ids = res.ok && (await res.json().catch(() => ({})))?.musicIds;
+                                setCuratedTracksText(Array.isArray(ids) ? ids.join(", ") : "");
+                              } catch {
+                                setCuratedTracksText("");
+                              }
                               setCuratedTracksDialogId(pl.id);
-                              setCuratedTracksText("");
                             }}
                           >
                             {t('admin.editTracks', '트랙 편집')}

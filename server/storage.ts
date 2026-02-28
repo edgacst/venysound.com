@@ -120,6 +120,7 @@ export interface IStorage {
   updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number }): Promise<void>;
   deleteCuratedPlaylist(id: number): Promise<void>;
   setCuratedPlaylistTracks(curatedPlaylistId: number, musicIds: number[]): Promise<void>;
+  getCuratedPlaylistTrackIds(curatedPlaylistId: number): Promise<number[]>;
   getAllUsers(search?: string): Promise<any[]>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePostAdmin(id: number): Promise<void>;
@@ -2060,6 +2061,15 @@ export class DatabaseStorage implements IStorage {
         sortOrder: i,
       }))
     );
+  }
+
+  async getCuratedPlaylistTrackIds(curatedPlaylistId: number): Promise<number[]> {
+    const rows = await db
+      .select({ musicId: curatedPlaylistMusic.musicId })
+      .from(curatedPlaylistMusic)
+      .where(eq(curatedPlaylistMusic.curatedPlaylistId, curatedPlaylistId))
+      .orderBy(asc(curatedPlaylistMusic.sortOrder));
+    return rows.map((r) => r.musicId);
   }
 }
 
