@@ -232,6 +232,7 @@
       font-size: 0.85rem;
     }
     .chat-list .name { color: #a78bfa; margin-right: 6px; }
+    .chat-list li.chat-join { color: #71717a; font-size: 0.8rem; }
     .chat-input-wrap { display: flex; gap: 8px; margin-top: 12px; }
     .chat-input-wrap input {
       flex: 1;
@@ -634,12 +635,19 @@
 
   function startWaveform(audioEl) {
     if (!audioEl || !audioEl.src) return;
-    stopWaveform();
     try {
-      waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (waveformSource) {
+        try { waveformSource.disconnect(); } catch (e) {}
+        waveformSource = null;
+      }
+      waveformAnalyser = null;
+      musicGainNode = null;
+      if (!waveformCtx || waveformCtx.state === 'closed') {
+        waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
       waveformSource = waveformCtx.createMediaElementSource(audioEl);
       musicGainNode = waveformCtx.createGain();
-      musicGainNode.gain.value = 1;
+      musicGainNode.gain.value = mentMode ? 0.5 : 1;
       waveformAnalyser = waveformCtx.createAnalyser();
       waveformAnalyser.fftSize = 2048;
       waveformSource.connect(musicGainNode);
@@ -649,8 +657,11 @@
       if (canvas) canvas.style.display = 'block';
       waveformCtx.resume().then(function() {
         drawWaveform();
-        if (audioEl.paused) audioEl.play().catch(function() {});
-      }).catch(function() { drawWaveform(); });
+        audioEl.play().catch(function() {});
+      }).catch(function() {
+        drawWaveform();
+        audioEl.play().catch(function() {});
+      });
     } catch (e) {}
   }
 
@@ -709,12 +720,13 @@
         function onCanPlay() {
           audioEl.removeEventListener('canplay', onCanPlay);
           audioEl.removeEventListener('error', onError);
+          if (waveformSource && waveformCtx && waveformCtx.state !== 'closed') {
+            loadNowPlayingLyrics(nowId);
+            audioEl.play().catch(function() {});
+            return;
+          }
           startWaveform(audioEl);
           loadNowPlayingLyrics(nowId);
-          if (audioEl.paused) {
-            var p = audioEl.play();
-            if (p && typeof p.then === 'function') p.catch(function() {});
-          }
         }
         function onError() {
           audioEl.removeEventListener('canplay', onCanPlay);
@@ -822,6 +834,12 @@
     var slug = String(channel.slug).trim().toLowerCase();
     var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
     if (Number.isNaN(musicIdNum)) { alert('잘못된 곡 ID입니다.'); return; }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try {
+        waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
+        waveformCtx.resume().catch(function() {});
+      } catch (e) {}
+    }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
       body: { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() }
@@ -956,6 +974,17 @@
           var el = document.getElementById('listenerCountLabel');
           if (el) el.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
         }
+        if (msg.type === 'radio_user_joined' && msg.userId) {
+          chatMessages.push({
+            id: 'join-' + String(msg.userId) + '-' + Date.now(),
+            userId: String(msg.userId),
+            username: msg.username != null ? String(msg.username) : null,
+            type: 'system_join',
+            content: '',
+            createdAt: new Date().toISOString()
+          });
+          renderChat();
+        }
         if (msg.type === 'radio_chat' && msg.message) {
           var m = msg.message;
           var same = chatMessages.find(function(x) { return x.id === m.id || (String(x.id).indexOf('temp-') === 0 && x.userId === m.userId && x.content === m.content); });
@@ -1013,6 +1042,9 @@
     } else {
       ul.innerHTML = chatMessages.map(function(m) {
         var name = m.username || (m.userId ? String(m.userId).slice(0, 8) : '?');
+        if (m.type === 'system_join') {
+          return '<li class="chat-join"><span class="name">' + esc(name) + '</span>님이 입장했습니다.</li>';
+        }
         return '<li><span class="name">' + esc(name) + '</span>' + esc(m.content) + '</li>';
       }).join('');
       var panel = ul.closest('.panel');
