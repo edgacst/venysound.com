@@ -149,6 +149,8 @@
     "chatPlaceholder": "输入消息...",
     "chatSend": "发送",
     "noChatYet": "暂无消息。",
+    "listenerLabel": "听众",
+    "joinedChat": " 进入了聊天。",
     "songRequestHint": "搜索歌曲并选择后提交，DJ 会确认。",
     "selected": "已选",
     "loginToRequest": "登录后可点歌。",

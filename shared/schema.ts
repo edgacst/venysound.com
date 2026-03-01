@@ -101,6 +101,9 @@ export const radioChannels = pgTable("radio_channels", {
   notice: text("notice"),
   nowPlayingMusicId: integer("now_playing_music_id").references(() => music.id, { onDelete: "set null" }),
   nowPlayingStartedAt: timestamp("now_playing_started_at"),
+  currentHostId: text("current_host_id").references(() => users.id, { onDelete: "set null" }),
+  scheduledStartAt: timestamp("scheduled_start_at"),
+  scheduledEndAt: timestamp("scheduled_end_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [uniqueIndex("radio_channels_slug_unique").on(t.slug), uniqueIndex("radio_channels_owner_id").on(t.ownerId)]);

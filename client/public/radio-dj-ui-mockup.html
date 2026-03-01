@@ -127,6 +127,19 @@
       justify-content: center;
       font-size: 3rem;
       color: #52525b;
+      position: relative;
+      overflow: hidden;
+    }
+    .now-playing .artwork canvas.waveform {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+    }
+    .now-playing .artwork .artwork-placeholder {
+      position: relative;
+      z-index: 0;
     }
     .now-playing .title { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
     .now-playing .artist { color: #71717a; font-size: 0.95rem; }
@@ -264,8 +277,11 @@
         <a href="/radio" style="font-size: 0.8rem; color: #71717a; text-decoration: none;">← 방송국으로</a>
         <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a;">API 주소: <span id="apiOrigin">-</span> <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="margin-left: 6px; padding: 2px 8px;">연결 테스트</button></p>
       </div>
-      <div class="header-actions">
+      <div class="header-actions" style="display: flex; align-items: center; gap: 10px;">
+        <span id="listenerCountLabel" style="font-size: 0.8rem; color: #71717a;"></span>
         <span id="liveBadge" class="live-badge hidden">● LIVE</span>
+        <span id="currentHostLabel" style="font-size: 0.8rem; color: #71717a;"></span>
+        <button type="button" id="btnHandoff" class="btn btn-secondary btn-sm" style="display: none;">인수인계</button>
         <button type="button" id="btnStartBroadcast" class="btn btn-danger">방송 시작</button>
         <button type="button" id="btnEndBroadcast" class="btn btn-secondary" style="display: none;">방송 종료</button>
       </div>
@@ -288,16 +304,23 @@
 
     <main class="main">
       <div class="now-playing">
-        <div class="artwork">🎵</div>
+        <div class="artwork">
+          <canvas id="waveformCanvas" class="waveform" width="200" height="200" style="display: none;"></canvas>
+          <span class="artwork-placeholder">🎵</span>
+        </div>
         <div class="title" id="nowTitle">재생 중인 곡 없음</div>
         <div class="artist" id="nowArtist">큐에서 곡을 선택하고 「지금 재생」을 누르세요</div>
+        <div id="nowLyricsWrap" style="display: none; margin-top: 12px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; width: 100%;">
+          <p class="panel-title" style="margin-bottom: 6px;">가사</p>
+          <div id="nowLyrics" class="lyrics-box" style="max-height: 160px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; white-space: pre-wrap; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;"></div>
+        </div>
         <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
           <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡)</p>
           <audio id="djMonitorAudio" controls style="width: 100%; height: 56px; min-height: 56px;" preload="metadata"></audio>
         </div>
         <div class="mic-setup">
           <p class="panel-title" style="margin-top: 20px; margin-bottom: 4px;">마이크 설정</p>
-          <p class="mic-hint">현재 방송에는 <strong>사이트 음원만</strong> 송출됩니다. 마이크 음성 송출은 추후 지원 예정입니다.</p>
+          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 선택한 마이크는 저장됩니다.</p>
           <div class="mic-controls">
             <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
             <button type="button" id="btnMicConnect" class="btn btn-secondary btn-sm">마이크 연결</button>
@@ -306,7 +329,36 @@
           <div id="micLevelWrap" class="mic-level-wrap" style="display: none;">
             <span class="mic-level-label">입력 레벨</span>
             <div class="mic-level-bar"><div id="micLevelBar" class="mic-level-fill"></div></div>
+            <div class="mic-controls" style="margin-top: 8px;">
+              <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 6px;">
+                <input type="range" id="micGainSlider" min="0" max="200" value="100" style="width: 80px;" />
+                볼륨
+              </label>
+              <button type="button" id="btnMicMute" class="btn btn-secondary btn-sm">뮤트</button>
+            </div>
           </div>
+        </div>
+        <div class="schedule-setup" style="margin-top: 20px;">
+          <p class="panel-title" style="margin-bottom: 8px;">방송 예정 시간</p>
+          <p class="mic-hint">설정 시 청취자에게 "OO 님 방송이 N시부터 N시까지 진행됩니다"로 표시됩니다.</p>
+          <div class="mic-controls" style="margin-bottom: 8px;">
+            <label class="mic-level-label" style="display: flex; align-items: center; gap: 8px;">
+              <span style="min-width: 60px;">시작</span>
+              <input type="time" id="scheduledStartTime" class="mic-select" style="flex: 1;" />
+            </label>
+            <label class="mic-level-label" style="display: flex; align-items: center; gap: 8px;">
+              <span style="min-width: 60px;">종료</span>
+              <input type="time" id="scheduledEndTime" class="mic-select" style="flex: 1;" />
+            </label>
+          </div>
+          <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">예정 시간 저장</button>
+        </div>
+        <div class="recording-setup" style="margin-top: 20px;">
+          <p class="panel-title" style="margin-bottom: 8px;">방송 녹음</p>
+          <p class="mic-hint">지금 송출 중인 곡 + 마이크를 함께 녹음합니다. 중지 시 파일이 다운로드됩니다.</p>
+          <button type="button" id="btnRecordStart" class="btn btn-secondary btn-sm">● 녹음 시작</button>
+          <button type="button" id="btnRecordStop" class="btn btn-secondary btn-sm" style="display: none;">■ 녹음 중지</button>
+          <span id="recordStatus" class="mic-status" style="margin-left: 8px;"></span>
         </div>
       </div>
     </main>
@@ -334,6 +386,15 @@
       </div>
     </aside>
 
+    <div id="handoffModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center;">
+      <div style="background: #27272a; padding: 20px; border-radius: 12px; max-width: 320px; width: 90%;">
+        <p style="margin: 0 0 12px 0; font-weight: 600;">송출 인수인계</p>
+        <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 12px;">송출 권한을 넘길 사람을 선택하세요.</p>
+        <ul id="handoffList" style="list-style: none; padding: 0; margin: 0 0 12px 0; max-height: 200px; overflow-y: auto;"></ul>
+        <button type="button" id="handoffCancel" class="btn btn-secondary" style="width: 100%;">취소</button>
+      </div>
+    </div>
+
     <footer class="foot-note">
       베니방송국 DJ 송출실 · 방송 시작 후 큐에 곡을 넣고 「지금 재생」으로 청취자에게 송출됩니다. (네트워크/결과 없음 시: 이 페이지를 <strong>사이트와 같은 주소</strong>에서 열어주세요. 예: http://localhost:5000/radio-dj-ui-mockup.html)
     </footer>
@@ -352,7 +413,19 @@
   var micStream = null;
   var micAudioContext = null;
   var micLevelAnimationId = null;
+  var micGainNode = null;
+  var micMuted = false;
+  var recordContext = null;
+  var mediaRecorder = null;
+  var recordChunks = [];
+  var recordStartTime = null;
+  var waveformCtx = null;
+  var waveformSource = null;
+  var waveformAnalyser = null;
+  var waveformAnimationId = null;
+  var listenerCount = 0;
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+  var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
 
   function api(path, options) {
     options = options || {};
@@ -437,15 +510,34 @@
     var liveBadge = document.getElementById('liveBadge');
     var btnStart = document.getElementById('btnStartBroadcast');
     var btnEnd = document.getElementById('btnEndBroadcast');
-    if (channel.status === 'live') {
-      liveBadge.classList.remove('hidden');
-      btnStart.style.display = 'none';
-      btnEnd.style.display = 'inline-flex';
+    var canControl = channel.canControlBroadcast !== false;
+    if (canControl) {
+      if (channel.status === 'live') {
+        liveBadge.classList.remove('hidden');
+        btnStart.style.display = 'none';
+        btnEnd.style.display = 'inline-flex';
+      } else {
+        liveBadge.classList.add('hidden');
+        btnStart.style.display = 'inline-flex';
+        btnEnd.style.display = 'none';
+      }
     } else {
       liveBadge.classList.add('hidden');
-      btnStart.style.display = 'inline-flex';
+      btnStart.style.display = 'none';
       btnEnd.style.display = 'none';
     }
+    var listenerEl = document.getElementById('listenerCountLabel');
+    if (listenerEl) listenerEl.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
+    var hostLabel = document.getElementById('currentHostLabel');
+    if (channel.currentHostUsername) {
+      hostLabel.textContent = '현재 송출: ' + channel.currentHostUsername;
+    } else if (channel.currentHostId) {
+      hostLabel.textContent = '현재 송출: (호스트)';
+    } else {
+      hostLabel.textContent = '';
+    }
+    var btnHandoff = document.getElementById('btnHandoff');
+    if (btnHandoff) btnHandoff.style.display = (currentUser && channel.ownerId === currentUser.id) ? 'inline-flex' : 'none';
   }
 
   function renderQueue() {
@@ -469,7 +561,7 @@
         '<span class="num">' + num + '</span>' +
         '<span class="label" title="' + esc(label) + '">' + esc(label) + '</span>' +
         '<span class="actions">' +
-          '<button type="button" class="btn btn-primary btn-sm btn-set-now' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '"' + (isPlaying ? ' disabled' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>' +
+          '<button type="button" class="btn btn-primary btn-sm btn-set-now' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '"' + (isPlaying ? ' disabled' : '') + (channel.canControlBroadcast === false ? ' disabled title="송출 권한이 없습니다"' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>' +
           '<button type="button" class="btn btn-secondary btn-sm btn-remove" data-id="' + item.id + '">삭제</button>' +
         '</span></li>';
     }).join('');
@@ -481,6 +573,87 @@
     });
   }
 
+  function stopWaveform() {
+    if (waveformAnimationId) {
+      cancelAnimationFrame(waveformAnimationId);
+      waveformAnimationId = null;
+    }
+    if (waveformSource) {
+      try { waveformSource.disconnect(); } catch (e) {}
+      waveformSource = null;
+    }
+    waveformAnalyser = null;
+    if (waveformCtx && waveformCtx.state !== 'closed') waveformCtx.close();
+    waveformCtx = null;
+    var canvas = document.getElementById('waveformCanvas');
+    if (canvas) { canvas.style.display = 'none'; }
+  }
+
+  function drawWaveform() {
+    if (!waveformAnalyser) return;
+    var canvas = document.getElementById('waveformCanvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    var w = canvas.width;
+    var h = canvas.height;
+    var bufferLength = waveformAnalyser.frequencyBinCount;
+    var dataArray = new Uint8Array(bufferLength);
+    waveformAnalyser.getByteTimeDomainData(dataArray);
+    ctx.fillStyle = 'rgba(39, 39, 42, 0.4)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#a78bfa';
+    ctx.beginPath();
+    var sliceWidth = w / bufferLength;
+    var x = 0;
+    for (var i = 0; i < bufferLength; i++) {
+      var v = dataArray[i] / 128.0;
+      var y = (v * h) / 2 + h / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      x += sliceWidth;
+    }
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+    waveformAnimationId = requestAnimationFrame(drawWaveform);
+  }
+
+  function startWaveform(audioEl) {
+    if (!audioEl || !audioEl.src) return;
+    stopWaveform();
+    try {
+      waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
+      waveformSource = waveformCtx.createMediaElementSource(audioEl);
+      waveformAnalyser = waveformCtx.createAnalyser();
+      waveformAnalyser.fftSize = 2048;
+      waveformSource.connect(waveformAnalyser);
+      waveformAnalyser.connect(waveformCtx.destination);
+      var canvas = document.getElementById('waveformCanvas');
+      if (canvas) canvas.style.display = 'block';
+      waveformCtx.resume().then(function() { drawWaveform(); }).catch(function() { drawWaveform(); });
+    } catch (e) {}
+  }
+
+  function loadNowPlayingLyrics(musicId) {
+    var wrap = document.getElementById('nowLyricsWrap');
+    var box = document.getElementById('nowLyrics');
+    if (!wrap || !box) return;
+    wrap.style.display = 'none';
+    box.textContent = '';
+    if (!musicId) return;
+    api('/api/music/' + encodeURIComponent(musicId)).then(function(r) {
+      if (!r.ok) return r.json().then(function() {});
+      return r.json();
+    }).then(function(m) {
+      var text = (m && m.lyrics) ? String(m.lyrics).trim() : '';
+      if (text) {
+        box.textContent = text;
+        wrap.style.display = 'block';
+      }
+    }).catch(function() {});
+  }
+
   function updateNowPlayingDisplay() {
     var titleEl = document.getElementById('nowTitle');
     var artistEl = document.getElementById('nowArtist');
@@ -489,6 +662,8 @@
     if (!nowId) {
       titleEl.textContent = '재생 중인 곡 없음';
       artistEl.textContent = '큐에서 곡을 선택하고 「지금 재생」을 누르세요';
+      loadNowPlayingLyrics(null);
+      stopWaveform();
       if (audioEl) {
         audioEl.removeAttribute('src');
         audioEl.removeAttribute('data-current-id');
@@ -510,12 +685,13 @@
         audioEl.setAttribute('data-current-id', String(nowId));
         audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
         audioEl.load();
-        // 사용자 제스처(지금 재생 클릭) 체인 안에서 바로 재생 시도
         var playPromise = audioEl.play();
         if (playPromise && typeof playPromise.then === 'function') playPromise.catch(function() {});
         function onCanPlay() {
           audioEl.removeEventListener('canplay', onCanPlay);
           audioEl.removeEventListener('error', onError);
+          startWaveform(audioEl);
+          loadNowPlayingLyrics(nowId);
           if (audioEl.paused) {
             var p = audioEl.play();
             if (p && typeof p.then === 'function') p.catch(function() {});
@@ -523,11 +699,63 @@
         }
         function onError() {
           audioEl.removeEventListener('canplay', onCanPlay);
+          stopWaveform();
         }
         audioEl.addEventListener('canplay', onCanPlay, { once: true });
         audioEl.addEventListener('error', onError, { once: true });
+      } else {
+        loadNowPlayingLyrics(nowId);
       }
     }
+  }
+
+  function formatTimeForInput(d) {
+    if (!d) return '';
+    var date = d instanceof Date ? d : new Date(d);
+    if (isNaN(date.getTime())) return '';
+    var h = date.getHours();
+    var m = date.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  function applyScheduleToInputs() {
+    var startEl = document.getElementById('scheduledStartTime');
+    var endEl = document.getElementById('scheduledEndTime');
+    if (startEl) startEl.value = formatTimeForInput(channel && channel.scheduledStartAt);
+    if (endEl) endEl.value = formatTimeForInput(channel && channel.scheduledEndAt);
+  }
+
+  function saveSchedule() {
+    if (!channel || !channel.slug) return;
+    var startEl = document.getElementById('scheduledStartTime');
+    var endEl = document.getElementById('scheduledEndTime');
+    var startVal = startEl && startEl.value ? startEl.value : '';
+    var endVal = endEl && endEl.value ? endEl.value : '';
+    var today = new Date();
+    today.setSeconds(0, 0);
+    var scheduledStartAt = null;
+    var scheduledEndAt = null;
+    if (startVal) {
+      var [sh, sm] = startVal.split(':').map(Number);
+      scheduledStartAt = new Date(today);
+      scheduledStartAt.setHours(sh, sm || 0, 0, 0);
+    }
+    if (endVal) {
+      var [eh, em] = endVal.split(':').map(Number);
+      scheduledEndAt = new Date(today);
+      scheduledEndAt.setHours(eh, em || 0, 0, 0);
+    }
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), {
+      method: 'PATCH',
+      body: { scheduledStartAt: scheduledStartAt ? scheduledStartAt.toISOString() : null, scheduledEndAt: scheduledEndAt ? scheduledEndAt.toISOString() : null }
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '저장 실패'); });
+      return r.json();
+    }).then(function(data) {
+      if (data) channel = data;
+      alert('방송 예정 시간이 저장되었습니다.');
+    }).catch(function(e) { alert(e.message || '저장 실패'); });
   }
 
   function fetchChannelAndUpdate() {
@@ -542,6 +770,7 @@
         renderHeader();
         renderQueue();
         updateNowPlayingDisplay();
+        applyScheduleToInputs();
       }
     });
   }
@@ -697,6 +926,11 @@
           if (inp) { inp.disabled = false; inp.placeholder = '메시지 입력...'; }
           if (btn) btn.disabled = false;
         }
+        if (msg.type === 'radio_listeners' && msg.slug === slug && typeof msg.count === 'number') {
+          listenerCount = msg.count;
+          var el = document.getElementById('listenerCountLabel');
+          if (el) el.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
+        }
         if (msg.type === 'radio_chat' && msg.message) {
           var m = msg.message;
           var same = chatMessages.find(function(x) { return x.id === m.id || (String(x.id).indexOf('temp-') === 0 && x.userId === m.userId && x.content === m.content); });
@@ -848,6 +1082,10 @@
         opt.textContent = d.label || ('마이크 ' + (select.options.length));
         select.appendChild(opt);
       });
+      var saved = localStorage.getItem(MIC_STORAGE_KEY);
+      if (saved && Array.prototype.some.call(select.options, function(o) { return o.value === saved; })) {
+        select.value = saved;
+      }
     }).catch(function() {
       select.innerHTML = '<option value="">목록 조회 실패</option>';
     });
@@ -858,6 +1096,7 @@
       cancelAnimationFrame(micLevelAnimationId);
       micLevelAnimationId = null;
     }
+    micGainNode = null;
     if (micAudioContext && micAudioContext.state !== 'closed') micAudioContext.close();
     micAudioContext = null;
     if (micStream) {
@@ -893,18 +1132,25 @@
     }
     navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
       micStream = stream;
+      var deviceId = select && select.value ? select.value : null;
+      if (deviceId) try { localStorage.setItem(MIC_STORAGE_KEY, deviceId); } catch (e) {}
       var statusEl = document.getElementById('micStatus');
       var label = (select && select.options[select.selectedIndex]) ? select.options[select.selectedIndex].textContent : '기본 마이크';
       statusEl.textContent = '연결됨: ' + label;
       document.getElementById('micLevelWrap').style.display = 'block';
       var btn = document.getElementById('btnMicConnect');
       if (btn) { btn.textContent = '마이크 연결 해제'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
+      var gainSlider = document.getElementById('micGainSlider');
+      var muteBtn = document.getElementById('btnMicMute');
       try {
         micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
         var source = micAudioContext.createMediaStreamSource(stream);
+        micGainNode = micAudioContext.createGain();
+        micGainNode.gain.value = gainSlider ? parseInt(gainSlider.value, 10) / 100 : 1;
+        source.connect(micGainNode);
         var analyser = micAudioContext.createAnalyser();
         analyser.fftSize = 256;
-        source.connect(analyser);
+        micGainNode.connect(analyser);
         function tick() {
           if (!micStream) return;
           updateMicLevel(analyser);
@@ -969,6 +1215,131 @@
     loadMicDevices();
     var btnMic = document.getElementById('btnMicConnect');
     if (btnMic) btnMic.addEventListener('click', connectMic);
+    var gainSlider = document.getElementById('micGainSlider');
+    if (gainSlider) gainSlider.addEventListener('input', function() {
+      if (micMuted) return;
+      if (micGainNode) micGainNode.gain.value = parseInt(this.value, 10) / 100;
+    });
+    var muteBtn = document.getElementById('btnMicMute');
+    if (muteBtn) muteBtn.addEventListener('click', function() {
+      micMuted = !micMuted;
+      if (micGainNode) micGainNode.gain.value = micMuted ? 0 : (gainSlider ? parseInt(gainSlider.value, 10) / 100 : 1);
+      this.textContent = micMuted ? '뮤트 해제' : '뮤트';
+    });
+    document.getElementById('btnRecordStart').addEventListener('click', startRecording);
+    document.getElementById('btnRecordStop').addEventListener('click', stopRecording);
+    document.getElementById('btnHandoff').addEventListener('click', openHandoffModal);
+    document.getElementById('handoffCancel').addEventListener('click', closeHandoffModal);
+    document.getElementById('btnSaveSchedule').addEventListener('click', saveSchedule);
+  }
+
+  function startRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') return;
+    var audioEl = document.getElementById('djMonitorAudio');
+    var hasTrack = false;
+    var dest = null;
+    if (waveformCtx && waveformSource && audioEl && audioEl.src) {
+      dest = waveformCtx.createMediaStreamDestination();
+      waveformSource.connect(dest);
+      hasTrack = true;
+      recordContext = waveformCtx;
+    } else if (audioEl && audioEl.src) {
+      recordContext = new (window.AudioContext || window.webkitAudioContext)();
+      dest = recordContext.createMediaStreamDestination();
+      var musicSource = recordContext.createMediaElementSource(audioEl);
+      musicSource.connect(dest);
+      musicSource.connect(recordContext.destination);
+      hasTrack = true;
+    }
+    if (micStream && dest) {
+      var micSource = recordContext.createMediaStreamSource(micStream);
+      micSource.connect(dest);
+      hasTrack = true;
+    } else if (micStream) {
+      if (!recordContext) recordContext = new (window.AudioContext || window.webkitAudioContext)();
+      dest = recordContext.createMediaStreamDestination();
+      var micSource = recordContext.createMediaStreamSource(micStream);
+      micSource.connect(dest);
+      hasTrack = true;
+    }
+    if (!hasTrack || !dest) {
+      if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
+      recordContext = null;
+      alert('녹음할 소스가 없습니다. 곡을 재생 중이거나 마이크를 연결해 주세요.');
+      return;
+    }
+    var streamToRecord = dest.stream;
+    recordChunks = [];
+    var mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    try { mediaRecorder = new MediaRecorder(streamToRecord, { mimeType: mime, audioBitsPerSecond: 128000 }); } catch (e) { mediaRecorder = new MediaRecorder(streamToRecord); }
+    mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) recordChunks.push(e.data); };
+    mediaRecorder.onstop = function() {
+      var blob = new Blob(recordChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'radio-recording-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.webm';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      document.getElementById('recordStatus').textContent = '';
+      document.getElementById('btnRecordStart').style.display = 'inline-flex';
+      document.getElementById('btnRecordStop').style.display = 'none';
+      if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
+      recordContext = null;
+      mediaRecorder = null;
+    };
+    mediaRecorder.start(1000);
+    recordStartTime = Date.now();
+    document.getElementById('recordStatus').textContent = '녹음 중...';
+    document.getElementById('btnRecordStart').style.display = 'none';
+    document.getElementById('btnRecordStop').style.display = 'inline-flex';
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  }
+
+  function openHandoffModal() {
+    if (!channel || !channel.slug || !currentUser || channel.ownerId !== currentUser.id) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var modal = document.getElementById('handoffModal');
+    var list = document.getElementById('handoffList');
+    list.innerHTML = '<li style="padding:8px; color:#71717a;">로딩 중...</li>';
+    modal.style.display = 'flex';
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/staff').then(function(r) {
+      if (!r.ok) return r.json().then(function() { throw new Error('스텝 목록 실패'); });
+      return r.json();
+    }).then(function(staffList) {
+      list.innerHTML = '';
+      function addItem(userId, label, isClear) {
+        var li = document.createElement('li');
+        li.style.cssText = 'padding: 10px 12px; border-bottom: 1px solid #3f3f46; cursor: pointer; font-size: 0.9rem;';
+        li.textContent = label;
+        li.addEventListener('click', function() {
+          var body = isClear ? { currentHostId: null } : { currentHostId: userId };
+          api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(res) {
+            if (!res.ok) return res.json().then(function(d) { throw new Error(d.message || '실패'); });
+            return res.json();
+          }).then(function(data) {
+            if (data) channel = data;
+            closeHandoffModal();
+            fetchChannelAndUpdate();
+            renderHeader();
+          }).catch(function(e) { alert(e.message || '인수인계 실패'); });
+        });
+        list.appendChild(li);
+      }
+      addItem(channel.ownerId, '👑 방장 (본인)', false);
+      staffList.forEach(function(s) {
+        addItem(s.userId, (s.username || s.userId) + ' (스텝)', false);
+      });
+      addItem(null, '— 송출 해제 (방장이 직접 제어)', true);
+    }).catch(function(e) {
+      list.innerHTML = '<li style="padding:8px; color: #ef4444;">목록을 불러올 수 없습니다.</li>';
+    });
+  }
+
+  function closeHandoffModal() {
+    document.getElementById('handoffModal').style.display = 'none';
   }
 
   loadSession();

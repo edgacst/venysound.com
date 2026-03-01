@@ -30,6 +30,7 @@ export default function RadioChannel() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const hasSeekedForTrackRef = useRef<number | null>(null);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -42,6 +43,9 @@ export default function RadioChannel() {
     nowPlayingMusicId: number | null;
     nowPlayingStartedAt: string | null;
     canManage?: boolean;
+    ownerDisplayName?: string;
+    scheduledStartAt?: string | null;
+    scheduledEndAt?: string | null;
   }>({
     queryKey: ["/api/radio/channels", slug],
     queryFn: async () => {
@@ -59,7 +63,17 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const { listenerCount } = useRadioRoom(slug);
 
-  const { data: nowPlayingMusic } = useQuery<{ id: number; title?: string; artist?: string; filename?: string | null }>({
+  function formatScheduleTime(iso: string | null | undefined): string {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const h = d.getHours();
+    const m = d.getMinutes();
+    if (m === 0) return `${h}${t("radio.hour", "시")}`;
+    return `${h}${t("radio.hour", "시")} ${m}${t("radio.minute", "분")}`;
+  }
+
+  const { data: nowPlayingMusic } = useQuery<{ id: number; title?: string; artist?: string; filename?: string | null; lyrics?: string | null }>({
     queryKey: ["/api/music", nowPlayingId],
     queryFn: async () => {
       const res = await fetch(`/api/music/${nowPlayingId}`);
@@ -137,7 +151,7 @@ export default function RadioChannel() {
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
 
-  type ChatMsg = { id: number; userId: string; username?: string | null; content: string; createdAt: string };
+  type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" };
   const { data: chatList } = useQuery<ChatMsg[]>({
     queryKey: ["/api/radio/channels", slug, "chat"],
     queryFn: async () => {
@@ -161,11 +175,26 @@ export default function RadioChannel() {
   useEffect(() => {
     if (!slug) return;
     const unsub = subscribeRef.current((msg) => {
+      if (msg.type === "radio_user_joined" && msg.userId) {
+        const userId = String(msg.userId);
+        const username = msg.username != null ? String(msg.username) : undefined;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "join-" + userId + "-" + Date.now(),
+            userId,
+            username: username ?? null,
+            type: "system_join",
+            createdAt: new Date().toISOString(),
+          } as ChatMsg,
+        ]);
+        return;
+      }
       if (msg.type !== "radio_chat" || !msg.message) return;
       const incoming = msg.message as ChatMsg;
       setMessages((prev) => {
         const withoutOptimistic = prev.filter(
-          (m) => !(m.id < 0 && m.userId === incoming.userId && m.content === incoming.content)
+          (m) => !(typeof m.id === "number" && m.id < 0 && m.userId === incoming.userId && m.content === incoming.content)
         );
         if (withoutOptimistic.some((m) => m.id === incoming.id)) return prev;
         return [...withoutOptimistic, incoming];
@@ -372,10 +401,10 @@ export default function RadioChannel() {
           </Link>
 
           <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr_280px] gap-4 lg:gap-6">
-            {/* 1번: 채팅 (왼쪽) */}
-            <aside className="order-2 lg:order-1">
-              <Card className="border-white/5 bg-card/50 overflow-hidden h-full flex flex-col">
-                <CardContent className="p-0 flex flex-col flex-1 min-h-0">
+            {/* 1번: 채팅 (왼쪽) - 입력창 하단 고정, 메시지만 스크롤 */}
+            <aside className="order-2 lg:order-1 flex flex-col min-h-0 max-h-[85vh] lg:max-h-[75vh]">
+              <Card className="border-white/5 bg-card/50 overflow-hidden flex flex-col flex-1 min-h-0">
+                <CardContent className="p-0 flex flex-col flex-1 min-h-0 min-w-0">
                   <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 shrink-0">
                     <MessageCircle size={18} className="text-muted-foreground" />
                     <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} (단체)</span>
@@ -384,19 +413,30 @@ export default function RadioChannel() {
                     )}
                   </div>
                   <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
-                  <div ref={chatContainerRef} className="min-h-[180px] flex-1 overflow-y-auto p-3 space-y-2">
+                  <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     {messages.length === 0 ? (
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
                     ) : (
-                      messages.map((m) => (
-                        <div key={m.id} className="text-sm">
-                          <span className="font-medium text-muted-foreground mr-2">{m.username ?? m.userId.slice(0, 8)}</span>
-                          <span className="text-foreground">{m.content}</span>
-                        </div>
-                      ))
+                      messages.map((m) => {
+                        const isJoin = (m as { type?: string }).type === "system_join";
+                        const displayName = m.username?.trim() || (m.userId ? t("radio.listenerLabel", "방청자") + " " + String(m.userId).slice(0, 8) : "?");
+                        if (isJoin) {
+                          return (
+                            <p key={"join-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1">
+                              {displayName}{t("radio.joinedChat", "님이 입장했습니다.")}
+                            </p>
+                          );
+                        }
+                        return (
+                          <div key={m.id} className="text-sm">
+                            <span className="font-medium text-muted-foreground mr-2">{displayName}</span>
+                            <span className="text-foreground">{m.content}</span>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
-                  <div className="p-3 border-t border-white/10 flex flex-col gap-2 shrink-0">
+                  <div className="p-3 border-t border-white/10 flex flex-col gap-2 shrink-0 bg-card">
                     {(!user || !wsReady || !wsAuthenticated) && (
                       <p className="text-xs text-muted-foreground">
                         {!user
@@ -515,6 +555,16 @@ export default function RadioChannel() {
                 {channel.description && (
                   <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
                 )}
+                {channel.scheduledStartAt && channel.scheduledEndAt && (
+                  <p className="text-sm text-muted-foreground mb-4 rounded-md bg-muted/30 px-3 py-2">
+                    <strong className="text-foreground">{channel.ownerDisplayName ?? "DJ"}</strong>
+                    {t("radio.schedulePrefix", " 님 방송이 ")}
+                    {formatScheduleTime(channel.scheduledStartAt)}
+                    {t("radio.scheduleTo", "부터 ")}
+                    {formatScheduleTime(channel.scheduledEndAt)}
+                    {t("radio.scheduleSuffix", "까지 진행됩니다.")}
+                  </p>
+                )}
                 {!isOwner && (
                   <Dialog open={tipOpen} onOpenChange={setTipOpen}>
                     <DialogTrigger asChild>
@@ -574,11 +624,29 @@ export default function RadioChannel() {
                       controls
                       className="w-full h-10"
                       autoPlay
+                      onCanPlay={() => {
+                        if (isOwner || !channel?.nowPlayingStartedAt || !audioRef.current) return;
+                        if (hasSeekedForTrackRef.current === nowPlayingId) return;
+                        const startedAt = new Date(channel.nowPlayingStartedAt).getTime();
+                        const seekSec = (Date.now() - startedAt) / 1000;
+                        if (seekSec > 0) {
+                          audioRef.current.currentTime = Math.max(0, seekSec);
+                          hasSeekedForTrackRef.current = nowPlayingId;
+                        }
+                      }}
                       onEnded={() => {
                         if (isLive && slug) refetchChannel();
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
+                    {nowPlayingMusic?.lyrics?.trim() && (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>
+                        <div className="max-h-40 overflow-y-auto rounded-md bg-background/50 p-3 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                          {nowPlayingMusic.lyrics}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 text-muted-foreground">

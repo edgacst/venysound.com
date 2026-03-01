@@ -128,6 +128,15 @@ export async function registerRoutes(
           radioChannelRooms.get(slug)!.add(ws);
           wsRadioSlugs.get(ws)!.add(slug);
           broadcastRadioListeners(slug);
+          if (wsUserId) {
+            try {
+              const user = await storage.getUserById(wsUserId);
+              const username = (user?.username ?? user?.firstName ?? null) as string | null;
+              broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username: username ?? undefined });
+            } catch (e) {
+              console.warn("[ws] radio_user_joined broadcast failed", e);
+            }
+          }
         }
         if (msg.type === "radio_leave" && typeof msg.slug === "string" && msg.slug) {
           const slug = String(msg.slug).trim().toLowerCase();
@@ -2550,12 +2559,17 @@ export async function registerRoutes(
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const out: any = { ...channel };
+      const owner = await storage.getUserById(channel.ownerId);
+      out.ownerDisplayName = owner?.firstName || owner?.username || channel.ownerId?.slice(0, 8) || "DJ";
       if (req.isAuthenticated() && (req as any).user?.claims?.sub) {
         const uid = (req as any).user.claims.sub;
-        if (channel.ownerId === uid) out.canManage = true;
-        else out.canManage = await storage.isRadioChannelStaff(channel.id, uid);
+        const isOwner = channel.ownerId === uid;
+        const isCurrentHost = (channel as any).currentHostId === uid;
+        out.canManage = isOwner || isCurrentHost || (await storage.isRadioChannelStaff(channel.id, uid));
+        out.canControlBroadcast = isOwner || isCurrentHost;
       } else {
         out.canManage = false;
+        out.canControlBroadcast = false;
       }
       res.json(out);
     } catch (e) {
@@ -2593,28 +2607,52 @@ export async function registerRoutes(
 
   app.patch("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
     try {
-      // @ts-ignore
-      const userId = req.user.claims.sub;
+      const userId = (req as any).user?.claims?.sub;
       const slug = String(req.params.slug || "").trim().toLowerCase();
       if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
-      if (channel.ownerId !== userId) return res.status(403).json({ message: "채널 소유자만 수정할 수 있습니다." });
-      const { status, nowPlayingMusicId, nowPlayingStartedAt } = req.body || {};
-      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null } = {};
-      if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) updates.status = String(status);
-      if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
-      if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
-      if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
+      const isOwner = channel.ownerId === userId;
+      const isCurrentHost = (channel as any).currentHostId === userId;
+      const canManage = isOwner || isCurrentHost;
+
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt } = req.body || {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null } = {};
+
+      if (bodyCurrentHostId !== undefined) {
+        if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
+        const newHostId = bodyCurrentHostId === null || bodyCurrentHostId === "" ? null : String(bodyCurrentHostId);
+        if (newHostId) {
+          const isStaff = await storage.isRadioChannelStaff(channel.id, newHostId);
+          if (newHostId !== channel.ownerId && !isStaff) return res.status(400).json({ message: "송출을 넘길 수 있는 사람은 방장 또는 스텝만 가능합니다." });
+        }
+        updates.currentHostId = newHostId;
+      }
+
+      if (!canManage && Object.keys(updates).length === 0) return res.status(403).json({ message: "채널 소유자 또는 현재 송출 호스트만 수정할 수 있습니다." });
+      if (canManage) {
+        if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) {
+          updates.status = String(status);
+          if (String(status) === "ended") updates.currentHostId = null;
+        }
+        if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
+        if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
+        if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
+      }
+      if (isOwner) {
+        if (bodyScheduledStartAt !== undefined) updates.scheduledStartAt = bodyScheduledStartAt === null || bodyScheduledStartAt === "" ? null : new Date(bodyScheduledStartAt);
+        if (bodyScheduledEndAt !== undefined) updates.scheduledEndAt = bodyScheduledEndAt === null || bodyScheduledEndAt === "" ? null : new Date(bodyScheduledEndAt);
+      }
+
       if (Object.keys(updates).length > 0) {
-        await storage.updateRadioChannel(channel.id, userId, updates);
+        await storage.updateRadioChannel(channel.id, updates);
       }
       const updated = await storage.getRadioChannelBySlug(slug);
       if (updates.nowPlayingMusicId !== undefined && updated) {
         broadcastToRadioChannel(slug, {
           type: "radio_now_playing",
-          musicId: updated.nowPlayingMusicId ?? null,
-          startedAt: updated.nowPlayingStartedAt ? (updated.nowPlayingStartedAt as Date).toISOString() : null,
+          musicId: updated!.nowPlayingMusicId ?? null,
+          startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
         });
       }
       res.json(updated);

@@ -14,6 +14,8 @@
     "db:guide-videos": "tsx script/run-guide-videos-table.ts",
     "db:analytics": "tsx script/run-analytics-table.ts",
     "db:curated": "tsx script/run-curated-playlists-table.ts",
+    "db:radio-current-host": "tsx script/run-radio-current-host.ts",
+    "db:radio-schedule": "tsx script/run-radio-schedule.ts",
     "db:push-notify": "tsx script/run-push-notify-prefs.ts",
     "db:deploy": "tsx script/run-all-deploy-migrations.ts",
     "download-files": "tsx script/download-from-production.ts",

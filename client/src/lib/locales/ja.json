@@ -106,6 +106,8 @@
     "chatPlaceholder": "メッセージを入力...",
     "chatSend": "送信",
     "noChatYet": "まだメッセージはありません。",
+    "listenerLabel": "リスナー",
+    "joinedChat": "さんが入室しました。",
     "tipToDj": "DJを支援"
   },
   "explore": {
