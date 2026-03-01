@@ -50,7 +50,7 @@ export default function RadioChannel() {
       return res.json();
     },
     enabled: !!slug,
-    refetchInterval: (data) => (data?.status === "live" ? 5000 : false),
+    refetchInterval: (data) => (data?.status === "live" ? 2000 : false),
   });
 
   const isOwner = user?.id === channel?.ownerId;
@@ -59,7 +59,7 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const { listenerCount } = useRadioRoom(slug);
 
-  const { data: nowPlayingMusic } = useQuery<{ id: number; filename?: string | null }>({
+  const { data: nowPlayingMusic } = useQuery<{ id: number; title?: string; artist?: string; filename?: string | null }>({
     queryKey: ["/api/music", nowPlayingId],
     queryFn: async () => {
       const res = await fetch(`/api/music/${nowPlayingId}`);
@@ -74,39 +74,8 @@ export default function RadioChannel() {
       : nowPlayingMusic?.filename?.startsWith("/objects/")
         ? nowPlayingMusic.filename
         : `/api/music/${nowPlayingId}/stream`;
-  const [audioBlobUrl, setAudioBlobUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!rawAudioUrl) {
-      setAudioBlobUrl(null);
-      return;
-    }
-    let cancelled = false;
-    let blobUrl: string | null = null;
-    fetch(rawAudioUrl, { credentials: "include" })
-      .then((res) => {
-        if (!res.ok) throw new Error(res.status === 404 ? "파일 없음" : `오류 ${res.status}`);
-        const ct = res.headers.get("content-type") || "";
-        if (!ct.startsWith("audio/") && !ct.includes("octet-stream")) return res.json().then(() => { throw new Error("음원이 아님"); });
-        return res.blob();
-      })
-      .then((blob) => {
-        if (!cancelled) {
-          blobUrl = URL.createObjectURL(blob);
-          setAudioBlobUrl(blobUrl);
-        } else if (blobUrl) URL.revokeObjectURL(blobUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setAudioBlobUrl(null);
-      });
-    return () => {
-      cancelled = true;
-      setAudioBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-    };
-  }, [rawAudioUrl]);
-  const audioStreamUrl = audioBlobUrl ?? rawAudioUrl;
+  // 스트림 URL로 바로 재생(버퍼만 채우면 시작). 전체 파일 다운로드 후 재생하면 30초 이상 지연됨
+  const audioStreamUrl = rawAudioUrl;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -394,15 +363,124 @@ export default function RadioChannel() {
     <PageTransition>
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
-        <div className="container px-4 py-10 max-w-2xl mx-auto">
-          <Link href="/radio">
-            <Button variant="ghost" size="sm" className="mb-4 gap-2 text-muted-foreground">
+        <div className="container px-4 py-10 max-w-6xl mx-auto">
+          <Link href="/radio" className="block mb-4">
+            <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
               <ArrowLeft size={16} />
-              {t("radio.backToRadio", "?????")}
+              {t("radio.backToRadio", "방송국으로")}
             </Button>
           </Link>
+
+          <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr_280px] gap-4 lg:gap-6">
+            {/* 1번: 채팅 (왼쪽) */}
+            <aside className="order-2 lg:order-1">
+              <Card className="border-white/5 bg-card/50 overflow-hidden h-full flex flex-col">
+                <CardContent className="p-0 flex flex-col flex-1 min-h-0">
+                  <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 shrink-0">
+                    <MessageCircle size={18} className="text-muted-foreground" />
+                    <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} (단체)</span>
+                    {typeof listenerCount === "number" && (
+                      <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
+                    )}
+                  </div>
+                  <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+                  <div ref={chatContainerRef} className="min-h-[180px] flex-1 overflow-y-auto p-3 space-y-2">
+                    {messages.length === 0 ? (
+                      <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
+                    ) : (
+                      messages.map((m) => (
+                        <div key={m.id} className="text-sm">
+                          <span className="font-medium text-muted-foreground mr-2">{m.username ?? m.userId.slice(0, 8)}</span>
+                          <span className="text-foreground">{m.content}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="p-3 border-t border-white/10 flex flex-col gap-2 shrink-0">
+                    {(!user || !wsReady || !wsAuthenticated) && (
+                      <p className="text-xs text-muted-foreground">
+                        {!user
+                          ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.")
+                          : !wsReady
+                            ? t("radio.chatConnecting", "연결 중...")
+                            : t("radio.chatAuthWaiting", "채팅 연결 확인 중...")}
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder={t("radio.chatPlaceholder", "메시지를 입력하세요...")}
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            const c = chatInput.trim();
+                            if (c && user && wsReady && wsAuthenticated) {
+                              setMessages((prev) => [
+                                ...prev,
+                                {
+                                  id: -Date.now(),
+                                  userId: user.id,
+                                  username: user.username ?? user.firstName ?? null,
+                                  content: c,
+                                  createdAt: new Date().toISOString(),
+                                },
+                              ]);
+                              setChatInput("");
+                              wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
+                            }
+                          }
+                        }}
+                        disabled={!user || !wsReady || !wsAuthenticated}
+                        aria-label={!user ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.") : !wsReady ? t("radio.chatConnecting", "연결 중...") : !wsAuthenticated ? t("radio.chatAuthWaiting", "채팅 연결 확인 중...") : undefined}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const c = chatInput.trim();
+                          if (c && user && wsReady && wsAuthenticated) {
+                            setMessages((prev) => [
+                              ...prev,
+                              {
+                                id: -Date.now(),
+                                userId: user.id,
+                                username: user.username ?? user.firstName ?? null,
+                                content: c,
+                                createdAt: new Date().toISOString(),
+                              },
+                            ]);
+                            setChatInput("");
+                            wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
+                          }
+                        }}
+                        disabled={!user || !wsReady || !wsAuthenticated || !chatInput.trim()}
+                      >
+                        {t("radio.chatSend", "전송")}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </aside>
+
+            {/* 가운데: 메인 (방송 정보 + 재생) */}
+            <main className="order-1 lg:order-2 min-w-0">
           <Card className="border-white/5 bg-card/50 overflow-hidden">
             <CardContent className="p-0">
+              {/* 1번: 현재 송출 중인 음원 정보 */}
+              {isLive && nowPlayingId != null && nowPlayingMusic && (
+                <div className="px-4 py-3 bg-muted/20 border-b border-white/10 flex items-center gap-3">
+                  <Music2 size={20} className="text-primary shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {nowPlayingMusic.title ?? t("radio.nowPlaying", "지금 재생 중")}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {nowPlayingMusic.artist ?? ""}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="aspect-video bg-muted/30 flex items-center justify-center relative overflow-hidden">
                 {isLive && nowPlayingId != null && audioStreamUrl && !isOwner ? (
                   <canvas
@@ -575,150 +653,67 @@ export default function RadioChannel() {
               </CardContent>
             </Card>
           )}
+            </main>
 
-          <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
-            <CardContent className="p-0">
-              <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
-                <MessageCircle size={18} className="text-muted-foreground" />
-                <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} (단체)</span>
-                {typeof listenerCount === "number" && (
-                  <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
-                )}
-              </div>
-              <p className="text-muted-foreground text-xs px-4 pt-1">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
-              <div ref={chatContainerRef} className="min-h-[200px] max-h-[280px] overflow-y-auto p-3 space-y-2">
-                {messages.length === 0 ? (
-                  <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
-                ) : (
-                  messages.map((m) => (
-                    <div key={m.id} className="text-sm">
-                      <span className="font-medium text-muted-foreground mr-2">{m.username ?? m.userId.slice(0, 8)}</span>
-                      <span className="text-foreground">{m.content}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="p-3 border-t border-white/10 flex flex-col gap-2">
-                {(!user || !wsReady || !wsAuthenticated) && (
-                  <p className="text-xs text-muted-foreground">
-                    {!user
-                      ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.")
-                      : !wsReady
-                        ? t("radio.chatConnecting", "연결 중...")
-                        : t("radio.chatAuthWaiting", "채팅 연결 확인 중...")}
-                  </p>
-                )}
-                <div className="flex gap-2">
-                  <Input
-                    placeholder={t("radio.chatPlaceholder", "메시지를 입력하세요...")}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        const c = chatInput.trim();
-                        if (c && user && wsReady && wsAuthenticated) {
-                          setMessages((prev) => [
-                            ...prev,
-                            {
-                              id: -Date.now(),
-                              userId: user.id,
-                              username: user.username ?? user.firstName ?? null,
-                              content: c,
-                              createdAt: new Date().toISOString(),
-                            },
-                          ]);
-                          setChatInput("");
-                          wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
-                        }
-                      }
-                    }}
-                    disabled={!user || !wsReady || !wsAuthenticated}
-                    aria-label={!user ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.") : !wsReady ? t("radio.chatConnecting", "연결 중...") : !wsAuthenticated ? t("radio.chatAuthWaiting", "채팅 연결 확인 중...") : undefined}
-                  />
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      const c = chatInput.trim();
-                      if (c && user && wsReady && wsAuthenticated) {
-                        setMessages((prev) => [
-                          ...prev,
-                          {
-                            id: -Date.now(),
-                            userId: user.id,
-                            username: user.username ?? user.firstName ?? null,
-                            content: c,
-                            createdAt: new Date().toISOString(),
-                          },
-                        ]);
-                        setChatInput("");
-                        wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
-                      }
-                    }}
-                    disabled={!user || !wsReady || !wsAuthenticated || !chatInput.trim()}
-                  >
-                    {t("radio.chatSend", "전송")}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
-            <CardContent className="p-0">
-              <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
-                <Music2 size={18} className="text-muted-foreground" />
-                <span className="font-medium text-sm">{t("radio.songRequest", "신청곡")}</span>
-              </div>
-              <p className="text-muted-foreground text-xs px-4 pt-2">{t("radio.songRequestHint", "곡을 검색해 선택한 뒤 신청하면 DJ가 확인합니다.")}</p>
-              <div className="p-4 space-y-3">
-                {!user ? (
-                  <p className="text-sm text-muted-foreground">{t("radio.loginToRequest", "로그인 후 신청할 수 있습니다.")}</p>
-                ) : (
-                  <>
-                    <Input
-                      placeholder={t("radio.searchSongToRequest", "곡 검색...")}
-                      value={requestSearch}
-                      onChange={(e) => setRequestSearch(e.target.value)}
-                      className="bg-muted/30"
-                    />
-                    {requestResults.length > 0 && (
-                      <div className="max-h-40 overflow-y-auto rounded-md border border-white/10 divide-y divide-white/5">
-                        {requestResults.map((m) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 flex justify-between items-center gap-2"
-                            onClick={() => setSelectedRequest({ id: m.id, title: m.title, artist: m.artist })}
-                          >
-                            <span className="truncate">{m.title} – {m.artist}</span>
-                            {selectedRequest?.id === m.id && <span className="text-primary text-xs">{t("radio.selected", "선택됨")}</span>}
-                          </button>
-                        ))}
-                      </div>
+            {/* 2번: 신청곡 (오른쪽) */}
+            <aside className="order-3">
+              <Card className="border-white/5 bg-card/50 overflow-hidden h-full">
+                <CardContent className="p-0">
+                  <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
+                    <Music2 size={18} className="text-muted-foreground" />
+                    <span className="font-medium text-sm">{t("radio.songRequest", "신청곡")}</span>
+                  </div>
+                  <p className="text-muted-foreground text-xs px-4 pt-2">{t("radio.songRequestHint", "곡을 검색해 선택한 뒤 신청하면 DJ가 확인합니다.")}</p>
+                  <div className="p-4 space-y-3">
+                    {!user ? (
+                      <p className="text-sm text-muted-foreground">{t("radio.loginToRequest", "로그인 후 신청할 수 있습니다.")}</p>
+                    ) : (
+                      <>
+                        <Input
+                          placeholder={t("radio.searchSongToRequest", "곡 검색...")}
+                          value={requestSearch}
+                          onChange={(e) => setRequestSearch(e.target.value)}
+                          className="bg-muted/30"
+                        />
+                        {requestResults.length > 0 && (
+                          <div className="max-h-40 overflow-y-auto rounded-md border border-white/10 divide-y divide-white/5">
+                            {requestResults.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 flex justify-between items-center gap-2"
+                                onClick={() => setSelectedRequest({ id: m.id, title: m.title, artist: m.artist })}
+                              >
+                                <span className="truncate">{m.title} – {m.artist}</span>
+                                {selectedRequest?.id === m.id && <span className="text-primary text-xs">{t("radio.selected", "선택됨")}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {selectedRequest && (
+                          <div className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
+                            <span className="truncate">{selectedRequest.title} – {selectedRequest.artist}</span>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <Button variant="ghost" size="sm" onClick={() => setSelectedRequest(null)}>
+                                {t("common.cancel", "취소")}
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => requestMutation.mutate(selectedRequest)}
+                                disabled={requestMutation.isPending}
+                              >
+                                {requestMutation.isPending ? t("radio.requesting", "신청 중...") : t("radio.submitRequest", "신청하기")}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
-                    {selectedRequest && (
-                      <div className="flex items-center justify-between gap-2 rounded-md bg-muted/30 px-3 py-2 text-sm">
-                        <span className="truncate">{selectedRequest.title} – {selectedRequest.artist}</span>
-                        <div className="flex gap-2 flex-shrink-0">
-                          <Button variant="ghost" size="sm" onClick={() => setSelectedRequest(null)}>
-                            {t("common.cancel", "취소")}
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={() => requestMutation.mutate(selectedRequest)}
-                            disabled={requestMutation.isPending}
-                          >
-                            {requestMutation.isPending ? t("radio.requesting", "신청 중...") : t("radio.submitRequest", "신청하기")}
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  </div>
+                </CardContent>
+              </Card>
+            </aside>
+          </div>
         </div>
         <Footer />
       </div>

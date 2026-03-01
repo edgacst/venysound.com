@@ -660,20 +660,38 @@
     });
   }
 
+  var wsReconnectTimeout = null;
+  var wsAuthRetryCount = 0;
+  var wsAuthRetryTimer = null;
+
   function connectWs() {
     if (!channel || !channel.slug || !currentUser || !currentUser.id) return;
+    if (wsReconnectTimeout) { clearTimeout(wsReconnectTimeout); wsReconnectTimeout = null; }
+    if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
     var slug = String(channel.slug).trim().toLowerCase();
     var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
     ws.onopen = function() {
+      wsAuthenticated = false;
       ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
       ws.send(JSON.stringify({ type: 'radio_join', slug: slug }));
+      wsAuthRetryCount = 0;
+      wsAuthRetryTimer = setInterval(function() {
+        if (!ws || ws.readyState !== WebSocket.OPEN || wsAuthenticated) {
+          if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+          return;
+        }
+        wsAuthRetryCount++;
+        if (wsAuthRetryCount <= 5) ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
+        else if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+      }, 2000);
     };
     ws.onmessage = function(ev) {
       try {
         var msg = JSON.parse(ev.data);
         if (msg.type === 'auth_ack') {
           wsAuthenticated = true;
+          if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
           var inp = document.getElementById('chatInput');
           var btn = document.getElementById('chatSend');
           if (inp) { inp.disabled = false; inp.placeholder = '메시지 입력...'; }
@@ -691,7 +709,19 @@
         }
       } catch (e) {}
     };
-    ws.onclose = function() { wsAuthenticated = false; };
+    ws.onclose = function() {
+      wsAuthenticated = false;
+      ws = null;
+      var inp = document.getElementById('chatInput');
+      var btn = document.getElementById('chatSend');
+      if (inp) { inp.disabled = true; inp.placeholder = '재연결 중...'; }
+      if (btn) btn.disabled = true;
+      if (wsReconnectTimeout) return;
+      wsReconnectTimeout = setTimeout(function() {
+        wsReconnectTimeout = null;
+        connectWs();
+      }, 2000);
+    };
   }
 
   function loadChat() {
