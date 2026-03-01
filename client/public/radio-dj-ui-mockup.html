@@ -277,7 +277,7 @@
         <a href="/radio" style="font-size: 0.8rem; color: #71717a; text-decoration: none;">← 방송국으로</a>
         <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a;">API 주소: <span id="apiOrigin">-</span> <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="margin-left: 6px; padding: 2px 8px;">연결 테스트</button></p>
       </div>
-      <div class="header-actions" style="display: flex; align-items: center; gap: 10px;">
+      <div class="header-actions" style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
         <span id="listenerCountLabel" style="font-size: 0.8rem; color: #71717a;"></span>
         <span id="liveBadge" class="live-badge hidden">● LIVE</span>
         <span id="currentHostLabel" style="font-size: 0.8rem; color: #71717a;"></span>
@@ -338,17 +338,17 @@
             </div>
           </div>
         </div>
-        <div class="schedule-setup" style="margin-top: 20px;">
+        <div class="schedule-setup" style="margin-top: 20px; text-align: center;">
           <p class="panel-title" style="margin-bottom: 8px;">방송 예정 시간</p>
           <p class="mic-hint">설정 시 청취자에게 "OO 님 방송이 N시부터 N시까지 진행됩니다"로 표시됩니다.</p>
-          <div class="mic-controls" style="margin-bottom: 8px;">
-            <label class="mic-level-label" style="display: flex; align-items: center; gap: 8px;">
-              <span style="min-width: 60px;">시작</span>
-              <input type="time" id="scheduledStartTime" class="mic-select" style="flex: 1;" />
+          <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap;">
+            <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
+              <span style="min-width: 44px;">시작</span>
+              <input type="time" id="scheduledStartTime" class="mic-select" style="width: 120px;" />
             </label>
-            <label class="mic-level-label" style="display: flex; align-items: center; gap: 8px;">
-              <span style="min-width: 60px;">종료</span>
-              <input type="time" id="scheduledEndTime" class="mic-select" style="flex: 1;" />
+            <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
+              <span style="min-width: 44px;">종료</span>
+              <input type="time" id="scheduledEndTime" class="mic-select" style="width: 120px;" />
             </label>
           </div>
           <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">예정 시간 저장</button>
@@ -424,6 +424,7 @@
   var waveformAnalyser = null;
   var waveformAnimationId = null;
   var listenerCount = 0;
+  var scheduleInputsApplied = false;
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
   var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
 
@@ -753,7 +754,10 @@
       if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '저장 실패'); });
       return r.json();
     }).then(function(data) {
-      if (data) channel = data;
+      if (data) {
+        channel = data;
+        applyScheduleToInputs();
+      }
       alert('방송 예정 시간이 저장되었습니다.');
     }).catch(function(e) { alert(e.message || '저장 실패'); });
   }
@@ -770,7 +774,10 @@
         renderHeader();
         renderQueue();
         updateNowPlayingDisplay();
-        applyScheduleToInputs();
+        if (!scheduleInputsApplied) {
+          applyScheduleToInputs();
+          scheduleInputsApplied = true;
+        }
       }
     });
   }
