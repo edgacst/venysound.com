@@ -341,7 +341,7 @@
                 <input type="range" id="micGainSlider" min="0" max="200" value="100" style="width: 80px;" />
                 볼륨
               </label>
-              <button type="button" id="btnMicMute" class="btn btn-secondary btn-sm">멘트중단</button>
+              <button type="button" id="btnMicMute" class="btn btn-secondary btn-sm">멘트</button>
             </div>
           </div>
         </div>
@@ -647,7 +647,7 @@
       }
       waveformSource = waveformCtx.createMediaElementSource(audioEl);
       musicGainNode = waveformCtx.createGain();
-      musicGainNode.gain.value = mentMode ? 0.5 : 1;
+      musicGainNode.gain.value = mentMode ? 0.3 : 1;
       waveformAnalyser = waveformCtx.createAnalyser();
       waveformAnalyser.fftSize = 2048;
       waveformSource.connect(musicGainNode);
@@ -985,6 +985,17 @@
           });
           renderChat();
         }
+        if (msg.type === 'radio_user_left' && msg.userId) {
+          chatMessages.push({
+            id: 'left-' + String(msg.userId) + '-' + Date.now(),
+            userId: String(msg.userId),
+            username: msg.username != null ? String(msg.username) : null,
+            type: 'system_leave',
+            content: '',
+            createdAt: new Date().toISOString()
+          });
+          renderChat();
+        }
         if (msg.type === 'radio_chat' && msg.message) {
           var m = msg.message;
           var same = chatMessages.find(function(x) { return x.id === m.id || (String(x.id).indexOf('temp-') === 0 && x.userId === m.userId && x.content === m.content); });
@@ -1045,10 +1056,13 @@
         if (m.type === 'system_join') {
           return '<li class="chat-join"><span class="name">' + esc(name) + '</span>님이 입장했습니다.</li>';
         }
+        if (m.type === 'system_leave') {
+          return '<li class="chat-join chat-leave"><span class="name">' + esc(name) + '</span>님이 퇴장했습니다.</li>';
+        }
         return '<li><span class="name">' + esc(name) + '</span>' + esc(m.content) + '</li>';
       }).join('');
-      var panel = ul.closest('.panel');
-      if (panel) panel.scrollTop = panel.scrollHeight;
+      var wrap = ul.closest('.chat-list-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
     }
   }
 
@@ -1197,6 +1211,9 @@
       document.getElementById('micLevelWrap').style.display = 'block';
       var btn = document.getElementById('btnMicConnect');
       if (btn) { btn.textContent = '마이크 연결 해제'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
+      var muteBtn = document.getElementById('btnMicMute');
+      if (muteBtn) { muteBtn.textContent = '멘트'; }
+      micMuted = true;
       var gainSlider = document.getElementById('micGainSlider');
       var muteBtn = document.getElementById('btnMicMute');
       try {
@@ -1285,7 +1302,7 @@
         mentMode = true;
         micMuted = false;
         if (micGainNode) micGainNode.gain.value = Math.min(2, gainVal * 1.5);
-        if (musicGainNode) musicGainNode.gain.value = 0.5;
+        if (musicGainNode) musicGainNode.gain.value = 0.3;
         this.textContent = '멘트중단';
       } else {
         mentMode = false;

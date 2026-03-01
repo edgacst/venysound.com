@@ -61,7 +61,8 @@ export default function RadioChannel() {
   const canManage = !!channel?.canManage;
   const isLive = channel?.status === "live";
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
-  const { listenerCount } = useRadioRoom(slug);
+  const displayName = user?.username ?? user?.firstName ?? null;
+  const { listenerCount } = useRadioRoom(slug, displayName);
 
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -151,7 +152,7 @@ export default function RadioChannel() {
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
 
-  type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" };
+  type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" | "system_leave" };
   const { data: chatList } = useQuery<ChatMsg[]>({
     queryKey: ["/api/radio/channels", slug, "chat"],
     queryFn: async () => {
@@ -162,6 +163,10 @@ export default function RadioChannel() {
     enabled: !!slug,
   });
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [broadcastEndedMessage, setBroadcastEndedMessage] = useState<string | null>(null);
+  useEffect(() => {
+    setBroadcastEndedMessage(null);
+  }, [slug]);
   const subscribeRef = useRef(subscribe);
   subscribeRef.current = subscribe;
   useEffect(() => {
@@ -188,6 +193,31 @@ export default function RadioChannel() {
             createdAt: new Date().toISOString(),
           } as ChatMsg,
         ]);
+        return;
+      }
+      if (msg.type === "radio_user_left" && msg.userId) {
+        const userId = String(msg.userId);
+        const username = msg.username != null ? String(msg.username) : undefined;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "left-" + userId + "-" + Date.now(),
+            userId,
+            username: username ?? null,
+            type: "system_leave",
+            createdAt: new Date().toISOString(),
+          } as ChatMsg,
+        ]);
+        return;
+      }
+      if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName) {
+        setBroadcastEndedMessage(String(msg.hostDisplayName));
+        refetchChannel();
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.removeAttribute("src");
+          audioRef.current.load();
+        }
         return;
       }
       if (msg.type !== "radio_chat" || !msg.message) return;
@@ -418,12 +448,21 @@ export default function RadioChannel() {
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
                     ) : (
                       messages.map((m) => {
-                        const isJoin = (m as { type?: string }).type === "system_join";
-                        const displayName = m.username?.trim() || (m.userId ? t("radio.listenerLabel", "방청자") + " " + String(m.userId).slice(0, 8) : "?");
+                        const msgType = (m as { type?: string }).type;
+                        const isJoin = msgType === "system_join";
+                        const isLeave = msgType === "system_leave";
+                        const displayName = m.username?.trim() || (m.userId ? String(m.userId).slice(0, 8) : "?");
                         if (isJoin) {
                           return (
                             <p key={"join-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1">
                               {displayName}{t("radio.joinedChat", "님이 입장했습니다.")}
+                            </p>
+                          );
+                        }
+                        if (isLeave) {
+                          return (
+                            <p key={"left-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1">
+                              {displayName}님이 퇴장했습니다.
                             </p>
                           );
                         }
@@ -555,6 +594,11 @@ export default function RadioChannel() {
                 {channel.description && (
                   <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
                 )}
+                {broadcastEndedMessage && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400 mb-4 rounded-md bg-amber-500/10 px-3 py-2 border border-amber-500/20">
+                    <strong>{broadcastEndedMessage}</strong>님이 방송을 중단했습니다.
+                  </p>
+                )}
                 {channel.scheduledStartAt && channel.scheduledEndAt && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
                     <strong>{channel.ownerDisplayName ?? "DJ"}</strong>
@@ -631,8 +675,8 @@ export default function RadioChannel() {
                         const seekSec = (Date.now() - startedAt) / 1000;
                         if (seekSec > 0) {
                           audioRef.current.currentTime = Math.max(0, seekSec);
-                          hasSeekedForTrackRef.current = nowPlayingId;
                         }
+                        hasSeekedForTrackRef.current = nowPlayingId;
                       }}
                       onEnded={() => {
                         if (isLive && slug) refetchChannel();

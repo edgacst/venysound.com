@@ -130,9 +130,14 @@ export async function registerRoutes(
           broadcastRadioListeners(slug);
           if (wsUserId) {
             try {
-              const user = await storage.getUserById(wsUserId);
-              const username = (user?.username ?? user?.firstName ?? null) as string | null;
-              broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username: username ?? undefined });
+              const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
+              let username: string | undefined;
+              if (displayName) username = displayName;
+              else {
+                const user = await storage.getUserById(wsUserId);
+                username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+              }
+              broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
             } catch (e) {
               console.warn("[ws] radio_user_joined broadcast failed", e);
             }
@@ -140,6 +145,15 @@ export async function registerRoutes(
         }
         if (msg.type === "radio_leave" && typeof msg.slug === "string" && msg.slug) {
           const slug = String(msg.slug).trim().toLowerCase();
+          if (wsUserId) {
+            try {
+              const user = await storage.getUserById(wsUserId);
+              const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+              broadcastToRadioChannel(slug, { type: "radio_user_left", userId: wsUserId, username });
+            } catch (e) {
+              console.warn("[ws] radio_user_left broadcast failed", e);
+            }
+          }
           const room = radioChannelRooms.get(slug);
           if (room) {
             room.delete(ws);
@@ -177,7 +191,21 @@ export async function registerRoutes(
     ws.on("close", () => {
       visitorCount--;
       broadcastVisitorCount();
+      const uid = wsUserId;
       const slugs = wsRadioSlugs.get(ws);
+      if (uid && slugs && slugs.size > 0) {
+        (async () => {
+          try {
+            const user = await storage.getUserById(uid);
+            const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+            slugs.forEach((slug) => {
+              broadcastToRadioChannel(slug, { type: "radio_user_left", userId: uid, username });
+            });
+          } catch (e) {
+            console.warn("[ws] radio_user_left on close broadcast failed", e);
+          }
+        })();
+      }
       if (slugs) {
         slugs.forEach((slug) => {
           const room = radioChannelRooms.get(slug);
@@ -2654,6 +2682,17 @@ export async function registerRoutes(
           musicId: updated!.nowPlayingMusicId ?? null,
           startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
         });
+      }
+      if (updates.status === "ended" && updated) {
+        const endedByUserId = (req as any).user?.claims?.sub;
+        let hostDisplayName: string = "DJ";
+        if (endedByUserId) {
+          try {
+            const hostUser = await storage.getUserById(endedByUserId);
+            hostDisplayName = (hostUser?.username ?? hostUser?.firstName ?? hostUser?.id ?? "DJ") as string;
+          } catch (_) {}
+        }
+        broadcastToRadioChannel(slug, { type: "radio_broadcast_ended", hostDisplayName });
       }
       res.json(updated);
     } catch (e) {
