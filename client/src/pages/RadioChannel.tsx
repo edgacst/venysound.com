@@ -556,8 +556,8 @@ export default function RadioChannel() {
                   <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
                 )}
                 {channel.scheduledStartAt && channel.scheduledEndAt && (
-                  <p className="text-sm text-muted-foreground mb-4 rounded-md bg-muted/30 px-3 py-2">
-                    <strong className="text-foreground">{channel.ownerDisplayName ?? "DJ"}</strong>
+                  <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
+                    <strong>{channel.ownerDisplayName ?? "DJ"}</strong>
                     {t("radio.schedulePrefix", " 님 방송이 ")}
                     {formatScheduleTime(channel.scheduledStartAt)}
                     {t("radio.scheduleTo", "부터 ")}
