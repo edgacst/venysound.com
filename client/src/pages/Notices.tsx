@@ -16,9 +16,10 @@ type SiteAnnouncement = {
   createdAt: string;
 };
 
-function excerpt(text: string, maxLen = 80) {
-  const one = text.replace(/\s+/g, " ").trim();
-  return one.length <= maxLen ? one : one.slice(0, maxLen) + "…";
+/** 목록용 짧은 제목: 첫 줄만, 앞 # 제거, 최대 길이 제한 */
+function listTitle(content: string, maxLen = 40) {
+  const firstLine = content.split(/\r?\n/)[0]?.replace(/^#+\s*/, "").replace(/\s+/g, " ").trim() ?? "";
+  return firstLine.length <= maxLen ? firstLine : firstLine.slice(0, maxLen) + "…";
 }
 
 export default function Notices() {
@@ -54,14 +55,62 @@ export default function Notices() {
           <p className="text-muted-foreground">{t("noticesPage.empty")}</p>
         ) : (
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* 모바일: 카드 목록 */}
+            <div className="block md:hidden divide-y divide-border">
+              {list.map((a, idx) => {
+                const isActive = a.startsAtDate <= now && a.endsAtDate >= now;
+                const isExpanded = expandedId === a.id;
+                return (
+                  <div
+                    key={a.id}
+                    className="p-4 active:bg-muted/20"
+                    onClick={() => setExpandedId(isExpanded ? null : a.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === "Enter" && setExpandedId(isExpanded ? null : a.id)}
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="text-muted-foreground text-xs shrink-0 w-6">{list.length - idx}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-foreground line-clamp-1">{listTitle(a.content)}</p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(a.createdAt).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" })}
+                          </span>
+                          {isActive ? (
+                            <span className="inline-flex px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">{t("noticesPage.statusActive")}</span>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">{t("noticesPage.statusEnded")}</span>
+                          )}
+                        </div>
+                      </div>
+                      {isExpanded ? <ChevronUp size={18} className="text-muted-foreground shrink-0" /> : <ChevronDown size={18} className="text-muted-foreground shrink-0" />}
+                    </div>
+                    {isExpanded && (
+                      <div className="mt-4 pt-3 border-t border-border/50">
+                        <div className="whitespace-pre-wrap text-foreground text-sm mb-3">{a.content}</div>
+                        {a.imageUrl && (
+                          <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt="" className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {t("noticesPage.exposurePeriod")}: {a.startsAtDate.toLocaleString(locale)} ~ {a.endsAtDate.toLocaleString(locale)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 데스크톱: 테이블 */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
-                    <th className="text-left p-3 font-medium w-12">{t("noticesPage.no")}</th>
-                    <th className="text-left p-3 font-medium">{t("noticesPage.subject")}</th>
-                    <th className="text-left p-3 font-medium w-28">{t("noticesPage.date")}</th>
-                    <th className="text-center p-3 font-medium w-20">{t("noticesPage.status")}</th>
+                    <th className="text-left p-3 font-medium w-12 whitespace-nowrap">{t("noticesPage.no")}</th>
+                    <th className="text-left p-3 font-medium max-w-[280px]">{t("noticesPage.subject")}</th>
+                    <th className="text-left p-3 font-medium whitespace-nowrap min-w-[7.5rem]">{t("noticesPage.date")}</th>
+                    <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.status")}</th>
                     <th className="w-10" />
                   </tr>
                 </thead>
@@ -72,16 +121,17 @@ export default function Notices() {
                     return (
                       <Fragment key={a.id}>
                         <tr
-                          key={a.id}
                           className="border-b border-border/50 hover:bg-muted/20 cursor-pointer"
                           onClick={() => setExpandedId(isExpanded ? null : a.id)}
                         >
                           <td className="p-3 text-muted-foreground">{list.length - idx}</td>
-                          <td className="p-3 font-medium">{excerpt(a.content)}</td>
-                          <td className="p-3 text-muted-foreground">
+                          <td className="p-3 font-medium max-w-[280px]">
+                            <span className="line-clamp-1 block" title={listTitle(a.content, 200)}>{listTitle(a.content)}</span>
+                          </td>
+                          <td className="p-3 text-muted-foreground whitespace-nowrap">
                             {new Date(a.createdAt).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" })}
                           </td>
-                          <td className="p-3 text-center">
+                          <td className="p-3 text-center whitespace-nowrap">
                             {isActive ? (
                               <span className="inline-flex px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">{t("noticesPage.statusActive")}</span>
                             ) : (

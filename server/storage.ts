@@ -1184,6 +1184,19 @@ export class DatabaseStorage implements IStorage {
     return row?.total ?? 0;
   }
 
+  /** 최근 N분 이내 페이지뷰를 기록한 고유 방문자 수 (실시간 접속자 수) */
+  async getCurrentVisitorsCount(lastMinutes: number): Promise<number> {
+    const safe = Math.min(60, Math.max(1, Math.floor(lastMinutes)));
+    try {
+      const [row] = await db.select({
+        count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
+      }).from(analyticsVisits).where(sql`${analyticsVisits.visitedAt} >= now() - make_interval(mins => ${safe})`);
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
   async getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }> {
     // "오늘" = 한국(Asia/Seoul) 기준 자정~현재. visited_at이 UTC로 저장돼 있어도 일일/오늘 페이지뷰가 맞게 집계되도록.
     const todayCondition = sql`${analyticsVisits.visitedAt} >= (date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul')`;
@@ -1830,11 +1843,12 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
     const rows = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
       imageUrl: siteAnnouncements.imageUrl,
+      textSize: siteAnnouncements.textSize,
       showAsPopup: siteAnnouncements.showAsPopup,
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
@@ -1856,6 +1870,22 @@ export class DatabaseStorage implements IStorage {
     }).returning();
     const row = inserted[0];
     if (!row) throw new Error("Insert did not return row");
+    return { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
+  }
+
+  async updateSiteAnnouncement(id: number, data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
+    const textSizeVal = data.textSize && ["sm", "md", "lg"].includes(data.textSize) ? data.textSize : "md";
+    const updated = await db.update(siteAnnouncements).set({
+      content: data.content,
+      imageUrl: data.imageUrl ?? null,
+      textSize: textSizeVal,
+      showAsPopup: data.showAsPopup !== false,
+      startsAt: data.startsAt,
+      endsAt: data.endsAt,
+      updatedAt: new Date(),
+    }).where(eq(siteAnnouncements.id, id)).returning();
+    const row = updated[0];
+    if (!row) throw new Error("Update did not return row");
     return { id: row.id, content: row.content, imageUrl: row.imageUrl ?? null, startsAt: row.startsAt, endsAt: row.endsAt };
   }
 

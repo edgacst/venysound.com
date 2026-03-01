@@ -50,6 +50,7 @@ import {
   Megaphone,
   Video,
   ListMusic,
+  Pencil,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -102,6 +103,7 @@ export default function Admin() {
   const [announcementStartsAt, setAnnouncementStartsAt] = useState("");
   const [announcementEndsAt, setAnnouncementEndsAt] = useState("");
   const [announcementShowAsPopup, setAnnouncementShowAsPopup] = useState(true);
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<number | null>(null);
   const [guideVideoTitle, setGuideVideoTitle] = useState("");
   const [guideVideoDescription, setGuideVideoDescription] = useState("");
   const [guideVideoYoutubeUrl, setGuideVideoYoutubeUrl] = useState("");
@@ -134,10 +136,10 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
-  const { data: visitorData } = useQuery<{ count: number }>({
-    queryKey: ["/api/admin/visitor-count"],
+  const { data: currentVisitorsData } = useQuery<{ count: number }>({
+    queryKey: ["/api/admin/current-visitors", 15],
     queryFn: async () => {
-      const res = await fetch("/api/admin/visitor-count", { credentials: "include" });
+      const res = await fetch("/api/admin/current-visitors?minutes=15", { credentials: "include" });
       if (!res.ok) return { count: 0 };
       return res.json();
     },
@@ -232,7 +234,7 @@ export default function Admin() {
     refetchInterval: 60000,
   });
 
-  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; showAsPopup?: boolean; startsAt: string; endsAt: string; createdAt: string }[]>({
+  const { data: siteAnnouncementsList, refetch: refetchSiteAnnouncements } = useQuery<{ id: number; content: string; imageUrl: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: string; endsAt: string; createdAt: string }[]>({
     queryKey: ["/api/admin/site-announcements"],
     queryFn: async () => {
       const res = await fetch("/api/admin/site-announcements", { credentials: "include" });
@@ -361,25 +363,35 @@ export default function Admin() {
     },
   });
 
+  const toDatetimeLocal = (iso: string) => {
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 16);
+  };
+
   const saveAnnouncementMutation = useMutation({
-    mutationFn: async (body: { content: string; imageUrl?: string | null; textSize?: string; showAsPopup?: boolean; startsAt: string; endsAt: string }) => {
-      const res = await fetch("/api/admin/site-announcements", {
-        method: "POST",
+    mutationFn: async (body: { id?: number; content: string; imageUrl?: string | null; textSize?: string; showAsPopup?: boolean; startsAt: string; endsAt: string }) => {
+      const { id, ...payload } = body;
+      const url = id ? `/api/admin/site-announcements/${id}` : "/api/admin/site-announcements";
+      const res = await fetch(url, {
+        method: id ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "저장 실패");
+      if (!res.ok) throw new Error(data.message || (id ? "수정 실패" : "저장 실패"));
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/site-announcements"] });
-      toast({ title: t('admin.announcementSaved', '공지가 저장되었습니다.') });
+      toast({ title: variables.id ? t('admin.announcementUpdated', '공지가 수정되었습니다.') : t('admin.announcementSaved', '공지가 저장되었습니다.') });
       setAnnouncementContent("");
       setAnnouncementImageUrl("");
+      setAnnouncementTextSize("md");
       setAnnouncementStartsAt("");
       setAnnouncementEndsAt("");
+      setAnnouncementShowAsPopup(true);
+      setEditingAnnouncementId(null);
     },
     onError: (err: any) => {
       toast({ title: err?.message || "저장 실패", variant: "destructive" });
@@ -682,7 +694,7 @@ export default function Admin() {
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
                 <Activity size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.currentVisitors', '현재 접속자')}</span>
               </div>
-              <div className="text-2xl sm:text-3xl font-bold tabular-nums">{visitorData?.count ?? 0}</div>
+              <div className="text-2xl sm:text-3xl font-bold tabular-nums">{currentVisitorsData?.count ?? 0}</div>
               <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
             </Card>
             <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-daily-visitors">
@@ -1132,16 +1144,16 @@ export default function Admin() {
         </div>
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="table-users">
+            <table className="w-full text-sm min-w-[640px]" data-testid="table-users">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left p-3 font-medium">{t('admin.userId', '아이디')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.email', '이메일')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.joinDate', '가입일')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.registerSource', '가입 경로')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.role', '권한')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.subscription', '구독')}</th>
-                  <th className="text-left p-3 font-medium">{t('admin.manage', '관리')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap w-24">{t('admin.userId', '아이디')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap min-w-[140px]">{t('admin.email', '이메일')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap w-24">{t('admin.joinDate', '가입일')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.registerSource', '가입 경로')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap w-16">{t('admin.role', '권한')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.subscription', '구독')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap">{t('admin.manage', '관리')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1158,10 +1170,10 @@ export default function Admin() {
                     const isPremium = u.subscriptionTier === "premium";
                     return (
                       <tr key={u.id} className="border-b border-border/50" data-testid={`row-user-${u.id}`}>
-                        <td className="p-3 font-mono text-xs max-w-[120px] truncate">{u.firstName || u.id}</td>
-                        <td className="p-3">{u.email || "-"}</td>
-                        <td className="p-3 text-muted-foreground">{u.createdAt ? formatDate(u.createdAt) : "-"}</td>
-                        <td className="p-3">
+                        <td className="p-3 font-mono text-xs max-w-[100px] truncate align-middle" title={u.firstName || u.id}>{u.firstName || u.id}</td>
+                        <td className="p-3 max-w-[180px] truncate align-middle" title={u.email || "-"}>{u.email || "-"}</td>
+                        <td className="p-3 text-muted-foreground whitespace-nowrap align-middle">{u.createdAt ? formatDate(u.createdAt) : "-"}</td>
+                        <td className="p-3 whitespace-nowrap align-middle">
                           <span className="text-muted-foreground" data-testid={`text-register-source-${u.id}`}>
                             {(() => {
                               let source = u.registerSource ?? u.register_source ?? "";
@@ -1176,21 +1188,21 @@ export default function Admin() {
                             })()}
                           </span>
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 align-middle">
                           {isUserAdmin ? (
                             <Badge variant="default" className="bg-red-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid={`badge-role-${u.id}`}>{t('admin.adminRole', '관리자')}</Badge>
                           ) : (
                             <Badge variant="secondary" data-testid={`badge-role-${u.id}`}>{t('admin.userRole', '일반')}</Badge>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 align-middle">
                           {isPremium ? (
                             <Badge variant="default" className="bg-purple-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid={`badge-sub-${u.id}`}>Premium</Badge>
                           ) : (
                             <Badge variant="secondary" data-testid={`badge-sub-${u.id}`}>Free</Badge>
                           )}
                         </td>
-                        <td className="p-3">
+                        <td className="p-3 align-middle">
                           {isSelf ? (
                             <span className="text-muted-foreground text-xs" data-testid="text-self-label">{t('admin.self', '본인')}</span>
                           ) : (
@@ -1546,48 +1558,69 @@ export default function Admin() {
                 />
               </div>
             </div>
-            <Button
-              onClick={() => {
-                if (!announcementContent.trim()) {
-                  toast({ title: t('admin.announcementContentRequired', '공지 내용을 입력하세요'), variant: "destructive" });
-                  return;
-                }
-                if (!announcementStartsAt || !announcementEndsAt) {
-                  toast({ title: t('admin.announcementDateTimeRequired', '노출 시작·종료 일시를 모두 선택하세요'), variant: "destructive" });
-                  return;
-                }
-                const start = new Date(announcementStartsAt);
-                const end = new Date(announcementEndsAt);
-                if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-                  toast({ title: t('admin.announcementDateTimeInvalid', '노출 시작·종료 일시를 올바르게 선택하세요'), variant: "destructive" });
-                  return;
-                }
-                if (end <= start) {
-                  toast({ title: t('admin.announcementEndAfterStart', '종료 일시는 시작 일시보다 뒤여야 합니다'), variant: "destructive" });
-                  return;
-                }
-                saveAnnouncementMutation.mutate({
-                  content: announcementContent.trim(),
-                  imageUrl: announcementImageUrl.trim() || null,
-                  textSize: announcementTextSize,
-                  showAsPopup: announcementShowAsPopup,
-                  startsAt: start.toISOString(),
-                  endsAt: end.toISOString(),
-                });
-              }}
-              disabled={saveAnnouncementMutation.isPending}
-              data-testid="button-save-announcement"
-            >
-              {saveAnnouncementMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              {t('admin.saveAnnouncement', '공지 저장')}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => {
+                  if (!announcementContent.trim()) {
+                    toast({ title: t('admin.announcementContentRequired', '공지 내용을 입력하세요'), variant: "destructive" });
+                    return;
+                  }
+                  if (!announcementStartsAt || !announcementEndsAt) {
+                    toast({ title: t('admin.announcementDateTimeRequired', '노출 시작·종료 일시를 모두 선택하세요'), variant: "destructive" });
+                    return;
+                  }
+                  const start = new Date(announcementStartsAt);
+                  const end = new Date(announcementEndsAt);
+                  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                    toast({ title: t('admin.announcementDateTimeInvalid', '노출 시작·종료 일시를 올바르게 선택하세요'), variant: "destructive" });
+                    return;
+                  }
+                  if (end <= start) {
+                    toast({ title: t('admin.announcementEndAfterStart', '종료 일시는 시작 일시보다 뒤여야 합니다'), variant: "destructive" });
+                    return;
+                  }
+                  saveAnnouncementMutation.mutate({
+                    ...(editingAnnouncementId ? { id: editingAnnouncementId } : {}),
+                    content: announcementContent.trim(),
+                    imageUrl: announcementImageUrl.trim() || null,
+                    textSize: announcementTextSize,
+                    showAsPopup: announcementShowAsPopup,
+                    startsAt: start.toISOString(),
+                    endsAt: end.toISOString(),
+                  });
+                }}
+                disabled={saveAnnouncementMutation.isPending}
+                data-testid="button-save-announcement"
+              >
+                {saveAnnouncementMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {editingAnnouncementId ? t('admin.saveAnnouncementEdit', '수정 저장') : t('admin.saveAnnouncement', '공지 저장')}
+              </Button>
+              {editingAnnouncementId ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingAnnouncementId(null);
+                    setAnnouncementContent("");
+                    setAnnouncementImageUrl("");
+                    setAnnouncementTextSize("md");
+                    setAnnouncementStartsAt("");
+                    setAnnouncementEndsAt("");
+                    setAnnouncementShowAsPopup(true);
+                  }}
+                  data-testid="button-cancel-announcement-edit"
+                >
+                  {t('common.cancel', '취소')}
+                </Button>
+              ) : null}
+            </div>
           </div>
           {siteAnnouncementsList && siteAnnouncementsList.length > 0 && (
             <div className="mt-6 pt-6 border-t border-border">
               <h3 className="text-sm font-semibold mb-2">{t('admin.savedAnnouncements', '저장된 공지')}</h3>
               <ul className="space-y-2">
                 {siteAnnouncementsList.map((a) => (
-                  <li key={a.id} className="flex items-start justify-between gap-2 p-3 rounded-lg bg-muted/30 text-sm">
+                  <li key={a.id} className={`flex items-start justify-between gap-2 p-3 rounded-lg text-sm ${editingAnnouncementId === a.id ? "bg-primary/10 ring-1 ring-primary/30" : "bg-muted/30"}`}>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="line-clamp-2 text-foreground">{a.content}</p>
@@ -1599,16 +1632,36 @@ export default function Admin() {
                         {t('admin.announcementStartsAt', '노출 시작')}: {isNaN(new Date(a.startsAt).getTime()) ? String(a.startsAt) : new Date(a.startsAt).toLocaleString("ko-KR")} ~ {t('admin.announcementEndsAt', '노출 종료')}: {isNaN(new Date(a.endsAt).getTime()) ? String(a.endsAt) : new Date(a.endsAt).toLocaleString("ko-KR")}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => { if (confirm(t('admin.confirmDeleteAnnouncement', '이 공지를 삭제하시겠습니까?'))) deleteAnnouncementMutation.mutate(a.id); }}
-                      disabled={deleteAnnouncementMutation.isPending}
-                      data-testid={`button-delete-announcement-${a.id}`}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-foreground"
+                        onClick={() => {
+                          setEditingAnnouncementId(a.id);
+                          setAnnouncementContent(a.content);
+                          setAnnouncementImageUrl(a.imageUrl || "");
+                          setAnnouncementTextSize((a.textSize as "sm" | "md" | "lg") || "md");
+                          setAnnouncementShowAsPopup(a.showAsPopup !== false);
+                          setAnnouncementStartsAt(toDatetimeLocal(a.startsAt));
+                          setAnnouncementEndsAt(toDatetimeLocal(a.endsAt));
+                        }}
+                        data-testid={`button-edit-announcement-${a.id}`}
+                        title={t('admin.edit', '수정')}
+                      >
+                        <Pencil size={14} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => { if (confirm(t('admin.confirmDeleteAnnouncement', '이 공지를 삭제하시겠습니까?'))) deleteAnnouncementMutation.mutate(a.id); }}
+                        disabled={deleteAnnouncementMutation.isPending}
+                        data-testid={`button-delete-announcement-${a.id}`}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>

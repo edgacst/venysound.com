@@ -31,7 +31,7 @@ export default function RadioChannel() {
   const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const { data: channel, isLoading, error } = useQuery<{
+  const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
     ownerId: string;
     name: string;
@@ -109,12 +109,21 @@ export default function RadioChannel() {
   const audioStreamUrl = audioBlobUrl ?? rawAudioUrl;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
+  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   useEffect(() => {
     const audio = audioRef.current;
     const canvas = canvasRef.current;
     if (!audio || !canvas || !audioStreamUrl) return;
+    // 이전에 같은 audio에 연결된 소스가 있으면 해제 (재연결 시 InvalidStateError 방지)
+    if (audioSourceRef.current) {
+      try {
+        audioSourceRef.current.disconnect();
+      } catch (_) {}
+      audioSourceRef.current = null;
+    }
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const source = ctx.createMediaElementSource(audio);
+    audioSourceRef.current = source;
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.8;
@@ -149,6 +158,10 @@ export default function RadioChannel() {
     return () => {
       cancelAnimationFrame(rafId);
       analyserRef.current = null;
+      try {
+        source.disconnect();
+      } catch (_) {}
+      audioSourceRef.current = null;
       ctx.close();
     };
   }, [audioStreamUrl]);
@@ -219,9 +232,10 @@ export default function RadioChannel() {
   });
 
   const [chatInput, setChatInput] = useState("");
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = chatContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const [requestSearch, setRequestSearch] = useState("");
@@ -482,6 +496,9 @@ export default function RadioChannel() {
                       controls
                       className="w-full h-10"
                       autoPlay
+                      onEnded={() => {
+                        if (isLive && slug) refetchChannel();
+                      }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
                   </div>
@@ -569,7 +586,7 @@ export default function RadioChannel() {
                 )}
               </div>
               <p className="text-muted-foreground text-xs px-4 pt-1">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
-              <div className="min-h-[200px] max-h-[280px] overflow-y-auto p-3 space-y-2">
+              <div ref={chatContainerRef} className="min-h-[200px] max-h-[280px] overflow-y-auto p-3 space-y-2">
                 {messages.length === 0 ? (
                   <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
                 ) : (
@@ -580,16 +597,48 @@ export default function RadioChannel() {
                     </div>
                   ))
                 )}
-                <div ref={chatEndRef} />
               </div>
-              <div className="p-3 border-t border-white/10 flex gap-2">
-                <Input
-                  placeholder={t("radio.chatPlaceholder", "메시지를 입력하세요...")}
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
+              <div className="p-3 border-t border-white/10 flex flex-col gap-2">
+                {(!user || !wsReady || !wsAuthenticated) && (
+                  <p className="text-xs text-muted-foreground">
+                    {!user
+                      ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.")
+                      : !wsReady
+                        ? t("radio.chatConnecting", "연결 중...")
+                        : t("radio.chatAuthWaiting", "채팅 연결 확인 중...")}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder={t("radio.chatPlaceholder", "메시지를 입력하세요...")}
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        const c = chatInput.trim();
+                        if (c && user && wsReady && wsAuthenticated) {
+                          setMessages((prev) => [
+                            ...prev,
+                            {
+                              id: -Date.now(),
+                              userId: user.id,
+                              username: user.username ?? user.firstName ?? null,
+                              content: c,
+                              createdAt: new Date().toISOString(),
+                            },
+                          ]);
+                          setChatInput("");
+                          wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
+                        }
+                      }
+                    }}
+                    disabled={!user || !wsReady || !wsAuthenticated}
+                    aria-label={!user ? t("radio.chatLoginRequired", "로그인하면 채팅할 수 있습니다.") : !wsReady ? t("radio.chatConnecting", "연결 중...") : !wsAuthenticated ? t("radio.chatAuthWaiting", "채팅 연결 확인 중...") : undefined}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => {
                       const c = chatInput.trim();
                       if (c && user && wsReady && wsAuthenticated) {
                         setMessages((prev) => [
@@ -605,33 +654,12 @@ export default function RadioChannel() {
                         setChatInput("");
                         wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
                       }
-                    }
-                  }}
-                  disabled={!user || !wsReady || !wsAuthenticated}
-                />
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    const c = chatInput.trim();
-                    if (c && user && wsReady && wsAuthenticated) {
-                      setMessages((prev) => [
-                        ...prev,
-                        {
-                          id: -Date.now(),
-                          userId: user.id,
-                          username: user.username ?? user.firstName ?? null,
-                          content: c,
-                          createdAt: new Date().toISOString(),
-                        },
-                      ]);
-                      setChatInput("");
-                      wsSend({ type: "radio_chat", slug: slug.trim().toLowerCase(), content: c });
-                    }
-                  }}
-                  disabled={!user || !wsReady || !wsAuthenticated || !chatInput.trim()}
-                >
-                  {t("radio.chatSend", "전송")}
-                </Button>
+                    }}
+                    disabled={!user || !wsReady || !wsAuthenticated || !chatInput.trim()}
+                  >
+                    {t("radio.chatSend", "전송")}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

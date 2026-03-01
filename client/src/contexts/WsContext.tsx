@@ -68,6 +68,19 @@ export function WsProvider({
     send({ type: "auth", userId });
   }, [ready, userId, send]);
 
+  // PC 등에서 auth_ack가 늦거나 유실되면 재전송 (최대 5회, 2초 간격)
+  useEffect(() => {
+    if (!ready || !userId || authenticated) return;
+    let count = 0;
+    const maxRetries = 5;
+    const id = setInterval(() => {
+      count += 1;
+      send({ type: "auth", userId });
+      if (count >= maxRetries) clearInterval(id);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [ready, userId, authenticated, send]);
+
   const value: WsContextValue = { send, subscribe, ready, authenticated };
   return <WsContext.Provider value={value}>{children}</WsContext.Provider>;
 }

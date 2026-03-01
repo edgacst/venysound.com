@@ -1364,6 +1364,17 @@ export async function registerRoutes(
     res.json({ count: visitorCount });
   });
 
+  app.get("/api/admin/current-visitors", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const minutes = Math.min(60, Math.max(1, parseInt(String(req.query?.minutes), 10) || 15));
+      const count = await storage.getCurrentVisitorsCount(minutes);
+      res.json({ count });
+    } catch (e) {
+      console.error("[admin/current-visitors]", e);
+      res.json({ count: 0 });
+    }
+  });
+
   app.get("/api/admin/stats", isAuthenticated, isAdmin, async (req, res) => {
     const stats = await storage.getAdminStats();
     res.json(stats);
@@ -1543,6 +1554,37 @@ export async function registerRoutes(
         ? " DB 테이블이 없습니다. 서버에서 npm run db:site-announcements 실행 후 다시 시도하세요."
         : "";
       res.status(500).json({ message: "저장에 실패했습니다." + hint });
+    }
+  });
+
+  app.put("/api/admin/site-announcements/:id", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id < 1) return res.status(400).json({ message: "유효하지 않은 ID입니다" });
+      const { content, imageUrl, textSize, showAsPopup, startsAt, endsAt } = req.body;
+      if (!content || typeof content !== "string" || !startsAt || !endsAt) {
+        return res.status(400).json({ message: "content, startsAt, endsAt가 필요합니다" });
+      }
+      const start = new Date(startsAt);
+      const end = new Date(endsAt);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        return res.status(400).json({ message: "시작·종료 일시가 유효하지 않습니다" });
+      }
+      const imageUrlVal = typeof imageUrl === "string" && imageUrl.trim() ? imageUrl.trim() : null;
+      const textSizeVal = typeof textSize === "string" && ["sm", "md", "lg"].includes(textSize) ? textSize : null;
+      const saved = await storage.updateSiteAnnouncement(id, { content: content.trim(), imageUrl: imageUrlVal, textSize: textSizeVal, showAsPopup: showAsPopup !== false, startsAt: start, endsAt: end });
+      try {
+        const translations = await translateAnnouncementContent(content.trim());
+        if (Object.keys(translations).length > 0) {
+          await storage.updateSiteAnnouncementTranslations(id, translations);
+        }
+      } catch (e) {
+        console.warn("[site-announcements translate]", e);
+      }
+      res.json({ ...saved, startsAt: saved.startsAt.toISOString(), endsAt: saved.endsAt.toISOString() });
+    } catch (e: any) {
+      console.error("[admin/site-announcements PUT]", e);
+      res.status(500).json({ message: e?.message || "수정에 실패했습니다." });
     }
   });
 
