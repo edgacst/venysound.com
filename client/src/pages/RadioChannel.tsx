@@ -70,13 +70,15 @@ export default function RadioChannel() {
   const { listenerCount } = useRadioRoom(slug, displayName);
 
   useEffect(() => {
-    if (nowPlayingId != null && channel?.nowPlayingElapsedSeconds != null) {
-      channelElapsedRef.current = {
-        musicId: nowPlayingId,
-        elapsed: channel.nowPlayingElapsedSeconds,
-        receivedAt: Date.now(),
-      };
-    }
+    if (nowPlayingId == null || channel?.nowPlayingElapsedSeconds == null) return;
+    const nextElapsed = channel.nowPlayingElapsedSeconds;
+    const prev = channelElapsedRef.current;
+    if (prev?.musicId === nowPlayingId && prev.elapsed > nextElapsed) return;
+    channelElapsedRef.current = {
+      musicId: nowPlayingId,
+      elapsed: nextElapsed,
+      receivedAt: Date.now(),
+    };
   }, [nowPlayingId, channel?.nowPlayingElapsedSeconds]);
 
   // 곡이 바뀌면 seek 플래그 리셋 (새 곡 재생 시 동기화 적용)
@@ -84,7 +86,7 @@ export default function RadioChannel() {
     hasSeekedForTrackRef.current = null;
   }, [nowPlayingId]);
 
-  // 리스너 재생 위치 주기적 동기화 (DJ와 차이가 크면 재보정)
+  // 리스너 재생 위치 주기적 동기화 (많이 뒤처졌을 때만 앞으로 보정, 뒤로 seek 절대 안 함)
   useEffect(() => {
     if (isOwner || !isLive || nowPlayingId == null) return;
     const interval = setInterval(() => {
@@ -100,8 +102,10 @@ export default function RadioChannel() {
         expectedSec = elapsed + (Date.now() - receivedAt) / 1000;
       } else return;
       const behind = expectedSec - audio.currentTime;
-      if (behind > 2.5) audio.currentTime = Math.max(0, expectedSec);
-    }, 12000);
+      if (behind > 8 && expectedSec > audio.currentTime) {
+        audio.currentTime = Math.max(0, expectedSec);
+      }
+    }, 20000);
     return () => clearInterval(interval);
   }, [isOwner, isLive, nowPlayingId]);
 
@@ -792,12 +796,16 @@ export default function RadioChannel() {
                         }
                         if (seekSec != null && seekSec > 0) {
                           const target = Math.max(0, seekSec);
-                          audioRef.current.currentTime = target;
-                          // 스트리밍에서 currentTime 반영이 늦을 수 있어 한 번 더 시도
+                          const cur = audioRef.current.currentTime;
+                          if (target > cur - 0.5) {
+                            audioRef.current.currentTime = target;
+                          }
                           setTimeout(() => {
                             if (audioRef.current && hasSeekedForTrackRef.current === nowPlayingId) {
-                              const cur = audioRef.current.currentTime;
-                              if (cur < target - 1.5) audioRef.current.currentTime = target;
+                              const c = audioRef.current.currentTime;
+                              if (c < target - 1.5 && target > c) {
+                                audioRef.current.currentTime = target;
+                              }
                             }
                           }, 300);
                         }
