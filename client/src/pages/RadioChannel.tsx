@@ -31,6 +31,7 @@ export default function RadioChannel() {
   const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasSeekedForTrackRef = useRef<number | null>(null);
+  const lastNowPlayingRef = useRef<{ musicId: number | null; startedAt: string | null }>({ musicId: null, startedAt: null });
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -209,6 +210,11 @@ export default function RadioChannel() {
           } as ChatMsg,
         ]);
         return;
+      }
+      if (msg.type === "radio_now_playing") {
+        const musicId = msg.musicId != null ? Number(msg.musicId) : null;
+        const startedAt = typeof msg.startedAt === "string" ? msg.startedAt : null;
+        lastNowPlayingRef.current = { musicId, startedAt };
       }
       if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
@@ -669,9 +675,22 @@ export default function RadioChannel() {
                       className="w-full h-10"
                       autoPlay
                       onCanPlay={() => {
-                        if (isOwner || !channel?.nowPlayingStartedAt || !audioRef.current) return;
+                        if (isOwner || !audioRef.current) return;
                         if (hasSeekedForTrackRef.current === nowPlayingId) return;
-                        const startedAt = new Date(channel.nowPlayingStartedAt).getTime();
+                        const last = lastNowPlayingRef.current;
+                        const startedAtIso =
+                          last?.musicId === nowPlayingId && last?.startedAt
+                            ? last.startedAt
+                            : channel?.nowPlayingStartedAt ?? null;
+                        if (!startedAtIso) {
+                          hasSeekedForTrackRef.current = nowPlayingId;
+                          return;
+                        }
+                        const startedAt = new Date(startedAtIso).getTime();
+                        if (Number.isNaN(startedAt)) {
+                          hasSeekedForTrackRef.current = nowPlayingId;
+                          return;
+                        }
                         const seekSec = (Date.now() - startedAt) / 1000;
                         if (seekSec > 0) {
                           audioRef.current.currentTime = Math.max(0, seekSec);
