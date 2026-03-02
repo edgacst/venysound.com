@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { useRoute } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ export default function RadioChannel() {
   const slug = params?.slug ?? "";
   const { t } = useTranslation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasSeekedForTrackRef = useRef<number | null>(null);
   const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
@@ -333,6 +334,12 @@ export default function RadioChannel() {
       setTipOpen(false);
       setTipAmount(1000);
       setTipMessage("");
+      // 후원 성공 시 크레딧/수익 관련 캐시 갱신
+      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/sent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/received"] });
     },
     onError: (e: Error) => toast({ title: t("music.tipFailed"), description: e.message, variant: "destructive" }),
   });

@@ -649,16 +649,16 @@
   function startWaveform(audioEl) {
     if (!audioEl || !audioEl.src) return;
     try {
-      if (waveformSource) {
-        try { waveformSource.disconnect(); } catch (e) {}
-        waveformSource = null;
-      }
       waveformAnalyser = null;
       musicGainNode = null;
       if (!waveformCtx || waveformCtx.state === 'closed') {
         waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
-      waveformSource = waveformCtx.createMediaElementSource(audioEl);
+      if (waveformSource) {
+        try { waveformSource.disconnect(); } catch (e) {}
+      } else {
+        waveformSource = waveformCtx.createMediaElementSource(audioEl);
+      }
       musicGainNode = waveformCtx.createGain();
       musicGainNode.gain.value = mentMode ? 0.3 : 1;
       waveformAnalyser = waveformCtx.createAnalyser();
