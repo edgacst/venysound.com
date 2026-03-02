@@ -196,6 +196,7 @@ export default function RadioChannel() {
   }, [chatList]);
   useEffect(() => {
     if (!slug) return;
+    const normalizedSlug = slug.trim().toLowerCase();
     const unsub = subscribeRef.current((msg) => {
       if (msg.type === "radio_user_joined" && msg.userId) {
         const userId = String(msg.userId);
@@ -227,7 +228,7 @@ export default function RadioChannel() {
         ]);
         return;
       }
-      if (msg.type === "radio_now_playing" && (msg.slug == null || msg.slug === slug)) {
+      if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
@@ -241,7 +242,7 @@ export default function RadioChannel() {
           }
         }
       }
-      if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName && (msg.slug == null || msg.slug === slug)) {
+      if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
         refetchChannel();
         const audio = audioRef.current;
@@ -708,10 +709,23 @@ export default function RadioChannel() {
                           const { elapsed, receivedAt } = channelElapsedRef.current;
                           seekSec = elapsed + (Date.now() - receivedAt) / 1000;
                         } else if (channel?.nowPlayingElapsedSeconds != null) {
+                          channelElapsedRef.current = {
+                            musicId: nowPlayingId!,
+                            elapsed: channel.nowPlayingElapsedSeconds,
+                            receivedAt: Date.now(),
+                          };
                           seekSec = channel.nowPlayingElapsedSeconds;
                         }
                         if (seekSec != null && seekSec > 0) {
-                          audioRef.current.currentTime = Math.max(0, seekSec);
+                          const target = Math.max(0, seekSec);
+                          audioRef.current.currentTime = target;
+                          // 스트리밍에서 currentTime 반영이 늦을 수 있어 한 번 더 시도
+                          setTimeout(() => {
+                            if (audioRef.current && hasSeekedForTrackRef.current === nowPlayingId) {
+                              const diff = Math.abs(audioRef.current.currentTime - target);
+                              if (diff > 1.5) audioRef.current.currentTime = target;
+                            }
+                          }, 300);
                         }
                         hasSeekedForTrackRef.current = nowPlayingId;
                       }}
