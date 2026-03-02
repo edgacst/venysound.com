@@ -99,8 +99,8 @@ export default function RadioChannel() {
         const { elapsed, receivedAt } = channelElapsedRef.current;
         expectedSec = elapsed + (Date.now() - receivedAt) / 1000;
       } else return;
-      const diff = Math.abs(audio.currentTime - expectedSec);
-      if (diff > 2.5) audio.currentTime = Math.max(0, expectedSec);
+      const behind = expectedSec - audio.currentTime;
+      if (behind > 2.5) audio.currentTime = Math.max(0, expectedSec);
     }, 12000);
     return () => clearInterval(interval);
   }, [isOwner, isLive, nowPlayingId]);
@@ -782,8 +782,8 @@ export default function RadioChannel() {
                           // 스트리밍에서 currentTime 반영이 늦을 수 있어 한 번 더 시도
                           setTimeout(() => {
                             if (audioRef.current && hasSeekedForTrackRef.current === nowPlayingId) {
-                              const diff = Math.abs(audioRef.current.currentTime - target);
-                              if (diff > 1.5) audioRef.current.currentTime = target;
+                              const cur = audioRef.current.currentTime;
+                              if (cur < target - 1.5) audioRef.current.currentTime = target;
                             }
                           }, 300);
                         }
