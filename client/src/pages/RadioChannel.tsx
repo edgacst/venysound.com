@@ -36,6 +36,8 @@ export default function RadioChannel() {
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
   const lastJoinByUserRef = useRef<Record<string, number>>({});
   const lastLeaveByUserRef = useRef<Record<string, number>>({});
+  const seenJoinUserIdsRef = useRef<Set<string>>(new Set());
+  const seenLeaveUserIdsRef = useRef<Set<string>>(new Set());
   const [userStopped, setUserStopped] = useState(false);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
@@ -244,6 +246,8 @@ export default function RadioChannel() {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
+        if (seenJoinUserIdsRef.current.has(userId)) return;
+        seenJoinUserIdsRef.current.add(userId);
         const last = lastJoinByUserRef.current[userId];
         if (last != null && now - last < 60000) return;
         lastJoinByUserRef.current[userId] = now;
@@ -263,9 +267,11 @@ export default function RadioChannel() {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
-        const last = lastLeaveByUserRef.current[userId];
+        if (seenLeaveUserIdsRef.current.has(userId)) return;
+        seenLeaveUserIdsRef.current.add(userId);
+        const last = lastLeaveUserRef.current[userId];
         if (last != null && now - last < 60000) return;
-        lastLeaveByUserRef.current[userId] = now;
+        lastLeaveUserRef.current[userId] = now;
         setMessages((prev) => [
           ...prev,
           {
@@ -833,9 +839,6 @@ export default function RadioChannel() {
                           }, 300);
                         }
                         hasSeekedForTrackRef.current = nowPlayingId;
-                      }}
-                      onEnded={() => {
-                        if (isLive && slug) refetchChannel();
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
