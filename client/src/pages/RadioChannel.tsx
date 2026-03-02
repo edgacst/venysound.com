@@ -34,6 +34,8 @@ export default function RadioChannel() {
   const hasSeekedForTrackRef = useRef<number | null>(null);
   const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
+  const lastJoinByUserRef = useRef<Record<string, number>>({});
+  const lastLeaveByUserRef = useRef<Record<string, number>>({});
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -234,44 +236,38 @@ export default function RadioChannel() {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
-        setMessages((prev) => {
-          const recentJoin = prev.some(
-            (m) => (m as ChatMsg).type === "system_join" && m.userId === userId && now - new Date(m.createdAt).getTime() < 15000
-          );
-          if (recentJoin) return prev;
-          return [
-            ...prev,
-            {
-              id: "join-" + userId + "-" + now,
-              userId,
-              username: username ?? null,
-              type: "system_join",
-              createdAt: new Date().toISOString(),
-            } as ChatMsg,
-          ];
-        });
+        const last = lastJoinByUserRef.current[userId];
+        if (last != null && now - last < 15000) return;
+        lastJoinByUserRef.current[userId] = now;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "join-" + userId + "-" + now,
+            userId,
+            username: username ?? null,
+            type: "system_join",
+            createdAt: new Date().toISOString(),
+          } as ChatMsg,
+        ]);
         return;
       }
       if (msg.type === "radio_user_left" && msg.userId) {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
-        setMessages((prev) => {
-          const recentLeft = prev.some(
-            (m) => (m as ChatMsg).type === "system_leave" && m.userId === userId && now - new Date(m.createdAt).getTime() < 15000
-          );
-          if (recentLeft) return prev;
-          return [
-            ...prev,
-            {
-              id: "left-" + userId + "-" + now,
-              userId,
-              username: username ?? null,
-              type: "system_leave",
-              createdAt: new Date().toISOString(),
-            } as ChatMsg,
-          ];
-        });
+        const last = lastLeaveByUserRef.current[userId];
+        if (last != null && now - last < 15000) return;
+        lastLeaveByUserRef.current[userId] = now;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: "left-" + userId + "-" + now,
+            userId,
+            username: username ?? null,
+            type: "system_leave",
+            createdAt: new Date().toISOString(),
+          } as ChatMsg,
+        ]);
         return;
       }
       if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
