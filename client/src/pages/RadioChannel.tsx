@@ -34,10 +34,7 @@ export default function RadioChannel() {
   const hasSeekedForTrackRef = useRef<number | null>(null);
   const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
-  const lastJoinByUserRef = useRef<Record<string, number>>({});
-  const lastLeaveByUserRef = useRef<Record<string, number>>({});
-  const seenJoinUserIdsRef = useRef<Set<string>>(new Set());
-  const seenLeaveUserIdsRef = useRef<Set<string>>(new Set());
+  const presentUserIdsRef = useRef<Set<string>>(new Set());
   const [userStopped, setUserStopped] = useState(false);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
@@ -221,16 +218,13 @@ export default function RadioChannel() {
       if (msg.type === "radio_user_joined" && msg.userId) {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
-        const now = Date.now();
-        if (seenJoinUserIdsRef.current.has(userId)) return;
-        seenJoinUserIdsRef.current.add(userId);
-        const last = lastJoinByUserRef.current[userId];
-        if (last != null && now - last < 60000) return;
-        lastJoinByUserRef.current[userId] = now;
+        // 이미 방에 있다고 판단되면 중복 입장 메시지 스킵
+        if (presentUserIdsRef.current.has(userId)) return;
+        presentUserIdsRef.current.add(userId);
         setMessages((prev) => [
           ...prev,
           {
-            id: "join-" + userId + "-" + now,
+            id: "join-" + userId + "-" + Date.now(),
             userId,
             username: username ?? null,
             type: "system_join",
@@ -242,16 +236,13 @@ export default function RadioChannel() {
       if (msg.type === "radio_user_left" && msg.userId) {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
-        const now = Date.now();
-        if (seenLeaveUserIdsRef.current.has(userId)) return;
-        seenLeaveUserIdsRef.current.add(userId);
-        const last = lastLeaveUserRef.current[userId];
-        if (last != null && now - last < 60000) return;
-        lastLeaveUserRef.current[userId] = now;
+        // 방에 없는 유저 퇴장 이벤트는 무시
+        if (!presentUserIdsRef.current.has(userId)) return;
+        presentUserIdsRef.current.delete(userId);
         setMessages((prev) => [
           ...prev,
           {
-            id: "left-" + userId + "-" + now,
+            id: "left-" + userId + "-" + Date.now(),
             userId,
             username: username ?? null,
             type: "system_leave",
@@ -335,6 +326,22 @@ export default function RadioChannel() {
   useEffect(() => {
     const el = chatContainerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  const filteredMessages = useMemo(() => {
+    const seenJoin = new Set<string>();
+    const seenLeave = new Set<string>();
+    return messages.filter((m) => {
+      const msgType = (m as { type?: string }).type;
+      if (msgType === "system_join") {
+        if (seenJoin.has(m.userId)) return false;
+        seenJoin.add(m.userId);
+      } else if (msgType === "system_leave") {
+        if (seenLeave.has(m.userId)) return false;
+        seenLeave.add(m.userId);
+      }
+      return true;
+    });
   }, [messages]);
 
   const [requestSearch, setRequestSearch] = useState("");
@@ -537,10 +544,10 @@ export default function RadioChannel() {
                   </div>
                   <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
                   <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-                    {messages.length === 0 ? (
+                    {filteredMessages.length === 0 ? (
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
                     ) : (
-                      messages.map((m) => {
+                      filteredMessages.map((m) => {
                         const msgType = (m as { type?: string }).type;
                         const isJoin = msgType === "system_join";
                         const isLeave = msgType === "system_leave";

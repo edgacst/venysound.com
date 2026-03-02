@@ -381,11 +381,63 @@
           <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap;">
             <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
               <span style="min-width: 44px;">시작</span>
-              <input type="time" id="scheduledStartTime" class="mic-select" style="width: 120px;" />
+              <select id="scheduledStartTime" class="mic-select" style="width: 120px;">
+                <option value="">--</option>
+                <option value="1">01:00</option>
+                <option value="2">02:00</option>
+                <option value="3">03:00</option>
+                <option value="4">04:00</option>
+                <option value="5">05:00</option>
+                <option value="6">06:00</option>
+                <option value="7">07:00</option>
+                <option value="8">08:00</option>
+                <option value="9">09:00</option>
+                <option value="10">10:00</option>
+                <option value="11">11:00</option>
+                <option value="12">12:00</option>
+                <option value="13">13:00</option>
+                <option value="14">14:00</option>
+                <option value="15">15:00</option>
+                <option value="16">16:00</option>
+                <option value="17">17:00</option>
+                <option value="18">18:00</option>
+                <option value="19">19:00</option>
+                <option value="20">20:00</option>
+                <option value="21">21:00</option>
+                <option value="22">22:00</option>
+                <option value="23">23:00</option>
+                <option value="24">24:00</option>
+              </select>
             </label>
             <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
               <span style="min-width: 44px;">종료</span>
-              <input type="time" id="scheduledEndTime" class="mic-select" style="width: 120px;" />
+              <select id="scheduledEndTime" class="mic-select" style="width: 120px;">
+                <option value="">--</option>
+                <option value="1">01:00</option>
+                <option value="2">02:00</option>
+                <option value="3">03:00</option>
+                <option value="4">04:00</option>
+                <option value="5">05:00</option>
+                <option value="6">06:00</option>
+                <option value="7">07:00</option>
+                <option value="8">08:00</option>
+                <option value="9">09:00</option>
+                <option value="10">10:00</option>
+                <option value="11">11:00</option>
+                <option value="12">12:00</option>
+                <option value="13">13:00</option>
+                <option value="14">14:00</option>
+                <option value="15">15:00</option>
+                <option value="16">16:00</option>
+                <option value="17">17:00</option>
+                <option value="18">18:00</option>
+                <option value="19">19:00</option>
+                <option value="20">20:00</option>
+                <option value="21">21:00</option>
+                <option value="22">22:00</option>
+                <option value="23">23:00</option>
+                <option value="24">24:00</option>
+              </select>
             </label>
           </div>
           <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">예정 시간 저장</button>
@@ -840,7 +892,9 @@
     if (isNaN(date.getTime())) return '';
     var h = date.getHours();
     var m = date.getMinutes();
-    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+    // 자정(0시, 분 0)은 24시로 표시
+    if (h === 0 && m === 0) return '24';
+    return String(h);
   }
 
   function applyScheduleToInputs() {
@@ -861,14 +915,28 @@
     var scheduledStartAt = null;
     var scheduledEndAt = null;
     if (startVal) {
-      var [sh, sm] = startVal.split(':').map(Number);
-      scheduledStartAt = new Date(today);
-      scheduledStartAt.setHours(sh, sm || 0, 0, 0);
+      var sh = parseInt(startVal, 10);
+      if (!isNaN(sh)) {
+        scheduledStartAt = new Date(today);
+        if (sh === 24) {
+          scheduledStartAt.setDate(scheduledStartAt.getDate() + 1);
+          scheduledStartAt.setHours(0, 0, 0, 0);
+        } else {
+          scheduledStartAt.setHours(sh, 0, 0, 0);
+        }
+      }
     }
     if (endVal) {
-      var [eh, em] = endVal.split(':').map(Number);
-      scheduledEndAt = new Date(today);
-      scheduledEndAt.setHours(eh, em || 0, 0, 0);
+      var eh = parseInt(endVal, 10);
+      if (!isNaN(eh)) {
+        scheduledEndAt = new Date(today);
+        if (eh === 24) {
+          scheduledEndAt.setDate(scheduledEndAt.getDate() + 1);
+          scheduledEndAt.setHours(0, 0, 0, 0);
+        } else {
+          scheduledEndAt.setHours(eh, 0, 0, 0);
+        }
+      }
     }
     var slug = String(channel.slug).trim().toLowerCase();
     api('/api/radio/channels/' + encodeURIComponent(slug), {
