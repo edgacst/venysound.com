@@ -485,6 +485,8 @@
   var currentUser = null;
 
   function loadSession() {
+    var slugParam = (typeof URLSearchParams !== 'undefined') ? new URLSearchParams(window.location.search).get('slug') : null;
+    var slug = slugParam ? String(slugParam).trim().toLowerCase() : null;
     return api('/api/auth/me').then(function(r) {
       if (r.status === 401) {
         showInit('로그인이 필요합니다. <a href="/login">로그인</a> 후 이용해 주세요.', true);
@@ -494,13 +496,14 @@
       return r.json();
     }).then(function(user) {
       currentUser = user;
+      if (slug) return api('/api/radio/channels/' + encodeURIComponent(slug));
       return api('/api/radio/channels/me');
     }).then(function(r) {
       if (!r.ok) throw new Error('channel fetch failed');
       return r.json();
     }).then(function(data) {
       if (!data || !data.slug) {
-        showInit('채널이 없습니다. <a href="/radio">방송국</a>에서 먼저 채널을 만들어 주세요.', true);
+        showInit('채널이 없습니다. <a href="/radio">방송국</a>에서 먼저 채널을 만들거나, 방송 페이지에서 「방송 스튜디오」로 들어오세요.', true);
         return Promise.reject(new Error('no channel'));
       }
       channel = data;

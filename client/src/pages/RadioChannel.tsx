@@ -733,7 +733,7 @@ export default function RadioChannel() {
                   </Dialog>
                 )}
                 {canManage ? (
-                  <a href="/radio-dj-ui-mockup.html" target="_blank" rel="noopener noreferrer">
+                  <a href={`/radio-dj-ui-mockup.html?slug=${encodeURIComponent(channel.slug)}`} target="_blank" rel="noopener noreferrer">
                     <Button className="gap-2 w-full sm:w-auto">
                       <Mic2 size={18} />
                       {t("radio.goToStudio", "방송 스튜디오")}
