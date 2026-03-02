@@ -79,6 +79,11 @@ export default function RadioChannel() {
     }
   }, [nowPlayingId, channel?.nowPlayingElapsedSeconds]);
 
+  // 곡이 바뀌면 seek 플래그 리셋 (새 곡 재생 시 동기화 적용)
+  useEffect(() => {
+    hasSeekedForTrackRef.current = null;
+  }, [nowPlayingId]);
+
   // 리스너 재생 위치 주기적 동기화 (DJ와 차이가 크면 재보정)
   useEffect(() => {
     if (isOwner || !isLive || nowPlayingId == null) return;

@@ -2664,6 +2664,9 @@ export async function registerRoutes(
       }
 
       if (!canManage && Object.keys(updates).length === 0) return res.status(403).json({ message: "채널 소유자 또는 현재 송출 호스트만 수정할 수 있습니다." });
+      if (status !== undefined && String(status) === "ended" && !isOwner && !isCurrentHost) {
+        return res.status(403).json({ message: "방송 종료는 방장 또는 현재 송출 호스트만 가능합니다." });
+      }
       if (canManage) {
         if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) {
           updates.status = String(status);

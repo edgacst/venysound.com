@@ -729,6 +729,7 @@
       }
       return;
     }
+    if (titleEl) titleEl.setAttribute('data-now-id', String(nowId));
     var item = queue.filter(function(q) { return q.id === nowId; })[0];
     if (item) {
       titleEl.textContent = item.title || '제목 없음';
@@ -736,6 +737,14 @@
     } else {
       titleEl.textContent = '곡 #' + nowId;
       artistEl.textContent = '로딩 중...';
+      api('/api/music/' + encodeURIComponent(nowId)).then(function(r) {
+        if (!r.ok) return;
+        return r.json();
+      }).then(function(m) {
+        if (!m || !titleEl || titleEl.getAttribute('data-now-id') !== String(nowId)) return;
+        titleEl.textContent = (m.title && m.title.trim()) ? m.title.trim() : '제목 없음';
+        artistEl.textContent = (m.artist && String(m.artist).trim()) ? String(m.artist).trim() : '';
+      }).catch(function() {});
     }
     var waveformEl = document.getElementById('djWaveformAudio');
     var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
@@ -909,6 +918,7 @@
 
   function setNowPlaying(musicId) {
     if (!channel || !channel.slug) return;
+    if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
     var slug = String(channel.slug).trim().toLowerCase();
     var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
     if (Number.isNaN(musicIdNum)) { alert('잘못된 곡 ID입니다.'); return; }
@@ -1066,12 +1076,12 @@
           if (inp) { inp.disabled = false; inp.placeholder = '메시지 입력...'; }
           if (btn) btn.disabled = false;
         }
-        if (msg.type === 'radio_listeners' && msg.slug === slug && typeof msg.count === 'number') {
+        if (msg.type === 'radio_listeners' && (msg.slug == null || String(msg.slug).toLowerCase() === slug) && typeof msg.count === 'number') {
           listenerCount = msg.count;
           var el = document.getElementById('listenerCountLabel');
           if (el) el.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
         }
-        if (msg.type === 'radio_now_playing' && (msg.slug == null || msg.slug === slug)) {
+        if (msg.type === 'radio_now_playing' && (msg.slug == null || String(msg.slug).toLowerCase() === slug)) {
           if (channel) {
             channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
             channel.nowPlayingStartedAt = msg.startedAt || null;
@@ -1079,7 +1089,7 @@
             updateNowPlayingDisplay();
           }
         }
-        if (msg.type === 'radio_broadcast_ended' && (msg.slug == null || msg.slug === slug)) {
+        if (msg.type === 'radio_broadcast_ended' && (msg.slug == null || String(msg.slug).toLowerCase() === slug)) {
           fetchChannelAndUpdate();
         }
         if (msg.type === 'radio_user_joined' && msg.userId) {
