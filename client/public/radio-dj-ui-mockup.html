@@ -736,6 +736,9 @@
         audioEl.addEventListener('error', onError, { once: true });
       } else {
         loadNowPlayingLyrics(nowId);
+        if (!waveformSource && audioEl.src) {
+          startWaveform(audioEl);
+        }
       }
     }
     var btnStop = document.getElementById('btnStopNowPlaying');
@@ -809,6 +812,7 @@
     }).then(function(data) {
       if (data) {
         channel = data;
+        if (channel.status === 'ended') stopPolling();
         renderHeader();
         renderQueue();
         updateNowPlayingDisplay();
@@ -865,6 +869,13 @@
         waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
         waveformCtx.resume().then(function() { }).catch(function() { });
       } catch (e) {}
+    }
+    var audioEl = document.getElementById('djMonitorAudio');
+    if (audioEl) {
+      audioEl.setAttribute('data-current-id', String(musicIdNum));
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      audioEl.load();
+      audioEl.play().catch(function() {});
     }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
@@ -1004,6 +1015,17 @@
           listenerCount = msg.count;
           var el = document.getElementById('listenerCountLabel');
           if (el) el.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
+        }
+        if (msg.type === 'radio_now_playing' && (msg.slug == null || msg.slug === slug)) {
+          if (channel) {
+            channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
+            channel.nowPlayingStartedAt = msg.startedAt || null;
+            renderQueue();
+            updateNowPlayingDisplay();
+          }
+        }
+        if (msg.type === 'radio_broadcast_ended' && (msg.slug == null || msg.slug === slug)) {
+          fetchChannelAndUpdate();
         }
         if (msg.type === 'radio_user_joined' && msg.userId) {
           chatMessages.push({

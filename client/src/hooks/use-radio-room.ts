@@ -18,7 +18,7 @@ export function useRadioRoom(slug: string | undefined, displayName?: string | nu
       if (msg.type === "radio_listeners" && msg.slug === normalizedSlug && typeof msg.count === "number") {
         setListenerCount(msg.count);
       }
-      if (msg.type === "radio_now_playing" || msg.type === "radio_broadcast_ended") {
+      if ((msg.type === "radio_now_playing" || msg.type === "radio_broadcast_ended") && (msg.slug == null || msg.slug === normalizedSlug)) {
         queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
       }
     });

@@ -31,7 +31,7 @@ export default function RadioChannel() {
   const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasSeekedForTrackRef = useRef<number | null>(null);
-  const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number }>({ musicId: null, elapsedSeconds: 0 });
+  const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
@@ -227,10 +227,10 @@ export default function RadioChannel() {
         ]);
         return;
       }
-      if (msg.type === "radio_now_playing") {
+      if (msg.type === "radio_now_playing" && (msg.slug == null || msg.slug === slug)) {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
-        lastNowPlayingRef.current = { musicId, elapsedSeconds };
+        lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         if (musicId === null) {
           refetchChannel();
           const audio = audioRef.current;
@@ -241,7 +241,7 @@ export default function RadioChannel() {
           }
         }
       }
-      if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName) {
+      if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName && (msg.slug == null || msg.slug === slug)) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
         refetchChannel();
         const audio = audioRef.current;
@@ -631,7 +631,7 @@ export default function RadioChannel() {
                     <strong>{broadcastEndedMessage}</strong>님이 방송을 종료했습니다.
                   </p>
                 )}
-                {channel.status === "live" && channel.scheduledStartAt && channel.scheduledEndAt && (
+                {channel.status === "live" && channel.scheduledStartAt && channel.scheduledEndAt && !broadcastEndedMessage && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
                     <strong>{channel.currentHostUsername ?? channel.ownerDisplayName ?? "DJ"}</strong>
                     님이 {formatScheduleTime(channel.scheduledStartAt)}부터 {formatScheduleTime(channel.scheduledEndAt)}까지 방송중입니다.
@@ -702,7 +702,8 @@ export default function RadioChannel() {
                         const last = lastNowPlayingRef.current;
                         let seekSec: number | null = null;
                         if (last?.musicId === nowPlayingId) {
-                          seekSec = last.elapsedSeconds;
+                          const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
+                          seekSec = last.elapsedSeconds + delay;
                         } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
                           const { elapsed, receivedAt } = channelElapsedRef.current;
                           seekSec = elapsed + (Date.now() - receivedAt) / 1000;

@@ -2691,6 +2691,7 @@ export async function registerRoutes(
         const elapsedSeconds = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
         broadcastToRadioChannel(slug, {
           type: "radio_now_playing",
+          slug,
           musicId: updated!.nowPlayingMusicId ?? null,
           startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
           elapsedSeconds,
@@ -2705,7 +2706,7 @@ export async function registerRoutes(
             hostDisplayName = (hostUser?.username ?? hostUser?.firstName ?? hostUser?.id ?? "DJ") as string;
           } catch (_) {}
         }
-        broadcastToRadioChannel(slug, { type: "radio_broadcast_ended", hostDisplayName });
+        broadcastToRadioChannel(slug, { type: "radio_broadcast_ended", slug, hostDisplayName });
       }
       res.json(updated);
     } catch (e) {
