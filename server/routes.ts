@@ -125,10 +125,12 @@ export async function registerRoutes(
         if (msg.type === "radio_join" && typeof msg.slug === "string" && msg.slug) {
           const slug = String(msg.slug).trim().toLowerCase();
           if (!radioChannelRooms.has(slug)) radioChannelRooms.set(slug, new Set());
-          radioChannelRooms.get(slug)!.add(ws);
+          const room = radioChannelRooms.get(slug)!;
+          const wasAlreadyInRoom = room.has(ws);
+          room.add(ws);
           wsRadioSlugs.get(ws)!.add(slug);
           broadcastRadioListeners(slug);
-          if (wsUserId) {
+          if (!wasAlreadyInRoom && wsUserId) {
             try {
               const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
               let username: string | undefined;

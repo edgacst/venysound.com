@@ -1093,26 +1093,40 @@
           fetchChannelAndUpdate();
         }
         if (msg.type === 'radio_user_joined' && msg.userId) {
-          chatMessages.push({
-            id: 'join-' + String(msg.userId) + '-' + Date.now(),
-            userId: String(msg.userId),
-            username: msg.username != null ? String(msg.username) : null,
-            type: 'system_join',
-            content: '',
-            createdAt: new Date().toISOString()
+          var uid = String(msg.userId);
+          var now = Date.now();
+          var recentJoin = chatMessages.some(function(m) {
+            return m.type === 'system_join' && m.userId === uid && now - new Date(m.createdAt).getTime() < 15000;
           });
-          renderChat();
+          if (!recentJoin) {
+            chatMessages.push({
+              id: 'join-' + uid + '-' + now,
+              userId: uid,
+              username: msg.username != null ? String(msg.username) : null,
+              type: 'system_join',
+              content: '',
+              createdAt: new Date().toISOString()
+            });
+            renderChat();
+          }
         }
         if (msg.type === 'radio_user_left' && msg.userId) {
-          chatMessages.push({
-            id: 'left-' + String(msg.userId) + '-' + Date.now(),
-            userId: String(msg.userId),
-            username: msg.username != null ? String(msg.username) : null,
-            type: 'system_leave',
-            content: '',
-            createdAt: new Date().toISOString()
+          var uid = String(msg.userId);
+          var now = Date.now();
+          var recentLeft = chatMessages.some(function(m) {
+            return m.type === 'system_leave' && m.userId === uid && now - new Date(m.createdAt).getTime() < 15000;
           });
-          renderChat();
+          if (!recentLeft) {
+            chatMessages.push({
+              id: 'left-' + uid + '-' + now,
+              userId: uid,
+              username: msg.username != null ? String(msg.username) : null,
+              type: 'system_leave',
+              content: '',
+              createdAt: new Date().toISOString()
+            });
+            renderChat();
+          }
         }
         if (msg.type === 'radio_chat' && msg.message) {
           var m = msg.message;
@@ -1394,6 +1408,15 @@
       }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
         if (data) channel = data;
       }).catch(function() {});
+    });
+    if (monAudio) monAudio.addEventListener('ended', function() {
+      if (!channel || channel.canControlBroadcast === false || !queue.length) return;
+      var nowId = channel.nowPlayingMusicId;
+      if (nowId == null) return;
+      var idx = queue.findIndex(function(q) { return q.id === nowId; });
+      if (idx < 0 || idx >= queue.length - 1) return;
+      var next = queue[idx + 1];
+      if (next && next.id) setNowPlaying(next.id);
     });
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
       var wrap = document.getElementById('searchWrap');

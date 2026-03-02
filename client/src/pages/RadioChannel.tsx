@@ -228,31 +228,45 @@ export default function RadioChannel() {
       if (msg.type === "radio_user_joined" && msg.userId) {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: "join-" + userId + "-" + Date.now(),
-            userId,
-            username: username ?? null,
-            type: "system_join",
-            createdAt: new Date().toISOString(),
-          } as ChatMsg,
-        ]);
+        const now = Date.now();
+        setMessages((prev) => {
+          const recentJoin = prev.some(
+            (m) => (m as ChatMsg).type === "system_join" && m.userId === userId && now - new Date(m.createdAt).getTime() < 15000
+          );
+          if (recentJoin) return prev;
+          return [
+            ...prev,
+            {
+              id: "join-" + userId + "-" + now,
+              userId,
+              username: username ?? null,
+              type: "system_join",
+              createdAt: new Date().toISOString(),
+            } as ChatMsg,
+          ];
+        });
         return;
       }
       if (msg.type === "radio_user_left" && msg.userId) {
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: "left-" + userId + "-" + Date.now(),
-            userId,
-            username: username ?? null,
-            type: "system_leave",
-            createdAt: new Date().toISOString(),
-          } as ChatMsg,
-        ]);
+        const now = Date.now();
+        setMessages((prev) => {
+          const recentLeft = prev.some(
+            (m) => (m as ChatMsg).type === "system_leave" && m.userId === userId && now - new Date(m.createdAt).getTime() < 15000
+          );
+          if (recentLeft) return prev;
+          return [
+            ...prev,
+            {
+              id: "left-" + userId + "-" + now,
+              userId,
+              username: username ?? null,
+              type: "system_leave",
+              createdAt: new Date().toISOString(),
+            } as ChatMsg,
+          ];
+        });
         return;
       }
       if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
