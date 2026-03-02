@@ -47,6 +47,7 @@ export default function RadioChannel() {
     nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
     ownerDisplayName?: string;
+    currentHostUsername?: string | null;
     scheduledStartAt?: string | null;
     scheduledEndAt?: string | null;
   }>({
@@ -180,6 +181,9 @@ export default function RadioChannel() {
   useEffect(() => {
     setBroadcastEndedMessage(null);
   }, [slug]);
+  useEffect(() => {
+    if (channel?.status === "live") setBroadcastEndedMessage(null);
+  }, [channel?.status]);
   const subscribeRef = useRef(subscribe);
   subscribeRef.current = subscribe;
   useEffect(() => {
@@ -227,14 +231,24 @@ export default function RadioChannel() {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         lastNowPlayingRef.current = { musicId, elapsedSeconds };
+        if (musicId === null) {
+          refetchChannel();
+          const audio = audioRef.current;
+          if (audio) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+          }
+        }
       }
       if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
         refetchChannel();
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current.removeAttribute("src");
-          audioRef.current.load();
+        const audio = audioRef.current;
+        if (audio) {
+          audio.pause();
+          audio.removeAttribute("src");
+          audio.load();
         }
         return;
       }
@@ -612,19 +626,15 @@ export default function RadioChannel() {
                 {channel.description && (
                   <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
                 )}
-                {broadcastEndedMessage && (
+                {broadcastEndedMessage && channel.status === "ended" && (
                   <p className="text-sm text-amber-600 dark:text-amber-400 mb-4 rounded-md bg-amber-500/10 px-3 py-2 border border-amber-500/20">
-                    <strong>{broadcastEndedMessage}</strong>님이 방송을 중단했습니다.
+                    <strong>{broadcastEndedMessage}</strong>님이 방송을 종료했습니다.
                   </p>
                 )}
-                {channel.scheduledStartAt && channel.scheduledEndAt && channel.status !== "ended" && (
+                {channel.status === "live" && channel.scheduledStartAt && channel.scheduledEndAt && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
-                    <strong>{channel.ownerDisplayName ?? "DJ"}</strong>
-                    {t("radio.schedulePrefix", " 님 방송이 ")}
-                    {formatScheduleTime(channel.scheduledStartAt)}
-                    {t("radio.scheduleTo", "부터 ")}
-                    {formatScheduleTime(channel.scheduledEndAt)}
-                    {t("radio.scheduleSuffix", "까지 진행됩니다.")}
+                    <strong>{channel.currentHostUsername ?? channel.ownerDisplayName ?? "DJ"}</strong>
+                    님이 {formatScheduleTime(channel.scheduledStartAt)}부터 {formatScheduleTime(channel.scheduledEndAt)}까지 방송중입니다.
                   </p>
                 )}
                 {!isOwner && (

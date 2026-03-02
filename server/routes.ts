@@ -2667,7 +2667,11 @@ export async function registerRoutes(
       if (canManage) {
         if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) {
           updates.status = String(status);
-          if (String(status) === "ended") updates.currentHostId = null;
+          if (String(status) === "ended") {
+            updates.currentHostId = null;
+            updates.nowPlayingMusicId = null;
+            updates.nowPlayingStartedAt = null;
+          }
         }
         if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
         if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
