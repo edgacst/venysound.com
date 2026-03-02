@@ -82,45 +82,21 @@ export default function RadioChannel() {
     }
   }, [isLive, nowPlayingId]);
 
+  // 채널/곡 정보가 바뀔 때마다 동기화 기준 초기화
   useEffect(() => {
     if (nowPlayingId == null || channel?.nowPlayingElapsedSeconds == null) return;
-    const nextElapsed = channel.nowPlayingElapsedSeconds;
-    const prev = channelElapsedRef.current;
-    if (prev?.musicId === nowPlayingId && prev.elapsed > nextElapsed) return;
     channelElapsedRef.current = {
       musicId: nowPlayingId,
-      elapsed: nextElapsed,
+      elapsed: channel.nowPlayingElapsedSeconds,
       receivedAt: Date.now(),
     };
-  }, [nowPlayingId, channel?.nowPlayingElapsedSeconds]);
+  }, [slug, nowPlayingId, channel?.nowPlayingElapsedSeconds]);
 
-  // 곡이 바뀌면 seek 플래그 리셋 (새 곡 재생 시 동기화 적용)
+  // 슬러그나 곡이 바뀌면 seek 플래그와 마지막 nowPlaying 상태를 초기화
   useEffect(() => {
     hasSeekedForTrackRef.current = null;
-  }, [nowPlayingId]);
-
-  // 리스너 재생 위치 주기적 동기화 (많이 뒤처졌을 때만 앞으로 보정, 뒤로 seek 절대 안 함)
-  useEffect(() => {
-    if (isOwner || !isLive || nowPlayingId == null) return;
-    const interval = setInterval(() => {
-      const audio = audioRef.current;
-      if (!audio || audio.paused || audio.readyState < 2) return;
-      const last = lastNowPlayingRef.current;
-      let expectedSec: number;
-      if (last?.musicId === nowPlayingId) {
-        const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
-        expectedSec = last.elapsedSeconds + delay;
-      } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
-        const { elapsed, receivedAt } = channelElapsedRef.current;
-        expectedSec = elapsed + (Date.now() - receivedAt) / 1000;
-      } else return;
-      const behind = expectedSec - audio.currentTime;
-      if (behind > 8 && expectedSec > audio.currentTime) {
-        audio.currentTime = Math.max(0, expectedSec);
-      }
-    }, 20000);
-    return () => clearInterval(interval);
-  }, [isOwner, isLive, nowPlayingId]);
+    lastNowPlayingRef.current = { musicId: null, elapsedSeconds: 0, receivedAt: 0 };
+  }, [slug, nowPlayingId]);
 
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
