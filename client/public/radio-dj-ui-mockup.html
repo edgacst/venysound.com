@@ -322,9 +322,12 @@
           <div id="nowLyrics" class="lyrics-box" style="max-height: 160px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; white-space: pre-wrap; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;"></div>
         </div>
         <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
-          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡)</p>
+          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 소리 안 들리면 아래 재생 클릭</p>
           <audio id="djMonitorAudio" controls style="width: 100%; height: 56px; min-height: 56px;" preload="metadata"></audio>
-          <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm" style="display: none; margin-top: 8px;">곡 정지</button>
+          <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm" style="display: none;">▶ 모니터 재생</button>
+            <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm" style="display: none;">곡 정지</button>
+          </div>
         </div>
         <div class="mic-setup">
           <p class="panel-title" style="margin-top: 20px; margin-bottom: 4px;">마이크 설정</p>
@@ -742,11 +745,19 @@
       }
     }
     var btnStop = document.getElementById('btnStopNowPlaying');
+    var btnMonitorPlay = document.getElementById('btnMonitorPlay');
     if (btnStop) {
       if (nowId && channel.canControlBroadcast !== false) {
         btnStop.style.display = 'inline-block';
       } else {
         btnStop.style.display = 'none';
+      }
+    }
+    if (btnMonitorPlay) {
+      if (nowId && audioEl && audioEl.src) {
+        btnMonitorPlay.style.display = 'inline-flex';
+      } else {
+        btnMonitorPlay.style.display = 'none';
       }
     }
   }
@@ -1309,6 +1320,11 @@
     document.getElementById('btnEndBroadcast').addEventListener('click', endBroadcast);
     var btnStopNow = document.getElementById('btnStopNowPlaying');
     if (btnStopNow) btnStopNow.addEventListener('click', stopNowPlaying);
+    var btnMonitorPlay = document.getElementById('btnMonitorPlay');
+    if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
+      var audio = document.getElementById('djMonitorAudio');
+      if (audio && audio.src) { audio.play().catch(function() {}); }
+    });
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
       var wrap = document.getElementById('searchWrap');
       wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
