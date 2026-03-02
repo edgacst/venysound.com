@@ -89,6 +89,8 @@ export async function registerRoutes(
   const userSockets = new Map<string, Set<WebSocket>>();
   const radioChannelRooms = new Map<string, Set<WebSocket>>();
   const wsRadioSlugs = new WeakMap<WebSocket, Set<string>>();
+  const lastJoinBroadcastAt = new Map<string, number>();
+  const JOIN_BROADCAST_COOLDOWN_MS = 60000;
 
   function broadcastToRadioChannel(slug: string, data: object) {
     const room = radioChannelRooms.get(slug);
@@ -131,17 +133,25 @@ export async function registerRoutes(
           wsRadioSlugs.get(ws)!.add(slug);
           broadcastRadioListeners(slug);
           if (!wasAlreadyInRoom && wsUserId) {
-            try {
-              const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
-              let username: string | undefined;
-              if (displayName) username = displayName;
-              else {
-                const user = await storage.getUserById(wsUserId);
-                username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+            const joinKey = `${slug}:${wsUserId}`;
+            const now = Date.now();
+            const lastAt = lastJoinBroadcastAt.get(joinKey);
+            if (lastAt != null && now - lastAt < JOIN_BROADCAST_COOLDOWN_MS) {
+              /* 같은 유저 입장 알림 60초에 한 번만 */
+            } else {
+              try {
+                lastJoinBroadcastAt.set(joinKey, now);
+                const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
+                let username: string | undefined;
+                if (displayName) username = displayName;
+                else {
+                  const user = await storage.getUserById(wsUserId);
+                  username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+                }
+                broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
+              } catch (e) {
+                console.warn("[ws] radio_user_joined broadcast failed", e);
               }
-              broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
-            } catch (e) {
-              console.warn("[ws] radio_user_joined broadcast failed", e);
             }
           }
         }

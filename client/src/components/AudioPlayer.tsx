@@ -1,7 +1,7 @@
 import { useMusic, useMusicList } from "@/hooks/use-music";
 import { create } from 'zustand';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, FileText, Repeat, Repeat1, Shuffle, ListMusic, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { X, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, FileText, Repeat, Repeat1, Shuffle, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -1019,20 +1019,6 @@ export function GlobalAudioPlayer() {
                 data-testid="button-equalizer"
               >
                 <SlidersHorizontal size={16} />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => togglePanel('queue')}
-                className={`shrink-0 ${showQueuePanel ? "text-primary" : ""}`}
-                data-testid="button-queue"
-              >
-                <ListMusic size={16} />
-                {queue.length > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 bg-primary text-primary-foreground text-[9px] rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold">
-                    {queue.length}
-                  </span>
-                )}
               </Button>
               {displayMusic?.lyrics && (
                 <Button

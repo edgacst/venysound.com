@@ -87,28 +87,31 @@
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: #71717a;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
     .queue-list {
       list-style: none;
       padding: 0;
-      margin: 0 0 16px 0;
+      margin: 0 0 12px 0;
+      max-height: 200px;
+      overflow-y: auto;
     }
     .queue-list li {
-      padding: 10px 12px;
-      background: #27272a;
-      border-radius: 8px;
-      margin-bottom: 6px;
-      font-size: 0.85rem;
+      padding: 5px 8px;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.75rem;
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 6px;
+      flex-wrap: nowrap;
+      background: transparent;
+      border-radius: 0;
+      margin-bottom: 0;
     }
-    .queue-list li .num { color: #71717a; font-size: 0.8rem; width: 22px; flex-shrink: 0; }
+    .queue-list li .num { color: #71717a; font-size: 0.7rem; width: 16px; flex-shrink: 0; }
     .queue-list li .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .queue-list li.playing { border-left: 3px solid #a78bfa; }
-    .queue-list li .actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .queue-list li.playing { border-left: 2px solid #a78bfa; background: rgba(167, 139, 250, 0.08); }
+    .queue-list li .actions { display: flex; gap: 2px; flex-shrink: 0; }
     .main {
       padding: 24px;
       display: flex;
@@ -300,7 +303,24 @@
       <div class="panel-title">곡 추가</div>
       <button type="button" id="btnToggleSearch" class="btn btn-primary" style="width: 100%; margin-bottom: 8px;">📂 사이트 음원에서 선택</button>
       <div id="searchWrap" class="search-wrap" style="display: none;">
-        <input type="text" id="searchInput" placeholder="곡 검색..." />
+        <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+          <select id="searchGenre" class="mic-select" style="min-width: 100px; flex: 1;">
+            <option value="">전체</option>
+            <option value="팝뮤직">팝뮤직</option>
+            <option value="국내가요">국내가요</option>
+            <option value="발라드">발라드</option>
+            <option value="케이팝">케이팝</option>
+            <option value="트로트">트로트</option>
+            <option value="월드뮤직">월드뮤직</option>
+            <option value="경음악">경음악</option>
+            <option value="재즈">재즈</option>
+            <option value="클래식">클래식</option>
+            <option value="인디팝">인디팝</option>
+            <option value="댄스팝">댄스팝</option>
+          </select>
+          <button type="button" id="btnLoadByGenre" class="btn btn-secondary btn-sm">장르로 불러오기</button>
+        </div>
+        <input type="text" id="searchInput" placeholder="곡 검색 또는 장르 선택 후 불러오기..." />
         <div id="searchResults" class="search-results"></div>
       </div>
       <button type="button" class="btn btn-secondary" style="width: 100%;" disabled title="준비 중">💾 로컬 파일 (준비 중)</button>
@@ -998,9 +1018,12 @@
       .catch(function(e) { alert(networkErrorMsg(e) || '방송 종료 실패'); });
   }
 
-  function doSearch(q) {
+  function doSearch(q, genreParam) {
     var query = (q && typeof q === 'string') ? q.trim() : '';
-    var url = '/api/music?page=1&limit=30';
+    var genreEl = document.getElementById('searchGenre');
+    var genre = (genreParam != null && genreParam !== '') ? String(genreParam) : (genreEl && genreEl.value ? String(genreEl.value).trim() : '');
+    var url = '/api/music?page=1&limit=50';
+    if (genre) url += '&genre=' + encodeURIComponent(genre);
     if (query.length > 0) url += '&search=' + encodeURIComponent(query);
     document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#71717a;">로딩 중...</div>';
     api(url).then(function(r) {
@@ -1432,6 +1455,8 @@
       if (searchDebounce) clearTimeout(searchDebounce);
       searchDebounce = setTimeout(function() { doSearch(q); }, 300);
     });
+    var btnLoadByGenre = document.getElementById('btnLoadByGenre');
+    if (btnLoadByGenre) btnLoadByGenre.addEventListener('click', function() { doSearch(''); });
     document.querySelectorAll('.tabs button').forEach(function(btn) {
       btn.addEventListener('click', function() {
         document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });

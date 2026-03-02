@@ -237,7 +237,7 @@ export default function RadioChannel() {
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
         const last = lastJoinByUserRef.current[userId];
-        if (last != null && now - last < 15000) return;
+        if (last != null && now - last < 60000) return;
         lastJoinByUserRef.current[userId] = now;
         setMessages((prev) => [
           ...prev,
@@ -256,7 +256,7 @@ export default function RadioChannel() {
         const username = msg.username != null ? String(msg.username) : undefined;
         const now = Date.now();
         const last = lastLeaveByUserRef.current[userId];
-        if (last != null && now - last < 15000) return;
+        if (last != null && now - last < 60000) return;
         lastLeaveByUserRef.current[userId] = now;
         setMessages((prev) => [
           ...prev,
