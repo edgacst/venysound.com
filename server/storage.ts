@@ -2200,6 +2200,9 @@ export class DatabaseStorage implements IStorage {
       slug: radioChannels.slug,
       description: radioChannels.description,
       coverFilename: radioChannels.coverFilename,
+      scheduledStartAt: radioChannels.scheduledStartAt,
+      scheduledEndAt: radioChannels.scheduledEndAt,
+      updatedAt: radioChannels.updatedAt,
     }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
   }
 

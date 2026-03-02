@@ -39,6 +39,36 @@ export default function Home() {
     },
   });
 
+  const { data: liveChannels } = useQuery<Array<{
+    id: number;
+    name: string;
+    slug: string;
+    scheduledStartAt?: string | null;
+    scheduledEndAt?: string | null;
+    updatedAt?: string;
+  }>>({
+    queryKey: ["/api/radio/channels/live"],
+    queryFn: async () => {
+      const res = await fetch("/api/radio/channels/live");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const liveTickerText = liveChannels?.length
+    ? liveChannels
+        .map((ch) => {
+          const startAt = ch.scheduledStartAt ? new Date(ch.scheduledStartAt) : (ch.updatedAt ? new Date(ch.updatedAt) : null);
+          const endAt = ch.scheduledEndAt ? new Date(ch.scheduledEndAt) : null;
+          const startStr = startAt ? startAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+          const endStr = endAt ? endAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+          if (startStr && endStr) return `${ch.name} 채널 ${startStr}~${endStr} 방송중`;
+          if (startStr) return `${ch.name} 채널 ${startStr}부터 방송중`;
+          return `${ch.name} 채널 지금 방송중`;
+        })
+        .join("    ★    ")
+    : "";
+
   const banners = [
     { image: banner1, title: t('home.banner1Title'), subtitle: t('home.banner1Subtitle'), link: "/upload", buttonText: t('home.banner1Button') },
     { image: banner2, title: t('home.banner2Title'), subtitle: t('home.banner2Subtitle'), link: "/music", buttonText: t('home.banner2Button') },
@@ -322,11 +352,21 @@ export default function Home() {
       <section className="container px-4 py-4" data-testid="section-radio-banner">
         <Link href="/radio">
           <div
-            className="rounded-xl overflow-hidden h-[120px] md:h-[140px] flex items-center justify-between gap-4 px-6 md:px-10 border border-white/10 cursor-pointer hover:opacity-95 transition-opacity group relative bg-cover bg-center"
+            className="rounded-xl overflow-hidden h-[120px] md:h-[140px] flex flex-col border border-white/10 cursor-pointer hover:opacity-95 transition-opacity group relative bg-cover bg-center"
             style={{
               backgroundImage: "linear-gradient(to right, rgba(30,0,60,0.88) 0%, rgba(60,20,80,0.6) 50%, rgba(80,40,100,0.5) 100%), url('/radio-studio-bg.png'), linear-gradient(to right, rgb(88,28,135), rgb(126,34,206))",
             }}
           >
+            {/* 방송중 스크롤 알림 */}
+            {liveTickerText ? (
+              <div className="flex-shrink-0 h-8 md:h-9 overflow-hidden bg-black/30 flex items-center relative z-10">
+                <div className="animate-radio-ticker whitespace-nowrap text-yellow-400 font-medium text-sm md:text-base inline-flex">
+                  <span className="inline-block pr-[2em]">{liveTickerText}</span>
+                  <span className="inline-block pr-[2em]">{liveTickerText}</span>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex-1 flex items-center justify-between gap-4 px-6 md:px-10 min-h-0">
             {/* 중앙 파형 영역 (동그라미 부분) */}
             <RadioBannerWaveformCanvas className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[200px] h-[52px] md:w-[240px] md:h-[60px] pointer-events-none rounded-lg overflow-hidden" />
             <div className="flex items-center gap-4 min-w-0 relative z-0">
@@ -345,6 +385,7 @@ export default function Home() {
             <span className="flex-shrink-0 text-white/90 group-hover:translate-x-1 transition-transform text-sm font-medium relative z-0">
               {t("home.radioBannerButton", "방송국 가기")} →
             </span>
+            </div>
           </div>
         </Link>
       </section>

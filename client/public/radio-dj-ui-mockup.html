@@ -414,6 +414,7 @@
     </footer>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
   <script>
 (function() {
   var channel = null;
@@ -1525,17 +1526,70 @@
     mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) recordChunks.push(e.data); };
     mediaRecorder.onstop = function() {
       var blob = new Blob(recordChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'radio-recording-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.webm';
-      a.click();
-      URL.revokeObjectURL(a.href);
-      document.getElementById('recordStatus').textContent = '';
-      document.getElementById('btnRecordStart').style.display = 'inline-flex';
-      document.getElementById('btnRecordStop').style.display = 'none';
-      if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
-      recordContext = null;
-      mediaRecorder = null;
+      var filenameBase = 'radio-recording-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      function finishUi() {
+        document.getElementById('recordStatus').textContent = '';
+        document.getElementById('btnRecordStart').style.display = 'inline-flex';
+        document.getElementById('btnRecordStop').style.display = 'none';
+        if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
+        recordContext = null;
+        mediaRecorder = null;
+      }
+      function downloadWebm() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filenameBase + '.webm';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        finishUi();
+      }
+      if (typeof lamejs === 'undefined' || !lamejs.Mp3Encoder) {
+        downloadWebm();
+        return;
+      }
+      document.getElementById('recordStatus').textContent = 'MP3 변환 중...';
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var url = URL.createObjectURL(blob);
+      fetch(url).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+        return ctx.decodeAudioData(buf);
+      }).then(function(decoded) {
+        URL.revokeObjectURL(url);
+        var sr = decoded.sampleRate;
+        var ch0 = decoded.getChannelData(0);
+        var ch1 = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : ch0;
+        var len = ch0.length;
+        var left = new Int16Array(len);
+        var right = new Int16Array(len);
+        for (var i = 0; i < len; i++) {
+          var l = Math.max(-1, Math.min(1, ch0[i]));
+          left[i] = (l < 0 ? l * 0x8000 : l * 0x7FFF) | 0;
+          var r = Math.max(-1, Math.min(1, ch1[i]));
+          right[i] = (r < 0 ? r * 0x8000 : r * 0x7FFF) | 0;
+        }
+        var encoder = new lamejs.Mp3Encoder(decoded.numberOfChannels, sr, 128);
+        var mp3Chunks = [];
+        var block = 1152;
+        for (var j = 0; j < len; j += block) {
+          var sliceL = left.subarray(j, Math.min(j + block, len));
+          var sliceR = right.subarray(j, Math.min(j + block, len));
+          var mp3buf = encoder.encodeBuffer(sliceL, sliceR);
+          if (mp3buf.length) mp3Chunks.push(mp3buf);
+        }
+        var mp3buf = encoder.flush();
+        if (mp3buf.length) mp3Chunks.push(mp3buf);
+        var mp3Blob = new Blob(mp3Chunks, { type: 'audio/mpeg' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(mp3Blob);
+        a.download = filenameBase + '.mp3';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        ctx.close();
+        finishUi();
+      }).catch(function() {
+        URL.revokeObjectURL(url);
+        if (ctx.close) ctx.close();
+        downloadWebm();
+      });
     };
     mediaRecorder.start(1000);
     recordStartTime = Date.now();

@@ -105,6 +105,15 @@
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes radio-ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-radio-ticker {
+  animation: radio-ticker 25s linear infinite;
+}
+
 .glass-panel {
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }
