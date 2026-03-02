@@ -406,7 +406,6 @@ export default function RadioChannel() {
       </span>
     );
   }
-  const [staffUsername, setStaffUsername] = useState("");
   const [staffRole, setStaffRole] = useState<"staff" | "sub_host">("staff");
   const addStaffMutation = useMutation({
     mutationFn: async () => {
