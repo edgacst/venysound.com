@@ -89,6 +89,7 @@ export async function registerRoutes(
   const userSockets = new Map<string, Set<WebSocket>>();
   const radioChannelRooms = new Map<string, Set<WebSocket>>();
   const wsRadioSlugs = new WeakMap<WebSocket, Set<string>>();
+  const wsToUserId = new Map<WebSocket, string>();
   const lastJoinBroadcastAt = new Map<string, number>();
   const JOIN_BROADCAST_COOLDOWN_MS = 60000;
 
@@ -118,6 +119,7 @@ export async function registerRoutes(
         const msg = JSON.parse(data.toString());
         if (msg.type === "auth" && msg.userId) {
           wsUserId = msg.userId;
+          wsToUserId.set(ws, wsUserId);
           if (!userSockets.has(wsUserId!)) {
             userSockets.set(wsUserId!, new Set());
           }
@@ -133,24 +135,29 @@ export async function registerRoutes(
           wsRadioSlugs.get(ws)!.add(slug);
           broadcastRadioListeners(slug);
           if (!wasAlreadyInRoom && wsUserId) {
-            const joinKey = `${slug}:${wsUserId}`;
-            const now = Date.now();
-            const lastAt = lastJoinBroadcastAt.get(joinKey);
-            if (lastAt != null && now - lastAt < JOIN_BROADCAST_COOLDOWN_MS) {
-              /* 같은 유저 입장 알림 60초에 한 번만 */
+            const sameUserAlreadyInRoom = Array.from(room).some((s) => s !== ws && wsToUserId.get(s) === wsUserId);
+            if (sameUserAlreadyInRoom) {
+              /* 이미 이 방에 같은 유저가 다른 연결(다른 탭 등)로 있으면 입장 알림 안 함 */
             } else {
-              try {
-                lastJoinBroadcastAt.set(joinKey, now);
-                const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
-                let username: string | undefined;
-                if (displayName) username = displayName;
-                else {
-                  const user = await storage.getUserById(wsUserId);
-                  username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+              const joinKey = `${slug}:${wsUserId}`;
+              const now = Date.now();
+              const lastAt = lastJoinBroadcastAt.get(joinKey);
+              if (lastAt != null && now - lastAt < JOIN_BROADCAST_COOLDOWN_MS) {
+                /* 같은 유저 입장 알림 60초에 한 번만 */
+              } else {
+                try {
+                  lastJoinBroadcastAt.set(joinKey, now);
+                  const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
+                  let username: string | undefined;
+                  if (displayName) username = displayName;
+                  else {
+                    const user = await storage.getUserById(wsUserId);
+                    username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+                  }
+                  broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
+                } catch (e) {
+                  console.warn("[ws] radio_user_joined broadcast failed", e);
                 }
-                broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
-              } catch (e) {
-                console.warn("[ws] radio_user_joined broadcast failed", e);
               }
             }
           }
@@ -234,6 +241,7 @@ export async function registerRoutes(
           userSockets.delete(wsUserId);
         }
       }
+      wsToUserId.delete(ws);
     });
   });
 

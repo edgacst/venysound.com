@@ -36,6 +36,7 @@ export default function RadioChannel() {
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
   const lastJoinByUserRef = useRef<Record<string, number>>({});
   const lastLeaveByUserRef = useRef<Record<string, number>>({});
+  const [userStopped, setUserStopped] = useState(false);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -71,6 +72,13 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
+
+  // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태는 초기화
+  useEffect(() => {
+    if (!isLive || nowPlayingId == null) {
+      setUserStopped(false);
+    }
+  }, [isLive, nowPlayingId]);
 
   useEffect(() => {
     if (nowPlayingId == null || channel?.nowPlayingElapsedSeconds == null) return;
@@ -777,7 +785,19 @@ export default function RadioChannel() {
                       src={audioStreamUrl}
                       controls
                       className="w-full h-10"
-                      autoPlay
+                      autoPlay={!userStopped}
+                      onPlay={() => {
+                        setUserStopped(false);
+                      }}
+                      onPause={() => {
+                        const audio = audioRef.current;
+                        if (!audio) return;
+                        // 사용자가 의도적으로 정지한 경우만 기억 (트랙 자연 종료는 제외)
+                        if (audio.ended) return;
+                        if (audio.currentTime > 0) {
+                          setUserStopped(true);
+                        }
+                      }}
                       onCanPlay={() => {
                         if (isOwner || !audioRef.current) return;
                         if (hasSeekedForTrackRef.current === nowPlayingId) return;
