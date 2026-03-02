@@ -695,6 +695,7 @@
       loadNowPlayingLyrics(null);
       stopWaveform();
       if (audioEl) {
+        audioEl.pause();
         audioEl.removeAttribute('src');
         audioEl.removeAttribute('data-current-id');
         audioEl.load();
@@ -884,6 +885,11 @@
       })
       .then(function(data) {
         channel = data;
+        if (channel.status === 'ended') {
+          channel.nowPlayingMusicId = null;
+          channel.nowPlayingStartedAt = null;
+          updateNowPlayingDisplay();
+        }
         renderHeader();
         stopPolling();
       })

@@ -2587,6 +2587,12 @@ export async function registerRoutes(
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const out: any = { ...channel };
+      if (channel.nowPlayingStartedAt) {
+        const started = (channel.nowPlayingStartedAt as Date).getTime();
+        out.nowPlayingElapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      } else {
+        out.nowPlayingElapsedSeconds = null;
+      }
       const owner = await storage.getUserById(channel.ownerId);
       out.ownerDisplayName = owner?.firstName || owner?.username || channel.ownerId?.slice(0, 8) || "DJ";
       if (req.isAuthenticated() && (req as any).user?.claims?.sub) {
@@ -2677,10 +2683,13 @@ export async function registerRoutes(
       }
       const updated = await storage.getRadioChannelBySlug(slug);
       if (updates.nowPlayingMusicId !== undefined && updated) {
+        const startedAt = updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).getTime() : 0;
+        const elapsedSeconds = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
         broadcastToRadioChannel(slug, {
           type: "radio_now_playing",
           musicId: updated!.nowPlayingMusicId ?? null,
           startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
+          elapsedSeconds,
         });
       }
       if (updates.status === "ended" && updated) {

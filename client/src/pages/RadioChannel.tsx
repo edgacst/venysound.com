@@ -31,7 +31,8 @@ export default function RadioChannel() {
   const { user } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasSeekedForTrackRef = useRef<number | null>(null);
-  const lastNowPlayingRef = useRef<{ musicId: number | null; startedAt: string | null }>({ musicId: null, startedAt: null });
+  const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number }>({ musicId: null, elapsedSeconds: 0 });
+  const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -43,6 +44,7 @@ export default function RadioChannel() {
     status: string;
     nowPlayingMusicId: number | null;
     nowPlayingStartedAt: string | null;
+    nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
     ownerDisplayName?: string;
     scheduledStartAt?: string | null;
@@ -64,6 +66,16 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
+
+  useEffect(() => {
+    if (nowPlayingId != null && channel?.nowPlayingElapsedSeconds != null) {
+      channelElapsedRef.current = {
+        musicId: nowPlayingId,
+        elapsed: channel.nowPlayingElapsedSeconds,
+        receivedAt: Date.now(),
+      };
+    }
+  }, [nowPlayingId, channel?.nowPlayingElapsedSeconds]);
 
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -213,8 +225,8 @@ export default function RadioChannel() {
       }
       if (msg.type === "radio_now_playing") {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
-        const startedAt = typeof msg.startedAt === "string" ? msg.startedAt : null;
-        lastNowPlayingRef.current = { musicId, startedAt };
+        const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
+        lastNowPlayingRef.current = { musicId, elapsedSeconds };
       }
       if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
@@ -605,7 +617,7 @@ export default function RadioChannel() {
                     <strong>{broadcastEndedMessage}</strong>님이 방송을 중단했습니다.
                   </p>
                 )}
-                {channel.scheduledStartAt && channel.scheduledEndAt && (
+                {channel.scheduledStartAt && channel.scheduledEndAt && channel.status !== "ended" && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
                     <strong>{channel.ownerDisplayName ?? "DJ"}</strong>
                     {t("radio.schedulePrefix", " 님 방송이 ")}
@@ -678,21 +690,16 @@ export default function RadioChannel() {
                         if (isOwner || !audioRef.current) return;
                         if (hasSeekedForTrackRef.current === nowPlayingId) return;
                         const last = lastNowPlayingRef.current;
-                        const startedAtIso =
-                          last?.musicId === nowPlayingId && last?.startedAt
-                            ? last.startedAt
-                            : channel?.nowPlayingStartedAt ?? null;
-                        if (!startedAtIso) {
-                          hasSeekedForTrackRef.current = nowPlayingId;
-                          return;
+                        let seekSec: number | null = null;
+                        if (last?.musicId === nowPlayingId) {
+                          seekSec = last.elapsedSeconds;
+                        } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
+                          const { elapsed, receivedAt } = channelElapsedRef.current;
+                          seekSec = elapsed + (Date.now() - receivedAt) / 1000;
+                        } else if (channel?.nowPlayingElapsedSeconds != null) {
+                          seekSec = channel.nowPlayingElapsedSeconds;
                         }
-                        const startedAt = new Date(startedAtIso).getTime();
-                        if (Number.isNaN(startedAt)) {
-                          hasSeekedForTrackRef.current = nowPlayingId;
-                          return;
-                        }
-                        const seekSec = (Date.now() - startedAt) / 1000;
-                        if (seekSec > 0) {
+                        if (seekSec != null && seekSec > 0) {
                           audioRef.current.currentTime = Math.max(0, seekSec);
                         }
                         hasSeekedForTrackRef.current = nowPlayingId;
