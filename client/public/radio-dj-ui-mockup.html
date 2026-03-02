@@ -442,6 +442,7 @@
   var listenerCount = 0;
   var scheduleInputsApplied = false;
   var lastLoadedLyricsMusicId = null;
+  var lastSyncedStartMusicId = null;
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
   var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
 
@@ -706,6 +707,7 @@
     var audioEl = document.getElementById('djMonitorAudio');
     var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
     if (!nowId) {
+      lastSyncedStartMusicId = null;
       titleEl.textContent = '재생 중인 곡 없음';
       artistEl.textContent = '큐에서 곡을 선택하고 「지금 재생」을 누르세요';
       loadNowPlayingLyrics(null);
@@ -1363,6 +1365,22 @@
     if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
       var audio = document.getElementById('djMonitorAudio');
       if (audio && audio.src) { audio.play().catch(function() {}); }
+    });
+    var monAudio = document.getElementById('djMonitorAudio');
+    if (monAudio) monAudio.addEventListener('playing', function() {
+      var curId = monAudio.getAttribute('data-current-id');
+      if (!channel || !channel.slug || !curId) return;
+      if (lastSyncedStartMusicId === curId) return;
+      var numId = parseInt(curId, 10);
+      if (Number.isNaN(numId) || channel.nowPlayingMusicId !== numId) return;
+      lastSyncedStartMusicId = curId;
+      var slug = String(channel.slug).trim().toLowerCase();
+      api('/api/radio/channels/' + encodeURIComponent(slug), {
+        method: 'PATCH',
+        body: { nowPlayingMusicId: numId, nowPlayingStartedAt: new Date().toISOString() }
+      }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
+        if (data) channel = data;
+      }).catch(function() {});
     });
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
       var wrap = document.getElementById('searchWrap');

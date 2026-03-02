@@ -78,6 +78,27 @@ export default function RadioChannel() {
     }
   }, [nowPlayingId, channel?.nowPlayingElapsedSeconds]);
 
+  // 리스너 재생 위치 주기적 동기화 (DJ와 차이가 크면 재보정)
+  useEffect(() => {
+    if (isOwner || !isLive || nowPlayingId == null) return;
+    const interval = setInterval(() => {
+      const audio = audioRef.current;
+      if (!audio || audio.paused || audio.readyState < 2) return;
+      const last = lastNowPlayingRef.current;
+      let expectedSec: number;
+      if (last?.musicId === nowPlayingId) {
+        const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
+        expectedSec = last.elapsedSeconds + delay;
+      } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
+        const { elapsed, receivedAt } = channelElapsedRef.current;
+        expectedSec = elapsed + (Date.now() - receivedAt) / 1000;
+      } else return;
+      const diff = Math.abs(audio.currentTime - expectedSec);
+      if (diff > 2.5) audio.currentTime = Math.max(0, expectedSec);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [isOwner, isLive, nowPlayingId]);
+
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
     const d = new Date(iso);
