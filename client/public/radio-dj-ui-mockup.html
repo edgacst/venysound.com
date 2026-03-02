@@ -717,8 +717,6 @@
         audioEl.setAttribute('data-current-id', String(nowId));
         audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
         audioEl.load();
-        var playPromise = audioEl.play();
-        if (playPromise && typeof playPromise.then === 'function') playPromise.catch(function() {});
         function onCanPlay() {
           audioEl.removeEventListener('canplay', onCanPlay);
           audioEl.removeEventListener('error', onError);
@@ -865,7 +863,7 @@
     if (!waveformCtx || waveformCtx.state === 'closed') {
       try {
         waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
-        waveformCtx.resume().catch(function() {});
+        waveformCtx.resume().then(function() { }).catch(function() { });
       } catch (e) {}
     }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
