@@ -10,7 +10,7 @@ import {
   type Tip, type Purchase, type Conversation, type DirectMessage,
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
 } from "@shared/schema";
-import { eq, desc, asc, and, ilike, inArray, sql, count, lte, gte, ne } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNotNull } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
@@ -2343,7 +2343,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserIdByUsername(username: string): Promise<string | undefined> {
-    const [row] = await db.select({ id: users.id }).from(users).where(eq(users.username, username.trim()));
+    const term = username.trim();
+    if (!term) return undefined;
+    const [row] = await db.select({ id: users.id }).from(users).where(
+      or(
+        sql`lower(${users.username}) = lower(${term})`,
+        sql`lower(${users.email}) = lower(${term})`
+      )
+    );
     return row?.id;
   }
 }

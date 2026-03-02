@@ -47,6 +47,7 @@ export default function RadioChannel() {
     nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
     ownerDisplayName?: string;
+    currentHostId?: string | null;
     currentHostUsername?: string | null;
     scheduledStartAt?: string | null;
     scheduledEndAt?: string | null;
@@ -380,8 +381,31 @@ export default function RadioChannel() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!normalizedSlug && canManage,
+    enabled: !!normalizedSlug,
   });
+  const [staffUsername, setStaffUsername] = useState("");
+  function getRoleForUser(userId: string): "owner" | "dj" | "sub_host" | "staff" | null {
+    if (!channel) return null;
+    if (channel.ownerId === userId) return "owner";
+    if (isLive && channel.currentHostId === userId) return "dj";
+    const s = staffList.find((x) => x.userId === userId);
+    if (s) return s.role === "sub_host" ? "sub_host" : "staff";
+    return null;
+  }
+  function RoleBadge({ role }: { role: "owner" | "dj" | "sub_host" | "staff" }) {
+    const labels = { owner: "방장", dj: "DJ", sub_host: "부방장", staff: "스텝" };
+    const styles = {
+      owner: "bg-primary/20 text-primary border border-primary/30",
+      dj: "bg-violet-500/20 text-violet-300 border border-violet-500/30",
+      sub_host: "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+      staff: "bg-muted text-muted-foreground border border-white/10",
+    };
+    return (
+      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium shrink-0 ${styles[role]}`}>
+        {labels[role]}
+      </span>
+    );
+  }
   const [staffUsername, setStaffUsername] = useState("");
   const [staffRole, setStaffRole] = useState<"staff" | "sub_host">("staff");
   const addStaffMutation = useMutation({
@@ -506,23 +530,31 @@ export default function RadioChannel() {
                         const isJoin = msgType === "system_join";
                         const isLeave = msgType === "system_leave";
                         const displayName = m.username?.trim() || (m.userId ? String(m.userId).slice(0, 8) : "?");
+                        const role = getRoleForUser(m.userId);
                         if (isJoin) {
                           return (
-                            <p key={"join-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1">
-                              {displayName}{t("radio.joinedChat", "님이 입장했습니다.")}
+                            <p key={"join-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1 flex items-center justify-center gap-1.5 flex-wrap">
+                              <span>{displayName}</span>
+                              {role && <RoleBadge role={role} />}
+                              <span>{t("radio.joinedChat", "님이 입장했습니다.")}</span>
                             </p>
                           );
                         }
                         if (isLeave) {
                           return (
-                            <p key={"left-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1">
-                              {displayName}님이 퇴장했습니다.
+                            <p key={"left-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1 flex items-center justify-center gap-1.5 flex-wrap">
+                              <span>{displayName}</span>
+                              {role && <RoleBadge role={role} />}
+                              <span>님이 퇴장했습니다.</span>
                             </p>
                           );
                         }
                         return (
-                          <div key={m.id} className="text-sm">
-                            <span className="font-medium text-muted-foreground mr-2">{displayName}</span>
+                          <div key={m.id} className="text-sm flex items-start gap-2 flex-wrap">
+                            <span className="font-medium text-muted-foreground flex items-center gap-1.5 shrink-0">
+                              {displayName}
+                              {role && <RoleBadge role={role} />}
+                            </span>
                             <span className="text-foreground">{m.content}</span>
                           </div>
                         );
@@ -655,7 +687,10 @@ export default function RadioChannel() {
                 )}
                 {channel.status === "live" && channel.scheduledStartAt && channel.scheduledEndAt && !broadcastEndedMessage && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
-                    <strong>{channel.currentHostUsername ?? channel.ownerDisplayName ?? "DJ"}</strong>
+                    <span className="flex items-center gap-2">
+                      <strong>{channel.currentHostUsername ?? channel.ownerDisplayName ?? "DJ"}</strong>
+                      <RoleBadge role={channel.currentHostId ? "dj" : "owner"} />
+                    </span>
                     님이 {formatScheduleTime(channel.scheduledStartAt)}부터 {formatScheduleTime(channel.scheduledEndAt)}까지 방송중입니다.
                   </p>
                 )}
@@ -785,7 +820,7 @@ export default function RadioChannel() {
                   <UserPlus size={18} className="text-muted-foreground" />
                   <span className="font-medium text-sm">스텝 관리 (부방장·스텝)</span>
                 </div>
-                <p className="text-muted-foreground text-xs px-4 pt-2">스텝은 방송 스튜디오 접속이 가능합니다. 아이디로 추가하세요.</p>
+                <p className="text-muted-foreground text-xs px-4 pt-2">스텝은 방송 스튜디오 접속이 가능합니다. 로그인 아이디 또는 이메일로 추가하세요.</p>
                 <div className="p-4 space-y-3">
                   <div className="flex flex-wrap gap-2 items-end">
                     <Input
@@ -814,9 +849,9 @@ export default function RadioChannel() {
                     <ul className="space-y-1.5 text-sm">
                       {staffList.map((s) => (
                         <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/5 last:border-0">
-                          <span>
-                            {s.username || s.userId.slice(0, 8)}
-                            <span className="text-muted-foreground ml-2 text-xs">({s.role === "sub_host" ? "부방장" : "스텝"})</span>
+                          <span className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">{s.username || s.userId.slice(0, 8)}</span>
+                            <RoleBadge role={s.role === "sub_host" ? "sub_host" : "staff"} />
                           </span>
                           <Button
                             variant="ghost"
