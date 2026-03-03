@@ -127,7 +127,6 @@ dist
 
 # yarn v3
 .pnp.*
-<<<<<<< HEAD
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -138,8 +137,9 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-=======
 
 # Replit (미사용)
 .replit
->>>>>>> e9f8802 (Update: guide video section, profile fix, notifications limit, bank transfer, locales, etc.)
+
+# Local uploaded media (절대 푸시 금지)
+local-uploads/

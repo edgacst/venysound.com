@@ -142,9 +142,13 @@
       position: relative;
       overflow: hidden;
       background-color: #18181b;
-      background-image: url("/dj-studio-banner.jpg");
-      background-size: cover;
-      background-position: center;
+    }
+    .now-playing .artwork img.artwork-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     .now-playing .artwork canvas.waveform {
       position: absolute;
@@ -274,8 +278,9 @@
       padding: 8px 20px;
       background: #18181b;
       border-top: 1px solid #27272a;
-      font-size: 0.75rem;
-      color: #71717a;
+      font-size: 0.8rem;
+      color: #e5e5e5;
+      text-align: center;
     }
     .init-message {
       grid-column: 1 / -1;
@@ -296,7 +301,10 @@
       <div>
         <h1 id="headerTitle">🎙️ 베니방송국 · DJ 송출실</h1>
         <a href="/radio" style="font-size: 0.8rem; color: #71717a; text-decoration: none;">← 방송국으로</a>
-        <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a;">API 주소: <span id="apiOrigin">-</span> <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="margin-left: 6px; padding: 2px 8px;">연결 테스트</button></p>
+        <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a; display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">
+          <span>API 주소: <span id="apiOrigin">-</span></span>
+          <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="padding: 2px 8px;">연결 테스트</button>
+        </p>
       </div>
       <div class="header-actions" style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
         <span id="listenerCountLabel" style="font-size: 0.8rem; color: #71717a;"></span>
@@ -343,6 +351,7 @@
     <main class="main">
       <div class="now-playing">
         <div class="artwork">
+          <img src="/dj-studio-banner.jpg" alt="Veny Radio Studio" class="artwork-bg" />
           <canvas id="waveformCanvas" class="waveform" width="200" height="200" style="display: none;"></canvas>
           <span class="artwork-placeholder">🎵</span>
         </div>
@@ -361,8 +370,7 @@
             <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm" style="display: none;">곡 정지</button>
           </div>
         </div>
-        <div class="mic-setup">
-          <p class="panel-title" style="margin-top: 20px; margin-bottom: 4px;">마이크 설정</p>
+        <div class="mic-setup" style="margin-top: 16px;">
           <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 선택한 마이크는 저장됩니다.</p>
           <div class="mic-controls">
             <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
@@ -381,8 +389,7 @@
             </div>
           </div>
         </div>
-        <div class="schedule-setup" style="margin-top: 20px; text-align: center;">
-          <p class="panel-title" style="margin-bottom: 8px;">방송 안내 문구</p>
+        <div class="schedule-setup" style="margin-top: 12px; text-align: center;">
           <p class="mic-hint">청취자에게 보여줄 한 줄 안내를 적어주세요. (예: "오늘은 11시부터 24시까지 진행합니다")</p>
           <div style="display: flex; justify-content: center; margin-bottom: 8px;">
             <input
@@ -395,8 +402,7 @@
           </div>
           <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">안내 문구 저장</button>
         </div>
-        <div class="recording-setup" style="margin-top: 20px;">
-          <p class="panel-title" style="margin-bottom: 8px;">방송 녹음</p>
+        <div class="recording-setup" style="margin-top: 16px;">
           <p class="mic-hint">지금 송출 중인 곡 + 마이크를 함께 녹음합니다. 중지 시 파일이 다운로드됩니다.</p>
           <button type="button" id="btnRecordStart" class="btn btn-secondary btn-sm">● 녹음 시작</button>
           <button type="button" id="btnRecordStop" class="btn btn-secondary btn-sm" style="display: none;">■ 녹음 중지</button>
@@ -440,7 +446,7 @@
     </div>
 
     <footer class="foot-note">
-      베니방송국 DJ 송출실 · 방송 시작 후 큐에 곡을 넣고 「지금 재생」으로 청취자에게 송출됩니다. (네트워크/결과 없음 시: 이 페이지를 <strong>사이트와 같은 주소</strong>에서 열어주세요. 예: http://localhost:5000/radio-dj-ui-mockup.html)
+      베니방송국 DJ 송출실 · 큐에 곡을 넣고 「지금 재생」을 누르면 청취자에게 송출됩니다.
     </footer>
   </div>
 
