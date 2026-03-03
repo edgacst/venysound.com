@@ -774,12 +774,37 @@ export default function RadioChannel() {
                       <Headphones size={18} />
                       {t("radio.listeningTo", "지금 재생 중")}
                     </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const el = audioRef.current;
+                          if (!el) return;
+                          el.play().catch(() => {});
+                          setUserStopped(false);
+                        }}
+                      >
+                        {t("radio.listenPlay", "재생")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          const el = audioRef.current;
+                          if (!el) return;
+                          el.pause();
+                          setUserStopped(true);
+                        }}
+                      >
+                        {t("radio.listenPause", "일시정지")}
+                      </Button>
+                    </div>
                     <audio
                       key={audioStreamUrl}
                       ref={audioRef}
                       src={audioStreamUrl}
-                      controls
-                      className="w-full h-10"
+                      className="hidden"
                       autoPlay={!userStopped}
                       onPlay={() => {
                         setUserStopped(false);

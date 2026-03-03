@@ -156,6 +156,8 @@
       width: 100%;
       height: 100%;
       border-radius: 12px;
+      opacity: 0.3;
+      pointer-events: none;
     }
     .now-playing .artwork .artwork-placeholder {
       position: relative;
@@ -290,6 +292,20 @@
     }
     .init-message a { color: #a78bfa; }
     .init-message.hidden { display: none; }
+
+    /* 작은 화면(높이 800px 이하)에서는 세로 스크롤 허용 */
+    @media (max-height: 800px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+      }
+      .layout {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+    }
   </style>
 </head>
 <body>
@@ -362,12 +378,12 @@
           <div id="nowLyrics" class="lyrics-box" style="max-height: 160px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; white-space: pre-wrap; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;"></div>
         </div>
         <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
-          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 소리 안 들리면 아래 재생 클릭</p>
-          <audio id="djMonitorAudio" controls style="width: 100%; height: 56px; min-height: 56px;" preload="metadata"></audio>
+          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 아래 버튼으로 재생/정지할 수 있습니다.</p>
+          <audio id="djMonitorAudio" preload="metadata" style="display: none;"></audio>
           <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
-            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm" style="display: none;">▶ 모니터 재생</button>
-            <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm" style="display: none;">곡 정지</button>
+            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm">▶ 모니터 재생</button>
+            <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm">곡 정지</button>
           </div>
         </div>
         <div class="mic-setup" style="margin-top: 16px;">
@@ -480,6 +496,8 @@
   var scheduleInputsApplied = false;
   var lastLoadedLyricsMusicId = null;
   var lastSyncedStartMusicId = null;
+  var lastNowTitle = '';
+  var lastNowArtist = '';
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
   var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
 
@@ -663,8 +681,7 @@
     var bufferLength = waveformAnalyser.frequencyBinCount;
     var dataArray = new Uint8Array(bufferLength);
     waveformAnalyser.getByteTimeDomainData(dataArray);
-    ctx.fillStyle = 'rgba(39, 39, 42, 0.4)';
-    ctx.fillRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#a78bfa';
     ctx.beginPath();
@@ -768,20 +785,38 @@
     }
     if (titleEl) titleEl.setAttribute('data-now-id', String(nowId));
     var item = queue.filter(function(q) { return q.id === nowId; })[0];
+    var nextTitle;
+    var nextArtist;
     if (item) {
-      titleEl.textContent = item.title || '제목 없음';
-      artistEl.textContent = item.artist || '';
+      nextTitle = item.title || '제목 없음';
+      nextArtist = item.artist || '';
     } else {
-      titleEl.textContent = '곡 #' + nowId;
-      artistEl.textContent = '로딩 중...';
+      nextTitle = '곡 #' + nowId;
+      nextArtist = '로딩 중...';
       api('/api/music/' + encodeURIComponent(nowId)).then(function(r) {
         if (!r.ok) return;
         return r.json();
       }).then(function(m) {
         if (!m || !titleEl || titleEl.getAttribute('data-now-id') !== String(nowId)) return;
-        titleEl.textContent = (m.title && m.title.trim()) ? m.title.trim() : '제목 없음';
-        artistEl.textContent = (m.artist && String(m.artist).trim()) ? String(m.artist).trim() : '';
+        var t = (m.title && m.title.trim()) ? m.title.trim() : '제목 없음';
+        var a = (m.artist && String(m.artist).trim()) ? String(m.artist).trim() : '';
+        if (t !== lastNowTitle) {
+          titleEl.textContent = t;
+          lastNowTitle = t;
+        }
+        if (a !== lastNowArtist) {
+          artistEl.textContent = a;
+          lastNowArtist = a;
+        }
       }).catch(function() {});
+    }
+    if (nextTitle && nextTitle !== lastNowTitle) {
+      titleEl.textContent = nextTitle;
+      lastNowTitle = nextTitle;
+    }
+    if (nextArtist !== undefined && nextArtist !== lastNowArtist) {
+      artistEl.textContent = nextArtist;
+      lastNowArtist = nextArtist;
     }
     var waveformEl = document.getElementById('djWaveformAudio');
     var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
