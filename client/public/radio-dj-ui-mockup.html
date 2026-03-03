@@ -376,71 +376,18 @@
           </div>
         </div>
         <div class="schedule-setup" style="margin-top: 20px; text-align: center;">
-          <p class="panel-title" style="margin-bottom: 8px;">방송 예정 시간</p>
-          <p class="mic-hint">설정 시 청취자에게 "OO 님 방송이 N시부터 N시까지 진행됩니다"로 표시됩니다.</p>
-          <div style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap;">
-            <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
-              <span style="min-width: 44px;">시작</span>
-              <select id="scheduledStartTime" class="mic-select" style="width: 120px;">
-                <option value="">--</option>
-                <option value="1">01:00</option>
-                <option value="2">02:00</option>
-                <option value="3">03:00</option>
-                <option value="4">04:00</option>
-                <option value="5">05:00</option>
-                <option value="6">06:00</option>
-                <option value="7">07:00</option>
-                <option value="8">08:00</option>
-                <option value="9">09:00</option>
-                <option value="10">10:00</option>
-                <option value="11">11:00</option>
-                <option value="12">12:00</option>
-                <option value="13">13:00</option>
-                <option value="14">14:00</option>
-                <option value="15">15:00</option>
-                <option value="16">16:00</option>
-                <option value="17">17:00</option>
-                <option value="18">18:00</option>
-                <option value="19">19:00</option>
-                <option value="20">20:00</option>
-                <option value="21">21:00</option>
-                <option value="22">22:00</option>
-                <option value="23">23:00</option>
-                <option value="24">24:00</option>
-              </select>
-            </label>
-            <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 8px;">
-              <span style="min-width: 44px;">종료</span>
-              <select id="scheduledEndTime" class="mic-select" style="width: 120px;">
-                <option value="">--</option>
-                <option value="1">01:00</option>
-                <option value="2">02:00</option>
-                <option value="3">03:00</option>
-                <option value="4">04:00</option>
-                <option value="5">05:00</option>
-                <option value="6">06:00</option>
-                <option value="7">07:00</option>
-                <option value="8">08:00</option>
-                <option value="9">09:00</option>
-                <option value="10">10:00</option>
-                <option value="11">11:00</option>
-                <option value="12">12:00</option>
-                <option value="13">13:00</option>
-                <option value="14">14:00</option>
-                <option value="15">15:00</option>
-                <option value="16">16:00</option>
-                <option value="17">17:00</option>
-                <option value="18">18:00</option>
-                <option value="19">19:00</option>
-                <option value="20">20:00</option>
-                <option value="21">21:00</option>
-                <option value="22">22:00</option>
-                <option value="23">23:00</option>
-                <option value="24">24:00</option>
-              </select>
-            </label>
+          <p class="panel-title" style="margin-bottom: 8px;">방송 안내 문구</p>
+          <p class="mic-hint">청취자에게 보여줄 한 줄 안내를 적어주세요. (예: "오늘은 11시부터 24시까지 진행합니다")</p>
+          <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+            <input
+              type="text"
+              id="scheduleNotice"
+              maxlength="200"
+              placeholder="예: 오늘은 21시~23시까지 라이브로 진행합니다"
+              style="width: 100%; max-width: 480px; padding: 8px 10px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: #e4e4e7; font-size: 0.875rem;"
+            />
           </div>
-          <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">예정 시간 저장</button>
+          <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">안내 문구 저장</button>
         </div>
         <div class="recording-setup" style="margin-top: 20px;">
           <p class="panel-title" style="margin-bottom: 8px;">방송 녹음</p>
@@ -886,62 +833,20 @@
     }
   }
 
-  function formatTimeForInput(d) {
-    if (!d) return '';
-    var date = d instanceof Date ? d : new Date(d);
-    if (isNaN(date.getTime())) return '';
-    var h = date.getHours();
-    var m = date.getMinutes();
-    // 자정(0시, 분 0)은 24시로 표시
-    if (h === 0 && m === 0) return '24';
-    return String(h);
-  }
-
   function applyScheduleToInputs() {
-    var startEl = document.getElementById('scheduledStartTime');
-    var endEl = document.getElementById('scheduledEndTime');
-    if (startEl) startEl.value = formatTimeForInput(channel && channel.scheduledStartAt);
-    if (endEl) endEl.value = formatTimeForInput(channel && channel.scheduledEndAt);
+    var noticeEl = document.getElementById('scheduleNotice');
+    if (!noticeEl) return;
+    noticeEl.value = (channel && channel.notice) ? String(channel.notice) : '';
   }
 
   function saveSchedule() {
     if (!channel || !channel.slug) return;
-    var startEl = document.getElementById('scheduledStartTime');
-    var endEl = document.getElementById('scheduledEndTime');
-    var startVal = startEl && startEl.value ? startEl.value : '';
-    var endVal = endEl && endEl.value ? endEl.value : '';
-    var today = new Date();
-    today.setSeconds(0, 0);
-    var scheduledStartAt = null;
-    var scheduledEndAt = null;
-    if (startVal) {
-      var sh = parseInt(startVal, 10);
-      if (!isNaN(sh)) {
-        scheduledStartAt = new Date(today);
-        if (sh === 24) {
-          scheduledStartAt.setDate(scheduledStartAt.getDate() + 1);
-          scheduledStartAt.setHours(0, 0, 0, 0);
-        } else {
-          scheduledStartAt.setHours(sh, 0, 0, 0);
-        }
-      }
-    }
-    if (endVal) {
-      var eh = parseInt(endVal, 10);
-      if (!isNaN(eh)) {
-        scheduledEndAt = new Date(today);
-        if (eh === 24) {
-          scheduledEndAt.setDate(scheduledEndAt.getDate() + 1);
-          scheduledEndAt.setHours(0, 0, 0, 0);
-        } else {
-          scheduledEndAt.setHours(eh, 0, 0, 0);
-        }
-      }
-    }
+    var noticeEl = document.getElementById('scheduleNotice');
+    var text = noticeEl && noticeEl.value ? String(noticeEl.value).trim() : '';
     var slug = String(channel.slug).trim().toLowerCase();
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
-      body: { scheduledStartAt: scheduledStartAt ? scheduledStartAt.toISOString() : null, scheduledEndAt: scheduledEndAt ? scheduledEndAt.toISOString() : null }
+      body: { notice: text || null }
     }).then(function(r) {
       if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '저장 실패'); });
       return r.json();
@@ -950,7 +855,7 @@
         channel = data;
         applyScheduleToInputs();
       }
-      alert('방송 예정 시간이 저장되었습니다.');
+      alert('방송 안내 문구가 저장되었습니다.');
     }).catch(function(e) { alert(e.message || '저장 실패'); });
   }
 

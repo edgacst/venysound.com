@@ -2670,8 +2670,8 @@ export async function registerRoutes(
       const isCurrentHost = (channel as any).currentHostId === userId;
       const canManage = isOwner || isCurrentHost;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt } = req.body || {};
-      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null } = {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice } = req.body || {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -2703,6 +2703,10 @@ export async function registerRoutes(
       if (isOwner) {
         if (bodyScheduledStartAt !== undefined) updates.scheduledStartAt = bodyScheduledStartAt === null || bodyScheduledStartAt === "" ? null : new Date(bodyScheduledStartAt);
         if (bodyScheduledEndAt !== undefined) updates.scheduledEndAt = bodyScheduledEndAt === null || bodyScheduledEndAt === "" ? null : new Date(bodyScheduledEndAt);
+        if (bodyNotice !== undefined) {
+          const text = typeof bodyNotice === "string" ? bodyNotice.trim() : "";
+          updates.notice = text ? text.slice(0, 200) : null;
+        }
       }
 
       if (Object.keys(updates).length > 0) {

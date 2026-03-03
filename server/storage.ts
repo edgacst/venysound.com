@@ -126,9 +126,9 @@ export interface IStorage {
   // Radio channels (베니방송국)
   createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
   getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
-  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null } | undefined>;
-  listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null }[]>;
-  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null }): Promise<void>;
+  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null } | undefined>;
+  listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
+  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
   getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
@@ -2173,6 +2173,7 @@ export class DatabaseStorage implements IStorage {
       currentHostUsername: users.username,
       scheduledStartAt: radioChannels.scheduledStartAt,
       scheduledEndAt: radioChannels.scheduledEndAt,
+      notice: radioChannels.notice,
     }).from(radioChannels).leftJoin(users, eq(radioChannels.currentHostId, users.id)).where(eq(radioChannels.slug, slug));
     if (!row) return undefined;
     return {
@@ -2190,6 +2191,7 @@ export class DatabaseStorage implements IStorage {
       currentHostUsername: row.currentHostUsername ?? undefined,
       scheduledStartAt: row.scheduledStartAt ?? null,
       scheduledEndAt: row.scheduledEndAt ?? null,
+      notice: row.notice ?? null,
     };
   }
 
@@ -2203,11 +2205,12 @@ export class DatabaseStorage implements IStorage {
       coverFilename: radioChannels.coverFilename,
       scheduledStartAt: radioChannels.scheduledStartAt,
       scheduledEndAt: radioChannels.scheduledEndAt,
+      notice: radioChannels.notice,
       updatedAt: radioChannels.updatedAt,
     }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
   }
 
-  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null }): Promise<void> {
+  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
     if (data.slug !== undefined) set.slug = data.slug;
@@ -2220,6 +2223,7 @@ export class DatabaseStorage implements IStorage {
     if (data.currentHostId !== undefined) set.currentHostId = data.currentHostId;
     if (data.scheduledStartAt !== undefined) set.scheduledStartAt = data.scheduledStartAt;
     if (data.scheduledEndAt !== undefined) set.scheduledEndAt = data.scheduledEndAt;
+    if (data.notice !== undefined) set.notice = data.notice;
     await db.update(radioChannels).set(set as any).where(eq(radioChannels.id, id));
   }
 

@@ -54,6 +54,7 @@ export default function RadioChannel() {
     currentHostUsername?: string | null;
     scheduledStartAt?: string | null;
     scheduledEndAt?: string | null;
+    notice?: string | null;
   }>({
     queryKey: ["/api/radio/channels", slug],
     queryFn: async () => {
@@ -710,13 +711,15 @@ export default function RadioChannel() {
                     <strong>{broadcastEndedMessage}</strong>님이 방송을 종료했습니다.
                   </p>
                 )}
-                {channel.status === "live" && channel.scheduledStartAt && channel.scheduledEndAt && !broadcastEndedMessage && (
+                {channel.notice && !broadcastEndedMessage && (
                   <p className="text-sm text-green-600 dark:text-green-400 mb-4 rounded-md bg-muted/30 px-3 py-2">
                     <span className="flex items-center gap-2">
                       <strong>{channel.currentHostUsername ?? channel.ownerDisplayName ?? "DJ"}</strong>
                       <RoleBadge role={channel.currentHostId ? "dj" : "owner"} />
                     </span>
-                    님이 {formatScheduleTime(channel.scheduledStartAt)}부터 {formatScheduleTime(channel.scheduledEndAt)}까지 방송중입니다.
+                    <span className="block mt-1 text-foreground">
+                      {channel.notice}
+                    </span>
                   </p>
                 )}
                 {!isOwner && (
