@@ -15,7 +15,7 @@
     }
     .layout {
       display: grid;
-      grid-template-columns: 340px 1fr 480px;
+      grid-template-columns: 340px 1fr 600px;
       grid-template-rows: auto 1fr auto;
       height: 100vh;
     }
@@ -1091,6 +1091,34 @@
       .catch(function(e) { alert(networkErrorMsg(e) || '방송 종료 실패'); });
   }
 
+  function loadByGenreIntoQueue() {
+    var genreEl = document.getElementById('searchGenre');
+    var genre = (genreEl && genreEl.value) ? String(genreEl.value).trim() : '';
+    if (!genre) {
+      alert('장르를 선택한 뒤 「장르로 불러오기」를 눌러 주세요.');
+      return;
+    }
+    var url = '/api/music?page=1&limit=500&genre=' + encodeURIComponent(genre);
+    document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#71717a;">장르 "' + genre + '" 음원 불러오는 중...</div>';
+    api(url).then(function(r) {
+      if (!r.ok) return r.json().then(function() { return { data: [] }; }).catch(function() { return { data: [] }; });
+      return r.json();
+    }).then(function(data) {
+      var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+      var added = 0;
+      list.forEach(function(m) {
+        if (queue.some(function(item) { return item.id === m.id; })) return;
+        queue.push({ id: m.id, title: (m.title || '').trim(), artist: (m.artist || '').trim() });
+        added++;
+      });
+      renderQueue();
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#16a34a;">' + genre + ' 장르 ' + added + '곡이 큐에 추가되었습니다.</div>';
+      doSearch(document.getElementById('searchInput').value || '', genre);
+    }).catch(function() {
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#b91c1c;">목록을 불러올 수 없습니다. 서버 연결을 확인하세요.</div>';
+    });
+  }
+
   function doSearch(q, genreParam) {
     var query = (q && typeof q === 'string') ? q.trim() : '';
     var genreEl = document.getElementById('searchGenre');
@@ -1511,8 +1539,13 @@
       var nowId = channel.nowPlayingMusicId;
       if (nowId == null) return;
       var idx = queue.findIndex(function(q) { return q.id === nowId; });
-      if (idx < 0 || idx >= queue.length - 1) return;
-      var next = queue[idx + 1];
+      if (idx < 0) return;
+      var next;
+      if (idx >= queue.length - 1) {
+        next = queue[0];
+      } else {
+        next = queue[idx + 1];
+      }
       if (next && next.id) setNowPlaying(next.id);
     });
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
@@ -1529,7 +1562,7 @@
       searchDebounce = setTimeout(function() { doSearch(q); }, 300);
     });
     var btnLoadByGenre = document.getElementById('btnLoadByGenre');
-    if (btnLoadByGenre) btnLoadByGenre.addEventListener('click', function() { doSearch(''); });
+    if (btnLoadByGenre) btnLoadByGenre.addEventListener('click', loadByGenreIntoQueue);
     document.querySelectorAll('.tabs button').forEach(function(btn) {
       btn.addEventListener('click', function() {
         document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });

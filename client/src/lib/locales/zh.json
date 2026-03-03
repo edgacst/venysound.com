@@ -575,7 +575,7 @@
     "q6": "可以上传AI生成的音乐吗？",
     "a6": "是的，AI制作的音乐也可以上传。上传时请勾选'这是AI生成的音乐'复选框。",
     "q7": "有问题向哪里联系？",
-    "a7": "可以发邮件到support@venysound.com或拨打02-1234-5678。"
+    "a7": "可以发邮件到freecompr@naver.com或拨打010-8447-9973。"
   },
   "legal": {
     "title": "服务条款",
@@ -801,6 +801,7 @@
     "chargeFailed": "充值失败",
     "typeCharge": "充值",
     "typeTip": "打赏",
+    "typeTipReceived": "收到打赏",
     "typePurchase": "购买"
   },
   "register": {

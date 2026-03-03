@@ -112,6 +112,7 @@ export default function Credits() {
     switch (type) {
       case "charge": return t('credits.typeCharge', '충전');
       case "tip_sent": return t('credits.typeTip', '후원');
+      case "tip_received": return t('credits.typeTipReceived', '후원 받음');
       case "purchase": return t('credits.typePurchase', '구매');
       default: return type;
     }
@@ -121,6 +122,7 @@ export default function Credits() {
     switch (type) {
       case "charge": return <Plus size={14} className="text-green-400" />;
       case "tip_sent": return <Gift size={14} className="text-yellow-500" />;
+      case "tip_received": return <Gift size={14} className="text-green-400" />;
       case "purchase": return <Download size={14} className="text-blue-400" />;
       default: return <Coins size={14} />;
     }

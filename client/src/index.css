@@ -114,6 +114,15 @@
   animation: radio-ticker 25s linear infinite;
 }
 
+@keyframes blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.4; }
+}
+
+.animate-blink {
+  animation: blink 2s ease-in-out infinite;
+}
+
 .glass-panel {
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }

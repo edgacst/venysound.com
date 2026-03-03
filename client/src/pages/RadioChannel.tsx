@@ -267,6 +267,9 @@ export default function RadioChannel() {
       }
       if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         setBroadcastEndedMessage(String(msg.hostDisplayName));
+        setMessages([]);
+        presentUserIdsRef.current.clear();
+        queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug, "chat"] });
         refetchChannel();
         const audio = audioRef.current;
         if (audio) {

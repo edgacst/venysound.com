@@ -374,6 +374,9 @@ export default function Home() {
                 <span className="text-2xl md:text-3xl">📻</span>
               </div>
               <div className="min-w-0">
+                <p className="text-yellow-300 font-bold text-xl md:text-2xl lg:text-3xl animate-blink mb-0.5 drop-shadow-md">
+                  {t("home.radioBannerCampaign", "나도 DJ해볼게")}
+                </p>
                 <h3 className="text-lg md:text-xl font-bold text-white truncate">
                   {t("home.radioBannerTitle", "베니방송국")}
                 </h3>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useWs } from "@/contexts/WsContext";
 
@@ -6,11 +6,13 @@ export function useRadioRoom(slug: string | undefined, displayName?: string | nu
   const { send, subscribe, ready } = useWs();
   const [listenerCount, setListenerCount] = useState<number>(0);
   const queryClient = useQueryClient();
+  const displayNameRef = useRef(displayName);
+  displayNameRef.current = displayName;
 
   useEffect(() => {
     if (!slug || !ready) return;
     const normalizedSlug = slug.trim().toLowerCase();
-    const name = typeof displayName === "string" && displayName.trim() ? displayName.trim() : undefined;
+    const name = typeof displayNameRef.current === "string" && displayNameRef.current.trim() ? displayNameRef.current.trim() : undefined;
 
     send({ type: "radio_join", slug: normalizedSlug, displayName: name });
 
@@ -27,7 +29,7 @@ export function useRadioRoom(slug: string | undefined, displayName?: string | nu
       send({ type: "radio_leave", slug: normalizedSlug });
       unsub();
     };
-  }, [slug, ready, send, subscribe, queryClient, displayName]);
+  }, [slug, ready, send, subscribe, queryClient]);
 
   return { listenerCount };
 }

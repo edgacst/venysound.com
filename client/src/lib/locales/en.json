@@ -53,6 +53,7 @@
     "heroImageAlt": "Music background",
     "radioBannerTitle": "Veny Radio",
     "radioBannerSubtitle": "Create your own channel and stream music in real time.",
+    "radioBannerCampaign": "I'll try being a DJ too",
     "radioBannerButton": "Go to Radio"
   },
   "radio": {
@@ -592,7 +593,7 @@
     "q6": "Can I upload AI-generated music?",
     "a6": "Yes, AI-generated tracks can also be uploaded. Simply check the 'This is an AI-generated track' checkbox when uploading.",
     "q7": "Where can I contact for inquiries?",
-    "a7": "You can email support@venysound.com or call 02-1234-5678."
+    "a7": "You can email freecompr@naver.com or call 010-8447-9973."
   },
   "legal": {
     "title": "Terms of Service",
@@ -851,6 +852,7 @@
     "chargeFailed": "Charge Failed",
     "typeCharge": "Charge",
     "typeTip": "Tip",
+    "typeTipReceived": "Tip received",
     "typePurchase": "Purchase"
   },
   "register": {

@@ -132,6 +132,7 @@ export interface IStorage {
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
   getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
+  deleteRadioChatMessagesByChannel(channelId: number): Promise<void>;
   createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date }>;
   getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date; musicTitle?: string | null; musicArtist?: string | null }[]>;
   updateRadioSongRequest(id: number, channelId: number, data: { status?: string; sortOrder?: number }): Promise<void>;
@@ -2249,6 +2250,10 @@ export class DatabaseStorage implements IStorage {
       createdAt: r.createdAt,
       username: r.username ?? null,
     }));
+  }
+
+  async deleteRadioChatMessagesByChannel(channelId: number): Promise<void> {
+    await db.delete(radioChatMessages).where(eq(radioChatMessages.channelId, channelId));
   }
 
   async createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }) {

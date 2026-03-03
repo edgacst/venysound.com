@@ -31,6 +31,36 @@ type SiteAnnouncement = {
 
 const ANNOUNCEMENTS_SHOW = 5;
 
+/** content에서 제목과 본문 분리 (# 제목\n본문, 첫 줄=제목 등 패턴 지원) */
+function parseAnnouncementContent(content: string): { title: string; body: string } {
+  const trimmed = content.trim();
+  if (!trimmed) return { title: "", body: "" };
+  const firstLineEnd = trimmed.indexOf("\n");
+  if (firstLineEnd !== -1) {
+    const firstLine = trimmed.slice(0, firstLineEnd).replace(/^#\s*/, "").trim();
+    const rest = trimmed.slice(firstLineEnd + 1).trim();
+    return { title: firstLine || rest.slice(0, 40) || trimmed.slice(0, 40), body: rest };
+  }
+  // 줄바꿈 없을 때: ". " 또는 "。" 로 첫 문장 구분, 없으면 ~50자(공백 경계)
+  const sentenceMatch = trimmed.match(/[.。]\s+/);
+  if (sentenceMatch && sentenceMatch.index != null && sentenceMatch.index > 5) {
+    const idx = sentenceMatch.index;
+    const skip = sentenceMatch[0].length;
+    return {
+      title: trimmed.slice(0, idx + 1).replace(/^#\s*/, "").trim(),
+      body: trimmed.slice(idx + skip).trim(),
+    };
+  }
+  const maxTitle = 50;
+  if (trimmed.length <= maxTitle) return { title: trimmed.replace(/^#\s*/, ""), body: "" };
+  const lastSpace = trimmed.lastIndexOf(" ", maxTitle);
+  const split = lastSpace > 10 ? lastSpace : maxTitle;
+  return {
+    title: trimmed.slice(0, split).replace(/^#\s*/, "").trim(),
+    body: trimmed.slice(split).trim(),
+  };
+}
+
 function excerpt(text: string, maxLen = 60) {
   const one = text.replace(/\s+/g, " ").trim();
   return one.length <= maxLen ? one : one.slice(0, maxLen) + "…";
@@ -215,6 +245,7 @@ export default function Radio() {
                       <ul className="divide-y divide-border/40">
                         {noticesOnRadio.map((a) => {
                           const isExpanded = announcementExpandedId === a.id;
+                          const { title, body } = parseAnnouncementContent(a.content);
                           return (
                             <li key={a.id}>
                               <button
@@ -225,9 +256,14 @@ export default function Radio() {
                                 <span className="text-xs text-muted-foreground mr-2">
                                   {formatNoticeDate(a.createdAt)}
                                 </span>
-                                <span className="text-sm text-foreground">
-                                  {isExpanded ? a.content : excerpt(a.content)}
-                                </span>
+                                <div className="text-sm text-foreground">
+                                  <span className="font-medium">{title || excerpt(a.content)}</span>
+                                  {isExpanded && body ? (
+                                    <p className="mt-1.5 text-muted-foreground font-normal whitespace-pre-wrap">
+                                      {body}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </button>
                             </li>
                           );

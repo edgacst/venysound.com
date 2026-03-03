@@ -53,6 +53,7 @@
     "heroImageAlt": "음악 배경",
     "radioBannerTitle": "베니방송국",
     "radioBannerSubtitle": "나만의 방송 채널을 만들고 실시간으로 음악을 송출하세요",
+    "radioBannerCampaign": "나도 DJ해볼게",
     "radioBannerButton": "방송국 가기"
   },
   "radio": {
@@ -589,7 +590,7 @@
     "q6": "AI로 만든 음원도 업로드할 수 있나요?",
     "a6": "네, AI로 제작한 음원도 업로드 가능합니다. 업로드 시 'AI로 만든 음원입니다' 체크박스를 선택해주시면 됩니다.",
     "q7": "문의사항은 어디로 연락하나요?",
-    "a7": "support@venysound.com으로 이메일을 보내주시거나, 02-1234-5678로 전화해주시면 됩니다."
+    "a7": "freecompr@naver.com으로 이메일을 보내주시거나, 010-8447-9973로 전화해주시면 됩니다."
   },
   "legal": {
     "title": "이용약관",
@@ -848,6 +849,7 @@
     "chargeFailed": "충전 실패",
     "typeCharge": "충전",
     "typeTip": "후원",
+    "typeTipReceived": "후원 받음",
     "typePurchase": "구매"
   },
   "register": {

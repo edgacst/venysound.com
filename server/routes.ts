@@ -2721,6 +2721,11 @@ export async function registerRoutes(
         });
       }
       if (updates.status === "ended" && updated) {
+        try {
+          await storage.deleteRadioChatMessagesByChannel(updated.id);
+        } catch (e) {
+          console.warn("[radio] deleteRadioChatMessagesByChannel failed", e);
+        }
         const endedByUserId = (req as any).user?.claims?.sub;
         let hostDisplayName: string = "DJ";
         if (endedByUserId) {
@@ -2856,6 +2861,9 @@ export async function registerRoutes(
       const tip = await storage.createTip({ fromUserId, toUserId, musicId: musicId || null, amount, message: message || null });
       await storage.addToBalance(toUserId, amount);
 
+      const fromUser = await storage.getUserById(fromUserId);
+      const fromName = fromUser?.firstName || "누군가";
+
       await storage.createCreditTransaction({
         userId: fromUserId,
         type: "tip_sent",
@@ -2863,9 +2871,14 @@ export async function registerRoutes(
         description: `후원 보내기`,
         relatedId: tip.id,
       });
+      await storage.createCreditTransaction({
+        userId: toUserId,
+        type: "tip_received",
+        amount,
+        description: `${fromName}님 후원`,
+        relatedId: tip.id,
+      });
 
-      const fromUser = await storage.getUserById(fromUserId);
-      const fromName = fromUser?.firstName || "누군가";
       await storage.createNotification({
         userId: toUserId,
         type: "tip",
