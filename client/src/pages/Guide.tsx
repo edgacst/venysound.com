@@ -435,7 +435,7 @@ export default function Guide() {
 
               <motion.div
                 variants={item}
-                className="grid grid-cols-1 md:grid-cols-2 gap-6"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
               >
                 {(videoGuides ?? []).length === 0 ? (
                   <p className="text-sm text-muted-foreground">
@@ -445,7 +445,7 @@ export default function Guide() {
                   (videoGuides ?? []).map((v) => (
                     <Card
                       key={v.id}
-                      className="overflow-hidden border-white/10 w-full md:w-1/2 mx-auto"
+                      className="overflow-hidden border-white/10 w-full"
                     >
                       <div className="aspect-video w-full bg-black">
                         <iframe
