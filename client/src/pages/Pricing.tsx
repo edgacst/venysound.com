@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -13,6 +14,7 @@ import {
   Crown,
   Music,
   Headphones,
+  Radio,
   Sparkles,
   Shield,
   Loader2,
@@ -42,6 +44,7 @@ export default function Pricing() {
     { icon: Headphones, text: t('pricing.freeFeature2', '일일 100곡 스트리밍') },
     { icon: Music, text: t('pricing.freeFeature3', '음원 업로드 (월 10곡)') },
     { icon: Shield, text: t('pricing.freeFeature4', '커뮤니티 참여') },
+    { icon: Radio, text: t('pricing.freeFeature5', 'V방송 참여') },
   ];
 
   const PREMIUM_FEATURES = [
@@ -51,6 +54,7 @@ export default function Pricing() {
     { icon: Zap, text: t('pricing.premiumFeature4', '고음질 스트리밍') },
     { icon: Shield, text: t('pricing.premiumFeature5', '광고 없음') },
     { icon: Crown, text: t('pricing.premiumFeature6', '프리미엄 배지') },
+    { icon: Radio, text: t('pricing.premiumFeature7', 'V방송 채널 운영') },
   ];
 
   const [bankModalOpen, setBankModalOpen] = useState(false);
@@ -354,11 +358,22 @@ export default function Pricing() {
             </Card>
             <Card className="p-6">
               <h3 className="font-semibold mb-2">{t('pricing.faq3Title', '연간 플랜은 어떤 혜택이 있나요?')}</h3>
-              <p className="text-sm text-muted-foreground">{t('pricing.faq3Answer', '연간 플랜은 월간 플랜 대비 약 17% 할인된 가격으로 이용할 수 있습니다.')}</p>
+              <p className="text-sm text-muted-foreground">{t('pricing.faq3Answer', '연간 플랜은 월간 플랜 대비 약 10% 할인된 가격으로 이용할 수 있습니다.')}</p>
             </Card>
             <Card className="p-6">
               <h3 className="font-semibold mb-2">{t('pricing.faq4Title', '환불 정책은 어떻게 되나요?')}</h3>
-              <p className="text-sm text-muted-foreground">{t('pricing.faq4Answer', '구독 후 7일 이내에 환불 요청이 가능합니다. 고객센터로 문의해주세요.')}</p>
+              <p className="text-sm text-muted-foreground">
+                {t('pricing.faq4Answer', '구독 후 7일 이내에 환불 요청이 가능합니다. 사이트 하단의 [환불정책] 탭을 참조해 주세요.').split('[').map((part, i) => {
+                  const [linkText, rest] = part.split(']');
+                  if (rest === undefined) return <span key={i}>{part}</span>;
+                  return (
+                    <span key={i}>
+                      <Link href="/refund-policy" className="underline hover:text-foreground">{linkText}</Link>
+                      {rest}
+                    </span>
+                  );
+                })}
+              </p>
             </Card>
           </div>
         </div>

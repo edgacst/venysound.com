@@ -40,6 +40,18 @@ export default function Legal() {
             {t('legal.title')}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">{t('legal.effectiveDate')}</p>
+          <p className="text-sm text-muted-foreground mb-6">
+            {t('legal.refundPolicyNote').split('[').map((part, i) => {
+              const [text, rest] = part.split(']');
+              if (rest === undefined) return <span key={i}>{part}</span>;
+              return (
+                <span key={i}>
+                  <a href="/refund-policy" className="underline hover:text-foreground">{text}</a>
+                  {rest}
+                </span>
+              );
+            })}
+          </p>
 
           {/* 목차 */}
           <div className="bg-white/5 rounded-xl p-5 mb-10 border border-white/10">

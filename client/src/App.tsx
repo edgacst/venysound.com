@@ -72,6 +72,7 @@ import Dashboard from "@/pages/Dashboard";
 import Messages from "@/pages/Messages";
 import SunoGuide from "@/pages/SunoGuide";
 import Privacy from "@/pages/Privacy";
+import RefundPolicy from "@/pages/RefundPolicy";
 import NotFound from "@/pages/not-found";
 import Notices from "@/pages/Notices";
 import CuratedPlaylist from "@/pages/CuratedPlaylist";
@@ -100,6 +101,7 @@ function Routes() {
       <Route path="/about/values/:slug" component={ValueDetail} />
       <Route path="/legal" component={Legal} />
       <Route path="/privacy" component={Privacy} />
+      <Route path="/refund-policy" component={RefundPolicy} />
       <Route path="/faq" component={FAQ} />
       <Route path="/login" component={Login} />
       <Route path="/register" component={Register} />

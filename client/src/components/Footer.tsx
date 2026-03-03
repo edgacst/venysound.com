@@ -31,6 +31,7 @@ export function Footer() {
               <li><Link href="/popular"><span className="hover:text-foreground cursor-pointer">{t('nav.popular')}</span></Link></li>
               <li><Link href="/legal"><span className="hover:text-foreground cursor-pointer">{t('footer.terms')}</span></Link></li>
               <li><Link href="/privacy"><span className="hover:text-foreground cursor-pointer">{t('footer.privacy')}</span></Link></li>
+              <li><Link href="/refund-policy"><span className="hover:text-foreground cursor-pointer">{t('footer.refundPolicy')}</span></Link></li>
             </ul>
           </div>
           <div>
