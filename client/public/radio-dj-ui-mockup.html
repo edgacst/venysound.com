@@ -461,6 +461,7 @@
       </div>
       <div id="chat-panel" class="chat-panel">
         <p class="panel-title" style="margin-top:0; flex-shrink:0;">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+        <p id="chatParticipants" class="panel-title" style="margin:2px 0 4px 0; font-size:0.7rem; color:#a1a1aa;"></p>
         <div class="chat-list-wrap">
           <ul class="chat-list" id="chatList">
             <li style="color:#71717a;">로딩 중...</li>
@@ -532,6 +533,7 @@
   var chatMessages = [];
   var songRequests = [];
   var presentUserIds = new Set();
+  var presentUsers = {};
   var lastJoinByUserKey = {};
   var syncedLyrics = [];
   var currentLyricIndex = -1;
@@ -855,6 +857,24 @@
       box.textContent = firstLine;
       wrap.style.display = 'block';
     }).catch(function() {});
+  }
+
+  function renderChatParticipants() {
+    var el = document.getElementById('chatParticipants');
+    if (!el) return;
+    var ids = Object.keys(presentUsers || {});
+    if (!ids.length) {
+      el.textContent = '';
+      return;
+    }
+    var names = ids
+      .map(function(id) { return presentUsers[id] || id; })
+      .filter(function(name, idx, arr) { return name && arr.indexOf(name) === idx; });
+    if (!names.length) {
+      el.textContent = '';
+      return;
+    }
+    el.textContent = '현재 접속자: ' + names.join(', ');
   }
 
   function updateSyncedLyric() {
@@ -1267,7 +1287,9 @@
     if (!channel || !channel.slug || !currentUser || !currentUser.id) return;
     // 새로 연결할 때 현재 접속자 목록 및 최근 입장 기록 초기화
     presentUserIds.clear();
+    presentUsers = {};
     lastJoinByUserKey = {};
+    renderChatParticipants();
     if (wsReconnectTimeout) { clearTimeout(wsReconnectTimeout); wsReconnectTimeout = null; }
     if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
     var slug = String(channel.slug).trim().toLowerCase();
@@ -1318,41 +1340,16 @@
         if (msg.type === 'radio_user_joined' && msg.userId) {
           var uid = String(msg.userId);
           var uname = msg.username != null ? String(msg.username) : '';
-          var key = uid || ('name:' + uname);
-          var now = Date.now();
-          // 같은 사용자(아이디 또는 이름 기준)의 연속 입장 메시지가
-          // 짧은 시간 안에 여러 번 오는 경우 중복 표시 방지 (예: 재접속 반복)
-          if (key && lastJoinByUserKey[key] && now - lastJoinByUserKey[key] < 60000) {
-            return;
-          }
-          lastJoinByUserKey[key] = now;
-          if (!presentUserIds.has(uid)) {
-            presentUserIds.add(uid);
-            chatMessages.push({
-              id: 'join-' + uid + '-' + now,
-              userId: uid,
-              username: msg.username != null ? String(msg.username) : null,
-              type: 'system_join',
-              content: '',
-              createdAt: new Date().toISOString()
-            });
-            renderChat();
-          }
+          presentUserIds.add(uid);
+          presentUsers[uid] = uname || uid;
+          renderChatParticipants();
         }
         if (msg.type === 'radio_user_left' && msg.userId) {
           var uid = String(msg.userId);
           if (presentUserIds.has(uid)) {
             presentUserIds.delete(uid);
-            var now = Date.now();
-            chatMessages.push({
-              id: 'left-' + uid + '-' + now,
-              userId: uid,
-              username: msg.username != null ? String(msg.username) : null,
-              type: 'system_leave',
-              content: '',
-              createdAt: new Date().toISOString()
-            });
-            renderChat();
+            delete presentUsers[uid];
+            renderChatParticipants();
           }
         }
         if (msg.type === 'radio_chat' && msg.message) {
