@@ -327,9 +327,9 @@ export default function Radio() {
               </Card>
             </div>
 
-            {/* 방송 관련 공지 (오른쪽, 2열 넓게) */}
-            <aside className="lg:col-span-2 order-2">
-              <Card className="border-border/60 bg-card/40 overflow-hidden h-full">
+            {/* 방송 관련 공지 + 규정 (오른쪽, 2열 넓게) */}
+            <aside className="lg:col-span-2 order-2 space-y-4">
+              <Card className="border-border/60 bg-card/40 overflow-hidden">
                 <CardContent className="p-0">
                   <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
                     <Megaphone className="w-4 h-4 text-primary shrink-0" />
@@ -382,6 +382,26 @@ export default function Radio() {
                       </Link>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border/60 bg-muted/30">
+                <CardContent className="p-4 space-y-2">
+                  <h3 className="text-sm font-semibold">
+                    {t("radio.rulesTitle", "방송 관련 규정")}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {t("radio.rulesIntro", "모든 DJ와 청취자는 아래 규정을 지켜 주세요.")}
+                  </p>
+                  <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-1">
+                    <li>{t("radio.rulesItem1", "저작권 등 타인의 권리를 침해하는 음원·콘텐츠를 송출할 수 없습니다.")}</li>
+                    <li>{t("radio.rulesItem2", "욕설, 혐오, 차별, 음란, 불법 정보 등 커뮤니티 가이드라인을 위반하는 방송은 제한될 수 있습니다.")}</li>
+                    <li>{t("radio.rulesItem3", "상업 광고·홍보 방송은 사전 협의 없이 진행할 수 없습니다.")}</li>
+                    <li>{t("radio.rulesItem4", "운영 정책 위반 시 방송 중단, 채널 제한, 계정 제재가 이루어질 수 있습니다.")}</li>
+                  </ul>
+                  <p className="text-[11px] text-muted-foreground/80">
+                    {t("radio.rulesMore", "자세한 내용은 향후 공지되는 이용약관·가이드라인을 참고해 주세요.")}
+                  </p>
                 </CardContent>
               </Card>
             </aside>
