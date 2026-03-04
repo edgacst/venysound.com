@@ -37,7 +37,6 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const msg = await getErrorMessage(res);
     if (res.status === 401) {
-      redirectToLogin();
       const isKorean = typeof navigator !== "undefined" && /^ko\b/i.test(navigator.language || "");
       if (isKorean) {
         throw new Error("로그인이 필요한 서비스입니다.");
