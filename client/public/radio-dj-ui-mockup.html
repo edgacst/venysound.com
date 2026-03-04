@@ -250,6 +250,32 @@
     }
     .tabs button.active { background: #3f3f46; color: #fff; }
     .chat-panel { display: flex; flex-direction: column; min-height: 0; }
+    .participants-wrap {
+      margin: 4px 0 6px 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #18181b;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .participants-title {
+      font-size: 0.7rem;
+      color: #a1a1aa;
+      margin: 0 0 4px 0;
+    }
+    .participants-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.8rem;
+      color: #e4e4e7;
+    }
+    .participants-list li {
+      padding: 2px 0;
+    }
+    .participants-list li.empty {
+      color: #71717a;
+    }
     .chat-list-wrap { flex: 1; min-height: 0; overflow-y: auto; }
     .chat-list, .request-list {
       list-style: none;
@@ -461,7 +487,12 @@
       </div>
       <div id="chat-panel" class="chat-panel">
         <p class="panel-title" style="margin-top:0; flex-shrink:0;">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
-        <p id="chatParticipants" class="panel-title" style="margin:2px 0 4px 0; font-size:0.7rem; color:#a1a1aa;"></p>
+        <div class="participants-wrap">
+          <p class="participants-title">현재 접속자</p>
+          <ul id="chatParticipantsList" class="participants-list">
+            <li class="empty">접속자가 없습니다.</li>
+          </ul>
+        </div>
         <div class="chat-list-wrap">
           <ul class="chat-list" id="chatList">
             <li style="color:#71717a;">로딩 중...</li>
@@ -860,21 +891,33 @@
   }
 
   function renderChatParticipants() {
-    var el = document.getElementById('chatParticipants');
-    if (!el) return;
+    var list = document.getElementById('chatParticipantsList');
+    if (!list) return;
+    list.innerHTML = '';
     var ids = Object.keys(presentUsers || {});
     if (!ids.length) {
-      el.textContent = '';
+      var liEmpty = document.createElement('li');
+      liEmpty.className = 'empty';
+      liEmpty.textContent = '접속자가 없습니다.';
+      list.appendChild(liEmpty);
       return;
     }
     var names = ids
       .map(function(id) { return presentUsers[id] || id; })
       .filter(function(name, idx, arr) { return name && arr.indexOf(name) === idx; });
     if (!names.length) {
-      el.textContent = '';
+      var liEmpty2 = document.createElement('li');
+      liEmpty2.className = 'empty';
+      liEmpty2.textContent = '접속자가 없습니다.';
+      list.appendChild(liEmpty2);
       return;
     }
-    el.textContent = '현재 접속자: ' + names.join(', ');
+    names.sort();
+    names.forEach(function(name) {
+      var li = document.createElement('li');
+      li.textContent = name;
+      list.appendChild(li);
+    });
   }
 
   function updateSyncedLyric() {
