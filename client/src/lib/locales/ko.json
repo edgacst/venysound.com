@@ -110,6 +110,7 @@
     "setNowPlaying": "지금 재생",
     "nowPlaying": "지금 재생 중",
     "listeningTo": "지금 재생 중",
+    "listeningPaused": "일시정지",
     "listenPlay": "재생",
     "listenPause": "일시정지",
     "tapToPlayHint": "모바일에서는 재생 버튼을 눌러 들으세요.",

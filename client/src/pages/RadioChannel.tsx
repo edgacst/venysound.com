@@ -778,7 +778,7 @@ export default function RadioChannel() {
                       <span>
                         {isPlaying
                           ? t("radio.listeningTo", "지금 재생 중")
-                          : t("radio.listeningPaused", "일시정리")}
+                          : t("radio.listeningPaused", "일시정지")}
                         {typeof navigator !== "undefined" &&
                           /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
                           ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}

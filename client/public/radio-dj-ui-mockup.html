@@ -390,6 +390,7 @@
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm">▶ 모니터 재생</button>
             <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm">곡 정지</button>
+            <button type="button" id="btnShowGuide" class="btn btn-secondary btn-sm">방송 송출 방법</button>
           </div>
         </div>
         <div class="mic-setup" style="margin-top: 16px;">
@@ -467,6 +468,21 @@
       </div>
     </div>
 
+    <div id="guideModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center;">
+      <div style="background: #18181b; padding: 20px 22px; border-radius: 12px; max-width: 420px; width: 90%; color:#e4e4e7; font-size:0.85rem; line-height:1.6;">
+        <p style="margin: 0 0 10px 0; font-weight: 600; font-size: 0.95rem;">베니방송국 방송 송출 순서</p>
+        <ol style="padding-left: 18px; margin: 0 0 10px 0;">
+          <li style="margin-bottom:4px;">상단 우측에서 <strong>방송 시작</strong> 버튼을 눌러 채널 상태를 라이브로 전환합니다.</li>
+          <li style="margin-bottom:4px;">좌측에서 <strong>사이트 음원에서 선택</strong> 또는 <strong>장르로 불러오기</strong>로 곡을 큐에 추가합니다.</li>
+          <li style="margin-bottom:4px;">재생 큐에서 원하는 곡의 <strong>지금 재생</strong> 버튼을 눌러 청취자에게 송출합니다.</li>
+          <li style="margin-bottom:4px;">필요하면 <strong>마이크 연결</strong> 및 멘트 버튼으로 음성을 섞어 송출합니다.</li>
+          <li style="margin-bottom:4px;">방송을 모두 마친 뒤에는 반드시 상단의 <strong>방송 종료</strong> 버튼을 눌러 방송을 종료합니다.</li>
+        </ol>
+        <p style="margin:0 0 14px 0; color:#a1a1aa;">※ 방송 중 문제가 생기면 하단 안내 문구의 연락처로 문의해 주세요.</p>
+        <button type="button" id="guideClose" class="btn btn-secondary" style="width:100%;">닫기</button>
+      </div>
+    </div>
+
     <footer class="foot-note">
       베니방송국 DJ 송출실 · 큐에 곡을 넣고 「지금 재생」을 누르면 청취자에게 송출됩니다. (방송 중단시 반드시 「방송 종료」를 누르고 마치시기 바랍니다)
     </footer>
@@ -481,6 +497,7 @@
   var searchDebounce = null;
   var chatMessages = [];
   var songRequests = [];
+  var presentUserIds = new Set();
   var ws = null;
   var wsAuthenticated = false;
   var micStream = null;
@@ -1152,6 +1169,8 @@
 
   function connectWs() {
     if (!channel || !channel.slug || !currentUser || !currentUser.id) return;
+    // 새로 연결할 때 현재 접속자 목록 초기화
+    presentUserIds.clear();
     if (wsReconnectTimeout) { clearTimeout(wsReconnectTimeout); wsReconnectTimeout = null; }
     if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
     var slug = String(channel.slug).trim().toLowerCase();
@@ -1201,11 +1220,9 @@
         }
         if (msg.type === 'radio_user_joined' && msg.userId) {
           var uid = String(msg.userId);
-          var now = Date.now();
-          var recentJoin = chatMessages.some(function(m) {
-            return m.type === 'system_join' && m.userId === uid && now - new Date(m.createdAt).getTime() < 15000;
-          });
-          if (!recentJoin) {
+          if (!presentUserIds.has(uid)) {
+            presentUserIds.add(uid);
+            var now = Date.now();
             chatMessages.push({
               id: 'join-' + uid + '-' + now,
               userId: uid,
@@ -1219,11 +1236,9 @@
         }
         if (msg.type === 'radio_user_left' && msg.userId) {
           var uid = String(msg.userId);
-          var now = Date.now();
-          var recentLeft = chatMessages.some(function(m) {
-            return m.type === 'system_leave' && m.userId === uid && now - new Date(m.createdAt).getTime() < 15000;
-          });
-          if (!recentLeft) {
+          if (presentUserIds.has(uid)) {
+            presentUserIds.delete(uid);
+            var now = Date.now();
             chatMessages.push({
               id: 'left-' + uid + '-' + now,
               userId: uid,
@@ -1535,6 +1550,20 @@
       monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
       monAudio.addEventListener('durationchange', updateMonitorProgress);
       monAudio.addEventListener('ended', function() { setTimeout(updateMonitorProgress, 0); });
+    }
+    var btnShowGuide = document.getElementById('btnShowGuide');
+    var guideModal = document.getElementById('guideModal');
+    var guideClose = document.getElementById('guideClose');
+    if (btnShowGuide && guideModal && guideClose) {
+      btnShowGuide.addEventListener('click', function() {
+        guideModal.style.display = 'flex';
+      });
+      guideClose.addEventListener('click', function() {
+        guideModal.style.display = 'none';
+      });
+      guideModal.addEventListener('click', function(e) {
+        if (e.target === guideModal) guideModal.style.display = 'none';
+      });
     }
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
       var wrap = document.getElementById('searchWrap');

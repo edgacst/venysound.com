@@ -110,6 +110,7 @@
     "setNowPlaying": "Play now",
     "nowPlaying": "Now playing",
     "listeningTo": "Now playing",
+    "listeningPaused": "Paused",
     "listenPlay": "Play",
     "listenPause": "Pause",
     "tapToPlayHint": "On mobile, tap Play to listen.",
