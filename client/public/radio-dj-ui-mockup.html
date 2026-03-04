@@ -654,6 +654,15 @@
         showInit('채널이 없습니다. <a href="/radio">방송국</a>에서 먼저 채널을 만들거나, 방송 페이지에서 「방송 스튜디오」로 들어오세요.', true);
         return Promise.reject(new Error('no channel'));
       }
+      if (data.canControlBroadcast === false) {
+        var slugPath = '/radio/' + encodeURIComponent(data.slug);
+        showInit(
+          '이 채널의 송출 권한이 없습니다.<br>청취만 가능하며, DJ 송출은 채널 국장/스텝만 사용할 수 있습니다.<br><br>' +
+            '<a href="' + slugPath + '">채널 청취 페이지로 이동</a>',
+          true
+        );
+        return Promise.reject(new Error('no broadcast permission'));
+      }
       channel = data;
       showLayout();
       renderHeader();
@@ -1404,6 +1413,7 @@
             chatMessages.push(m);
           }
           renderChat();
+          renderChatParticipants();
         }
       } catch (e) {}
     };
@@ -1433,9 +1443,11 @@
         return { id: m.id, userId: m.userId, username: m.username || null, content: m.content, createdAt: typeof m.createdAt === 'string' ? m.createdAt : (m.createdAt && m.createdAt.toISOString ? m.createdAt.toISOString() : '') };
       });
       renderChat();
+      renderChatParticipants();
     }).catch(function() {
       chatMessages = [];
       renderChat();
+      renderChatParticipants();
       var ul = document.getElementById('chatList');
       if (ul) ul.innerHTML = '<li style="color:#b91c1c;">채팅 목록을 불러올 수 없습니다. 새로고침해 보세요.</li>';
     });
