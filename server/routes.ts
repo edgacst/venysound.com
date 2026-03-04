@@ -147,14 +147,26 @@ export async function registerRoutes(
               } else {
                 try {
                   lastJoinBroadcastAt.set(joinKey, now);
-                  const displayName = typeof msg.displayName === "string" && msg.displayName.trim() ? msg.displayName.trim() : null;
+                  const explicitDisplayName =
+                    typeof msg.displayName === "string" && msg.displayName.trim()
+                      ? msg.displayName.trim()
+                      : null;
                   let username: string | undefined;
-                  if (displayName) username = displayName;
-                  else {
+                  if (explicitDisplayName) {
+                    username = explicitDisplayName;
+                  } else {
                     const user = await storage.getUserById(wsUserId);
-                    username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
+                    const preferred =
+                      (user?.firstName && String(user.firstName).trim()) ||
+                      (user?.username && String(user.username).trim()) ||
+                      null;
+                    username = (preferred as string | null) ?? undefined;
                   }
-                  broadcastToRadioChannel(slug, { type: "radio_user_joined", userId: wsUserId, username });
+                  broadcastToRadioChannel(slug, {
+                    type: "radio_user_joined",
+                    userId: wsUserId,
+                    username,
+                  });
                 } catch (e) {
                   console.warn("[ws] radio_user_joined broadcast failed", e);
                 }
@@ -167,8 +179,16 @@ export async function registerRoutes(
           if (wsUserId) {
             try {
               const user = await storage.getUserById(wsUserId);
-              const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
-              broadcastToRadioChannel(slug, { type: "radio_user_left", userId: wsUserId, username });
+              const preferred =
+                (user?.firstName && String(user.firstName).trim()) ||
+                (user?.username && String(user.username).trim()) ||
+                null;
+              const username = (preferred as string | null) ?? undefined;
+              broadcastToRadioChannel(slug, {
+                type: "radio_user_left",
+                userId: wsUserId,
+                username,
+              });
             } catch (e) {
               console.warn("[ws] radio_user_left broadcast failed", e);
             }

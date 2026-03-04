@@ -2267,6 +2267,7 @@ export class DatabaseStorage implements IStorage {
       content: radioChatMessages.content,
       createdAt: radioChatMessages.createdAt,
       username: users.username,
+      firstName: users.firstName,
     })
       .from(radioChatMessages)
       .leftJoin(users, eq(radioChatMessages.userId, users.id))
@@ -2279,7 +2280,10 @@ export class DatabaseStorage implements IStorage {
       userId: r.userId,
       content: r.content,
       createdAt: r.createdAt,
-      username: r.username ?? null,
+      username:
+        (r.firstName && String(r.firstName).trim()) ||
+        (r.username && String(r.username).trim()) ||
+        (r.userId ? String(r.userId).slice(0, 8) : null),
     }));
   }
 
