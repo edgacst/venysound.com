@@ -199,8 +199,21 @@ export async function setupAuth(app: Express) {
     if (password !== confirmPassword) {
       return res.status(400).json({ error: "비밀번호가 일치하지 않습니다." });
     }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "비밀번호는 6자 이상이어야 합니다." });
+    if (password.length < 8) {
+      return res.status(400).json({ error: "비밀번호는 8자 이상이어야 합니다." });
+    }
+    // 비밀번호 강도 검사: 영문 대소문자/숫자/특수문자 중 3종 이상, 흔한 비밀번호 차단
+    const hasUpper = /[A-Z]/.test(password);
+    const hasLower = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSymbol = /[^A-Za-z0-9]/.test(password);
+    const categories = [hasUpper, hasLower, hasNumber, hasSymbol].filter(Boolean).length;
+    const commonList = ["123456", "1234567", "12345678", "123456789", "password", "qwerty", "111111", "000000"];
+    const isCommon = commonList.includes(String(password).toLowerCase());
+    if (categories < 3 || isCommon) {
+      return res.status(400).json({
+        error: "비밀번호는 영문 대소문자, 숫자, 특수문자 중 3종 이상을 조합해 8자 이상으로 설정해주세요.",
+      });
     }
     try {
       const [existing] = await db

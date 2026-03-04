@@ -37,7 +37,23 @@ export default function Register() {
     if (!form.email) e.email = t("register.errEmailRequired", "이메일을 입력해주세요.");
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = t("register.errEmailInvalid", "올바른 이메일 형식이 아닙니다.");
     if (!form.password) e.password = t("register.errPasswordRequired", "비밀번호를 입력해주세요.");
-    else if (form.password.length < 6) e.password = t("register.errPasswordShort", "비밀번호는 6자 이상이어야 합니다.");
+  	else if (form.password.length < 8) e.password = t("register.errPasswordShort", "비밀번호는 8자 이상이어야 합니다.");
+  	else {
+  	  const pw = form.password;
+  	  const hasUpper = /[A-Z]/.test(pw);
+  	  const hasLower = /[a-z]/.test(pw);
+  	  const hasNumber = /[0-9]/.test(pw);
+  	  const hasSymbol = /[^A-Za-z0-9]/.test(pw);
+  	  const categories = [hasUpper, hasLower, hasNumber, hasSymbol].filter(Boolean).length;
+  	  const commonList = ["123456", "1234567", "12345678", "123456789", "password", "qwerty", "111111", "000000"];
+  	  const isCommon = commonList.includes(pw.toLowerCase());
+  	  if (categories < 3 || isCommon) {
+  	    e.password = t(
+  	      "register.errPasswordWeak",
+  	      "비밀번호는 영문 대소문자, 숫자, 특수문자 중 3종 이상을 조합해 8자 이상으로 설정해주세요.",
+  	    );
+  	  }
+  	}
     if (!form.confirmPassword) e.confirmPassword = t("register.errConfirmRequired", "비밀번호를 한 번 더 입력해주세요.");
     else if (form.password !== form.confirmPassword) e.confirmPassword = t("register.errPasswordMismatch", "비밀번호가 일치하지 않습니다.");
     if (!agreeTerms) e.agreeTerms = t("register.errAgreeTerms", "이용약관에 동의해 주세요.");
