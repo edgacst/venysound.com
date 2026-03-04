@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { redirectToLogin } from "@/lib/queryClient";
 
 export default function RadioChannel() {
   const [, params] = useRoute("/radio/:slug");
@@ -308,8 +309,18 @@ export default function RadioChannel() {
         credentials: "include",
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Tip failed");
+        let message: string | undefined;
+        try {
+          const err = await res.json();
+          message = err?.message as string | undefined;
+        } catch {
+          // ignore
+        }
+        if (res.status === 401) {
+          redirectToLogin();
+          throw new Error(t("music.loginRequired", "로그인이 필요한 서비스입니다"));
+        }
+        throw new Error(message || t("music.tipFailed"));
       }
       return res.json();
     },
@@ -669,9 +680,17 @@ export default function RadioChannel() {
                     <p className="text-sm font-medium text-foreground truncate">
                       {nowPlayingMusic.title ?? t("radio.nowPlaying", "지금 재생 중")}
                     </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {nowPlayingMusic.artist ?? ""}
-                    </p>
+                    {(nowPlayingMusic.artist || nowPlayingMusic.lyrics) && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        {nowPlayingMusic.artist}
+                        {nowPlayingMusic.artist && nowPlayingMusic.lyrics && " · "}
+                        {nowPlayingMusic.lyrics &&
+                          nowPlayingMusic.lyrics
+                            .split(/\r?\n/)
+                            .map((line) => line.trim())
+                            .find((line) => line.length > 0)}
+                      </p>
+                    )}
                   </div>
                 </div>
               )}

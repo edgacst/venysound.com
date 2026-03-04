@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "./AudioPlayer";
 import { useLikeMusic, useMyLikes, useLikeCounts, useUpdateMusic, useDeleteMusic } from "@/hooks/use-music";
 import { useAuth } from "@/hooks/use-auth";
+import { redirectToLogin } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePlaylists, useAddToPlaylist } from "@/hooks/use-playlists";
@@ -311,19 +312,29 @@ export function MusicCard({ music }: MusicCardProps) {
         credentials: "include",
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || t('music.tipFailed'));
+        let message: string | undefined;
+        try {
+          const err = await res.json();
+          message = err?.message as string | undefined;
+        } catch {
+          // ignore
+        }
+        if (res.status === 401) {
+          redirectToLogin();
+          throw new Error(t("music.loginRequired", "로그인이 필요한 서비스입니다"));
+        }
+        throw new Error(message || t("music.tipFailed"));
       }
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: t('music.tipSuccess'), description: t('music.tipSuccessDesc', { amount: tipAmount.toLocaleString() }) });
+      toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
       setTipOpen(false);
       setTipAmount(1000);
       setTipMessage("");
     },
     onError: (error: Error) => {
-      toast({ title: t('music.tipFailed'), description: error.message, variant: "destructive" });
+      toast({ title: t("music.tipFailed"), description: error.message, variant: "destructive" });
     },
   });
 
@@ -336,17 +347,27 @@ export function MusicCard({ music }: MusicCardProps) {
         credentials: "include",
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || t('music.buyFailed'));
+        let message: string | undefined;
+        try {
+          const err = await res.json();
+          message = err?.message as string | undefined;
+        } catch {
+          // ignore
+        }
+        if (res.status === 401) {
+          redirectToLogin();
+          throw new Error(t("music.loginRequired", "로그인이 필요합니다"));
+        }
+        throw new Error(message || t("music.buyFailed"));
       }
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: t('music.buySuccess'), description: t('music.buySuccessDesc', { title: music.title }) });
+      toast({ title: t("music.buySuccess"), description: t("music.buySuccessDesc", { title: music.title }) });
       setBuyOpen(false);
     },
     onError: (error: Error) => {
-      toast({ title: t('music.buyFailed'), description: error.message, variant: "destructive" });
+      toast({ title: t("music.buyFailed"), description: error.message, variant: "destructive" });
     },
   });
 

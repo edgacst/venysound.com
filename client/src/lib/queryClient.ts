@@ -1,9 +1,51 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+export function redirectToLogin() {
+  if (typeof window === "undefined") return;
+  const current = window.location.pathname + window.location.search + window.location.hash;
+  const loginPath = "/login";
+  if (window.location.pathname.startsWith(loginPath)) return;
+  const nextParam = encodeURIComponent(current || "/");
+  window.location.href = `${loginPath}?next=${nextParam}`;
+}
+
+async function getErrorMessage(res: Response): Promise<string> {
+  try {
+    const contentType = res.headers.get("Content-Type") || "";
+    if (contentType.includes("application/json")) {
+      const data = await res.json().catch(() => null);
+      if (data && typeof data === "object") {
+        const anyData = data as any;
+        if (typeof anyData.message === "string" && anyData.message.trim().length > 0) {
+          return anyData.message.trim();
+        }
+        if (typeof anyData.error === "string" && anyData.error.trim().length > 0) {
+          return anyData.error.trim();
+        }
+      }
+    }
+  } catch {
+    // fall through to text
+  }
+  const text = (await res.text().catch(() => ""))?.trim();
+  if (text) return text;
+  if (res.statusText) return res.statusText;
+  return `HTTP ${res.status}`;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    const msg = await getErrorMessage(res);
+    if (res.status === 401) {
+      redirectToLogin();
+      const isKorean = typeof navigator !== "undefined" && /^ko\b/i.test(navigator.language || "");
+      if (isKorean) {
+        throw new Error("로그인이 필요한 서비스입니다.");
+      }
+      // Fallback: use server message or generic English
+      throw new Error(msg || "Login is required to use this service.");
+    }
+    throw new Error(msg);
   }
 }
 
