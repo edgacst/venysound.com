@@ -379,6 +379,12 @@
         </div>
         <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
           <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 아래 버튼으로 재생/정지할 수 있습니다.</p>
+          <div class="progress-wrap" style="margin-bottom: 8px;">
+            <div class="progress-bar" style="height: 6px; background: #27272a; border-radius: 999px; overflow: hidden;">
+              <div id="monitorProgressFill" class="progress-fill" style="height: 100%; width: 0%; background: #7c3aed; border-radius: 999px; transition: width 0.2s ease;"></div>
+            </div>
+            <div id="monitorProgressTime" style="font-size: 0.75rem; color: #71717a; margin-top: 4px;">0:00 / 0:00</div>
+          </div>
           <audio id="djMonitorAudio" preload="metadata" style="display: none;"></audio>
           <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
@@ -758,6 +764,29 @@
     }).catch(function() {});
   }
 
+  function formatTime(sec) {
+    if (isNaN(sec) || sec < 0) return '0:00';
+    var m = Math.floor(sec / 60);
+    var s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function updateMonitorProgress() {
+    var audio = document.getElementById('djMonitorAudio');
+    var fill = document.getElementById('monitorProgressFill');
+    var timeEl = document.getElementById('monitorProgressTime');
+    if (!audio || !fill || !timeEl) return;
+    var cur = audio.currentTime;
+    var dur = audio.duration;
+    if (isNaN(dur) || dur <= 0) {
+      fill.style.width = '0%';
+      timeEl.textContent = formatTime(0) + ' / --:--';
+      return;
+    }
+    var pct = Math.min(100, (cur / dur) * 100);
+    fill.style.width = pct + '%';
+    timeEl.textContent = formatTime(cur) + ' / ' + formatTime(dur);
+  }
+
   function updateNowPlayingDisplay() {
     var titleEl = document.getElementById('nowTitle');
     var artistEl = document.getElementById('nowArtist');
@@ -781,6 +810,7 @@
         waveformEl.removeAttribute('src');
         waveformEl.load();
       }
+      updateMonitorProgress();
       return;
     }
     if (titleEl) titleEl.setAttribute('data-now-id', String(nowId));
@@ -1500,6 +1530,12 @@
       }
       if (next && next.id) setNowPlaying(next.id);
     });
+    if (monAudio) {
+      monAudio.addEventListener('timeupdate', updateMonitorProgress);
+      monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
+      monAudio.addEventListener('durationchange', updateMonitorProgress);
+      monAudio.addEventListener('ended', function() { setTimeout(updateMonitorProgress, 0); });
+    }
     document.getElementById('btnToggleSearch').addEventListener('click', function() {
       var wrap = document.getElementById('searchWrap');
       wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';

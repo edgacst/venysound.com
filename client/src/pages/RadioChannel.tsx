@@ -64,7 +64,8 @@ export default function RadioChannel() {
       return res.json();
     },
     enabled: !!slug,
-    refetchInterval: (data) => (data?.status === "live" ? 2000 : false),
+    refetchInterval: (data) => (data?.status === "live" ? 10000 : false),
+    refetchIntervalInBackground: false,
   });
 
   const isOwner = user?.id === channel?.ownerId;
@@ -422,7 +423,7 @@ export default function RadioChannel() {
     return null;
   }
   function RoleBadge({ role }: { role: "owner" | "dj" | "sub_host" | "staff" }) {
-    const labels = { owner: "방장", dj: "DJ", sub_host: "부방장", staff: "스텝" };
+    const labels = { owner: "국장", dj: "DJ", sub_host: "부국장", staff: "스텝" };
     const styles = {
       owner: "bg-primary/20 text-primary border border-primary/30",
       dj: "bg-violet-500/20 text-violet-300 border border-violet-500/30",
@@ -674,7 +675,7 @@ export default function RadioChannel() {
                   </div>
                 </div>
               )}
-              <div className="aspect-video bg-muted/30 flex items-center justify-center relative overflow-hidden">
+              <div className="h-24 sm:h-32 md:h-40 bg-muted/30 flex items-center justify-center relative overflow-hidden">
                 {isLive && nowPlayingId != null && audioStreamUrl && !isOwner ? (
                   <canvas
                     ref={canvasRef}
@@ -772,18 +773,22 @@ export default function RadioChannel() {
                   </a>
                 ) : isLive && nowPlayingId != null && audioStreamUrl ? (
                   <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
-                    <p className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
                       <Headphones size={18} />
-                      {t("radio.listeningTo", "지금 재생 중")}
+                      <span>
+                        {isPlaying
+                          ? t("radio.listeningTo", "지금 재생 중")
+                          : t("radio.listeningPaused", "일시정리")}
+                        {typeof navigator !== "undefined" &&
+                          /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
+                          ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}
+                      </span>
                     </p>
-                    {typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) && (
-                      <p className="text-xs text-muted-foreground">{t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}</p>
-                    )}
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
                         variant={isPlaying ? "outline" : "default"}
-                        disabled={isPlaying}
+                        type="button"
                         onClick={() => {
                           const el = audioRef.current;
                           if (!el) return;
@@ -800,7 +805,7 @@ export default function RadioChannel() {
                       <Button
                         size="sm"
                         variant={isPlaying ? "secondary" : "outline"}
-                        disabled={!isPlaying}
+                        type="button"
                         onClick={() => {
                           const el = audioRef.current;
                           if (!el) return;
@@ -833,6 +838,7 @@ export default function RadioChannel() {
                       onEnded={() => {
                         setIsPlaying(false);
                         setUserStopped(false);
+                        refetchChannel();
                       }}
                       onCanPlay={() => {
                         if (isOwner || !audioRef.current) return;
@@ -869,6 +875,9 @@ export default function RadioChannel() {
                           }, 300);
                         }
                         hasSeekedForTrackRef.current = nowPlayingId;
+                        if (!userStopped && audioRef.current) {
+                          audioRef.current.play().catch(() => {});
+                        }
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
