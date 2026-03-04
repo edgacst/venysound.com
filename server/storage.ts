@@ -128,7 +128,9 @@ export interface IStorage {
   getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
   getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null } | undefined>;
   listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
+  listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void>;
+  deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
   getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
@@ -2210,6 +2212,27 @@ export class DatabaseStorage implements IStorage {
     }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
   }
 
+  async listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]> {
+    const rows = await db.select({
+      id: radioChannels.id,
+      ownerId: radioChannels.ownerId,
+      name: radioChannels.name,
+      slug: radioChannels.slug,
+      status: radioChannels.status,
+      ownerUsername: users.username,
+      updatedAt: radioChannels.updatedAt,
+    }).from(radioChannels).leftJoin(users, eq(radioChannels.ownerId, users.id)).orderBy(desc(radioChannels.updatedAt));
+    return rows.map((r) => ({
+      id: r.id,
+      ownerId: r.ownerId,
+      name: r.name,
+      slug: r.slug,
+      status: r.status,
+      ownerUsername: r.ownerUsername ?? null,
+      updatedAt: r.updatedAt ?? null,
+    }));
+  }
+
   async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
@@ -2225,6 +2248,10 @@ export class DatabaseStorage implements IStorage {
     if (data.scheduledEndAt !== undefined) set.scheduledEndAt = data.scheduledEndAt;
     if (data.notice !== undefined) set.notice = data.notice;
     await db.update(radioChannels).set(set as any).where(eq(radioChannels.id, id));
+  }
+
+  async deleteRadioChannel(id: number): Promise<void> {
+    await db.delete(radioChannels).where(eq(radioChannels.id, id));
   }
 
   async createRadioChatMessage(channelId: number, userId: string, content: string) {

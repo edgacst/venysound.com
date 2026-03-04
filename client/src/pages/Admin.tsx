@@ -51,6 +51,9 @@ import {
   Video,
   ListMusic,
   Pencil,
+  Radio,
+  Pause,
+  Play,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -255,6 +258,18 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
+  const { data: adminRadioChannels = [], refetch: refetchAdminRadioChannels } = useQuery<
+    { id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: string | null }[]
+  >({
+    queryKey: ["/api/admin/radio/channels"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/radio/channels", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
   const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
     queryKey: ["/api/admin/curated-playlists"],
     queryFn: async () => {
@@ -361,6 +376,39 @@ export default function Admin() {
     onError: (err: any) => {
       toast({ title: err?.message || "삭제 실패", variant: "destructive" });
     },
+  });
+
+  const updateRadioChannelStatusMutation = useMutation({
+    mutationFn: async ({ slug, status }: { slug: string; status: string }) => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(slug)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "상태 변경 실패");
+      return data;
+    },
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/radio/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/live"] });
+      toast({ title: status === "paused" ? t("radio.channelPaused") : t("radio.channelResumed") });
+    },
+    onError: (err: any) => toast({ title: err?.message || "상태 변경 실패", variant: "destructive" }),
+  });
+
+  const deleteRadioChannelMutation = useMutation({
+    mutationFn: async (slug: string) => {
+      await apiRequest("DELETE", `/api/radio/channels/${encodeURIComponent(slug)}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/radio/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/live"] });
+      toast({ title: t("radio.channelDeleted") });
+      refetchAdminRadioChannels();
+    },
+    onError: (err: any) => toast({ title: err?.message || "삭제 실패", variant: "destructive" }),
   });
 
   const toDatetimeLocal = (iso: string) => {
@@ -665,6 +713,11 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="guide-videos">{t('admin.guideVideos', '동영상 가이드 관리')}</TabsTrigger>
               <TabsTrigger value="curated">{t('admin.curatedPlaylists', '테마 플레이리스트')}</TabsTrigger>
+              <TabsTrigger value="radio-channels" className="gap-1.5">
+                <Radio size={14} className="shrink-0" />
+                {t('admin.radioChannels', '방송 채널')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{adminRadioChannels?.length ?? 0}</Badge>
+              </TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
             <TabsContent value="stats">
@@ -2052,6 +2105,89 @@ export default function Admin() {
             </div>
           </DialogContent>
         </Dialog>
+            </TabsContent>
+            <TabsContent value="radio-channels">
+        <Card className="p-4 sm:p-6">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Radio size={20} className="text-primary" /> {t('admin.radioChannels', '방송 채널')}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('admin.radioChannelsDesc', '베니방송국 채널 목록입니다. 일시정지 시 채널이 라이브 목록에 노출되지 않습니다.')}
+          </p>
+          {adminRadioChannels.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">{t('admin.noRadioChannels', '등록된 방송 채널이 없습니다.')}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 pr-4">{t('admin.channelName', '채널명')}</th>
+                    <th className="text-left py-2 pr-4">/radio/</th>
+                    <th className="text-left py-2 pr-4">{t('admin.owner', '소유자')}</th>
+                    <th className="text-left py-2 pr-4">{t('admin.status', '상태')}</th>
+                    <th className="text-left py-2 pr-4">{t('admin.actions', '작업')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminRadioChannels.map((ch) => (
+                    <tr key={ch.id} className="border-b border-border/60 hover:bg-muted/30">
+                      <td className="py-3 pr-4 font-medium">{ch.name}</td>
+                      <td className="py-3 pr-4 text-muted-foreground">{ch.slug}</td>
+                      <td className="py-3 pr-4 text-muted-foreground">{ch.ownerUsername ?? ch.ownerId?.slice(0, 8) ?? "-"}</td>
+                      <td className="py-3 pr-4">
+                        <Badge variant={ch.status === "live" ? "default" : "secondary"} className="text-xs">
+                          {ch.status === "live" && t("radio.statusLive")}
+                          {ch.status === "paused" && t("radio.statusPaused")}
+                          {ch.status === "draft" && t("radio.statusDraft")}
+                          {ch.status === "ended" && t("radio.statusEnded")}
+                          {!["live", "paused", "draft", "ended"].includes(ch.status) && ch.status}
+                        </Badge>
+                      </td>
+                      <td className="py-3 pr-4 flex flex-wrap gap-1">
+                        {ch.status !== "paused" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1 border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                            disabled={updateRadioChannelStatusMutation.isPending}
+                            onClick={() => updateRadioChannelStatusMutation.mutate({ slug: ch.slug, status: "paused" })}
+                          >
+                            <Pause size={12} />
+                            {t("radio.channelPause")}
+                          </Button>
+                        )}
+                        {ch.status === "paused" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 gap-1"
+                            disabled={updateRadioChannelStatusMutation.isPending}
+                            onClick={() => updateRadioChannelStatusMutation.mutate({ slug: ch.slug, status: "live" })}
+                          >
+                            <Play size={12} />
+                            {t("radio.channelResume")}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1 text-destructive border-destructive/50 hover:bg-destructive/10"
+                          disabled={deleteRadioChannelMutation.isPending}
+                          onClick={() => {
+                            if (confirm(t("radio.deleteChannelConfirm"))) deleteRadioChannelMutation.mutate(ch.slug);
+                          }}
+                        >
+                          <Trash2 size={12} />
+                          {t("radio.channelDelete")}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
             </TabsContent>
             <TabsContent value="backup">
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">

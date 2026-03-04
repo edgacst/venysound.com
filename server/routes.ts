@@ -1895,6 +1895,16 @@ export async function registerRoutes(
     res.json({ isAdmin: role === "admin" });
   });
 
+  app.get("/api/admin/radio/channels", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await storage.listAllRadioChannels();
+      res.json(list);
+    } catch (e) {
+      console.error("[admin/radio/channels]", e);
+      res.status(500).json({ message: "방송 채널 목록을 불러올 수 없습니다" });
+    }
+  });
+
   // === Copyright Report Routes ===
   app.post("/api/copyright-reports", isAuthenticated, async (req, res) => {
     try {
@@ -2666,9 +2676,11 @@ export async function registerRoutes(
       if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+      const role = await storage.getUserRole(userId);
       const isOwner = channel.ownerId === userId;
       const isCurrentHost = (channel as any).currentHostId === userId;
-      const canManage = isOwner || isCurrentHost;
+      const isAdminUser = role === "admin";
+      const canManage = isOwner || isCurrentHost || isAdminUser;
 
       const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null } = {};
@@ -2684,11 +2696,11 @@ export async function registerRoutes(
       }
 
       if (!canManage && Object.keys(updates).length === 0) return res.status(403).json({ message: "채널 소유자 또는 현재 송출 호스트만 수정할 수 있습니다." });
-      if (status !== undefined && String(status) === "ended" && !isOwner && !isCurrentHost) {
+      if (status !== undefined && String(status) === "ended" && !isOwner && !isCurrentHost && !isAdminUser) {
         return res.status(403).json({ message: "방송 종료는 방장 또는 현재 송출 호스트만 가능합니다." });
       }
       if (canManage) {
-        if (status !== undefined && ["draft", "live", "ended"].includes(String(status))) {
+        if (status !== undefined && ["draft", "live", "paused", "ended"].includes(String(status))) {
           updates.status = String(status);
           if (String(status) === "ended") {
             updates.currentHostId = null;
@@ -2700,7 +2712,7 @@ export async function registerRoutes(
         if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
         if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
       }
-      if (isOwner) {
+      if (isOwner || isAdminUser) {
         if (bodyScheduledStartAt !== undefined) updates.scheduledStartAt = bodyScheduledStartAt === null || bodyScheduledStartAt === "" ? null : new Date(bodyScheduledStartAt);
         if (bodyScheduledEndAt !== undefined) updates.scheduledEndAt = bodyScheduledEndAt === null || bodyScheduledEndAt === "" ? null : new Date(bodyScheduledEndAt);
         if (bodyNotice !== undefined) {
@@ -2744,6 +2756,25 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[radio/channels PATCH]", e);
       res.status(500).json({ message: "채널 수정에 실패했습니다" });
+    }
+  });
+
+  app.delete("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req as any).user?.claims?.sub;
+      const slug = String(req.params.slug || "").trim().toLowerCase();
+      if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+      const role = await storage.getUserRole(userId);
+      const isOwner = channel.ownerId === userId;
+      const isAdminUser = role === "admin";
+      if (!isOwner && !isAdminUser) return res.status(403).json({ message: "채널 소유자 또는 관리자만 삭제할 수 있습니다." });
+      await storage.deleteRadioChannel(channel.id);
+      res.status(204).send();
+    } catch (e) {
+      console.error("[radio/channels DELETE]", e);
+      res.status(500).json({ message: "채널 삭제에 실패했습니다" });
     }
   });
 

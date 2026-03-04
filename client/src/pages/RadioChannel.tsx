@@ -36,6 +36,7 @@ export default function RadioChannel() {
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
   const presentUserIdsRef = useRef<Set<string>>(new Set());
   const [userStopped, setUserStopped] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -73,10 +74,11 @@ export default function RadioChannel() {
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
 
-  // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태는 초기화
+  // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
     if (!isLive || nowPlayingId == null) {
       setUserStopped(false);
+      setIsPlaying(false);
     }
   }, [isLive, nowPlayingId]);
 
@@ -774,13 +776,21 @@ export default function RadioChannel() {
                       <Headphones size={18} />
                       {t("radio.listeningTo", "지금 재생 중")}
                     </p>
+                    {typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) && (
+                      <p className="text-xs text-muted-foreground">{t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}</p>
+                    )}
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant={isPlaying ? "outline" : "default"}
+                        disabled={isPlaying}
                         onClick={() => {
                           const el = audioRef.current;
                           if (!el) return;
+                          const ctx = analyserRef.current?.ctx;
+                          if (ctx?.state === "suspended") {
+                            ctx.resume();
+                          }
                           el.play().catch(() => {});
                           setUserStopped(false);
                         }}
@@ -789,7 +799,8 @@ export default function RadioChannel() {
                       </Button>
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant={isPlaying ? "secondary" : "outline"}
+                        disabled={!isPlaying}
                         onClick={() => {
                           const el = audioRef.current;
                           if (!el) return;
@@ -805,18 +816,23 @@ export default function RadioChannel() {
                       ref={audioRef}
                       src={audioStreamUrl}
                       className="hidden"
-                      autoPlay={!userStopped}
+                      autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
                       onPlay={() => {
+                        setIsPlaying(true);
                         setUserStopped(false);
                       }}
                       onPause={() => {
+                        setIsPlaying(false);
                         const audio = audioRef.current;
                         if (!audio) return;
-                        // 사용자가 의도적으로 정지한 경우만 기억 (트랙 자연 종료는 제외)
                         if (audio.ended) return;
                         if (audio.currentTime > 0) {
                           setUserStopped(true);
                         }
+                      }}
+                      onEnded={() => {
+                        setIsPlaying(false);
+                        setUserStopped(false);
                       }}
                       onCanPlay={() => {
                         if (isOwner || !audioRef.current) return;

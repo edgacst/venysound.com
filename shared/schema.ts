@@ -97,7 +97,7 @@ export const radioChannels = pgTable("radio_channels", {
   coverFilename: text("cover_filename"),
   visibility: text("visibility").default("public").notNull(), // public | link_only | private
   inviteToken: text("invite_token"),
-  status: text("status").default("draft").notNull(), // draft | live | ended
+  status: text("status").default("draft").notNull(), // draft | live | paused | ended
   notice: text("notice"),
   nowPlayingMusicId: integer("now_playing_music_id").references(() => music.id, { onDelete: "set null" }),
   nowPlayingStartedAt: timestamp("now_playing_started_at"),

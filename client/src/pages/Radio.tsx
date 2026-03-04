@@ -3,13 +3,15 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Link } from "wouter";
-import { Radio as RadioIcon, Mic2, PlusCircle, Headphones, Megaphone, ChevronRight } from "lucide-react";
+import { Link, useLocation } from "wouter";
+import { Radio as RadioIcon, Mic2, PlusCircle, Headphones, Megaphone, ChevronRight, Pause, Play, Trash2 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resolveStorageUrl } from "@/lib/utils";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 type LiveChannel = {
   id: number;
@@ -78,11 +80,54 @@ function formatNoticeDate(iso: string) {
 export default function Radio() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [announcementExpandedId, setAnnouncementExpandedId] = useState<number | null>(null);
 
   const { data: myChannel } = useQuery<{ id: number; name: string; slug: string; status: string } | null>({
     queryKey: ["/api/radio/channels/me"],
     enabled: !!user,
+  });
+
+  const updateChannelStatus = useMutation({
+    mutationFn: async ({ slug, status }: { slug: string; status: string }) => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(slug)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to update");
+      }
+      return res.json();
+    },
+    onSuccess: (_, { status }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/live"] });
+      if (status === "paused") toast({ title: t("radio.channelPaused") });
+      else if (status === "live") toast({ title: t("radio.channelResumed") });
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const deleteChannel = useMutation({
+    mutationFn: async (slug: string) => {
+      const res = await fetch(`/api/radio/channels/${encodeURIComponent(slug)}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to delete");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/live"] });
+      toast({ title: t("radio.channelDeleted") });
+      setLocation("/radio");
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
   const { data: liveChannels = [] } = useQuery<LiveChannel[]>({
     queryKey: ["/api/radio/channels/live"],
@@ -198,7 +243,63 @@ export default function Radio() {
                   </div>
                   {user ? (
                     myChannel ? (
-                      <div className="flex flex-col items-center gap-2 w-full">
+                      <div className="flex flex-col items-center gap-3 w-full">
+                        <div className="flex flex-wrap items-center justify-center gap-2 w-full">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                            {myChannel.status === "live" && t("radio.statusLive")}
+                            {myChannel.status === "paused" && t("radio.statusPaused")}
+                            {myChannel.status === "draft" && t("radio.statusDraft")}
+                            {myChannel.status === "ended" && t("radio.statusEnded")}
+                            {!["live", "paused", "draft", "ended"].includes(myChannel.status) && myChannel.status}
+                          </span>
+                          {myChannel.status !== "paused" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                              disabled={updateChannelStatus.isPending}
+                              onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "paused" })}
+                            >
+                              <Pause size={14} />
+                              {t("radio.channelPause")}
+                            </Button>
+                          )}
+                          {myChannel.status === "paused" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 border-primary/50"
+                              disabled={updateChannelStatus.isPending}
+                              onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "live" })}
+                            >
+                              <Play size={14} />
+                              {t("radio.channelResume")}
+                            </Button>
+                          )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" className="gap-1 border-destructive/50 text-destructive hover:bg-destructive/10">
+                                <Trash2 size={14} />
+                                {t("radio.channelDelete")}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>{t("radio.channelDelete")}</AlertDialogTitle>
+                                <AlertDialogDescription>{t("radio.deleteChannelConfirm")}</AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>{t("profile.cancel", "취소")}</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => deleteChannel.mutate(myChannel.slug)}
+                                >
+                                  {deleteChannel.isPending ? "..." : t("radio.channelDelete")}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                         <Button asChild variant="outline" className="gap-2 w-full" size="default">
                           <Link href={`/radio/${myChannel.slug}`}>
                             <Mic2 size={16} />
