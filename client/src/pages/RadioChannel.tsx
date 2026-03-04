@@ -111,10 +111,29 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
+
+  // 현재 재생 중인 음원 정보
+  const { data: nowPlayingMusic } = useQuery<{
+    id: number;
+    title?: string;
+    artist?: string;
+    filename?: string | null;
+    lyrics?: string | null;
+  }>({
+    queryKey: ["/api/music", nowPlayingId],
+    queryFn: async () => {
+      const res = await fetch(`/api/music/${nowPlayingId}`);
+      if (!res.ok) throw new Error("Not found");
+      return res.json();
+    },
+    enabled: !!nowPlayingId && !!isLive,
+  });
+
   const syncedLyrics = useMemo(
     () => parseLrcToSyncedLines(nowPlayingMusic?.lyrics ?? null),
     [nowPlayingMusic?.lyrics],
   );
+
   const firstLyricLine = useMemo(() => {
     if (!nowPlayingMusic?.lyrics) return "";
     return (
@@ -124,8 +143,8 @@ export default function RadioChannel() {
         .find((line) => line.length > 0) || ""
     );
   }, [nowPlayingMusic?.lyrics]);
-  const lastSyncedIndexRef = useRef<number>(-1);
 
+  const lastSyncedIndexRef = useRef<number>(-1);
 
   // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
@@ -161,15 +180,6 @@ export default function RadioChannel() {
     return `${h}${t("radio.hour", "시")} ${m}${t("radio.minute", "분")}`;
   }
 
-  const { data: nowPlayingMusic } = useQuery<{ id: number; title?: string; artist?: string; filename?: string | null; lyrics?: string | null }>({
-    queryKey: ["/api/music", nowPlayingId],
-    queryFn: async () => {
-      const res = await fetch(`/api/music/${nowPlayingId}`);
-      if (!res.ok) throw new Error("Not found");
-      return res.json();
-    },
-    enabled: !!nowPlayingId && !!isLive,
-  });
   const rawAudioUrl =
     nowPlayingId == null
       ? null
