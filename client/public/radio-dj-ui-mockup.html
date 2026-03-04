@@ -389,9 +389,13 @@
           <span class="title" id="nowTitle">재생 중인 곡 없음</span>
           <span class="artist" id="nowArtist">큐에서 곡을 선택하고 「지금 재생」을 누르세요</span>
         </div>
-        <div id="nowLyricsWrap" style="display: none; margin-top: 12px; text-align: left; max-width: 480px; margin-left: auto; margin-right: auto; width: 100%;">
-          <p class="panel-title" style="margin-bottom: 6px;">가사</p>
-          <div id="nowLyrics" class="lyrics-box" style="max-height: 160px; overflow-y: auto; font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; white-space: pre-wrap; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;"></div>
+        <div id="nowLyricsWrap" style="display: none; margin-top: 8px; text-align: center; max-width: 640px; margin-left: auto; margin-right: auto; width: 100%;">
+          <p class="panel-title" style="margin-bottom: 4px;">가사</p>
+          <div
+            id="nowLyrics"
+            class="lyrics-box"
+            style="font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; padding: 6px 10px; background: rgba(0,0,0,0.2); border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ></div>
         </div>
         <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
           <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 아래 버튼으로 재생/정지할 수 있습니다.</p>
@@ -529,6 +533,8 @@
   var songRequests = [];
   var presentUserIds = new Set();
   var lastJoinByUserKey = {};
+  var syncedLyrics = [];
+  var currentLyricIndex = -1;
   var ws = null;
   var wsAuthenticated = false;
   var micStream = null;
@@ -804,12 +810,71 @@
       return r.json();
     }).then(function(m) {
       if (lastLoadedLyricsMusicId !== musicId) return;
-      var text = (m && m.lyrics) ? String(m.lyrics).trim() : '';
-      if (text) {
-        box.textContent = text;
-        wrap.style.display = 'block';
+      var raw = (m && m.lyrics) ? String(m.lyrics).trim() : '';
+      if (!raw) return;
+      // LRC 형식(타임스탬프 포함) 우선 파싱
+      var parsed = [];
+      var rows = raw.split(/\r?\n/);
+      var timeRe = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+      for (var i = 0; i < rows.length; i++) {
+        var line = rows[i].trim();
+        if (!line) continue;
+        var match;
+        var lastIdx = 0;
+        var times = [];
+        timeRe.lastIndex = 0;
+        while ((match = timeRe.exec(line))) {
+          var mm = parseInt(match[1], 10) || 0;
+          var ss = parseInt(match[2], 10) || 0;
+          var frac = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) / 1000 : 0;
+          times.push(mm * 60 + ss + frac);
+          lastIdx = timeRe.lastIndex;
+        }
+        var content = line.slice(lastIdx).trim();
+        if (!content) continue;
+        if (!times.length) continue;
+        times.forEach(function(t) {
+          parsed.push({ time: t, text: content });
+        });
       }
+      parsed.sort(function(a, b) { return a.time - b.time; });
+      if (parsed.length) {
+        syncedLyrics = parsed;
+        currentLyricIndex = -1;
+        box.textContent = parsed[0].text;
+        wrap.style.display = 'block';
+        return;
+      }
+      // 타임스탬프가 없는 경우: 첫 줄만 한 줄 가사로 사용
+      var firstLine = raw
+        .split(/\r?\n/)
+        .map(function(line) { return line.trim(); })
+        .find(function(line) { return line.length > 0; }) || raw;
+      syncedLyrics = [];
+      currentLyricIndex = -1;
+      box.textContent = firstLine;
+      wrap.style.display = 'block';
     }).catch(function() {});
+  }
+
+  function updateSyncedLyric() {
+    var wrap = document.getElementById('nowLyricsWrap');
+    var box = document.getElementById('nowLyrics');
+    var audio = document.getElementById('djMonitorAudio');
+    if (!wrap || !box || !audio || !syncedLyrics.length) return;
+    var t = audio.currentTime || 0;
+    var idx = currentLyricIndex;
+    if (idx < 0 || idx >= syncedLyrics.length || syncedLyrics[idx].time > t) {
+      idx = 0;
+    }
+    while (idx + 1 < syncedLyrics.length && syncedLyrics[idx + 1].time <= t) {
+      idx++;
+    }
+    if (idx !== currentLyricIndex) {
+      currentLyricIndex = idx;
+      box.textContent = syncedLyrics[idx].text;
+      wrap.style.display = 'block';
+    }
   }
 
   function formatTime(sec) {
@@ -1587,6 +1652,7 @@
     });
     if (monAudio) {
       monAudio.addEventListener('timeupdate', updateMonitorProgress);
+      monAudio.addEventListener('timeupdate', updateSyncedLyric);
       monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
       monAudio.addEventListener('durationchange', updateMonitorProgress);
       monAudio.addEventListener('ended', function() { setTimeout(updateMonitorProgress, 0); });

@@ -25,6 +25,41 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
 
+type SyncedLyricLine = { time: number; text: string };
+
+function parseLrcToSyncedLines(lyrics?: string | null): SyncedLyricLine[] {
+  if (!lyrics) return [];
+  const raw = String(lyrics);
+  const rows = raw.split(/\r?\n/);
+  const result: SyncedLyricLine[] = [];
+  const timeRe = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+  for (const row of rows) {
+    const line = row.trim();
+    if (!line) continue;
+    let match: RegExpExecArray | null;
+    let lastIdx = 0;
+    const times: number[] = [];
+    timeRe.lastIndex = 0;
+    while ((match = timeRe.exec(line))) {
+      const mm = parseInt(match[1], 10) || 0;
+      const ss = parseInt(match[2], 10) || 0;
+      const frac =
+        match[3] != null
+          ? parseInt((match[3] + "00").slice(0, 3), 10) / 1000
+          : 0;
+      times.push(mm * 60 + ss + frac);
+      lastIdx = timeRe.lastIndex;
+    }
+    const content = line.slice(lastIdx).trim();
+    if (!content || !times.length) continue;
+    for (const t of times) {
+      result.push({ time: t, text: content });
+    }
+  }
+  result.sort((a, b) => a.time - b.time);
+  return result;
+}
+
 export default function RadioChannel() {
   const [, params] = useRoute("/radio/:slug");
   const slug = params?.slug ?? "";
@@ -38,6 +73,7 @@ export default function RadioChannel() {
   const presentUserIdsRef = useRef<Set<string>>(new Set());
   const [userStopped, setUserStopped] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentLyric, setCurrentLyric] = useState<string | null>(null);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -75,6 +111,21 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
+  const syncedLyrics = useMemo(
+    () => parseLrcToSyncedLines(nowPlayingMusic?.lyrics ?? null),
+    [nowPlayingMusic?.lyrics],
+  );
+  const firstLyricLine = useMemo(() => {
+    if (!nowPlayingMusic?.lyrics) return "";
+    return (
+      nowPlayingMusic.lyrics
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\[[^\]]+\]/g, "").trim())
+        .find((line) => line.length > 0) || ""
+    );
+  }, [nowPlayingMusic?.lyrics]);
+  const lastSyncedIndexRef = useRef<number>(-1);
+
 
   // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
@@ -203,6 +254,40 @@ export default function RadioChannel() {
   useEffect(() => {
     setBroadcastEndedMessage(null);
   }, [slug]);
+
+  // 싱크 가사: 리스너 audio 시간에 맞춰 현재 줄 갱신
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !syncedLyrics.length || !isLive || nowPlayingId == null) {
+      setCurrentLyric(null);
+      lastSyncedIndexRef.current = -1;
+      return;
+    }
+    const handleTimeUpdate = () => {
+      const t = audio.currentTime || 0;
+      let idx = lastSyncedIndexRef.current;
+      if (
+        idx < 0 ||
+        idx >= syncedLyrics.length ||
+        syncedLyrics[idx].time > t
+      ) {
+        idx = 0;
+      }
+      while (idx + 1 < syncedLyrics.length && syncedLyrics[idx + 1].time <= t) {
+        idx++;
+      }
+      if (idx !== lastSyncedIndexRef.current) {
+        lastSyncedIndexRef.current = idx;
+        setCurrentLyric(syncedLyrics[idx].text);
+      }
+    };
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    // 초기 호출
+    handleTimeUpdate();
+    return () => {
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [syncedLyrics, isLive, nowPlayingId]);
   useEffect(() => {
     if (channel?.status === "live") setBroadcastEndedMessage(null);
   }, [channel?.status]);
@@ -680,15 +765,11 @@ export default function RadioChannel() {
                     <p className="text-sm font-medium text-foreground truncate">
                       {nowPlayingMusic.title ?? t("radio.nowPlaying", "지금 재생 중")}
                     </p>
-                    {(nowPlayingMusic.artist || nowPlayingMusic.lyrics) && (
+                    {(nowPlayingMusic.artist || firstLyricLine || currentLyric) && (
                       <p className="text-xs text-muted-foreground truncate">
                         {nowPlayingMusic.artist}
-                        {nowPlayingMusic.artist && nowPlayingMusic.lyrics && " · "}
-                        {nowPlayingMusic.lyrics &&
-                          nowPlayingMusic.lyrics
-                            .split(/\r?\n/)
-                            .map((line) => line.trim())
-                            .find((line) => line.length > 0)}
+                        {nowPlayingMusic.artist && (currentLyric || firstLyricLine) && " · "}
+                        {currentLyric || firstLyricLine}
                       </p>
                     )}
                   </div>
@@ -900,7 +981,7 @@ export default function RadioChannel() {
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
-                    {nowPlayingMusic?.lyrics?.trim() && (
+                    {nowPlayingMusic?.lyrics?.trim() && isOwner && (
                       <div className="mt-3">
                         <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>
                         <div className="max-h-40 overflow-y-auto rounded-md bg-background/50 p-3 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
