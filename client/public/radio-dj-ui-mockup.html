@@ -655,13 +655,8 @@
         return Promise.reject(new Error('no channel'));
       }
       if (data.canControlBroadcast === false) {
-        var slugPath = '/radio/' + encodeURIComponent(data.slug);
-        showInit(
-          '이 채널의 송출 권한이 없습니다.<br>청취만 가능하며, DJ 송출은 채널 국장/스텝만 사용할 수 있습니다.<br><br>' +
-            '<a href="' + slugPath + '">채널 청취 페이지로 이동</a>',
-          true
-        );
-        return Promise.reject(new Error('no broadcast permission'));
+        // 송출 권한이 없는 경우: 에러로 넘기고 catch 블록에서 안내 메시지 처리
+        return Promise.reject(new Error('NO_BROADCAST_PERMISSION'));
       }
       channel = data;
       showLayout();
@@ -674,7 +669,12 @@
       loadRequests();
       bindEvents();
     }).catch(function(err) {
+      if (!err || !err.message) return;
       if (err.message === 'not logged in' || err.message === 'no channel') return;
+      if (err.message === 'NO_BROADCAST_PERMISSION') {
+        showInit('이 채널은 권한이 있는 사람만 접근이 가능합니다.<br><br><a href="/radio">방송국 가기</a>', true);
+        return;
+      }
       var msg = err.message || '알 수 없음';
       if (msg.indexOf('fetch') !== -1 || msg === 'Failed to fetch' || msg.indexOf('NetworkError') !== -1) {
         showInit('서버에 연결할 수 없습니다. 이 페이지를 <strong>서버 주소</strong>에서 열어주세요.<br><br>예: <a href="http://localhost:5000/radio-dj-ui-mockup.html">http://localhost:5000/radio-dj-ui-mockup.html</a><br><br>터미널에서 <code>npm run dev</code> 로 서버를 실행한 뒤, 위 주소로 접속하세요.<br><br><a href="/radio">방송국으로</a>', true);
