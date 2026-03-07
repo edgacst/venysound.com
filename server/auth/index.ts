@@ -199,6 +199,9 @@ export async function setupAuth(app: Express) {
     if (password !== confirmPassword) {
       return res.status(400).json({ error: "비밀번호가 일치하지 않습니다." });
     }
+    if (/(.)\1\1/.test(username)) {
+      return res.status(400).json({ error: "아이디에는 같은 문자를 3번 이상 연속해서 사용할 수 없습니다." });
+    }
     if (password.length < 8) {
       return res.status(400).json({ error: "비밀번호는 8자 이상이어야 합니다." });
     }

@@ -27,6 +27,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "radio-channels.sql", name: "radio_channels" },
   { file: "radio-chat-and-requests.sql", name: "radio_chat_messages + radio_song_requests" },
   { file: "radio-channel-staff.sql", name: "radio_channel_staff" },
+  { file: "radio-channel-playlist-snapshot.sql", name: "radio_channel_playlist_snapshot" },
 ];
 
 async function main() {

@@ -104,6 +104,7 @@ export const radioChannels = pgTable("radio_channels", {
   currentHostId: text("current_host_id").references(() => users.id, { onDelete: "set null" }),
   scheduledStartAt: timestamp("scheduled_start_at"),
   scheduledEndAt: timestamp("scheduled_end_at"),
+  playlistSnapshot: jsonb("playlist_snapshot"), // { musicIds: number[], durationsSeconds: number[], currentIndex: number } — DJ 브라우저 종료 후 서버 자동 진행용
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => [uniqueIndex("radio_channels_slug_unique").on(t.slug), uniqueIndex("radio_channels_owner_id").on(t.ownerId)]);

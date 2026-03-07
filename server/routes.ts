@@ -2702,8 +2702,8 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice } = req.body || {};
-      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null } = {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds } = req.body || {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -2726,11 +2726,39 @@ export async function registerRoutes(
             updates.currentHostId = null;
             updates.nowPlayingMusicId = null;
             updates.nowPlayingStartedAt = null;
+            updates.playlistSnapshot = null;
           }
         }
         if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
         if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
         if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
+        // 재생 큐 스냅샷: DJ가 보낸 큐+길이 저장 → 송출 브라우저를 닫아도 서버가 다음 곡 자동 진행
+        const queueMusicIds = Array.isArray(bodyQueueMusicIds) ? bodyQueueMusicIds.filter((x: unknown) => typeof x === "number" && Number.isInteger(x)) as number[] : null;
+        const queueDurationsSeconds = Array.isArray(bodyQueueDurationsSeconds) ? bodyQueueDurationsSeconds as number[] : null;
+        const currentTrackDuration = typeof bodyCurrentTrackDurationSeconds === "number" && bodyCurrentTrackDurationSeconds > 0 ? bodyCurrentTrackDurationSeconds : null;
+        if (queueMusicIds && queueMusicIds.length > 0 && updates.nowPlayingMusicId != null) {
+          const currentIndex = queueMusicIds.indexOf(updates.nowPlayingMusicId);
+          if (currentIndex >= 0) {
+            const durationsSeconds = (queueDurationsSeconds && queueDurationsSeconds.length === queueMusicIds.length)
+              ? queueDurationsSeconds.slice(0, queueMusicIds.length)
+              : queueMusicIds.map(() => 240);
+            const durationForCurrent = currentTrackDuration ?? durationsSeconds[currentIndex] ?? 240;
+            if (currentTrackDuration != null && durationsSeconds[currentIndex] === 240) {
+              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
+            } else if (currentTrackDuration != null) {
+              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
+            }
+            updates.playlistSnapshot = { musicIds: queueMusicIds, durationsSeconds, currentIndex };
+          }
+        } else if (currentTrackDuration != null && channel.playlistSnapshot && updates.nowPlayingMusicId === undefined) {
+          const snap = channel.playlistSnapshot;
+          const idx = snap.currentIndex;
+          const newDurations = [...snap.durationsSeconds];
+          if (idx >= 0 && idx < newDurations.length) {
+            newDurations[idx] = Math.ceil(currentTrackDuration);
+            updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
+          }
+        }
       }
       if (isOwner || isAdminUser) {
         if (bodyScheduledStartAt !== undefined) updates.scheduledStartAt = bodyScheduledStartAt === null || bodyScheduledStartAt === "" ? null : new Date(bodyScheduledStartAt);
@@ -2778,6 +2806,37 @@ export async function registerRoutes(
       res.status(500).json({ message: "채널 수정에 실패했습니다" });
     }
   });
+
+  // DJ 송출 브라우저를 닫아도 리스너에게 다음 곡이 이어지도록 서버에서 자동 진행
+  const RADIO_AUTO_ADVANCE_INTERVAL_MS = 15000;
+  setInterval(async () => {
+    try {
+      const list = await storage.listLiveRadioChannelsForAutoAdvance();
+      for (const ch of list) {
+        const started = ch.nowPlayingStartedAt.getTime();
+        const elapsedSec = (Date.now() - started) / 1000;
+        const dur = ch.playlistSnapshot.durationsSeconds[ch.playlistSnapshot.currentIndex] ?? 240;
+        if (elapsedSec >= Math.max(1, dur - 2)) {
+          const nextIndex = (ch.playlistSnapshot.currentIndex + 1) % ch.playlistSnapshot.musicIds.length;
+          const nextId = ch.playlistSnapshot.musicIds[nextIndex];
+          await storage.updateRadioChannel(ch.id, {
+            nowPlayingMusicId: nextId,
+            nowPlayingStartedAt: new Date(),
+            playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
+          });
+          broadcastToRadioChannel(ch.slug, {
+            type: "radio_now_playing",
+            slug: ch.slug,
+            musicId: nextId,
+            startedAt: new Date().toISOString(),
+            elapsedSeconds: 0,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn("[radio auto-advance]", e);
+    }
+  }, RADIO_AUTO_ADVANCE_INTERVAL_MS);
 
   app.delete("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
     try {

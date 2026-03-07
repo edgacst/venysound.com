@@ -60,7 +60,7 @@ export default function Explore() {
     },
   });
 
-  const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
+  const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "힐링", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);

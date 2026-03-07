@@ -34,6 +34,9 @@ export default function Register() {
     const e: Record<string, string> = {};
     if (!form.username) e.username = t("register.errUsernameRequired", "아이디를 입력해주세요.");
     else if (form.username.length < 3) e.username = t("register.errUsernameShort", "아이디는 3자 이상이어야 합니다.");
+    else if (/(.)\1\1/.test(form.username)) {
+      e.username = t("register.errUsernameRepeat", "같은 문자를 3번 이상 연속해서 사용할 수 없습니다.");
+    }
     if (!form.email) e.email = t("register.errEmailRequired", "이메일을 입력해주세요.");
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = t("register.errEmailInvalid", "올바른 이메일 형식이 아닙니다.");
     if (!form.password) e.password = t("register.errPasswordRequired", "비밀번호를 입력해주세요.");

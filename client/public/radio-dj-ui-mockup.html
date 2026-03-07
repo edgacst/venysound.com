@@ -1203,9 +1203,15 @@
       waveformEl.src = streamUrl;
       waveformEl.load();
     }
+    var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() };
+    if (queue.length > 0) {
+      body.queueMusicIds = queue.map(function(q) { return q.id; });
+      var dur = (audioEl && audioEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(audioEl.duration) && audioEl.duration > 0) ? Math.ceil(audioEl.duration) : 240;
+      body.currentTrackDurationSeconds = dur;
+    }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
-      body: { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() }
+      body: body
     }).then(function(r) {
       if (r.ok) return r.json();
       return r.json().then(function(d) { throw new Error(d.message || '실패'); });
@@ -1681,10 +1687,12 @@
       if (Number.isNaN(numId) || channel.nowPlayingMusicId !== numId) return;
       lastSyncedStartMusicId = curId;
       var slug = String(channel.slug).trim().toLowerCase();
-      api('/api/radio/channels/' + encodeURIComponent(slug), {
-        method: 'PATCH',
-        body: { nowPlayingMusicId: numId, nowPlayingStartedAt: new Date().toISOString() }
-      }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
+      var body = { nowPlayingMusicId: numId, nowPlayingStartedAt: new Date().toISOString() };
+      if (queue.length > 0) {
+        body.queueMusicIds = queue.map(function(q) { return q.id; });
+        body.currentTrackDurationSeconds = (monAudio.duration && isFinite(monAudio.duration) && monAudio.duration > 0) ? Math.ceil(monAudio.duration) : 240;
+      }
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
         if (data) channel = data;
       }).catch(function() {});
     });
@@ -1708,6 +1716,14 @@
       monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
       monAudio.addEventListener('durationchange', updateMonitorProgress);
       monAudio.addEventListener('ended', function() { setTimeout(updateMonitorProgress, 0); });
+      monAudio.addEventListener('loadedmetadata', function() {
+        if (!channel || !channel.slug || !channel.playlistSnapshot) return;
+        var curId = monAudio.getAttribute('data-current-id');
+        if (!curId || channel.nowPlayingMusicId !== parseInt(curId, 10)) return;
+        if (!isFinite(monAudio.duration) || monAudio.duration <= 0) return;
+        var slug = String(channel.slug).trim().toLowerCase();
+        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { currentTrackDurationSeconds: Math.ceil(monAudio.duration) } }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+      });
     }
     var btnShowGuide = document.getElementById('btnShowGuide');
     var guideModal = document.getElementById('guideModal');

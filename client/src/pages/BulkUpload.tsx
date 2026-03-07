@@ -32,7 +32,7 @@ const mainGenres: Record<string, string[]> = {
   "팝뮤직": ["팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
   "국내가요": ["케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요"],
   "월드뮤직": ["라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
-  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악"],
+  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "힐링"],
   "찬양": ["CCM", "워십", "복음성가"],
   "기타": []
 };
@@ -457,7 +457,9 @@ export default function BulkUpload() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {Object.keys(mainGenres).map((g) => (
-                                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                                  <SelectItem key={g} value={g}>
+                                    {t(`explore.genres.${g}`, g)}
+                                  </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -474,7 +476,9 @@ export default function BulkUpload() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     {subGenres.map((g) => (
-                                      <SelectItem key={g} value={g}>{g}</SelectItem>
+                                      <SelectItem key={g} value={g}>
+                                        {t(`explore.genres.${g}`, g)}
+                                      </SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>

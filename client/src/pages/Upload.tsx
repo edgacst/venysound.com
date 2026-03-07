@@ -56,7 +56,7 @@ const mainGenres: Record<string, string[]> = {
   "팝뮤직": ["팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
   "국내가요": ["케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요"],
   "월드뮤직": ["라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
-  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악"],
+  "경음악": ["재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "힐링"],
   "찬양": ["CCM", "워십", "복음성가"],
   "기타": []
 };
@@ -446,11 +446,13 @@ export default function Upload() {
                     <FormLabel>{t('upload.mainGenre', '장르 (대분류)')}</FormLabel>
                     <Select onValueChange={handleMainGenreChange} value={selectedMainGenre}>
                       <SelectTrigger data-testid="select-main-genre">
-                        <SelectValue placeholder={t('upload.selectMainGenre', '대분류 선택')} />
+                        <SelectValue placeholder={t('upload.mainGenrePlaceholder', '대분류 선택')} />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.keys(mainGenres).map(g => (
-                          <SelectItem key={g} value={g}>{g}</SelectItem>
+                        {Object.keys(mainGenres).map((g) => (
+                          <SelectItem key={g} value={g}>
+                            {t(`explore.genres.${g}`, g)}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -461,11 +463,13 @@ export default function Upload() {
                       <FormLabel>{t('upload.subGenre', '장르 (소분류)')}</FormLabel>
                       <Select onValueChange={handleSubGenreChange} value={selectedSubGenre}>
                         <SelectTrigger data-testid="select-sub-genre">
-                          <SelectValue placeholder={t('upload.selectSubGenre', '소분류 선택')} />
+                          <SelectValue placeholder={t('upload.subGenrePlaceholder', '소분류 선택')} />
                         </SelectTrigger>
                         <SelectContent>
-                          {subGenres.map(g => (
-                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                          {subGenres.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              {t(`explore.genres.${g}`, g)}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

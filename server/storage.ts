@@ -126,10 +126,11 @@ export interface IStorage {
   // Radio channels (베니방송국)
   createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
   getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
-  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null } | undefined>;
+  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } | undefined>;
   listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
+  listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
   listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]>;
-  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void>;
+  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
@@ -235,7 +236,7 @@ export class DatabaseStorage implements IStorage {
       "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
       "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
       "월드뮤직": ["월드뮤직", "라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
-      "경음악": ["경음악", "재즈", "클래식", "뉴에이지", "태교음악", "카페음악"],
+      "경음악": ["경음악", "재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "힐링"],
     };
 
     const conditions = [];
@@ -2176,8 +2177,13 @@ export class DatabaseStorage implements IStorage {
       scheduledStartAt: radioChannels.scheduledStartAt,
       scheduledEndAt: radioChannels.scheduledEndAt,
       notice: radioChannels.notice,
+      playlistSnapshot: radioChannels.playlistSnapshot,
     }).from(radioChannels).leftJoin(users, eq(radioChannels.currentHostId, users.id)).where(eq(radioChannels.slug, slug));
     if (!row) return undefined;
+    const snap = row.playlistSnapshot as { musicIds?: number[]; durationsSeconds?: number[]; currentIndex?: number } | null;
+    const playlistSnapshot = snap && Array.isArray(snap.musicIds) && Array.isArray(snap.durationsSeconds) && typeof snap.currentIndex === "number"
+      ? { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: snap.currentIndex }
+      : null;
     return {
       id: row.id,
       ownerId: row.ownerId,
@@ -2194,6 +2200,7 @@ export class DatabaseStorage implements IStorage {
       scheduledStartAt: row.scheduledStartAt ?? null,
       scheduledEndAt: row.scheduledEndAt ?? null,
       notice: row.notice ?? null,
+      playlistSnapshot,
     };
   }
 
@@ -2210,6 +2217,30 @@ export class DatabaseStorage implements IStorage {
       notice: radioChannels.notice,
       updatedAt: radioChannels.updatedAt,
     }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
+  }
+
+  async listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]> {
+    const rows = await db.select({
+      id: radioChannels.id,
+      slug: radioChannels.slug,
+      nowPlayingMusicId: radioChannels.nowPlayingMusicId,
+      nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
+      playlistSnapshot: radioChannels.playlistSnapshot,
+    }).from(radioChannels).where(eq(radioChannels.status, "live"));
+    const out: { id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[] = [];
+    for (const r of rows) {
+      if (r.nowPlayingMusicId == null || !r.nowPlayingStartedAt) continue;
+      const snap = r.playlistSnapshot as { musicIds?: number[]; durationsSeconds?: number[]; currentIndex?: number } | null;
+      if (!snap || !Array.isArray(snap.musicIds) || !Array.isArray(snap.durationsSeconds) || typeof snap.currentIndex !== "number") continue;
+      out.push({
+        id: r.id,
+        slug: r.slug,
+        nowPlayingMusicId: r.nowPlayingMusicId,
+        nowPlayingStartedAt: r.nowPlayingStartedAt as Date,
+        playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: snap.currentIndex },
+      });
+    }
+    return out;
   }
 
   async listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]> {
@@ -2233,7 +2264,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null }): Promise<void> {
+  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
     if (data.slug !== undefined) set.slug = data.slug;
@@ -2247,6 +2278,7 @@ export class DatabaseStorage implements IStorage {
     if (data.scheduledStartAt !== undefined) set.scheduledStartAt = data.scheduledStartAt;
     if (data.scheduledEndAt !== undefined) set.scheduledEndAt = data.scheduledEndAt;
     if (data.notice !== undefined) set.notice = data.notice;
+    if (data.playlistSnapshot !== undefined) set.playlistSnapshot = data.playlistSnapshot;
     await db.update(radioChannels).set(set as any).where(eq(radioChannels.id, id));
   }
 
