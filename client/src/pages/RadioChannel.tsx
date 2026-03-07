@@ -355,8 +355,8 @@ export default function RadioChannel() {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
+        refetchChannel();
         if (musicId === null) {
-          refetchChannel();
           const audio = audioRef.current;
           if (audio) {
             audio.pause();
