@@ -165,9 +165,44 @@ export default function Radio() {
               {t("radio.title", "베니방송국")}
             </h1>
             <p className="text-muted-foreground text-sm md:text-base max-w-lg mx-auto leading-relaxed">
-              {t("radio.subtitle", "나만의 방송 채널을 만들고, 음원을 송출하며 지인들과 실시간으로 소통하세요.")}
+              {t("radio.subtitle", "업로드한 음원으로 바로 송출하는, 진짜 실시간 DJ 방송. 채팅·신청곡으로 청취자와 소통하세요.")}
             </p>
           </header>
+
+          {/* 차별화 포인트 */}
+          <Card className="mb-8 border-primary/15 bg-gradient-to-br from-primary/5 to-transparent overflow-hidden">
+            <CardContent className="p-5 md:p-6">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/15 text-primary">
+                  <RadioIcon size={18} />
+                </span>
+                <h2 className="text-base md:text-lg font-semibold">
+                  {t("radio.differentTitle", "Veny만의 실시간 DJ")}
+                </h2>
+              </div>
+              <p className="text-xs md:text-sm text-muted-foreground mb-4">
+                {t("radio.differentSubtitle", "단순 재생이 아닌, 차별화된 라이브 방송을 경험하세요.")}
+              </p>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">·</span>
+                  <span>{t("radio.different1", "업로드한 곡으로 바로 송출 — 사이트 음원을 큐에 넣고 즉시 라이브 송출")}</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">·</span>
+                  <span>{t("radio.different2", "실시간 채팅·신청곡 — 청취자와 대화하고, 신청곡을 받아 바로 틀어줄 수 있어요")}</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">·</span>
+                  <span>{t("radio.different3", "브라우저만 있으면 DJ — 별도 프로그램 없이 웹에서 송출·청취 모두 가능")}</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">·</span>
+                  <span>{t("radio.different4", "무료로 시작 — 채널 개설부터 방송까지 비용 없이 시작")}</span>
+                </li>
+              </ul>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
             {/* 지금 라이브 + CTA (왼쪽, 1열) */}

@@ -17,6 +17,47 @@ function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   return <WsProvider userId={user?.id ?? undefined}>{children}</WsProvider>;
 }
 
+const DEFAULT_TITLE = "VenySound - 음악공유, 음원업로드, 음원공유사이트";
+
+/** 라우트별 document.title 설정 (SEO·탭 제목·공유 시 제목) */
+function PageTitle() {
+  const [pathname] = useLocation();
+  useEffect(() => {
+    const path = (pathname || "/").replace(/^\//, "") || "home";
+    const titles: Record<string, string> = {
+      "": DEFAULT_TITLE,
+      home: DEFAULT_TITLE,
+      music: "음원 목록 | VenySound - 음악공유, 음원공유사이트",
+      explore: "음원 목록 | VenySound - 음악공유, 음원공유사이트",
+      popular: "인기 음원 TOP 20 | VenySound",
+      upload: "음원 업로드 | VenySound - 음원업로드",
+      "bulk-upload": "대량 업로드 | VenySound - 음원업로드",
+      radio: "실시간 DJ 방송 · 베니방송국 | VenySound",
+      "radio/create": "방송 채널 만들기 | VenySound",
+      guide: "스타트 가이드 | VenySound",
+      login: "로그인 | VenySound",
+      register: "회원가입 | VenySound",
+      pricing: "요금제 | VenySound",
+      about: "소개 | VenySound",
+      legal: "이용약관 | VenySound",
+      privacy: "개인정보처리방침 | VenySound",
+      faq: "자주 묻는 질문 | VenySound",
+      notices: "공지사항 | VenySound",
+      community: "커뮤니티 | VenySound",
+      credits: "크레딧 | VenySound",
+    };
+    let title = DEFAULT_TITLE;
+    if (path.startsWith("music/")) title = "음원 상세 | VenySound";
+    else if (path.startsWith("radio/") && path !== "radio/create") title = "방송 청취 | VenySound";
+    else if (path.startsWith("curated/")) title = "테마 플레이리스트 | VenySound";
+    else if (path.startsWith("profile/")) title = "프로필 | VenySound";
+    else if (path.startsWith("community/")) title = "게시글 | VenySound";
+    else title = titles[path] ?? DEFAULT_TITLE;
+    document.title = title;
+  }, [pathname]);
+  return null;
+}
+
 /** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
 function AnalyticsVisit() {
   const [pathname] = useLocation();
@@ -128,6 +169,7 @@ function App() {
       <Router>
         <TooltipProvider>
           <WsProviderWithAuth>
+            <PageTitle />
             <AnalyticsVisit />
             <Routes />
             <GlobalAudioPlayer />
