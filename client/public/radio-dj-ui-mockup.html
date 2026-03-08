@@ -556,7 +556,7 @@
     </footer>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
+  <script src="/lame.min.js"></script>
   <script>
 (function() {
   var channel = null;
@@ -596,6 +596,9 @@
   var lastNowTitle = '';
   var lastNowArtist = '';
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+  if (window.location.port === '5173' || window.location.port === '3000') {
+    API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
+  }
   var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
 
   function api(path, options) {
@@ -969,11 +972,12 @@
   }
 
   function formatTime(sec) {
-    if (isNaN(sec) || sec < 0) return '0:00';
+    if (isNaN(sec) || !isFinite(sec) || sec < 0) return '0:00';
     var m = Math.floor(sec / 60);
     var s = Math.floor(sec % 60);
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
+  var currentLocalDurationSec = null;
   function updateMonitorProgress() {
     var audio = document.getElementById('djMonitorAudio');
     var fill = document.getElementById('monitorProgressFill');
@@ -981,9 +985,12 @@
     if (!audio || !fill || !timeEl) return;
     var cur = audio.currentTime;
     var dur = audio.duration;
-    if (isNaN(dur) || dur <= 0) {
+    if (currentLocalDurationSec != null && (!isFinite(dur) || dur <= 0 || dur === Infinity)) {
+      dur = currentLocalDurationSec;
+    }
+    if (isNaN(dur) || !isFinite(dur) || dur <= 0) {
       fill.style.width = '0%';
-      timeEl.textContent = formatTime(0) + ' / --:--';
+      timeEl.textContent = formatTime(cur) + ' / --:--';
       return;
     }
     var pct = Math.min(100, (cur / dur) * 100);
@@ -1107,14 +1114,15 @@
     var btnStop = document.getElementById('btnStopNowPlaying');
     var btnMonitorPlay = document.getElementById('btnMonitorPlay');
     if (btnStop) {
-      if (nowId && channel.canControlBroadcast !== false) {
+      var hasNowPlaying = nowId || currentLocalItem || (channel && channel.nowPlayingObjectPath);
+      if (hasNowPlaying && channel.canControlBroadcast !== false) {
         btnStop.style.display = 'inline-block';
       } else {
         btnStop.style.display = 'none';
       }
     }
     if (btnMonitorPlay) {
-      if (nowId && audioEl && audioEl.src) {
+      if ((nowId || currentLocalItem) && audioEl && audioEl.src) {
         btnMonitorPlay.style.display = 'inline-flex';
       } else {
         btnMonitorPlay.style.display = 'none';
@@ -1191,14 +1199,21 @@
     var slug = String(channel.slug).trim().toLowerCase();
     var canControl = channel.canControlBroadcast !== false;
     if (!canControl) return;
+    currentLocalItem = null;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
-      body: { nowPlayingMusicId: null, nowPlayingStartedAt: null }
+      body: { nowPlayingMusicId: null, nowPlayingStartedAt: null, nowPlayingObjectPath: null }
     }).then(function(r) {
       if (r.ok) return r.json();
       return r.json().then(function(d) { throw new Error(d.message || '실패'); });
     }).then(function(data) {
       if (data) channel = data;
+      var audioEl = document.getElementById('djMonitorAudio');
+      if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+      var waveformEl = document.getElementById('djWaveformAudio');
+      if (waveformEl) { waveformEl.pause(); waveformEl.removeAttribute('src'); waveformEl.load(); }
       renderQueue();
       updateNowPlayingDisplay();
     }).catch(function(e) { alert(networkErrorMsg(e) || '곡 정지 실패'); });
@@ -1208,6 +1223,7 @@
     if (!channel || !channel.slug) return;
     if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
     currentLocalItem = null;
+    currentLocalDurationSec = null;
     if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
     var slug = String(channel.slug).trim().toLowerCase();
     var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
@@ -1272,6 +1288,7 @@
   function setNowPlayingLocal(item) {
     if (!item || !item.file || !item.localId) return;
     currentLocalItem = item;
+    currentLocalDurationSec = null;
     if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
     currentLocalObjectUrl = URL.createObjectURL(item.file);
     var audioEl = document.getElementById('djMonitorAudio');
@@ -1365,6 +1382,7 @@
       }).then(function(data) {
         channel = data;
         currentLocalItem = item;
+        currentLocalDurationSec = opts.durationSec;
         if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
         currentLocalObjectUrl = null;
         var streamUrl = API_BASE + opts.objectPath;
@@ -1520,8 +1538,9 @@
     if (wsReconnectTimeout) { clearTimeout(wsReconnectTimeout); wsReconnectTimeout = null; }
     if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
     var slug = String(channel.slug).trim().toLowerCase();
-    var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+    var wsHost = API_BASE ? API_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '') : window.location.host;
+    var protocol = (API_BASE && API_BASE.indexOf('https:') === 0) ? 'wss:' : 'ws:';
+    ws = new WebSocket(protocol + '//' + wsHost + '/ws');
     ws.onopen = function() {
       wsAuthenticated = false;
       ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
@@ -1845,7 +1864,9 @@
     var btnMonitorPlay = document.getElementById('btnMonitorPlay');
     if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
       var audio = document.getElementById('djMonitorAudio');
-      if (audio && audio.src) { audio.play().catch(function() {}); }
+      if (!audio || !audio.src) return;
+      if (waveformCtx && waveformCtx.state === 'suspended') waveformCtx.resume().then(function() {}).catch(function() {});
+      audio.play().catch(function() {});
     });
     var monAudio = document.getElementById('djMonitorAudio');
     if (monAudio) monAudio.addEventListener('playing', function() {

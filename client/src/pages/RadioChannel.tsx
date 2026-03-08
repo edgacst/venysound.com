@@ -937,6 +937,8 @@ export default function RadioChannel() {
                       className="hidden"
                       autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
                       onPlay={() => {
+                        const ctx = analyserRef.current?.ctx;
+                        if (ctx?.state === "suspended") ctx.resume().catch(() => {});
                         setIsPlaying(true);
                         setUserStopped(false);
                       }}
