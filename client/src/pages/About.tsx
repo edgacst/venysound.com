@@ -262,7 +262,7 @@ export default function About() {
               </div>
               <div className="flex items-center gap-2 justify-center">
                 <MapPin size={16} className="text-primary" /> 경기도 부천시 상동
-                457<br/>제 2026-부천원미-0446 호<br/>
+                457
               </div>
             </div>
           </CardContent>

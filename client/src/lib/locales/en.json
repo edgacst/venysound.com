@@ -710,7 +710,8 @@
     "privacy": "Privacy Policy",
     "refundPolicy": "Refund Policy",
     "support": "Support",
-    "address": "457 Sangdong, Bucheon-si, Gyeonggi-do"
+    "address": "457 Sangdong, Bucheon-si, Gyeonggi-do",
+    "address2": "Biz Reg. No. 2026-Bucheonwonmi-0446"
   },
   "donationBadge": {
     "seed": "Seed",

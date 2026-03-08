@@ -730,7 +730,8 @@
     "privacy": "개인정보처리방침",
     "refundPolicy": "환불 정책",
     "support": "고객센터",
-    "address": "경기도 부천시 상동457"
+    "address": "경기도 부천시 상동457",
+    "address2": "제 2026-부천원미-0446 호"
   },
   "donationBadge": {
     "seed": "씨앗",

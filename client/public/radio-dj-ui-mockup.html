@@ -861,12 +861,16 @@
     if (!wrap || !box) return;
     if (!musicId) {
       lastLoadedLyricsMusicId = null;
+      syncedLyrics = [];
+      currentLyricIndex = -1;
       wrap.style.display = 'none';
       box.textContent = '';
       return;
     }
     if (musicId === lastLoadedLyricsMusicId) return;
     lastLoadedLyricsMusicId = musicId;
+    syncedLyrics = [];
+    currentLyricIndex = -1;
     wrap.style.display = 'none';
     box.textContent = '';
     api('/api/music/' + encodeURIComponent(musicId)).then(function(r) {

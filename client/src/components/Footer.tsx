@@ -40,7 +40,7 @@ export function Footer() {
               <li><Link href="/faq"><span className="hover:text-foreground cursor-pointer">FAQ</span></Link></li>
               <li>freecompr@naver.com</li>
               <li>010-8447-9973</li>
-              <li>{t('footer.address')}</li>
+              <li>{t('footer.address')}<br />{t('footer.address2')}</li>
             </ul>
           </div>
         </div>
