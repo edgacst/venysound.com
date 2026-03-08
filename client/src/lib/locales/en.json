@@ -121,6 +121,7 @@
     "listenPlay": "Play",
     "listenPause": "Pause",
     "tapToPlayHint": "On mobile, tap Play to listen.",
+    "pcClickHint": "If you don't hear sound, try clicking anywhere once.",
     "listenersCount": "{{count}} watching",
     "tipToDj": "Support DJ",
     "chatTitle": "Chat",

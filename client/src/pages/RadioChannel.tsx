@@ -253,6 +253,31 @@ export default function RadioChannel() {
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
 
+  // PC 브라우저: AudioContext가 suspended 상태면 소리가 안 남. 첫 사용자 동작 시 한 번 resume (곡 바뀌면 새 context라 다시 한 번 필요)
+  const didResumeContextRef = useRef(false);
+  useEffect(() => {
+    if (isOwner || !slug) return;
+    didResumeContextRef.current = false;
+    const onFirstInteraction = () => {
+      if (didResumeContextRef.current) return;
+      const ctx = analyserRef.current?.ctx;
+      if (ctx?.state === "suspended") {
+        didResumeContextRef.current = true;
+        ctx.resume().then(() => {
+          const el = audioRef.current;
+          if (el && audioStreamUrl && !userStopped) el.play().catch(() => {});
+        }).catch(() => {});
+      }
+    };
+    const opts = { capture: true, once: true };
+    document.addEventListener("click", onFirstInteraction, opts);
+    document.addEventListener("keydown", onFirstInteraction, opts);
+    return () => {
+      document.removeEventListener("click", onFirstInteraction, opts);
+      document.removeEventListener("keydown", onFirstInteraction, opts);
+    };
+  }, [isOwner, slug, audioStreamUrl]);
+
   type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" | "system_leave" };
   const { data: chatList } = useQuery<ChatMsg[]>({
     queryKey: ["/api/radio/channels", slug, "chat"],
@@ -896,6 +921,10 @@ export default function RadioChannel() {
                         {typeof navigator !== "undefined" &&
                           /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
                           ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}
+                        {typeof navigator !== "undefined" &&
+                          !/Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
+                          !isPlaying &&
+                          ` · ${t("radio.pcClickHint", "소리가 안 나면 화면을 한 번 클릭해 보세요.")}`}
                       </span>
                     </p>
                     <div className="flex items-center gap-2">

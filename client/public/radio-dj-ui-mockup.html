@@ -1319,6 +1319,36 @@
     var slug = String(channel.slug).trim().toLowerCase();
     var btn = document.querySelector('.btn-set-now-local[data-queue-index="' + queueIndex + '"]');
     if (btn) { btn.disabled = true; btn.textContent = '업로드 중...'; }
+    currentLocalItem = item;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
+    currentLocalObjectUrl = URL.createObjectURL(item.file);
+    var audioEl = document.getElementById('djMonitorAudio');
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (audioEl) {
+      audioEl.pause();
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl.setAttribute('data-current-id', '');
+      audioEl.setAttribute('data-local-id', item.localId);
+      audioEl.src = currentLocalObjectUrl;
+      audioEl.load();
+      audioEl.play().catch(function() {});
+    }
+    if (waveformEl) {
+      waveformEl.pause();
+      waveformEl.removeAttribute('src');
+      waveformEl.load();
+      waveformEl.setAttribute('data-current-id', '');
+      waveformEl.setAttribute('data-local-id', item.localId);
+      waveformEl.src = currentLocalObjectUrl;
+      waveformEl.load();
+    }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+    updateNowPlayingDisplay();
+    renderQueue();
     api(API_BASE + '/api/uploads/request-url', {
       method: 'POST',
       body: { name: item.file.name, size: item.file.size, contentType: item.file.type || 'audio/mpeg' }
@@ -1381,44 +1411,7 @@
         return r.json();
       }).then(function(data) {
         channel = data;
-        currentLocalItem = item;
         currentLocalDurationSec = opts.durationSec;
-        if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
-        currentLocalObjectUrl = null;
-        var streamUrl = API_BASE + opts.objectPath;
-        var audioEl = document.getElementById('djMonitorAudio');
-        var waveformEl = document.getElementById('djWaveformAudio');
-        if (audioEl) {
-          audioEl.pause();
-          audioEl.removeAttribute('src');
-          audioEl.load();
-          audioEl.setAttribute('data-current-id', '');
-          audioEl.setAttribute('data-local-id', item.localId);
-          audioEl.src = streamUrl;
-          audioEl.load();
-          function tryPlay() {
-            audioEl.play().then(function() {
-              if (btnMonitorPlayEl) btnMonitorPlayEl.textContent = '▶ 모니터 재생';
-            }).catch(function() {
-              if (btnMonitorPlayEl) btnMonitorPlayEl.textContent = '▶ 모니터 재생 (클릭)';
-            });
-          }
-          var btnMonitorPlayEl = document.getElementById('btnMonitorPlay');
-          if (audioEl.readyState >= 2) tryPlay();
-          else audioEl.addEventListener('canplay', tryPlay, { once: true });
-        }
-        if (waveformEl) {
-          waveformEl.pause();
-          waveformEl.removeAttribute('src');
-          waveformEl.load();
-          waveformEl.setAttribute('data-current-id', '');
-          waveformEl.setAttribute('data-local-id', item.localId);
-          waveformEl.src = streamUrl;
-          waveformEl.load();
-        }
-        if (!waveformCtx || waveformCtx.state === 'closed') {
-          try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
-        }
         updateNowPlayingDisplay();
         renderQueue();
       });

@@ -121,6 +121,7 @@
     "listenPlay": "재생",
     "listenPause": "일시정지",
     "tapToPlayHint": "모바일에서는 재생 버튼을 눌러 들으세요.",
+    "pcClickHint": "소리가 안 나면 화면을 한 번 클릭해 보세요.",
     "listenersCount": "{{count}}명 시청 중",
     "tipToDj": "DJ에게 후원",
     "chatTitle": "채팅",

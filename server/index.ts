@@ -91,14 +91,17 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.HOST || (process.platform === "win32" ? "127.0.0.1" : "0.0.0.0");
   httpServer.listen(
     {
       port,
-      host: process.platform === "win32" ? "127.0.0.1" : "0.0.0.0",
+      host,
       ...(process.platform !== "win32" && { reusePort: true }),
     },
     () => {
       log(`serving on port ${port}`);
+      const url = host === "0.0.0.0" ? `http://localhost:${port}` : `http://${host}:${port}`;
+      log(`로컬 테스트: 브라우저에서 ${url} 로 접속하세요.`);
     },
   );
 })();
