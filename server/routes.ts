@@ -2702,8 +2702,8 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds } = req.body || {};
-      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds } = req.body || {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -2726,10 +2726,34 @@ export async function registerRoutes(
             updates.currentHostId = null;
             updates.nowPlayingMusicId = null;
             updates.nowPlayingStartedAt = null;
+            updates.nowPlayingObjectPath = null;
+            updates.nowPlayingTempDurationSeconds = null;
+            updates.nowPlayingTempNextSnapshotIndex = null;
             updates.playlistSnapshot = null;
           }
         }
-        if (nowPlayingMusicId !== undefined) updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
+        if (nowPlayingMusicId !== undefined) {
+          updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
+          if (updates.nowPlayingMusicId != null) {
+            updates.nowPlayingObjectPath = null;
+            updates.nowPlayingTempDurationSeconds = null;
+            updates.nowPlayingTempNextSnapshotIndex = null;
+          }
+        }
+        if (bodyNowPlayingObjectPath !== undefined) {
+          updates.nowPlayingObjectPath = typeof bodyNowPlayingObjectPath === "string" && bodyNowPlayingObjectPath.trim() ? bodyNowPlayingObjectPath.trim() : null;
+          if (updates.nowPlayingObjectPath) {
+            updates.nowPlayingMusicId = null;
+            updates.nowPlayingStartedAt = new Date();
+            const dur = typeof bodyCurrentTrackDurationSeconds === "number" && bodyCurrentTrackDurationSeconds > 0 ? bodyCurrentTrackDurationSeconds : 240;
+            updates.nowPlayingTempDurationSeconds = Math.ceil(dur);
+            const nextIdx = typeof bodyAfterTempNextSnapshotIndex === "number" && Number.isInteger(bodyAfterTempNextSnapshotIndex) ? bodyAfterTempNextSnapshotIndex : 0;
+            updates.nowPlayingTempNextSnapshotIndex = nextIdx;
+          } else {
+            updates.nowPlayingTempDurationSeconds = null;
+            updates.nowPlayingTempNextSnapshotIndex = null;
+          }
+        }
         if (nowPlayingStartedAt !== undefined) updates.nowPlayingStartedAt = nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : null;
         if (updates.nowPlayingMusicId !== undefined && updates.nowPlayingStartedAt === undefined) updates.nowPlayingStartedAt = new Date();
         // 재생 큐 스냅샷: DJ가 보낸 큐+길이 저장 → 송출 브라우저를 닫아도 서버가 다음 곡 자동 진행
@@ -2773,13 +2797,14 @@ export async function registerRoutes(
         await storage.updateRadioChannel(channel.id, updates);
       }
       const updated = await storage.getRadioChannelBySlug(slug);
-      if (updates.nowPlayingMusicId !== undefined && updated) {
+      if ((updates.nowPlayingMusicId !== undefined || updates.nowPlayingObjectPath !== undefined) && updated) {
         const startedAt = updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).getTime() : 0;
         const elapsedSeconds = startedAt ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
         broadcastToRadioChannel(slug, {
           type: "radio_now_playing",
           slug,
           musicId: updated!.nowPlayingMusicId ?? null,
+          nowPlayingObjectPath: (updated as any).nowPlayingObjectPath ?? null,
           startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
           elapsedSeconds,
         });
@@ -2816,22 +2841,50 @@ export async function registerRoutes(
       for (const ch of list) {
         const started = ch.nowPlayingStartedAt.getTime();
         const elapsedSec = (Date.now() - started) / 1000;
-        const dur = ch.playlistSnapshot.durationsSeconds[ch.playlistSnapshot.currentIndex] ?? 240;
-        if (elapsedSec >= Math.max(1, dur) + RADIO_AUTO_ADVANCE_BUFFER_SEC) {
-          const nextIndex = (ch.playlistSnapshot.currentIndex + 1) % ch.playlistSnapshot.musicIds.length;
-          const nextId = ch.playlistSnapshot.musicIds[nextIndex];
-          await storage.updateRadioChannel(ch.id, {
-            nowPlayingMusicId: nextId,
-            nowPlayingStartedAt: new Date(),
-            playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
-          });
-          broadcastToRadioChannel(ch.slug, {
-            type: "radio_now_playing",
-            slug: ch.slug,
-            musicId: nextId,
-            startedAt: new Date().toISOString(),
-            elapsedSeconds: 0,
-          });
+        let dur: number;
+        let nextId: number;
+        let nextIndex: number;
+        if (ch.nowPlayingObjectPath != null && ch.playlistSnapshot && ch.nowPlayingTempDurationSeconds != null && ch.nowPlayingTempNextSnapshotIndex != null) {
+          dur = ch.nowPlayingTempDurationSeconds;
+          nextIndex = ch.nowPlayingTempNextSnapshotIndex;
+          nextId = ch.playlistSnapshot.musicIds[nextIndex];
+          if (elapsedSec >= Math.max(1, dur) + RADIO_AUTO_ADVANCE_BUFFER_SEC) {
+            await storage.updateRadioChannel(ch.id, {
+              nowPlayingMusicId: nextId,
+              nowPlayingStartedAt: new Date(),
+              nowPlayingObjectPath: null,
+              nowPlayingTempDurationSeconds: null,
+              nowPlayingTempNextSnapshotIndex: null,
+              playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
+            });
+            broadcastToRadioChannel(ch.slug, {
+              type: "radio_now_playing",
+              slug: ch.slug,
+              musicId: nextId,
+              nowPlayingObjectPath: null,
+              startedAt: new Date().toISOString(),
+              elapsedSeconds: 0,
+            });
+          }
+        } else if (ch.nowPlayingMusicId != null && ch.playlistSnapshot) {
+          dur = ch.playlistSnapshot.durationsSeconds[ch.playlistSnapshot.currentIndex] ?? 240;
+          if (elapsedSec >= Math.max(1, dur) + RADIO_AUTO_ADVANCE_BUFFER_SEC) {
+            nextIndex = (ch.playlistSnapshot.currentIndex + 1) % ch.playlistSnapshot.musicIds.length;
+            nextId = ch.playlistSnapshot.musicIds[nextIndex];
+            await storage.updateRadioChannel(ch.id, {
+              nowPlayingMusicId: nextId,
+              nowPlayingStartedAt: new Date(),
+              playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
+            });
+            broadcastToRadioChannel(ch.slug, {
+              type: "radio_now_playing",
+              slug: ch.slug,
+              musicId: nextId,
+              nowPlayingObjectPath: null,
+              startedAt: new Date().toISOString(),
+              elapsedSeconds: 0,
+            });
+          }
         }
       }
     } catch (e) {

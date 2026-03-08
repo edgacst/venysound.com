@@ -130,7 +130,7 @@ export interface IStorage {
   listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
   listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
   listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]>;
-  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
+  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
@@ -2172,6 +2172,9 @@ export class DatabaseStorage implements IStorage {
       visibility: radioChannels.visibility,
       nowPlayingMusicId: radioChannels.nowPlayingMusicId,
       nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
+      nowPlayingObjectPath: radioChannels.nowPlayingObjectPath,
+      nowPlayingTempDurationSeconds: radioChannels.nowPlayingTempDurationSeconds,
+      nowPlayingTempNextSnapshotIndex: radioChannels.nowPlayingTempNextSnapshotIndex,
       currentHostId: radioChannels.currentHostId,
       currentHostUsername: users.username,
       scheduledStartAt: radioChannels.scheduledStartAt,
@@ -2195,6 +2198,9 @@ export class DatabaseStorage implements IStorage {
       visibility: row.visibility,
       nowPlayingMusicId: row.nowPlayingMusicId,
       nowPlayingStartedAt: row.nowPlayingStartedAt,
+      nowPlayingObjectPath: row.nowPlayingObjectPath ?? null,
+      nowPlayingTempDurationSeconds: row.nowPlayingTempDurationSeconds ?? null,
+      nowPlayingTempNextSnapshotIndex: row.nowPlayingTempNextSnapshotIndex ?? null,
       currentHostId: row.currentHostId ?? null,
       currentHostUsername: row.currentHostUsername ?? undefined,
       scheduledStartAt: row.scheduledStartAt ?? null,
@@ -2219,26 +2225,48 @@ export class DatabaseStorage implements IStorage {
     }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
   }
 
-  async listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]> {
+  async listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number | null; nowPlayingObjectPath: string | null; nowPlayingStartedAt: Date; nowPlayingTempDurationSeconds: number | null; nowPlayingTempNextSnapshotIndex: number | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }[]> {
     const rows = await db.select({
       id: radioChannels.id,
       slug: radioChannels.slug,
       nowPlayingMusicId: radioChannels.nowPlayingMusicId,
+      nowPlayingObjectPath: radioChannels.nowPlayingObjectPath,
       nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
+      nowPlayingTempDurationSeconds: radioChannels.nowPlayingTempDurationSeconds,
+      nowPlayingTempNextSnapshotIndex: radioChannels.nowPlayingTempNextSnapshotIndex,
       playlistSnapshot: radioChannels.playlistSnapshot,
     }).from(radioChannels).where(eq(radioChannels.status, "live"));
-    const out: { id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[] = [];
+    const out: { id: number; slug: string; nowPlayingMusicId: number | null; nowPlayingObjectPath: string | null; nowPlayingStartedAt: Date; nowPlayingTempDurationSeconds: number | null; nowPlayingTempNextSnapshotIndex: number | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }[] = [];
     for (const r of rows) {
-      if (r.nowPlayingMusicId == null || !r.nowPlayingStartedAt) continue;
+      if (!r.nowPlayingStartedAt) continue;
       const snap = r.playlistSnapshot as { musicIds?: number[]; durationsSeconds?: number[]; currentIndex?: number } | null;
-      if (!snap || !Array.isArray(snap.musicIds) || !Array.isArray(snap.durationsSeconds) || typeof snap.currentIndex !== "number") continue;
-      out.push({
-        id: r.id,
-        slug: r.slug,
-        nowPlayingMusicId: r.nowPlayingMusicId,
-        nowPlayingStartedAt: r.nowPlayingStartedAt as Date,
-        playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: snap.currentIndex },
-      });
+      const playlistSnapshot = snap && Array.isArray(snap.musicIds) && Array.isArray(snap.durationsSeconds) && typeof snap.currentIndex === "number"
+        ? { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: snap.currentIndex }
+        : null;
+      if (r.nowPlayingObjectPath != null) {
+        if (playlistSnapshot == null || r.nowPlayingTempDurationSeconds == null || r.nowPlayingTempNextSnapshotIndex == null) continue;
+        out.push({
+          id: r.id,
+          slug: r.slug,
+          nowPlayingMusicId: null,
+          nowPlayingObjectPath: r.nowPlayingObjectPath,
+          nowPlayingStartedAt: r.nowPlayingStartedAt as Date,
+          nowPlayingTempDurationSeconds: r.nowPlayingTempDurationSeconds,
+          nowPlayingTempNextSnapshotIndex: r.nowPlayingTempNextSnapshotIndex,
+          playlistSnapshot,
+        });
+      } else if (r.nowPlayingMusicId != null && playlistSnapshot != null) {
+        out.push({
+          id: r.id,
+          slug: r.slug,
+          nowPlayingMusicId: r.nowPlayingMusicId,
+          nowPlayingObjectPath: null,
+          nowPlayingStartedAt: r.nowPlayingStartedAt as Date,
+          nowPlayingTempDurationSeconds: null,
+          nowPlayingTempNextSnapshotIndex: null,
+          playlistSnapshot,
+        });
+      }
     }
     return out;
   }
@@ -2264,7 +2292,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
+  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
     if (data.slug !== undefined) set.slug = data.slug;
@@ -2274,6 +2302,9 @@ export class DatabaseStorage implements IStorage {
     if (data.visibility !== undefined) set.visibility = data.visibility;
     if (data.nowPlayingMusicId !== undefined) set.nowPlayingMusicId = data.nowPlayingMusicId;
     if (data.nowPlayingStartedAt !== undefined) set.nowPlayingStartedAt = data.nowPlayingStartedAt;
+    if (data.nowPlayingObjectPath !== undefined) set.nowPlayingObjectPath = data.nowPlayingObjectPath;
+    if (data.nowPlayingTempDurationSeconds !== undefined) set.nowPlayingTempDurationSeconds = data.nowPlayingTempDurationSeconds;
+    if (data.nowPlayingTempNextSnapshotIndex !== undefined) set.nowPlayingTempNextSnapshotIndex = data.nowPlayingTempNextSnapshotIndex;
     if (data.currentHostId !== undefined) set.currentHostId = data.currentHostId;
     if (data.scheduledStartAt !== undefined) set.scheduledStartAt = data.scheduledStartAt;
     if (data.scheduledEndAt !== undefined) set.scheduledEndAt = data.scheduledEndAt;

@@ -115,6 +115,7 @@
     "queue": "재생 큐",
     "setNowPlaying": "지금 재생",
     "nowPlaying": "지금 재생 중",
+    "localTrack": "로컬 곡",
     "listeningTo": "지금 재생 중",
     "listeningPaused": "일시정지",
     "listenPlay": "재생",

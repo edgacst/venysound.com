@@ -115,6 +115,7 @@
     "queue": "Playback queue",
     "setNowPlaying": "Play now",
     "nowPlaying": "Now playing",
+    "localTrack": "Local track",
     "listeningTo": "Now playing",
     "listeningPaused": "Paused",
     "listenPlay": "Play",

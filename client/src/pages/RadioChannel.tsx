@@ -85,6 +85,7 @@ export default function RadioChannel() {
     status: string;
     nowPlayingMusicId: number | null;
     nowPlayingStartedAt: string | null;
+    nowPlayingObjectPath?: string | null;
     nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
     ownerDisplayName?: string;
@@ -109,10 +110,11 @@ export default function RadioChannel() {
   const canManage = !!channel?.canManage;
   const isLive = channel?.status === "live";
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
+  const nowPlayingObjectPath = channel?.nowPlayingObjectPath ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
   const { listenerCount } = useRadioRoom(slug, displayName);
 
-  // 현재 재생 중인 음원 정보
+  // 현재 재생 중인 음원 정보 (로컬 송출 시에는 없음)
   const { data: nowPlayingMusic } = useQuery<{
     id: number;
     title?: string;
@@ -148,27 +150,27 @@ export default function RadioChannel() {
 
   // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
-    if (!isLive || nowPlayingId == null) {
+    if (!isLive || (nowPlayingId == null && !nowPlayingObjectPath)) {
       setUserStopped(false);
       setIsPlaying(false);
     }
-  }, [isLive, nowPlayingId]);
+  }, [isLive, nowPlayingId, nowPlayingObjectPath]);
 
   // 채널/곡 정보가 바뀔 때마다 동기화 기준 초기화
   useEffect(() => {
-    if (nowPlayingId == null || channel?.nowPlayingElapsedSeconds == null) return;
+    if ((nowPlayingId == null && !nowPlayingObjectPath) || channel?.nowPlayingElapsedSeconds == null) return;
     channelElapsedRef.current = {
-      musicId: nowPlayingId,
-      elapsed: channel.nowPlayingElapsedSeconds,
+      musicId: nowPlayingId ?? 0,
+      elapsed: channel!.nowPlayingElapsedSeconds,
       receivedAt: Date.now(),
     };
-  }, [slug, nowPlayingId, channel?.nowPlayingElapsedSeconds]);
+  }, [slug, nowPlayingId, nowPlayingObjectPath, channel?.nowPlayingElapsedSeconds]);
 
   // 슬러그나 곡이 바뀌면 seek 플래그와 마지막 nowPlaying 상태를 초기화
   useEffect(() => {
     hasSeekedForTrackRef.current = null;
     lastNowPlayingRef.current = { musicId: null, elapsedSeconds: 0, receivedAt: 0 };
-  }, [slug, nowPlayingId]);
+  }, [slug, nowPlayingId, nowPlayingObjectPath]);
 
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -181,11 +183,13 @@ export default function RadioChannel() {
   }
 
   const rawAudioUrl =
-    nowPlayingId == null
-      ? null
-      : nowPlayingMusic?.filename?.startsWith("/objects/")
-        ? nowPlayingMusic.filename
-        : `/api/music/${nowPlayingId}/stream`;
+    nowPlayingObjectPath != null
+      ? nowPlayingObjectPath
+      : nowPlayingId == null
+        ? null
+        : nowPlayingMusic?.filename?.startsWith("/objects/")
+          ? nowPlayingMusic.filename
+          : `/api/music/${nowPlayingId}/stream`;
   // 스트림 URL로 바로 재생(버퍼만 채우면 시작). 전체 파일 다운로드 후 재생하면 30초 이상 지연됨
   const audioStreamUrl = rawAudioUrl;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -356,7 +360,7 @@ export default function RadioChannel() {
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         refetchChannel();
-        if (musicId === null) {
+        if (musicId === null && !(msg as any).nowPlayingObjectPath) {
           const audio = audioRef.current;
           if (audio) {
             audio.pause();
@@ -768,17 +772,17 @@ export default function RadioChannel() {
           <Card className="border-white/5 bg-card/50 overflow-hidden">
             <CardContent className="p-0">
               {/* 1번: 현재 송출 중인 음원 정보 */}
-              {isLive && nowPlayingId != null && nowPlayingMusic && (
+              {(isLive && ((nowPlayingId != null && nowPlayingMusic) || nowPlayingObjectPath)) && (
                 <div className="px-4 py-3 bg-muted/20 border-b border-white/10 flex items-center gap-3">
                   <Music2 size={20} className="text-primary shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-foreground truncate">
-                      {nowPlayingMusic.title ?? t("radio.nowPlaying", "지금 재생 중")}
+                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? t("radio.localTrack", "로컬 곡") : t("radio.nowPlaying", "지금 재생 중"))}
                     </p>
-                    {(nowPlayingMusic.artist || firstLyricLine || currentLyric) && (
+                    {(nowPlayingMusic?.artist || firstLyricLine || currentLyric) && (
                       <p className="text-xs text-muted-foreground truncate">
-                        {nowPlayingMusic.artist}
-                        {nowPlayingMusic.artist && (currentLyric || firstLyricLine) && " · "}
+                        {nowPlayingMusic?.artist}
+                        {nowPlayingMusic?.artist && (currentLyric || firstLyricLine) && " · "}
                         {currentLyric || firstLyricLine}
                       </p>
                     )}
@@ -786,7 +790,7 @@ export default function RadioChannel() {
                 </div>
               )}
               <div className="h-24 sm:h-32 md:h-40 bg-muted/30 flex items-center justify-center relative overflow-hidden">
-                {isLive && nowPlayingId != null && audioStreamUrl && !isOwner ? (
+                {isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && !isOwner ? (
                   <canvas
                     ref={canvasRef}
                     className="absolute inset-0 w-full h-full"
@@ -881,7 +885,7 @@ export default function RadioChannel() {
                       {t("radio.goToStudio", "방송 스튜디오")}
                     </Button>
                   </a>
-                ) : isLive && nowPlayingId != null && audioStreamUrl ? (
+                ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl ? (
                   <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
                       <Headphones size={18} />

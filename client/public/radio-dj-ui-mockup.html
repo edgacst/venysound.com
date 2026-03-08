@@ -1330,23 +1330,67 @@
       }
       throw new Error('업로드 URL을 받지 못했습니다.');
     }).then(function(objectPath) {
-      return api(API_BASE + '/api/music', {
-        method: 'POST',
-        body: {
-          title: (item.title || item.file.name || '로컬').replace(/\.[^/.]+$/, '') || '로컬',
-          artist: item.artist || '로컬',
-          filename: objectPath
-        }
+      return new Promise(function(resolve) {
+        var a = new Audio();
+        a.onloadedmetadata = function() {
+          var d = a.duration;
+          if (a.src) URL.revokeObjectURL(a.src);
+          resolve({ objectPath: objectPath, durationSec: (isFinite(d) && d > 0) ? Math.ceil(d) : 240 });
+        };
+        a.onerror = function() {
+          if (a.src) URL.revokeObjectURL(a.src);
+          resolve({ objectPath: objectPath, durationSec: 240 });
+        };
+        a.src = URL.createObjectURL(item.file);
       });
-    }).then(function(r) {
-      if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '음원 등록 실패'); });
-      return r.json();
-    }).then(function(created) {
-      queue[queueIndex] = { id: created.id, title: created.title, artist: created.artist };
-      renderQueue();
-      setNowPlaying(created.id);
+    }).then(function(opts) {
+      var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+      var afterIdx = 0;
+      for (var i = queueIndex + 1; i < queue.length; i++) {
+        if (queue[i].id) {
+          var found = siteOnly.findIndex(function(s) { return s.id === queue[i].id; });
+          if (found >= 0) { afterIdx = found; break; }
+        }
+      }
+      return api('/api/radio/channels/' + encodeURIComponent(slug), {
+        method: 'PATCH',
+        body: {
+          nowPlayingObjectPath: opts.objectPath,
+          currentTrackDurationSeconds: opts.durationSec,
+          afterTempNextSnapshotIndex: siteOnly.length > 0 ? afterIdx : 0
+        }
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '송출 설정 실패'); });
+        return r.json();
+      }).then(function(data) {
+        channel = data;
+        currentLocalItem = item;
+        if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
+        currentLocalObjectUrl = null;
+        var streamUrl = API_BASE + opts.objectPath;
+        var audioEl = document.getElementById('djMonitorAudio');
+        var waveformEl = document.getElementById('djWaveformAudio');
+        if (audioEl) {
+          audioEl.setAttribute('data-current-id', '');
+          audioEl.setAttribute('data-local-id', item.localId);
+          audioEl.src = streamUrl;
+          audioEl.load();
+          audioEl.play().catch(function() {});
+        }
+        if (waveformEl) {
+          waveformEl.setAttribute('data-current-id', '');
+          waveformEl.setAttribute('data-local-id', item.localId);
+          waveformEl.src = streamUrl;
+          waveformEl.load();
+        }
+        if (!waveformCtx || waveformCtx.state === 'closed') {
+          try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+        }
+        updateNowPlayingDisplay();
+        renderQueue();
+      });
     }).catch(function(e) {
-      alert(e.message || '로컬 파일 업로드·송출 실패');
+      alert(e.message || '로컬 파일 송출 실패');
     }).finally(function() {
       if (btn) { btn.disabled = false; btn.textContent = '지금 재생'; }
     });
@@ -1831,9 +1875,10 @@
         idx = queue.findIndex(function(q) { return q.id === channel.nowPlayingMusicId; });
       }
       if (idx < 0) return;
-      var next = idx >= queue.length - 1 ? queue[0] : queue[idx + 1];
+      var nextIdx = idx >= queue.length - 1 ? 0 : idx + 1;
+      var next = queue[nextIdx];
       if (!next) return;
-      if (next.localId) setNowPlayingLocal(next);
+      if (next.localId) uploadLocalAndSetNowPlaying(next, nextIdx);
       else if (next.id && channel && channel.canControlBroadcast !== false) setNowPlaying(next.id);
     });
     if (monAudio) {
