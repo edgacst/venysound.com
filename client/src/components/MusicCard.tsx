@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Music } from "@shared/schema";
-import { Play, Pause, Heart, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check } from "lucide-react";
+import { Play, Pause, Heart, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check, Sparkles } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "./AudioPlayer";
@@ -338,6 +338,30 @@ export function MusicCard({ music }: MusicCardProps) {
     },
   });
 
+  const alignLyricsMutation = useMutation({
+    mutationFn: async ({ lyrics }: { lyrics: string }) => {
+      const res = await fetch(`/api/music/${music.id}/align-lyrics`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lyrics }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err?.message as string) || "가사 정렬 실패");
+      }
+      return res.json() as Promise<{ lyrics: string }>;
+    },
+    onSuccess: (data) => {
+      setEditLyrics(data.lyrics);
+      toast({ title: t("music.alignLyricsSuccess") });
+      queryClient.invalidateQueries({ queryKey: ["/api/music", music.id] });
+    },
+    onError: (error: Error) => {
+      toast({ title: t("music.alignLyricsFailed"), description: error.message, variant: "destructive" });
+    },
+  });
+
   const purchaseMutation = useMutation({
     mutationFn: async (musicId: number) => {
       const res = await fetch("/api/purchases", {
@@ -638,17 +662,31 @@ export function MusicCard({ music }: MusicCardProps) {
               <div className="flex items-center justify-between mb-1">
                 <Label htmlFor="edit-lyrics">{t('music.lyricsLabel')}</Label>
                 {editLyrics.trim() && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="gap-1"
-                    onClick={() => setSyncEditorOpen(true)}
-                    data-testid="button-open-sync-editor"
-                  >
-                    <Timer size={14} />
-                    {t('music.syncLyrics')}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={() => setSyncEditorOpen(true)}
+                      data-testid="button-open-sync-editor"
+                    >
+                      <Timer size={14} />
+                      {t('music.syncLyrics')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      disabled={alignLyricsMutation.isPending}
+                      onClick={() => alignLyricsMutation.mutate({ lyrics: editLyrics })}
+                      data-testid="button-align-lyrics-ai"
+                    >
+                      {alignLyricsMutation.isPending ? <Loader2Icon size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      {t('music.alignLyricsAi')}
+                    </Button>
+                  </div>
                 )}
               </div>
               <Textarea

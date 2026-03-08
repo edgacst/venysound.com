@@ -402,6 +402,9 @@
     "syncDone": "シンク完了",
     "syncApply": "シンク歌詞を適用",
     "syncLyrics": "歌詞シンクエディタ",
+    "alignLyricsAi": "AI自動整列",
+    "alignLyricsSuccess": "歌詞がAIで整列され保存されました",
+    "alignLyricsFailed": "AI歌詞整列に失敗しました",
     "fetchImageFailed": "画像の取得に失敗しました"
   },
   "musicDetail": {

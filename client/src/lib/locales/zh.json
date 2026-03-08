@@ -402,6 +402,9 @@
     "syncDone": "同步完成",
     "syncApply": "应用同步歌词",
     "syncLyrics": "歌词同步编辑器",
+    "alignLyricsAi": "AI自动对齐",
+    "alignLyricsSuccess": "歌词已由AI对齐并保存",
+    "alignLyricsFailed": "AI歌词对齐失败",
     "fetchImageFailed": "获取图片失败"
   },
   "musicDetail": {

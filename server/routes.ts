@@ -12,6 +12,7 @@ import { z } from "zod";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
+import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail } from "./email";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
@@ -848,6 +849,53 @@ export async function registerRoutes(
     } catch (err) {
       console.error("Music update error:", err);
       res.status(500).json({ message: "음원 수정에 실패했습니다" });
+    }
+  });
+
+  /** AI 가사 자동 정렬: 플레인 가사 + 음원 → Whisper로 LRC 생성 후 저장 */
+  app.post("/api/music/:id/align-lyrics", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const musicId = Number(req.params.id);
+      const existing = await storage.getMusicById(musicId);
+      if (!existing) return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      if (existing.userId !== userId) return res.status(403).json({ message: "본인의 음원만 정렬할 수 있습니다" });
+
+      const plainLyrics = (req.body.lyrics != null ? String(req.body.lyrics) : (existing.lyrics ?? "")).trim();
+      if (!plainLyrics) return res.status(400).json({ message: "가사를 입력하거나, 먼저 음원에 가사를 저장해 주세요." });
+
+      const fn = existing.filename || "";
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) fileId = objMatch[1];
+      else if (fn.startsWith("uploads/")) fileId = fn.replace(/^uploads\//, "");
+      else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) fileId = fn.trim();
+      else if (fn.includes("/")) fileId = fn.split("/").pop() || "";
+      else fileId = fn;
+      fileId = fileId.replace(/^\//, "");
+      if (!fileId) return res.status(404).json({ message: "파일 경로를 찾을 수 없습니다" });
+
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDir, fileId),
+        path.join(uploadsDir, `${baseId}.mp3`),
+        path.join(uploadsDir, `${baseId}.wav`),
+        path.join(uploadsDir, `${baseId}.ogg`),
+      ];
+      const localPath = candidates.find((p) => existsSync(p));
+      if (!localPath) return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
+
+      const language = req.body.language ? String(req.body.language).slice(0, 10) : undefined;
+      const lrc = await alignLyricsToAudio(localPath, plainLyrics, language);
+      await storage.updateMusic(musicId, { lyrics: lrc });
+      res.json({ lyrics: lrc });
+    } catch (err: any) {
+      if (err?.message?.includes("OPENAI_API_KEY")) {
+        return res.status(503).json({ message: "AI 가사 정렬을 사용하려면 서버에 OPENAI_API_KEY를 설정해 주세요." });
+      }
+      console.error("align-lyrics error:", err);
+      res.status(500).json({ message: err?.message || "가사 정렬에 실패했습니다" });
     }
   });
 
