@@ -1389,13 +1389,28 @@
         var audioEl = document.getElementById('djMonitorAudio');
         var waveformEl = document.getElementById('djWaveformAudio');
         if (audioEl) {
+          audioEl.pause();
+          audioEl.removeAttribute('src');
+          audioEl.load();
           audioEl.setAttribute('data-current-id', '');
           audioEl.setAttribute('data-local-id', item.localId);
           audioEl.src = streamUrl;
           audioEl.load();
-          audioEl.play().catch(function() {});
+          function tryPlay() {
+            audioEl.play().then(function() {
+              if (btnMonitorPlayEl) btnMonitorPlayEl.textContent = '▶ 모니터 재생';
+            }).catch(function() {
+              if (btnMonitorPlayEl) btnMonitorPlayEl.textContent = '▶ 모니터 재생 (클릭)';
+            });
+          }
+          var btnMonitorPlayEl = document.getElementById('btnMonitorPlay');
+          if (audioEl.readyState >= 2) tryPlay();
+          else audioEl.addEventListener('canplay', tryPlay, { once: true });
         }
         if (waveformEl) {
+          waveformEl.pause();
+          waveformEl.removeAttribute('src');
+          waveformEl.load();
           waveformEl.setAttribute('data-current-id', '');
           waveformEl.setAttribute('data-local-id', item.localId);
           waveformEl.src = streamUrl;
