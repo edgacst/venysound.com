@@ -101,7 +101,7 @@ export default function RadioChannel() {
       return res.json();
     },
     enabled: !!slug,
-    refetchInterval: (data) => (data?.status === "live" ? 10000 : false),
+    refetchInterval: (data) => (data?.status === "live" ? 3000 : false),
     refetchIntervalInBackground: false,
   });
 
@@ -949,6 +949,13 @@ export default function RadioChannel() {
                         setIsPlaying(false);
                         setUserStopped(false);
                         refetchChannel();
+                        const endedAt = Date.now();
+                        [1500, 3000, 4500, 6000].forEach((ms) => {
+                          setTimeout(() => {
+                            if (Date.now() - endedAt > 8000) return;
+                            refetchChannel();
+                          }, ms);
+                        });
                       }}
                       onCanPlay={() => {
                         if (isOwner || !audioRef.current) return;

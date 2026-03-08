@@ -398,9 +398,11 @@
         <input type="text" id="searchInput" placeholder="곡 검색 또는 장르 선택 후 불러오기..." />
         <div id="searchResults" class="search-results"></div>
       </div>
-      <button type="button" class="btn btn-secondary" style="width: 100%;" disabled title="준비 중">💾 로컬 파일 (준비 중)</button>
+      <input type="file" id="localFileInput" accept=".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/ogg" style="display: none;" />
+      <button type="button" id="btnLocalFile" class="btn btn-secondary" style="width: 100%;">💾 로컬 파일 불러오기</button>
       <p style="font-size: 0.75rem; color: #71717a; margin-top: 12px;">
-        · 사이트 음원: 검색 후 큐에 추가 → 지금 재생으로 송출
+        · 사이트 음원: 검색 후 큐에 추가 → 지금 재생으로 송출<br />
+        · 로컬 파일: 큐에 추가 후 지금 재생 시 모니터에서만 재생 (청취자에게는 송출되지 않음)
       </p>
     </aside>
 
@@ -559,6 +561,8 @@
 (function() {
   var channel = null;
   var queue = [];
+  var currentLocalItem = null;
+  var currentLocalObjectUrl = null;
   var pollTimer = null;
   var searchDebounce = null;
   var chatMessages = [];
@@ -723,7 +727,7 @@
     var ul = document.getElementById('queue');
     var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
     if (queue.length === 0) {
-      ul.innerHTML = '<li class="queue-empty" style="color:#71717a; font-size:0.85rem;">큐가 비어 있습니다. 사이트 음원에서 추가하세요.</li>';
+      ul.innerHTML = '<li class="queue-empty" style="color:#71717a; font-size:0.85rem;">큐가 비어 있습니다. 사이트 음원 또는 로컬 파일을 추가하세요.</li>';
       return;
     }
     function esc(s) {
@@ -731,24 +735,39 @@
       return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
     ul.innerHTML = queue.map(function(item, i) {
-      var isPlaying = item.id === nowId;
+      var isLocal = !!item.localId;
+      var isPlaying = isLocal ? (currentLocalItem && currentLocalItem.localId === item.localId) : (item.id === nowId);
       var num = i + 1;
-      var title = item.title || '제목 없음';
+      var title = item.title || (isLocal ? '로컬 파일' : '제목 없음');
       var artist = item.artist || '';
-      var label = title + ' – ' + artist;
-      return '<li class="queue-item' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '">' +
+      var label = title + (artist ? ' – ' + artist : '');
+      var dataAttr = isLocal ? ' data-local-id="' + esc(item.localId) + '"' : ' data-id="' + item.id + '"';
+      return '<li class="queue-item' + (isPlaying ? ' playing' : '') + '"' + dataAttr + '>' +
         '<span class="num">' + num + '</span>' +
-        '<span class="label" title="' + esc(label) + '">' + esc(label) + '</span>' +
+        '<span class="label" title="' + esc(label) + '">' + (isLocal ? '💾 ' : '') + esc(label) + '</span>' +
         '<span class="actions">' +
-          '<button type="button" class="btn btn-primary btn-sm btn-set-now' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '"' + (isPlaying ? ' disabled' : '') + (channel.canControlBroadcast === false ? ' disabled title="송출 권한이 없습니다"' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>' +
-          '<button type="button" class="btn btn-secondary btn-sm btn-remove" data-id="' + item.id + '">삭제</button>' +
+          (isLocal
+            ? '<button type="button" class="btn btn-primary btn-sm btn-set-now-local' + (isPlaying ? ' playing' : '') + '" data-queue-index="' + i + '"' + (isPlaying ? ' disabled' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>'
+            : '<button type="button" class="btn btn-primary btn-sm btn-set-now' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '"' + (isPlaying ? ' disabled' : '') + (channel && channel.canControlBroadcast === false ? ' disabled title="송출 권한이 없습니다"' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>') +
+          '<button type="button" class="btn btn-secondary btn-sm btn-remove" data-queue-index="' + i + '">삭제</button>' +
         '</span></li>';
     }).join('');
     ul.querySelectorAll('.btn-set-now').forEach(function(btn) {
       btn.addEventListener('click', function() { setNowPlaying(parseInt(btn.getAttribute('data-id'), 10)); });
     });
+    ul.querySelectorAll('.btn-set-now-local').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var idx = parseInt(btn.getAttribute('data-queue-index'), 10);
+        if (!queue[idx] || !queue[idx].localId) return;
+        uploadLocalAndSetNowPlaying(queue[idx], idx);
+      });
+    });
     ul.querySelectorAll('.btn-remove').forEach(function(btn) {
-      btn.addEventListener('click', function() { removeFromQueue(parseInt(btn.getAttribute('data-id'), 10)); });
+      var idx = parseInt(btn.getAttribute('data-queue-index'), 10);
+      btn.addEventListener('click', function() {
+        var item = queue[idx];
+        if (item) removeFromQueue(item.localId != null ? item.localId : item.id);
+      });
     });
   }
 
@@ -976,6 +995,14 @@
     var titleEl = document.getElementById('nowTitle');
     var artistEl = document.getElementById('nowArtist');
     var audioEl = document.getElementById('djMonitorAudio');
+    if (currentLocalItem) {
+      if (titleEl) titleEl.textContent = currentLocalItem.title || '로컬 파일';
+      if (artistEl) artistEl.textContent = currentLocalItem.artist || '';
+      loadNowPlayingLyrics(null);
+      var waveformEl = document.getElementById('djWaveformAudio');
+      if (audioEl && audioEl.src && waveformEl && !waveformSource) startWaveform(audioEl);
+      return;
+    }
     var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
     if (!nowId) {
       lastSyncedStartMusicId = null;
@@ -1180,6 +1207,8 @@
   function setNowPlaying(musicId) {
     if (!channel || !channel.slug) return;
     if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
+    currentLocalItem = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
     var slug = String(channel.slug).trim().toLowerCase();
     var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
     if (Number.isNaN(musicIdNum)) { alert('잘못된 곡 ID입니다.'); return; }
@@ -1190,6 +1219,7 @@
       } catch (e) {}
     }
     var audioEl = document.getElementById('djMonitorAudio');
+    if (audioEl) audioEl.removeAttribute('data-local-id');
     var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
     if (audioEl) {
       audioEl.setAttribute('data-current-id', String(musicIdNum));
@@ -1204,8 +1234,9 @@
       waveformEl.load();
     }
     var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() };
-    if (queue.length > 0) {
-      body.queueMusicIds = queue.map(function(q) { return q.id; });
+    var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
+    if (siteOnlyQueue.length > 0) {
+      body.queueMusicIds = siteOnlyQueue.map(function(q) { return q.id; });
       var dur = (audioEl && audioEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(audioEl.duration) && audioEl.duration > 0) ? Math.ceil(audioEl.duration) : 240;
       body.currentTrackDurationSeconds = dur;
     }
@@ -1222,9 +1253,103 @@
     }).catch(function(e) { alert(networkErrorMsg(e) || '지금 재생 설정 실패'); });
   }
 
-  function removeFromQueue(musicId) {
-    queue = queue.filter(function(q) { return q.id !== musicId; });
+  function removeFromQueue(idOrLocalId) {
+    if (typeof idOrLocalId === 'string') {
+      queue = queue.filter(function(q) { return q.localId !== idOrLocalId; });
+      if (currentLocalItem && currentLocalItem.localId === idOrLocalId) {
+        currentLocalItem = null;
+        var audioEl = document.getElementById('djMonitorAudio');
+        if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+        if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+        updateNowPlayingDisplay();
+      }
+    } else {
+      queue = queue.filter(function(q) { return q.id !== idOrLocalId; });
+    }
     renderQueue();
+  }
+
+  function setNowPlayingLocal(item) {
+    if (!item || !item.file || !item.localId) return;
+    currentLocalItem = item;
+    if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
+    currentLocalObjectUrl = URL.createObjectURL(item.file);
+    var audioEl = document.getElementById('djMonitorAudio');
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (audioEl) {
+      audioEl.setAttribute('data-current-id', '');
+      audioEl.setAttribute('data-local-id', item.localId);
+      audioEl.src = currentLocalObjectUrl;
+      audioEl.load();
+      audioEl.play().catch(function() {});
+    }
+    if (waveformEl) {
+      waveformEl.setAttribute('data-current-id', '');
+      waveformEl.setAttribute('data-local-id', item.localId);
+      waveformEl.src = currentLocalObjectUrl;
+      waveformEl.load();
+    }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+    updateNowPlayingDisplay();
+    renderQueue();
+  }
+
+  function uploadLocalAndSetNowPlaying(item, queueIndex) {
+    if (!channel || !channel.slug || !item || !item.file || !item.localId) return;
+    if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다.'); return; }
+    var slug = String(channel.slug).trim().toLowerCase();
+    var btn = document.querySelector('.btn-set-now-local[data-queue-index="' + queueIndex + '"]');
+    if (btn) { btn.disabled = true; btn.textContent = '업로드 중...'; }
+    api(API_BASE + '/api/uploads/request-url', {
+      method: 'POST',
+      body: { name: item.file.name, size: item.file.size, contentType: item.file.type || 'audio/mpeg' }
+    }).then(function(r) { return r.json(); }).then(function(uploadResp) {
+      if (uploadResp.localMode && uploadResp.uploadEndpoint) {
+        var fd = new FormData();
+        fd.append('file', item.file);
+        return fetch(API_BASE + (uploadResp.uploadEndpoint || '/api/uploads/local'), {
+          method: 'POST',
+          body: fd,
+          credentials: 'include'
+        }).then(function(res) {
+          if (!res.ok) return res.json().then(function(d) { throw new Error(d.error || '업로드 실패'); });
+          return res.json();
+        }).then(function(data) { return data.objectPath; });
+      }
+      if (uploadResp.uploadURL) {
+        return fetch(uploadResp.uploadURL, {
+          method: 'PUT',
+          body: item.file,
+          headers: { 'Content-Type': item.file.type || 'audio/mpeg' }
+        }).then(function(res) {
+          if (!res.ok) throw new Error('업로드 실패');
+          return uploadResp.objectPath;
+        });
+      }
+      throw new Error('업로드 URL을 받지 못했습니다.');
+    }).then(function(objectPath) {
+      return api(API_BASE + '/api/music', {
+        method: 'POST',
+        body: {
+          title: (item.title || item.file.name || '로컬').replace(/\.[^/.]+$/, '') || '로컬',
+          artist: item.artist || '로컬',
+          filename: objectPath
+        }
+      });
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '음원 등록 실패'); });
+      return r.json();
+    }).then(function(created) {
+      queue[queueIndex] = { id: created.id, title: created.title, artist: created.artist };
+      renderQueue();
+      setNowPlaying(created.id);
+    }).catch(function(e) {
+      alert(e.message || '로컬 파일 업로드·송출 실패');
+    }).finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '지금 재생'; }
+    });
   }
 
   function startBroadcast() {
@@ -1688,8 +1813,9 @@
       lastSyncedStartMusicId = curId;
       var slug = String(channel.slug).trim().toLowerCase();
       var body = { nowPlayingMusicId: numId, nowPlayingStartedAt: new Date().toISOString() };
-      if (queue.length > 0) {
-        body.queueMusicIds = queue.map(function(q) { return q.id; });
+      var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+      if (siteOnly.length > 0) {
+        body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
         body.currentTrackDurationSeconds = (monAudio.duration && isFinite(monAudio.duration) && monAudio.duration > 0) ? Math.ceil(monAudio.duration) : 240;
       }
       api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
@@ -1697,18 +1823,18 @@
       }).catch(function() {});
     });
     if (monAudio) monAudio.addEventListener('ended', function() {
-      if (!channel || channel.canControlBroadcast === false || !queue.length) return;
-      var nowId = channel.nowPlayingMusicId;
-      if (nowId == null) return;
-      var idx = queue.findIndex(function(q) { return q.id === nowId; });
-      if (idx < 0) return;
-      var next;
-      if (idx >= queue.length - 1) {
-        next = queue[0];
-      } else {
-        next = queue[idx + 1];
+      if (!queue.length) return;
+      var idx = -1;
+      if (currentLocalItem) {
+        idx = queue.findIndex(function(q) { return q.localId && q.localId === currentLocalItem.localId; });
+      } else if (channel && channel.nowPlayingMusicId != null) {
+        idx = queue.findIndex(function(q) { return q.id === channel.nowPlayingMusicId; });
       }
-      if (next && next.id) setNowPlaying(next.id);
+      if (idx < 0) return;
+      var next = idx >= queue.length - 1 ? queue[0] : queue[idx + 1];
+      if (!next) return;
+      if (next.localId) setNowPlayingLocal(next);
+      else if (next.id && channel && channel.canControlBroadcast !== false) setNowPlaying(next.id);
     });
     if (monAudio) {
       monAudio.addEventListener('timeupdate', updateMonitorProgress);
@@ -1754,6 +1880,25 @@
     });
     var btnLoadByGenre = document.getElementById('btnLoadByGenre');
     if (btnLoadByGenre) btnLoadByGenre.addEventListener('click', loadByGenreIntoQueue);
+    var localFileInput = document.getElementById('localFileInput');
+    var btnLocalFile = document.getElementById('btnLocalFile');
+    if (btnLocalFile && localFileInput) {
+      btnLocalFile.addEventListener('click', function() { localFileInput.click(); });
+      localFileInput.addEventListener('change', function() {
+        var files = this.files;
+        if (!files || files.length === 0) return;
+        for (var i = 0; i < files.length; i++) {
+          var file = files[i];
+          if (!file.type || !file.type.startsWith('audio/')) continue;
+          var baseName = file.name.replace(/\.[^/.]+$/, '') || '로컬 파일';
+          var localId = 'local-' + Date.now() + '-' + i;
+          queue.push({ localId: localId, file: file, title: baseName, artist: '로컬' });
+        }
+        renderQueue();
+        updateNowPlayingDisplay();
+        this.value = '';
+      });
+    }
     document.querySelectorAll('.tabs button').forEach(function(btn) {
       btn.addEventListener('click', function() {
         document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
