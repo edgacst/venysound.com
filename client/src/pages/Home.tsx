@@ -249,7 +249,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
       <Navigation />
-      <section className="relative h-[500px] flex items-center justify-center overflow-hidden">
+      <section className="relative h-[500px] flex items-center justify-center overflow-hidden hero-section">
         <div className="absolute inset-0">
           <img 
             src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80" 
@@ -260,7 +260,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
         </div>
 
-        <div className="container relative z-10 px-4 text-center">
+        <div className="hero-inner relative z-10 px-4 text-center">
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
