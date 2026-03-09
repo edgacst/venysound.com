@@ -21,6 +21,7 @@ export function Footer() {
             </h5>
             <p className="text-sm text-muted-foreground">{t('footer.tagline')}<br/>{t('footer.tagline2')}</p>
             <p className="text-sm text-muted-foreground mt-1">{t('footer.company')}</p>
+            <p className="text-sm text-muted-foreground">{t('footer.businessNumber')}</p>
             <p className="text-sm text-muted-foreground">{t('footer.ceo')}</p>
           </div>
           <div>

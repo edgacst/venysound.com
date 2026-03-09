@@ -39,6 +39,28 @@ export async function registerRoutes(
   const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
 
+  // Play Store TWA: Digital Asset Links (설정 시에만 응답, 미설정 시 404로 연동 없음)
+  app.get("/.well-known/assetlinks.json", (_req, res) => {
+    const packageName = process.env.TWA_PACKAGE_NAME;
+    const sha256 = process.env.TWA_SHA256_FINGERPRINT;
+    if (!packageName || !sha256) {
+      res.status(404).end();
+      return;
+    }
+    res.type("application/json").send(
+      JSON.stringify([
+        {
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: {
+            namespace: "android_app",
+            package_name: packageName,
+            sha256_cert_fingerprints: sha256.split(",").map((s) => s.trim()),
+          },
+        },
+      ])
+    );
+  });
+
   /** 메시지/대화 시간을 항상 UTC ISO 문자열(Z)로 반환 (타임존 9시간 오차 방지)
    *  - DB에 예상치 못한 값이 들어있을 때 서버가 500 나지 않도록, 파싱 실패 시 빈 문자열 반환
    */

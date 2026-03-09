@@ -346,6 +346,39 @@
         overflow: visible;
       }
     }
+
+    /* 좁은 화면: 3단 → 세로 배치 (밑으로 정렬) */
+    @media (max-width: 1024px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto minmax(280px, auto) minmax(240px, 1fr);
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+      .layout header { grid-column: 1; }
+      .layout .panel {
+        grid-column: 1;
+        border-right: none;
+        border-bottom: 1px solid #27272a;
+        min-height: 0;
+      }
+      .layout .panel.chat-aside {
+        border-left: none;
+        border-bottom: none;
+        min-height: 260px;
+      }
+      .layout .main {
+        grid-column: 1;
+        min-height: 320px;
+      }
+    }
   </style>
 </head>
 <body>

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export function useUserProfile(id: string) {
   return useQuery({
@@ -46,6 +47,7 @@ export function useFollowUser() {
 }
 
 export function useNotifications() {
+  const { user } = useAuth();
   return useQuery({
     queryKey: [api.notifications.list.path],
     queryFn: async () => {
@@ -53,6 +55,7 @@ export function useNotifications() {
       if (!res.ok) throw new Error("Failed to fetch notifications");
       return api.notifications.list.responses[200].parse(await res.json());
     },
+    enabled: !!user?.id,
     refetchInterval: 30000, // Poll every 30s
   });
 }

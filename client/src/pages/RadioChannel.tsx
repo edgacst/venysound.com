@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
+import { useRadioPlayerStore } from "@/stores/radio-player";
+import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
 
 type SyncedLyricLine = { time: number; text: string };
 
@@ -148,6 +150,8 @@ export default function RadioChannel() {
 
   const lastSyncedIndexRef = useRef<number>(-1);
 
+  const { setStream: setRadioStream, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying, userStopped: radioUserStopped } = useRadioPlayerStore();
+
   // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
     if (!isLive || (nowPlayingId == null && !nowPlayingObjectPath)) {
@@ -192,6 +196,15 @@ export default function RadioChannel() {
           : `/api/music/${nowPlayingId}/stream`;
   // 스트림 URL로 바로 재생(버퍼만 채우면 시작). 전체 파일 다운로드 후 재생하면 30초 이상 지연됨
   const audioStreamUrl = rawAudioUrl;
+  const useGlobalRadio = !isOwner && isLive && !!audioStreamUrl && !!slug && !!channel?.name;
+  const waveformBufferRef = useRadioWaveformRef();
+
+  // 리스너: 전역 라디오 플레이어에 스트림 동기화 (다른 페이지로 나가도 재생 유지)
+  useEffect(() => {
+    if (!useGlobalRadio || !channel) return;
+    setRadioStream(slug, channel.name, audioStreamUrl, channel?.nowPlayingElapsedSeconds ?? undefined);
+  }, [useGlobalRadio, slug, channel?.name, channel?.nowPlayingElapsedSeconds, audioStreamUrl, setRadioStream]);
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -250,6 +263,42 @@ export default function RadioChannel() {
       ctx.close();
     };
   }, [audioStreamUrl]);
+
+  // 리스너: 전역 라디오 파형 버퍼를 캔버스에 그리기 (웨이브)
+  useEffect(() => {
+    if (!useGlobalRadio || !waveformBufferRef || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const w = canvas.width;
+    const h = canvas.height;
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    let rafId = 0;
+    function draw() {
+      rafId = requestAnimationFrame(draw);
+      const data = waveformBufferRef!.current;
+      if (!data || data.length === 0) {
+        g.fillStyle = "rgba(15,15,18,0.4)";
+        g.fillRect(0, 0, w, h);
+        return;
+      }
+      g.fillStyle = "rgba(15,15,18,0.4)";
+      g.fillRect(0, 0, w, h);
+      g.strokeStyle = "#7c3aed";
+      g.lineWidth = 2;
+      g.beginPath();
+      const step = w / data.length;
+      for (let i = 0; i < data.length; i++) {
+        const x = i * step;
+        const y = (data[i] / 128) * (h / 2) + h / 2;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    draw();
+    return () => cancelAnimationFrame(rafId);
+  }, [useGlobalRadio, waveformBufferRef]);
+
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
 
@@ -386,6 +435,7 @@ export default function RadioChannel() {
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         refetchChannel();
         if (musicId === null && !(msg as any).nowPlayingObjectPath) {
+          clearRadioPlayer();
           const audio = audioRef.current;
           if (audio) {
             audio.pause();
@@ -400,6 +450,7 @@ export default function RadioChannel() {
         presentUserIdsRef.current.clear();
         queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug, "chat"] });
         refetchChannel();
+        clearRadioPlayer();
         const audio = audioRef.current;
         if (audio) {
           audio.pause();
@@ -419,7 +470,7 @@ export default function RadioChannel() {
       });
     });
     return unsub;
-  }, [slug]);
+  }, [slug, clearRadioPlayer]);
 
   const [tipOpen, setTipOpen] = useState(false);
   const [tipAmount, setTipAmount] = useState(1000);
@@ -904,7 +955,7 @@ export default function RadioChannel() {
                   </Dialog>
                 )}
                 {canManage ? (
-                  <a href={`/radio-dj-ui-mockup.html?slug=${encodeURIComponent(channel.slug)}`} target="_blank" rel="noopener noreferrer">
+                  <a href={`/radio-dj-ui-mockup.html?slug=${encodeURIComponent(channel.slug)}`}>
                     <Button className="gap-2 w-full sm:w-auto">
                       <Mic2 size={18} />
                       {t("radio.goToStudio", "방송 스튜디오")}
@@ -915,7 +966,7 @@ export default function RadioChannel() {
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
                       <Headphones size={18} />
                       <span>
-                        {isPlaying
+                        {(useGlobalRadio ? radioIsPlaying : isPlaying)
                           ? t("radio.listeningTo", "지금 재생 중")
                           : t("radio.listeningPaused", "일시정지")}
                         {typeof navigator !== "undefined" &&
@@ -923,16 +974,20 @@ export default function RadioChannel() {
                           ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}
                         {typeof navigator !== "undefined" &&
                           !/Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
-                          !isPlaying &&
+                          !(useGlobalRadio ? radioIsPlaying : isPlaying) &&
                           ` · ${t("radio.pcClickHint", "소리가 안 나면 화면을 한 번 클릭해 보세요.")}`}
                       </span>
                     </p>
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
-                        variant={isPlaying ? "outline" : "default"}
+                        variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "outline" : "default"}
                         type="button"
                         onClick={() => {
+                          if (useGlobalRadio) {
+                            radioRequestPlay();
+                            return;
+                          }
                           const el = audioRef.current;
                           if (!el) return;
                           const ctx = analyserRef.current?.ctx;
@@ -947,9 +1002,13 @@ export default function RadioChannel() {
                       </Button>
                       <Button
                         size="sm"
-                        variant={isPlaying ? "secondary" : "outline"}
+                        variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "secondary" : "outline"}
                         type="button"
                         onClick={() => {
+                          if (useGlobalRadio) {
+                            radioRequestPause();
+                            return;
+                          }
                           const el = audioRef.current;
                           if (!el) return;
                           el.pause();
@@ -959,6 +1018,7 @@ export default function RadioChannel() {
                         {t("radio.listenPause", "일시정지")}
                       </Button>
                     </div>
+                    {isOwner && (
                     <audio
                       key={audioStreamUrl}
                       ref={audioRef}
@@ -1033,6 +1093,7 @@ export default function RadioChannel() {
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
+                    )}
                     {nowPlayingMusic?.lyrics?.trim() && isOwner && (
                       <div className="mt-3">
                         <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>
