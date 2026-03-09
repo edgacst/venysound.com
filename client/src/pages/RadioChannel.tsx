@@ -203,9 +203,11 @@ export default function RadioChannel() {
   useEffect(() => {
     if (!useGlobalRadio || !channel) return;
     setRadioStream(slug, channel.name, audioStreamUrl, channel?.nowPlayingElapsedSeconds ?? undefined);
-  }, [useGlobalRadio, slug, channel?.name, channel?.nowPlayingElapsedSeconds, audioStreamUrl, setRadioStream]);
+    radioRequestPlay(); // 전역 플레이어 재생 시작(채널 떠나도 바 표시·재생 유지)
+  }, [useGlobalRadio, slug, channel?.name, channel?.nowPlayingElapsedSeconds, audioStreamUrl, setRadioStream, radioRequestPlay]);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const waveformWrapRef = useRef<HTMLDivElement | null>(null);
   const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
   const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   useEffect(() => {
@@ -263,6 +265,25 @@ export default function RadioChannel() {
       ctx.close();
     };
   }, [audioStreamUrl]);
+
+  // 리스너: 파형 캔버스를 카드 너비에 맞춰 리사이즈
+  useEffect(() => {
+    if (!useGlobalRadio || !waveformWrapRef.current || !canvasRef.current) return;
+    const wrap = waveformWrapRef.current;
+    const canvas = canvasRef.current;
+    const setSize = () => {
+      const cw = wrap.clientWidth;
+      const ch = wrap.clientHeight;
+      if (cw > 0 && ch > 0 && (canvas.width !== cw || canvas.height !== ch)) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
+    };
+    setSize();
+    const ro = new ResizeObserver(setSize);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [useGlobalRadio]);
 
   // 리스너: 전역 라디오 파형 버퍼를 캔버스에 그리기 (웨이브)
   useEffect(() => {
@@ -865,14 +886,14 @@ export default function RadioChannel() {
                   </div>
                 </div>
               )}
-              <div className="h-24 sm:h-32 md:h-40 bg-muted/30 flex items-center justify-center relative overflow-hidden">
+              <div ref={waveformWrapRef} className="h-24 sm:h-32 md:h-40 bg-muted/30 flex items-center justify-center relative overflow-hidden">
                 {isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && !isOwner ? (
                   <canvas
                     ref={canvasRef}
                     className="absolute inset-0 w-full h-full"
-                    width={640}
-                    height={360}
-                    style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                    width={1}
+                    height={1}
+                    style={{ width: "100%", height: "100%", display: "block" }}
                   />
                 ) : channel.coverFilename ? (
                   <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />

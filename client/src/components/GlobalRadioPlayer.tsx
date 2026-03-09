@@ -212,9 +212,26 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
           onEnded={() => {
             setPlaying(false);
             setUserStopped(false);
-            if (slug) {
-              queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
-            }
+            if (!slug) return;
+            queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+            // 곡 끝나면 즉시 채널 정보 갱신 후 다음 곡으로 전환(끝난 곡 뒷부분 재생 방지)
+            fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" })
+              .then((res) => (res.ok ? res.json() : null))
+              .then((data) => {
+                if (!data || data?.status !== "live") return;
+                const nowPlayingId = data?.nowPlayingMusicId ?? null;
+                const nowPlayingObjectPath = data?.nowPlayingObjectPath ?? null;
+                const newStreamUrl =
+                  nowPlayingObjectPath != null
+                    ? nowPlayingObjectPath
+                    : nowPlayingId != null
+                      ? `/api/music/${nowPlayingId}/stream`
+                      : null;
+                if (newStreamUrl && newStreamUrl !== streamUrl) {
+                  setStream(slug, (data?.name ?? channelName) ?? "", newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
+                }
+              })
+              .catch(() => {});
           }}
           onCanPlay={() => {
             const el = audioRef.current;
