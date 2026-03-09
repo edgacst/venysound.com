@@ -5,6 +5,7 @@
   "start_url": "https://venysound.com/",
   "scope": "https://venysound.com/",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#7c3aed",
   "background_color": "#0a0a0a",
   "icons": [

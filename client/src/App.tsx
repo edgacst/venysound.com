@@ -170,20 +170,30 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <TooltipProvider>
-          <WsProviderWithAuth>
-            <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
-              <PageTitle />
-              <AnalyticsVisit />
-              <Routes />
-              <GlobalAudioPlayer />
-              <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
-              <ScrollToTop />
-              <LoginModal />
-              <Toaster />
-            </RadioWaveformProvider>
-          </WsProviderWithAuth>
-        </TooltipProvider>
+        <div className="app-root">
+          <div className="landscape-blocker">
+            <div className="landscape-blocker-inner">
+              <p className="text-lg font-semibold mb-2">모바일 가로 모드는 지원하지 않습니다.</p>
+              <p className="text-sm text-muted-foreground">기기를 세로(포트레이트) 방향으로 돌려서 이용해 주세요.</p>
+            </div>
+          </div>
+          <div className="app-main">
+            <TooltipProvider>
+              <WsProviderWithAuth>
+                <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
+                  <PageTitle />
+                  <AnalyticsVisit />
+                  <Routes />
+                  <GlobalAudioPlayer />
+                  <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
+                  <ScrollToTop />
+                  <LoginModal />
+                  <Toaster />
+                </RadioWaveformProvider>
+              </WsProviderWithAuth>
+            </TooltipProvider>
+          </div>
+        </div>
       </Router>
     </QueryClientProvider>
   );

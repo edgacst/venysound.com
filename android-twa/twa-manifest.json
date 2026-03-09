@@ -34,7 +34,7 @@
   "isMetaQuest": false,
   "fullScopeUrl": "https://venysound.com/",
   "minSdkVersion": 21,
-  "orientation": "any",
+  "orientation": "portrait",
   "fingerprints": [],
   "additionalTrustedOrigins": [],
   "retainedBundles": [],

@@ -127,6 +127,34 @@
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }
 
+/* 기본적으로 가로모드 차단 오버레이는 숨김 */
+.landscape-blocker {
+  display: none;
+}
+
+/* 모바일 가로(폭 1024px 이하 + 가로 방향)에서는 전체 앱 대신 안내 오버레이만 표시 */
+@media (orientation: landscape) and (max-width: 1024px) {
+  .app-main {
+    display: none;
+  }
+  .landscape-blocker {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: radial-gradient(circle at top left, rgba(124,58,237,0.6), rgba(15,15,18,0.98));
+    color: #fff;
+    text-align: center;
+  }
+  .landscape-blocker-inner {
+    max-width: 360px;
+    @apply bg-black/50 rounded-2xl px-5 py-4 border border-white/10 shadow-2xl;
+  }
+}
+
 /* 모바일(폭 1024px 이하 또는 낮은 세로 높이)에서는 컨테이너/본문 폭을 화면 가로로 확장 */
 @media (max-width: 1024px), (orientation: landscape) and (max-height: 600px) {
   .container,

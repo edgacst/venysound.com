@@ -1,1 +1,1 @@
-{"name":"Veny Sound","short_name":"Veny_Sound","description":"음악으로 연결되는 우리만의 공간","start_url":"/","display":"standalone","theme_color":"#7c3aed","background_color":"#0a0a0a","icons":[{"src":"/favicon.png","sizes":"192x192 512x512","type":"image/png","purpose":"any"}]}
+{"name":"Veny Sound","short_name":"Veny_Sound","description":"음악으로 연결되는 우리만의 공간","start_url":"/","display":"standalone","orientation":"portrait","theme_color":"#7c3aed","background_color":"#0a0a0a","icons":[{"src":"/favicon.png","sizes":"192x192 512x512","type":"image/png","purpose":"any"}]}
