@@ -1270,6 +1270,8 @@
       } else {
         var audioEl = document.getElementById('djMonitorAudio');
         if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+        var audioEl2 = document.getElementById('djMonitorAudio2');
+        if (audioEl2) { audioEl2.pause(); audioEl2.removeAttribute('src'); audioEl2.load(); }
       }
       var waveformEl = document.getElementById('djWaveformAudio');
       if (waveformEl) { waveformEl.pause(); waveformEl.removeAttribute('src'); waveformEl.load(); }
@@ -1299,6 +1301,11 @@
     inactive.setAttribute('data-current-id', String(next.id));
     inactive.removeAttribute('data-local-id');
     inactive.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+    try { inactive.removeAttribute('data-preloaded-ready'); } catch (e) {}
+    inactive.addEventListener('canplay', function onCanPlay() {
+      inactive.removeEventListener('canplay', onCanPlay);
+      try { inactive.setAttribute('data-preloaded-ready', '1'); } catch (e2) {}
+    });
     inactive.load();
     inactivePreloadedId = next.id;
   }
@@ -1989,25 +1996,57 @@
       }
       if (!next.id || !channel || channel.canControlBroadcast === false) return;
       var inactive = getInactiveMonitorAudio();
-      var canUsePreloaded = inactive && inactive !== el && inactivePreloadedId === next.id && inactive.src && inactive.readyState >= 2;
-      if (canUsePreloaded) {
-        inactive.play().catch(function() {});
-        activeMonitorIndex = 1 - activeMonitorIndex;
-        inactivePreloadedId = null;
-        if (waveformSource) { try { waveformSource.disconnect(); } catch (err) {} waveformSource = null; }
-        if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
-        var slug = String(channel.slug).trim().toLowerCase();
-        var body = { nowPlayingMusicId: next.id, nowPlayingStartedAt: new Date().toISOString() };
-        var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
-        if (siteOnly.length > 0) {
-          body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
-          body.currentTrackDurationSeconds = 240;
+      var isPreloadedTarget = inactive && inactive !== el && inactivePreloadedId === next.id && inactive.src;
+      function doSwapToInactive() {
+        if (!inactive || inactive === el) return;
+        var playPromise = null;
+        try { playPromise = inactive.play(); } catch (e0) {}
+        var afterSwap = function() {
+          activeMonitorIndex = 1 - activeMonitorIndex;
+          inactivePreloadedId = null;
+          if (waveformSource) { try { waveformSource.disconnect(); } catch (err) {} waveformSource = null; }
+          if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+          var slug = String(channel.slug).trim().toLowerCase();
+          var body = { nowPlayingMusicId: next.id, nowPlayingStartedAt: new Date().toISOString() };
+          var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+          if (siteOnly.length > 0) {
+            body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
+            var dur = (isFinite(inactive.duration) && inactive.duration > 0) ? Math.ceil(inactive.duration) : 240;
+            body.currentTrackDurationSeconds = dur;
+          }
+          api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
+            .then(function(r) { if (r.ok) return r.json(); return null; })
+            .then(function(data) { if (data) { channel = data; } renderQueue(); updateNowPlayingDisplay(); })
+            .catch(function() {});
+          preloadNextInQueue();
+        };
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise.then(afterSwap).catch(function() { setNowPlaying(next.id); });
+        } else {
+          afterSwap();
         }
-        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) { channel = data; } renderQueue(); updateNowPlayingDisplay(); }).catch(function() {});
-        preloadNextInQueue();
-      } else {
-        setNowPlaying(next.id);
       }
+
+      if (isPreloadedTarget) {
+        if (inactive.readyState >= 2 || inactive.getAttribute('data-preloaded-ready') === '1') {
+          doSwapToInactive();
+          return;
+        }
+        // 아직 canplay가 안 된 경우: 조금 기다렸다가 스왑 (타임아웃 시 fallback)
+        var fallbackTimer = setTimeout(function() {
+          try { inactive.removeEventListener('canplay', onWaitCanPlay); } catch (e1) {}
+          setNowPlaying(next.id);
+        }, 2500);
+        function onWaitCanPlay() {
+          clearTimeout(fallbackTimer);
+          doSwapToInactive();
+        }
+        inactive.addEventListener('canplay', onWaitCanPlay, { once: true });
+        try { inactive.load(); } catch (e2) {}
+        return;
+      }
+
+      setNowPlaying(next.id);
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
