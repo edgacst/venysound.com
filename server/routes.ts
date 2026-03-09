@@ -3018,6 +3018,17 @@ export async function registerRoutes(
     }
   }, RADIO_AUTO_ADVANCE_INTERVAL_MS);
 
+  // 라디오 채팅 보관 기간: 1일 (오래된 채팅 자동 삭제)
+  const RADIO_CHAT_TTL_DAYS = 1;
+  const RADIO_CHAT_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1시간마다
+  setInterval(async () => {
+    try {
+      await storage.deleteRadioChatMessagesOlderThanDays(RADIO_CHAT_TTL_DAYS);
+    } catch (e) {
+      console.warn("[radio chat cleanup]", e);
+    }
+  }, RADIO_CHAT_CLEANUP_INTERVAL_MS);
+
   app.delete("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
     try {
       const userId = (req as any).user?.claims?.sub;

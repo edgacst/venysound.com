@@ -1981,72 +1981,11 @@
       audio.play().catch(function() {});
     });
     function onMonitorEnded(e) {
-      var el = e.target;
-      if (el !== getActiveMonitorAudio()) return;
-      el.pause();
-      el.removeAttribute('src');
-      el.load();
-      if (!queue.length) return;
-      var next = getNextInQueue();
-      if (!next) return;
-      if (next.localId) {
-        var nextIdx = queue.findIndex(function(q) { return q.localId === next.localId; });
-        if (nextIdx >= 0) uploadLocalAndSetNowPlaying(next, nextIdx);
-        return;
-      }
-      if (!next.id || !channel || channel.canControlBroadcast === false) return;
-      var inactive = getInactiveMonitorAudio();
-      var isPreloadedTarget = inactive && inactive !== el && inactivePreloadedId === next.id && inactive.src;
-      function doSwapToInactive() {
-        if (!inactive || inactive === el) return;
-        var playPromise = null;
-        try { playPromise = inactive.play(); } catch (e0) {}
-        var afterSwap = function() {
-          activeMonitorIndex = 1 - activeMonitorIndex;
-          inactivePreloadedId = null;
-          if (waveformSource) { try { waveformSource.disconnect(); } catch (err) {} waveformSource = null; }
-          if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
-          var slug = String(channel.slug).trim().toLowerCase();
-          var body = { nowPlayingMusicId: next.id, nowPlayingStartedAt: new Date().toISOString() };
-          var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
-          if (siteOnly.length > 0) {
-            body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
-            var dur = (isFinite(inactive.duration) && inactive.duration > 0) ? Math.ceil(inactive.duration) : 240;
-            body.currentTrackDurationSeconds = dur;
-          }
-          api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
-            .then(function(r) { if (r.ok) return r.json(); return null; })
-            .then(function(data) { if (data) { channel = data; } renderQueue(); updateNowPlayingDisplay(); })
-            .catch(function() {});
-          preloadNextInQueue();
-        };
-        if (playPromise && typeof playPromise.then === 'function') {
-          playPromise.then(afterSwap).catch(function() { setNowPlaying(next.id); });
-        } else {
-          afterSwap();
-        }
-      }
-
-      if (isPreloadedTarget) {
-        if (inactive.readyState >= 2 || inactive.getAttribute('data-preloaded-ready') === '1') {
-          doSwapToInactive();
-          return;
-        }
-        // 아직 canplay가 안 된 경우: 조금 기다렸다가 스왑 (타임아웃 시 fallback)
-        var fallbackTimer = setTimeout(function() {
-          try { inactive.removeEventListener('canplay', onWaitCanPlay); } catch (e1) {}
-          setNowPlaying(next.id);
-        }, 2500);
-        function onWaitCanPlay() {
-          clearTimeout(fallbackTimer);
-          doSwapToInactive();
-        }
-        inactive.addEventListener('canplay', onWaitCanPlay, { once: true });
-        try { inactive.load(); } catch (e2) {}
-        return;
-      }
-
-      setNowPlaying(next.id);
+      // 모니터 오디오가 끝났을 때는 서버(auto-advance)가 다음 곡을 결정합니다.
+      // 여기서는 로컬에서 다음 곡을 선택하거나 방송 상태를 변경하지 않습니다.
+      var el = e && e.target ? e.target : null;
+      if (!el) return;
+      try { el.pause(); } catch (err) {}
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
