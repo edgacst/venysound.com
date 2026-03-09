@@ -548,20 +548,76 @@ export async function registerRoutes(
 
       res.set("Accept-Ranges", "bytes");
       res.set("Content-Type", contentType);
+      res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+      res.set("Last-Modified", stat.mtime.toUTCString());
+      const etag = `W/\"${fileSize}-${Math.floor(stat.mtimeMs)}\"`;
+      res.set("ETag", etag);
+      // 일부 브라우저/프록시에서 다운로드로 처리되지 않도록 inline 힌트
+      res.set("Content-Disposition", "inline");
+
+      // 조건부 GET (range 없는 경우에만)
+      if (!rangeHeader) {
+        const ifNoneMatch = req.headers["if-none-match"];
+        const ifModifiedSince = req.headers["if-modified-since"];
+        if (ifNoneMatch && String(ifNoneMatch).trim() === etag) {
+          return res.status(304).end();
+        }
+        if (ifModifiedSince) {
+          const ims = new Date(String(ifModifiedSince)).getTime();
+          if (!Number.isNaN(ims) && stat.mtime.getTime() <= ims) {
+            return res.status(304).end();
+          }
+        }
+      }
 
       if (rangeHeader) {
-        const parts = rangeHeader.replace(/bytes=/, "").split("-");
-        const start = parseInt(parts[0], 10);
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-        const chunkSize = end - start + 1;
+        const m = /^bytes=(\d*)-(\d*)$/i.exec(String(rangeHeader).trim());
+        if (!m) {
+          res.status(416);
+          res.set("Content-Range", `bytes */${fileSize}`);
+          return res.end();
+        }
+        const startStr = m[1];
+        const endStr = m[2];
+        let start: number | null = startStr ? parseInt(startStr, 10) : null;
+        let end: number | null = endStr ? parseInt(endStr, 10) : null;
+        if (start != null && Number.isNaN(start)) start = null;
+        if (end != null && Number.isNaN(end)) end = null;
 
+        // suffix-byte-range-spec: bytes=-500 (마지막 500바이트)
+        if (start == null && end != null) {
+          const suffixLen = Math.max(0, end);
+          start = Math.max(0, fileSize - suffixLen);
+          end = fileSize - 1;
+        } else {
+          if (start == null) start = 0;
+          if (end == null || end >= fileSize) end = fileSize - 1;
+        }
+        if (start >= fileSize || start < 0 || end < 0 || start > end) {
+          res.status(416);
+          res.set("Content-Range", `bytes */${fileSize}`);
+          return res.end();
+        }
+        const chunkSize = end - start + 1;
         res.status(206);
         res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
         res.set("Content-Length", String(chunkSize));
-        createReadStream(localPath, { start, end }).pipe(res);
+        const stream = createReadStream(localPath, { start, end });
+        res.on("close", () => stream.destroy());
+        stream.on("error", () => {
+          if (!res.headersSent) res.status(500).end();
+          else res.destroy();
+        });
+        stream.pipe(res);
       } else {
         res.set("Content-Length", String(fileSize));
-        createReadStream(localPath).pipe(res);
+        const stream = createReadStream(localPath);
+        res.on("close", () => stream.destroy());
+        stream.on("error", () => {
+          if (!res.headersSent) res.status(500).end();
+          else res.destroy();
+        });
+        stream.pipe(res);
       }
     } catch (e) {
       if (res.headersSent) return;
