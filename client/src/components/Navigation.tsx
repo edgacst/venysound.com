@@ -94,7 +94,7 @@ export function Navigation() {
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-white/5 bg-background/80 backdrop-blur-xl">
-      <div className="container flex h-16 items-center justify-between gap-4 px-4">
+      <div className="w-full max-w-[1200px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
         <Link href="/" className="flex-shrink-0 min-w-0 overflow-hidden">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
