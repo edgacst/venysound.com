@@ -127,9 +127,15 @@
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }
 
-/* 모바일 가로(높이 낮은) 화면에서는 컨테이너가 화면 가로를 꽉 채우도록 */
+/* 모바일 가로(높이 낮은) 화면에서는 컨테이너/본문 폭을 화면 가로로 확장 */
 @media (orientation: landscape) and (max-height: 600px) {
-  .container {
+  .container,
+  .max-w-2xl,
+  .max-w-3xl,
+  .max-w-4xl,
+  .max-w-5xl,
+  .max-w-6xl,
+  .max-w-7xl {
     max-width: 100% !important;
   }
 }
