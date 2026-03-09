@@ -466,7 +466,8 @@
             </div>
             <div id="monitorProgressTime" style="font-size: 0.75rem; color: #71717a; margin-top: 4px;">0:00 / 0:00</div>
           </div>
-          <audio id="djMonitorAudio" preload="metadata" style="display: none;"></audio>
+          <audio id="djMonitorAudio" preload="auto" style="display: none;"></audio>
+          <audio id="djMonitorAudio2" preload="auto" style="display: none;"></audio>
           <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
             <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm">▶ 모니터 재생</button>
@@ -618,8 +619,10 @@
   var recordStartTime = null;
   var waveformCtx = null;
   var waveformSource = null;
-  var preloadNextAudio = null;
   var waveformAnalyser = null;
+  var monitorAudios = null;
+  var activeMonitorIndex = 0;
+  var inactivePreloadedId = null;
   var musicGainNode = null;
   var waveformAnimationId = null;
   var mentMode = false;
@@ -630,6 +633,19 @@
   var lastNowTitle = '';
   var lastNowArtist = '';
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+  (function initMonitorAudios() {
+    var el1 = document.getElementById('djMonitorAudio');
+    var el2 = document.getElementById('djMonitorAudio2');
+    monitorAudios = el1 && el2 ? [el1, el2] : (el1 ? [el1, el1] : []);
+  })();
+  function getActiveMonitorAudio() {
+    if (!monitorAudios || !monitorAudios.length) return document.getElementById('djMonitorAudio');
+    return monitorAudios[activeMonitorIndex] || monitorAudios[0];
+  }
+  function getInactiveMonitorAudio() {
+    if (!monitorAudios || monitorAudios.length < 2) return monitorAudios ? monitorAudios[0] : document.getElementById('djMonitorAudio');
+    return monitorAudios[1 - activeMonitorIndex];
+  }
   if (window.location.port === '5173' || window.location.port === '3000') {
     API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
   }
@@ -992,7 +1008,7 @@
   function updateSyncedLyric() {
     var wrap = document.getElementById('nowLyricsWrap');
     var box = document.getElementById('nowLyrics');
-    var audio = document.getElementById('djMonitorAudio');
+    var audio = getActiveMonitorAudio();
     if (!wrap || !box || !audio || !syncedLyrics.length) return;
     var t = audio.currentTime || 0;
     var idx = currentLyricIndex;
@@ -1017,7 +1033,7 @@
   }
   var currentLocalDurationSec = null;
   function updateMonitorProgress() {
-    var audio = document.getElementById('djMonitorAudio');
+    var audio = getActiveMonitorAudio();
     var fill = document.getElementById('monitorProgressFill');
     var timeEl = document.getElementById('monitorProgressTime');
     if (!audio || !fill || !timeEl) return;
@@ -1039,7 +1055,7 @@
   function updateNowPlayingDisplay() {
     var titleEl = document.getElementById('nowTitle');
     var artistEl = document.getElementById('nowArtist');
-    var audioEl = document.getElementById('djMonitorAudio');
+    var audioEl = getActiveMonitorAudio();
     if (currentLocalItem) {
       if (titleEl) titleEl.textContent = currentLocalItem.title || '로컬 파일';
       if (artistEl) artistEl.textContent = currentLocalItem.artist || '';
@@ -1248,8 +1264,13 @@
       return r.json().then(function(d) { throw new Error(d.message || '실패'); });
     }).then(function(data) {
       if (data) channel = data;
-      var audioEl = document.getElementById('djMonitorAudio');
-      if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+      inactivePreloadedId = null;
+      if (monitorAudios) {
+        monitorAudios.forEach(function(el) { if (el) { el.pause(); el.removeAttribute('src'); el.load(); } });
+      } else {
+        var audioEl = document.getElementById('djMonitorAudio');
+        if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+      }
       var waveformEl = document.getElementById('djWaveformAudio');
       if (waveformEl) { waveformEl.pause(); waveformEl.removeAttribute('src'); waveformEl.load(); }
       renderQueue();
@@ -1273,10 +1294,13 @@
   function preloadNextInQueue() {
     var next = getNextInQueue();
     if (!next || next.localId) return;
-    if (!preloadNextAudio) preloadNextAudio = new Audio();
-    preloadNextAudio.preload = 'auto';
-    preloadNextAudio.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
-    preloadNextAudio.load();
+    var inactive = getInactiveMonitorAudio();
+    if (!inactive || inactive === getActiveMonitorAudio()) return;
+    inactive.setAttribute('data-current-id', String(next.id));
+    inactive.removeAttribute('data-local-id');
+    inactive.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+    inactive.load();
+    inactivePreloadedId = next.id;
   }
 
   function setNowPlaying(musicId) {
@@ -1294,27 +1318,37 @@
         waveformCtx.resume().then(function() { }).catch(function() { });
       } catch (e) {}
     }
-    var audioEl = document.getElementById('djMonitorAudio');
-    if (audioEl) audioEl.removeAttribute('data-local-id');
-    var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+    var audioEl = getInactiveMonitorAudio();
+    if (!audioEl) audioEl = getActiveMonitorAudio();
     if (audioEl) {
+      audioEl.removeAttribute('data-local-id');
       audioEl.setAttribute('data-current-id', String(musicIdNum));
-      audioEl.src = streamUrl;
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
       audioEl.load();
       audioEl.play().catch(function() {});
+    }
+    if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
+      activeMonitorIndex = 1 - activeMonitorIndex;
+      inactivePreloadedId = null;
     }
     var waveformEl = document.getElementById('djWaveformAudio');
     if (waveformEl) {
       waveformEl.setAttribute('data-current-id', String(musicIdNum));
-      waveformEl.src = streamUrl;
+      waveformEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
       waveformEl.load();
+    }
+    if (waveformSource && getActiveMonitorAudio()) {
+      try { waveformSource.disconnect(); } catch (e) {}
+      waveformSource = null;
+      if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
     }
     preloadNextInQueue();
     var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() };
     var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
     if (siteOnlyQueue.length > 0) {
       body.queueMusicIds = siteOnlyQueue.map(function(q) { return q.id; });
-      var dur = (audioEl && audioEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(audioEl.duration) && audioEl.duration > 0) ? Math.ceil(audioEl.duration) : 240;
+      var activeEl = getActiveMonitorAudio();
+      var dur = (activeEl && activeEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(activeEl.duration) && activeEl.duration > 0) ? Math.ceil(activeEl.duration) : 240;
       body.currentTrackDurationSeconds = dur;
     }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
@@ -1335,7 +1369,7 @@
       queue = queue.filter(function(q) { return q.localId !== idOrLocalId; });
       if (currentLocalItem && currentLocalItem.localId === idOrLocalId) {
         currentLocalItem = null;
-        var audioEl = document.getElementById('djMonitorAudio');
+        var audioEl = getActiveMonitorAudio();
         if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
         if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
         updateNowPlayingDisplay();
@@ -1352,7 +1386,7 @@
     currentLocalDurationSec = null;
     if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
     currentLocalObjectUrl = URL.createObjectURL(item.file);
-    var audioEl = document.getElementById('djMonitorAudio');
+    var audioEl = getActiveMonitorAudio();
     var waveformEl = document.getElementById('djWaveformAudio');
     if (audioEl) {
       audioEl.setAttribute('data-current-id', '');
@@ -1385,7 +1419,7 @@
     currentLocalDurationSec = null;
     if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
     currentLocalObjectUrl = URL.createObjectURL(item.file);
-    var audioEl = document.getElementById('djMonitorAudio');
+    var audioEl = getActiveMonitorAudio();
     var waveformEl = document.getElementById('djWaveformAudio');
     if (audioEl) {
       audioEl.pause();
@@ -1934,14 +1968,50 @@
     if (btnStopNow) btnStopNow.addEventListener('click', stopNowPlaying);
     var btnMonitorPlay = document.getElementById('btnMonitorPlay');
     if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
-      var audio = document.getElementById('djMonitorAudio');
+      var audio = getActiveMonitorAudio();
       if (!audio || !audio.src) return;
       if (waveformCtx && waveformCtx.state === 'suspended') waveformCtx.resume().then(function() {}).catch(function() {});
       audio.play().catch(function() {});
     });
-    var monAudio = document.getElementById('djMonitorAudio');
-    if (monAudio) monAudio.addEventListener('playing', function() {
-      var curId = monAudio.getAttribute('data-current-id');
+    function onMonitorEnded(e) {
+      var el = e.target;
+      if (el !== getActiveMonitorAudio()) return;
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+      if (!queue.length) return;
+      var next = getNextInQueue();
+      if (!next) return;
+      if (next.localId) {
+        var nextIdx = queue.findIndex(function(q) { return q.localId === next.localId; });
+        if (nextIdx >= 0) uploadLocalAndSetNowPlaying(next, nextIdx);
+        return;
+      }
+      if (!next.id || !channel || channel.canControlBroadcast === false) return;
+      var inactive = getInactiveMonitorAudio();
+      var canUsePreloaded = inactive && inactive !== el && inactivePreloadedId === next.id && inactive.src && inactive.readyState >= 2;
+      if (canUsePreloaded) {
+        inactive.play().catch(function() {});
+        activeMonitorIndex = 1 - activeMonitorIndex;
+        inactivePreloadedId = null;
+        if (waveformSource) { try { waveformSource.disconnect(); } catch (err) {} waveformSource = null; }
+        if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+        var slug = String(channel.slug).trim().toLowerCase();
+        var body = { nowPlayingMusicId: next.id, nowPlayingStartedAt: new Date().toISOString() };
+        var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+        if (siteOnly.length > 0) {
+          body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
+          body.currentTrackDurationSeconds = 240;
+        }
+        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) { channel = data; } renderQueue(); updateNowPlayingDisplay(); }).catch(function() {});
+        preloadNextInQueue();
+      } else {
+        setNowPlaying(next.id);
+      }
+    }
+    function onMonitorPlaying(e) {
+      if (e.target !== getActiveMonitorAudio()) return;
+      var curId = e.target.getAttribute('data-current-id');
       if (!channel || !channel.slug || !curId) return;
       if (lastSyncedStartMusicId === curId) return;
       var numId = parseInt(curId, 10);
@@ -1952,40 +2022,44 @@
       var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
       if (siteOnly.length > 0) {
         body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
-        body.currentTrackDurationSeconds = (monAudio.duration && isFinite(monAudio.duration) && monAudio.duration > 0) ? Math.ceil(monAudio.duration) : 240;
+        body.currentTrackDurationSeconds = (e.target.duration && isFinite(e.target.duration) && e.target.duration > 0) ? Math.ceil(e.target.duration) : 240;
       }
-      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) {
-        if (data) channel = data;
-      }).catch(function() {});
-    });
-    if (monAudio) monAudio.addEventListener('ended', function() {
-      monAudio.pause();
-      monAudio.removeAttribute('src');
-      monAudio.load();
-      if (!queue.length) return;
-      var next = getNextInQueue();
-      if (!next) return;
-      if (next.localId) {
-        var nextIdx = queue.findIndex(function(q) { return q.localId === next.localId; });
-        if (nextIdx >= 0) uploadLocalAndSetNowPlaying(next, nextIdx);
-      } else if (next.id && channel && channel.canControlBroadcast !== false) {
-        setNowPlaying(next.id);
-      }
-    });
-    if (monAudio) {
-      monAudio.addEventListener('timeupdate', updateMonitorProgress);
-      monAudio.addEventListener('timeupdate', updateSyncedLyric);
-      monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
-      monAudio.addEventListener('durationchange', updateMonitorProgress);
-      monAudio.addEventListener('ended', function() { setTimeout(updateMonitorProgress, 0); });
-      monAudio.addEventListener('loadedmetadata', function() {
-        if (!channel || !channel.slug || !channel.playlistSnapshot) return;
-        var curId = monAudio.getAttribute('data-current-id');
-        if (!curId || channel.nowPlayingMusicId !== parseInt(curId, 10)) return;
-        if (!isFinite(monAudio.duration) || monAudio.duration <= 0) return;
-        var slug = String(channel.slug).trim().toLowerCase();
-        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { currentTrackDurationSeconds: Math.ceil(monAudio.duration) } }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+    }
+    function onMonitorLoadedMetadata(e) {
+      if (e.target !== getActiveMonitorAudio()) return;
+      if (!channel || !channel.slug || !channel.playlistSnapshot) return;
+      var curId = e.target.getAttribute('data-current-id');
+      if (!curId || channel.nowPlayingMusicId !== parseInt(curId, 10)) return;
+      if (!isFinite(e.target.duration) || e.target.duration <= 0) return;
+      var slug = String(channel.slug).trim().toLowerCase();
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { currentTrackDurationSeconds: Math.ceil(e.target.duration) } }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+    }
+    function onMonitorEndedAndProgress(ev) {
+      onMonitorEnded(ev);
+      setTimeout(updateMonitorProgress, 0);
+    }
+    if (monitorAudios && monitorAudios.length >= 2) {
+      monitorAudios.forEach(function(monEl) {
+        monEl.addEventListener('ended', onMonitorEndedAndProgress);
+        monEl.addEventListener('playing', onMonitorPlaying);
+        monEl.addEventListener('timeupdate', updateMonitorProgress);
+        monEl.addEventListener('timeupdate', updateSyncedLyric);
+        monEl.addEventListener('loadedmetadata', updateMonitorProgress);
+        monEl.addEventListener('durationchange', updateMonitorProgress);
+        monEl.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
       });
+    } else {
+      var monAudio = document.getElementById('djMonitorAudio');
+      if (monAudio) {
+        monAudio.addEventListener('ended', onMonitorEndedAndProgress);
+        monAudio.addEventListener('playing', onMonitorPlaying);
+        monAudio.addEventListener('timeupdate', updateMonitorProgress);
+        monAudio.addEventListener('timeupdate', updateSyncedLyric);
+        monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
+        monAudio.addEventListener('durationchange', updateMonitorProgress);
+        monAudio.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
+      }
     }
     var btnShowGuide = document.getElementById('btnShowGuide');
     var guideModal = document.getElementById('guideModal');
@@ -2089,7 +2163,7 @@
 
   function startRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') return;
-    var audioEl = document.getElementById('djMonitorAudio');
+    var audioEl = getActiveMonitorAudio();
     var hasTrack = false;
     var dest = null;
     if (waveformCtx && waveformSource && audioEl && audioEl.src) {
