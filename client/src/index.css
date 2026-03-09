@@ -127,8 +127,8 @@
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }
 
-/* 모바일 가로(높이 낮은) 화면에서는 컨테이너/본문 폭을 화면 가로로 확장 */
-@media (orientation: landscape) and (max-height: 600px) {
+/* 모바일 가로 화면(폭이 960px 이하)에서는 컨테이너/본문 폭을 화면 가로로 확장 */
+@media (orientation: landscape) and (max-width: 960px) {
   .container,
   .max-w-2xl,
   .max-w-3xl,
