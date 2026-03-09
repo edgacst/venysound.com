@@ -618,6 +618,7 @@
   var recordStartTime = null;
   var waveformCtx = null;
   var waveformSource = null;
+  var preloadNextAudio = null;
   var waveformAnalyser = null;
   var musicGainNode = null;
   var waveformAnimationId = null;
@@ -1256,6 +1257,28 @@
     }).catch(function(e) { alert(networkErrorMsg(e) || '곡 정지 실패'); });
   }
 
+  function getNextInQueue() {
+    if (!queue.length) return null;
+    var idx = -1;
+    if (currentLocalItem) {
+      idx = queue.findIndex(function(q) { return q.localId && q.localId === currentLocalItem.localId; });
+    } else if (channel && channel.nowPlayingMusicId != null) {
+      idx = queue.findIndex(function(q) { return q.id === channel.nowPlayingMusicId; });
+    }
+    if (idx < 0) return null;
+    var nextIdx = idx >= queue.length - 1 ? 0 : idx + 1;
+    return queue[nextIdx] || null;
+  }
+
+  function preloadNextInQueue() {
+    var next = getNextInQueue();
+    if (!next || next.localId) return;
+    if (!preloadNextAudio) preloadNextAudio = new Audio();
+    preloadNextAudio.preload = 'auto';
+    preloadNextAudio.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+    preloadNextAudio.load();
+  }
+
   function setNowPlaying(musicId) {
     if (!channel || !channel.slug) return;
     if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
@@ -1286,6 +1309,7 @@
       waveformEl.src = streamUrl;
       waveformEl.load();
     }
+    preloadNextInQueue();
     var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() };
     var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
     if (siteOnlyQueue.length > 0) {
@@ -1346,6 +1370,7 @@
     if (!waveformCtx || waveformCtx.state === 'closed') {
       try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
     }
+    preloadNextInQueue();
     updateNowPlayingDisplay();
     renderQueue();
   }
@@ -1384,6 +1409,7 @@
     if (!waveformCtx || waveformCtx.state === 'closed') {
       try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
     }
+    preloadNextInQueue();
     updateNowPlayingDisplay();
     renderQueue();
     api(API_BASE + '/api/uploads/request-url', {
@@ -1933,19 +1959,18 @@
       }).catch(function() {});
     });
     if (monAudio) monAudio.addEventListener('ended', function() {
+      monAudio.pause();
+      monAudio.removeAttribute('src');
+      monAudio.load();
       if (!queue.length) return;
-      var idx = -1;
-      if (currentLocalItem) {
-        idx = queue.findIndex(function(q) { return q.localId && q.localId === currentLocalItem.localId; });
-      } else if (channel && channel.nowPlayingMusicId != null) {
-        idx = queue.findIndex(function(q) { return q.id === channel.nowPlayingMusicId; });
-      }
-      if (idx < 0) return;
-      var nextIdx = idx >= queue.length - 1 ? 0 : idx + 1;
-      var next = queue[nextIdx];
+      var next = getNextInQueue();
       if (!next) return;
-      if (next.localId) uploadLocalAndSetNowPlaying(next, nextIdx);
-      else if (next.id && channel && channel.canControlBroadcast !== false) setNowPlaying(next.id);
+      if (next.localId) {
+        var nextIdx = queue.findIndex(function(q) { return q.localId === next.localId; });
+        if (nextIdx >= 0) uploadLocalAndSetNowPlaying(next, nextIdx);
+      } else if (next.id && channel && channel.canControlBroadcast !== false) {
+        setNowPlaying(next.id);
+      }
     });
     if (monAudio) {
       monAudio.addEventListener('timeupdate', updateMonitorProgress);
