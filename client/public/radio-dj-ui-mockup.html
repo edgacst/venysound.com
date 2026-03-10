@@ -884,6 +884,9 @@
   }
 
   function startWaveform(audioEl) {
+    // 파형 분석은 djWaveformAudio(뮤트된 요소)만 사용해서 모니터 소리에 영향을 주지 않게 한다.
+    var wfEl = document.getElementById('djWaveformAudio');
+    if (wfEl) audioEl = wfEl;
     if (!audioEl || !audioEl.src) return;
     try {
       waveformAnalyser = null;
@@ -893,26 +896,24 @@
       }
       if (waveformSource) {
         try { waveformSource.disconnect(); } catch (e) {}
-      } else {
-        waveformSource = waveformCtx.createMediaElementSource(audioEl);
       }
+      // 매번 새 media element source를 만든다 (element 재사용 시 InvalidStateError 방지)
+      waveformSource = waveformCtx.createMediaElementSource(audioEl);
       musicGainNode = waveformCtx.createGain();
       musicGainNode.gain.value = mentMode ? 0.3 : 1;
       waveformAnalyser = waveformCtx.createAnalyser();
       waveformAnalyser.fftSize = 2048;
       waveformSource.connect(musicGainNode);
       musicGainNode.connect(waveformAnalyser);
-      // 모니터 오디오는 실제로 스피커로도 출력되어야 한다.
-      // MediaElementSource로 연결하면 기본 출력이 WebAudio 그래프로 라우팅되므로 destination 연결이 필요함.
-      try { musicGainNode.connect(waveformCtx.destination); } catch (e) {}
+      // 분석용 오디오이므로 destination 연결은 하지 않는다(음소거된 요소를 사용).
       var canvas = document.getElementById('waveformCanvas');
       if (canvas) canvas.style.display = 'block';
       waveformCtx.resume().then(function() {
         drawWaveform();
-        audioEl.play().catch(function() {});
+        if (hasUserGestureForAudio) audioEl.play().catch(function() {});
       }).catch(function() {
         drawWaveform();
-        audioEl.play().catch(function() {});
+        if (hasUserGestureForAudio) audioEl.play().catch(function() {});
       });
     } catch (e) {}
   }
@@ -1159,7 +1160,7 @@
       if (artistEl) artistEl.textContent = currentLocalItem.artist || '';
       loadNowPlayingLyrics(null);
       var waveformEl = document.getElementById('djWaveformAudio');
-      if (audioEl && audioEl.src && waveformEl && !waveformSource) startWaveform(audioEl);
+      if (audioEl && audioEl.src && waveformEl && !waveformSource) startWaveform(waveformEl);
       return;
     }
     var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
@@ -1472,7 +1473,8 @@
     if (waveformSource && getActiveMonitorAudio()) {
       try { waveformSource.disconnect(); } catch (e) {} waveformSource = null;
     }
-    if (hasUserGestureForAudio && getActiveMonitorAudio() && getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+    var wf = document.getElementById('djWaveformAudio');
+    if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
     preloadNextInQueue();
     updateNowPlayingDisplay();
     updateMonitorProgress();
@@ -1501,7 +1503,8 @@
     if (waveformSource && getActiveMonitorAudio()) {
       try { waveformSource.disconnect(); } catch (e) {}
       waveformSource = null;
-      if (hasUserGestureForAudio && getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+      var wf = document.getElementById('djWaveformAudio');
+      if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
     }
     preloadNextInQueue();
     var startedAt = new Date().toISOString();
@@ -1537,7 +1540,8 @@
       try { waveformSource.disconnect(); } catch (e) {}
       waveformSource = null;
     }
-    if (getActiveMonitorAudio() && getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+    var wf = document.getElementById('djWaveformAudio');
+    if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
     var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: startedAt };
     if (siteOnlyQueue.length > 0) {
       body.queueMusicIds = siteOnlyQueue.map(function(q) { return q.id; });
