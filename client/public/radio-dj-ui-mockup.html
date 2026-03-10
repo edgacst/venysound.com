@@ -1049,7 +1049,12 @@
           if (elapsed < 0) elapsed = 0;
           cur = elapsed;
           var snap = channel.playlistSnapshot;
-          var idx = typeof snap.currentIndex === 'number' ? snap.currentIndex : 0;
+          var idx = -1;
+          if (channel.nowPlayingMusicId != null && Array.isArray(snap.musicIds)) {
+            idx = snap.musicIds.indexOf(channel.nowPlayingMusicId);
+          }
+          if (idx < 0 && typeof snap.currentIndex === 'number') idx = snap.currentIndex;
+          if (idx < 0) idx = 0;
           var snapDur = Array.isArray(snap.durationsSeconds) ? snap.durationsSeconds[idx] : null;
           if (typeof snapDur === 'number' && snapDur > 0) {
             dur = snapDur;
@@ -1374,6 +1379,16 @@
     if (getActiveMonitorAudio() && getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
     preloadNextInQueue();
     updateNowPlayingDisplay();
+    updateMonitorProgress();
+    var progInterval = setInterval(function() {
+      var a = getActiveMonitorAudio();
+      if (a && a.src && isFinite(a.currentTime) && a.currentTime > 0) {
+        clearInterval(progInterval);
+        return;
+      }
+      updateMonitorProgress();
+    }, 400);
+    setTimeout(function() { clearInterval(progInterval); }, 15000);
   }
 
   function setNowPlaying(musicId) {
@@ -1754,6 +1769,10 @@
           if (channel) {
             channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
             channel.nowPlayingStartedAt = msg.startedAt || null;
+            if (channel.playlistSnapshot && Array.isArray(channel.playlistSnapshot.musicIds) && msg.musicId != null) {
+              var newIdx = channel.playlistSnapshot.musicIds.indexOf(Number(msg.musicId));
+              if (newIdx >= 0) channel.playlistSnapshot.currentIndex = newIdx;
+            }
             renderQueue();
             if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
               loadMonitorAudioForTrackId(msg.musicId);
