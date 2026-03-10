@@ -2788,6 +2788,94 @@ export async function registerRoutes(
     }
   });
 
+  // 채널 연속 스트림: 한 URL로 현재 곡 + 다음 곡 이어서 재생 (DJ 모니터/리스너 한 번 play()로 연속 재생)
+  app.get("/api/radio/channels/:slug/stream", async (req, res) => {
+    const slug = String(req.params.slug || "").trim().toLowerCase();
+    if (!slug) return res.status(404).end();
+    const uploadsDirInner = path.resolve(process.cwd(), "local-uploads", "uploads");
+    const getLocalPathForMusicId = async (musicId: number): Promise<{ path: string; contentType: string } | null> => {
+      const music = await storage.getMusicById(musicId);
+      if (!music) return null;
+      const fn = music.filename || "";
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) fileId = objMatch[1];
+      else if (fn.startsWith("uploads/")) fileId = fn.replace(/^uploads\//, "");
+      else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) fileId = fn.trim();
+      else if (fn.includes("/")) fileId = fn.split("/").pop() || "";
+      else fileId = fn;
+      fileId = fileId.replace(/^\//, "");
+      if (!fileId) return null;
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDirInner, fileId),
+        path.join(uploadsDirInner, `${baseId}.mp3`),
+        path.join(uploadsDirInner, `${baseId}.wav`),
+        path.join(uploadsDirInner, `${baseId}.ogg`),
+      ];
+      const localPath = candidates.find((p) => existsSync(p));
+      if (!localPath) return null;
+      const ext = path.extname(localPath).toLowerCase();
+      const mime: Record<string, string> = { ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg" };
+      return { path: localPath, contentType: mime[ext] || "audio/mpeg" };
+    };
+    try {
+      res.set("Cache-Control", "no-store");
+      res.set("Content-Disposition", "inline");
+      let lastStreamedId: number | null = null;
+      const pump = async () => {
+        while (!res.writableEnded) {
+          const ch = await storage.getRadioChannelBySlug(slug);
+          if (!ch || ch.status !== "live") break;
+          const musicId = ch.nowPlayingMusicId ?? null;
+          if (musicId == null) {
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          const info = await getLocalPathForMusicId(musicId);
+          if (!info) {
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          if (lastStreamedId === musicId) {
+            await new Promise((r) => setTimeout(r, 1000));
+            lastStreamedId = null;
+            continue;
+          }
+          lastStreamedId = musicId;
+          if (!res.headersSent) {
+            res.set("Content-Type", info.contentType);
+            res.status(200);
+          }
+          await new Promise<void>((resolve, reject) => {
+            const fileStream = createReadStream(info.path);
+            fileStream.pipe(res, { end: false });
+            fileStream.on("end", () => resolve());
+            fileStream.on("error", (err) => {
+              fileStream.destroy();
+              reject(err);
+            });
+            res.on("close", () => {
+              fileStream.destroy();
+              resolve();
+            });
+          });
+          if (res.writableEnded) break;
+        }
+        if (!res.writableEnded) res.end();
+      };
+      pump().catch((e) => {
+        if (!res.writableEnded) {
+          try { res.end(); } catch (_) {}
+        }
+        console.warn("[radio/channels/:slug/stream]", e);
+      });
+    } catch (e) {
+      if (!res.headersSent) res.status(500).end();
+      console.warn("[radio/channels/:slug/stream]", e);
+    }
+  });
+
   app.post("/api/radio/channels", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
