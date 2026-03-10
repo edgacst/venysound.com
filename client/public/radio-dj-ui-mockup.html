@@ -1267,7 +1267,11 @@
         if (channel.nowPlayingMusicId != null) {
           startMonitorProgressTicker();
           updateMonitorProgress();
-          loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+          var active = getActiveMonitorAudio();
+          var currentId = active ? active.getAttribute('data-current-id') : null;
+          if (currentId !== String(channel.nowPlayingMusicId)) {
+            loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+          }
         }
         if (!scheduleInputsApplied) {
           applyScheduleToInputs();
