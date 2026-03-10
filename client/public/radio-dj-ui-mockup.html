@@ -1268,8 +1268,8 @@
           startMonitorProgressTicker();
           updateMonitorProgress();
           var active = getActiveMonitorAudio();
-          var isChannelStream = active && active.getAttribute('data-channel-stream') === '1';
-          if (!isChannelStream || !active.src) {
+          var currentId = active ? active.getAttribute('data-current-id') : null;
+          if (currentId !== String(channel.nowPlayingMusicId)) {
             loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
           }
         }
@@ -1475,19 +1475,13 @@
       if (data) channel = data;
       renderQueue();
       updateNowPlayingDisplay();
-      var useChannelStream = channel && channel.status === 'live' && getChannelStreamUrl();
       var audioEl = getInactiveMonitorAudio();
       if (!audioEl) audioEl = getActiveMonitorAudio();
       if (audioEl) {
         audioEl.removeAttribute('data-local-id');
         audioEl.setAttribute('data-current-id', String(musicIdNum));
-        if (useChannelStream) {
-          audioEl.setAttribute('data-channel-stream', '1');
-          audioEl.src = useChannelStream;
-        } else {
-          audioEl.removeAttribute('data-channel-stream');
-          audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
-        }
+        audioEl.removeAttribute('data-channel-stream');
+        audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
         audioEl.load();
         audioEl.play().catch(function() {
           var hint = document.getElementById('monitorPlayHint');
