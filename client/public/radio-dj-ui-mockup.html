@@ -469,9 +469,10 @@
           <audio id="djMonitorAudio" preload="auto" style="display: none;"></audio>
           <audio id="djMonitorAudio2" preload="auto" style="display: none;"></audio>
           <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
-          <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap;">
+          <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
             <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm">▶ 모니터 재생</button>
             <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm">곡 정지</button>
+            <span id="monitorPlayHint" style="display: none; font-size: 0.75rem; color: #f59e0b; max-width: 280px;">곡이 바뀌었습니다. 소리를 들으려면 [모니터 재생]을 눌러주세요.</span>
             <button type="button" id="btnShowGuide" class="btn btn-secondary btn-sm">방송송출 방법 및 방송약관</button>
           </div>
         </div>
@@ -1032,6 +1033,24 @@
     return m + ':' + (s < 10 ? '0' : '') + s;
   }
   var currentLocalDurationSec = null;
+  var monitorProgressIntervalId = null;
+  function startMonitorProgressTicker() {
+    if (monitorProgressIntervalId != null) return;
+    monitorProgressIntervalId = setInterval(function() {
+      if (!channel || (channel.nowPlayingMusicId == null && !currentLocalItem)) {
+        clearInterval(monitorProgressIntervalId);
+        monitorProgressIntervalId = null;
+        return;
+      }
+      updateMonitorProgress();
+    }, 400);
+  }
+  function stopMonitorProgressTicker() {
+    if (monitorProgressIntervalId != null) {
+      clearInterval(monitorProgressIntervalId);
+      monitorProgressIntervalId = null;
+    }
+  }
   function updateMonitorProgress() {
     var audio = getActiveMonitorAudio();
     var fill = document.getElementById('monitorProgressFill');
@@ -1039,9 +1058,9 @@
     if (!audio || !fill || !timeEl) return;
     var cur = audio.currentTime;
     var dur = audio.duration;
-    // 모니터 오디오가 로딩되지 않았거나 duration 정보를 줄 수 없는 경우,
-    // 서버의 nowPlayingStartedAt + playlistSnapshot 기준으로 대략적인 진행률을 계산한다.
-    if ((!audio.src || !isFinite(cur) || cur === 0) && channel && channel.nowPlayingStartedAt && channel.playlistSnapshot) {
+    // 현재 곡이 정해져 있으면 진행률은 항상 서버 시작 시각 기준 (처음~끝까지 끊김 없이, 다음 곡으로 이어짐)
+    var useServerTime = channel && channel.nowPlayingMusicId != null && channel.nowPlayingStartedAt;
+    if (useServerTime) {
       try {
         var startedAtMs = new Date(channel.nowPlayingStartedAt).getTime();
         if (isFinite(startedAtMs)) {
@@ -1050,15 +1069,14 @@
           cur = elapsed;
           var snap = channel.playlistSnapshot;
           var idx = -1;
-          if (channel.nowPlayingMusicId != null && Array.isArray(snap.musicIds)) {
+          if (snap && Array.isArray(snap.musicIds)) {
             idx = snap.musicIds.indexOf(channel.nowPlayingMusicId);
           }
-          if (idx < 0 && typeof snap.currentIndex === 'number') idx = snap.currentIndex;
+          if (idx < 0 && snap && typeof snap.currentIndex === 'number') idx = snap.currentIndex;
           if (idx < 0) idx = 0;
-          var snapDur = Array.isArray(snap.durationsSeconds) ? snap.durationsSeconds[idx] : null;
-          if (typeof snapDur === 'number' && snapDur > 0) {
-            dur = snapDur;
-          }
+          var snapDur = snap && Array.isArray(snap.durationsSeconds) && typeof snap.durationsSeconds[idx] === 'number' && snap.durationsSeconds[idx] > 0
+            ? snap.durationsSeconds[idx] : 240;
+          dur = snapDur;
         }
       } catch (e) {}
     }
@@ -1246,6 +1264,11 @@
         renderHeader();
         renderQueue();
         updateNowPlayingDisplay();
+        if (channel.nowPlayingMusicId != null) {
+          startMonitorProgressTicker();
+          updateMonitorProgress();
+          loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+        }
         if (!scheduleInputsApplied) {
           applyScheduleToInputs();
           scheduleInputsApplied = true;
@@ -1287,6 +1310,7 @@
       return r.json().then(function(d) { throw new Error(d.message || '실패'); });
     }).then(function(data) {
       if (data) channel = data;
+      stopMonitorProgressTicker();
       inactivePreloadedId = null;
       if (monitorAudios) {
         monitorAudios.forEach(function(el) { if (el) { el.pause(); el.removeAttribute('src'); el.load(); } });
@@ -1335,9 +1359,12 @@
 
   /** 서버에서 곡이 바뀌었다고 알려줬을 때(radio_now_playing) 모니터 오디오를 해당 곡으로 맞춘다. PATCH는 하지 않는다. */
   function loadMonitorAudioForTrackId(musicId) {
+    var playHint = document.getElementById('monitorPlayHint');
+    if (playHint) { playHint.style.display = 'none'; playHint.setAttribute('aria-hidden', 'true'); }
     var musicIdNum = musicId != null ? (typeof musicId === 'number' ? musicId : parseInt(musicId, 10)) : null;
     if (musicIdNum == null || Number.isNaN(musicIdNum)) {
       currentLocalItem = null;
+      stopMonitorProgressTicker();
       if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
       var list = monitorAudios && monitorAudios.length ? monitorAudios : (function() { var e = document.getElementById('djMonitorAudio'); return e ? [e] : []; })();
       list.forEach(function(el) {
@@ -1361,7 +1388,10 @@
       audioEl.setAttribute('data-current-id', String(musicIdNum));
       audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
       audioEl.load();
-      audioEl.play().catch(function() {});
+      audioEl.play().catch(function() {
+        var hint = document.getElementById('monitorPlayHint');
+        if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+      });
     }
     if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
       activeMonitorIndex = 1 - activeMonitorIndex;
@@ -1380,15 +1410,7 @@
     preloadNextInQueue();
     updateNowPlayingDisplay();
     updateMonitorProgress();
-    var progInterval = setInterval(function() {
-      var a = getActiveMonitorAudio();
-      if (a && a.src && isFinite(a.currentTime) && a.currentTime > 0) {
-        clearInterval(progInterval);
-        return;
-      }
-      updateMonitorProgress();
-    }, 400);
-    setTimeout(function() { clearInterval(progInterval); }, 15000);
+    startMonitorProgressTicker();
   }
 
   function setNowPlaying(musicId) {
@@ -1431,13 +1453,22 @@
       if (getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
     }
     preloadNextInQueue();
-    var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: new Date().toISOString() };
+    var startedAt = new Date().toISOString();
     var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
+    var musicIds = siteOnlyQueue.map(function(q) { return q.id; });
+    var activeEl = getActiveMonitorAudio();
+    var firstDur = (activeEl && activeEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(activeEl.duration) && activeEl.duration > 0) ? Math.ceil(activeEl.duration) : 240;
+    var durationsSeconds = musicIds.map(function(_, i) { return i === 0 ? firstDur : 240; });
+    if (channel) {
+      channel.nowPlayingMusicId = musicIdNum;
+      channel.nowPlayingStartedAt = startedAt;
+      channel.playlistSnapshot = { musicIds: musicIds, durationsSeconds: durationsSeconds, currentIndex: 0 };
+    }
+    startMonitorProgressTicker();
+    var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: startedAt };
     if (siteOnlyQueue.length > 0) {
       body.queueMusicIds = siteOnlyQueue.map(function(q) { return q.id; });
-      var activeEl = getActiveMonitorAudio();
-      var dur = (activeEl && activeEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(activeEl.duration) && activeEl.duration > 0) ? Math.ceil(activeEl.duration) : 240;
-      body.currentTrackDurationSeconds = dur;
+      body.currentTrackDurationSeconds = firstDur;
     }
     api('/api/radio/channels/' + encodeURIComponent(slug), {
       method: 'PATCH',
@@ -1769,9 +1800,17 @@
           if (channel) {
             channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
             channel.nowPlayingStartedAt = msg.startedAt || null;
-            if (channel.playlistSnapshot && Array.isArray(channel.playlistSnapshot.musicIds) && msg.musicId != null) {
-              var newIdx = channel.playlistSnapshot.musicIds.indexOf(Number(msg.musicId));
-              if (newIdx >= 0) channel.playlistSnapshot.currentIndex = newIdx;
+            if (msg.musicId != null) {
+              var siteIds = queue.filter(function(q) { return typeof q.id === 'number'; }).map(function(q) { return q.id; });
+              if (channel.playlistSnapshot && Array.isArray(channel.playlistSnapshot.musicIds)) {
+                var newIdx = channel.playlistSnapshot.musicIds.indexOf(Number(msg.musicId));
+                if (newIdx >= 0) channel.playlistSnapshot.currentIndex = newIdx;
+              } else if (siteIds.length > 0) {
+                var newIdx = siteIds.indexOf(Number(msg.musicId));
+                if (newIdx >= 0) {
+                  channel.playlistSnapshot = { musicIds: siteIds, durationsSeconds: siteIds.map(function() { return 240; }), currentIndex: newIdx };
+                }
+              }
             }
             renderQueue();
             if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
@@ -2068,6 +2107,8 @@
       if (!audio || !audio.src) return;
       if (waveformCtx && waveformCtx.state === 'suspended') waveformCtx.resume().then(function() {}).catch(function() {});
       audio.play().catch(function() {});
+      var hint = document.getElementById('monitorPlayHint');
+      if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
     });
     function onMonitorEnded(e) {
       // 모니터 오디오가 끝났을 때는 서버(auto-advance)가 다음 곡을 결정합니다.
@@ -2078,6 +2119,8 @@
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
+      var h = document.getElementById('monitorPlayHint');
+      if (h) { h.style.display = 'none'; h.setAttribute('aria-hidden', 'true'); }
       var curId = e.target.getAttribute('data-current-id');
       if (!channel || !channel.slug || !curId) return;
       if (lastSyncedStartMusicId === curId) return;
