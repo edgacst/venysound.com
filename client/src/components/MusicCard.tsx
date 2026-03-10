@@ -488,7 +488,11 @@ export function MusicCard({ music }: MusicCardProps) {
     <>
       <motion.div 
         whileHover={{ y: -5 }}
-        className="group relative bg-card rounded-xl overflow-hidden border border-white/5 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl hover:shadow-primary/10 cursor-pointer"
+        className={`group relative bg-card rounded-xl overflow-hidden border transition-all duration-300 shadow-lg cursor-pointer ${
+          isPlaying
+            ? "border-emerald-400/80 shadow-emerald-400/40"
+            : "border-white/5 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/10"
+        }`}
         data-testid={`card-music-${music.id}`}
         onClick={() => navigate(`/music/${music.id}`)}
       >
@@ -498,6 +502,15 @@ export function MusicCard({ music }: MusicCardProps) {
             alt={music.title} 
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
+
+          {isPlaying && (
+            <div className="absolute bottom-2 left-2 z-10">
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-xs text-black font-semibold shadow-md">
+                <span className="h-2 w-2 rounded-full bg-emerald-200 rounded-full animate-ping" />
+                <span>{t('music.nowPlaying', '지금 재생중')}</span>
+              </div>
+            </div>
+          )}
 
           {isPlaying && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
