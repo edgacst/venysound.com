@@ -1438,23 +1438,6 @@
         waveformCtx.resume().then(function() { }).catch(function() { });
       } catch (e) {}
     }
-    var streamUrl = getChannelStreamUrl();
-    if (streamUrl) {
-      var audioEl = getInactiveMonitorAudio();
-      if (!audioEl) audioEl = getActiveMonitorAudio();
-      if (audioEl) {
-        audioEl.removeAttribute('data-local-id');
-        audioEl.setAttribute('data-current-id', String(musicIdNum));
-        audioEl.setAttribute('data-channel-stream', '1');
-        audioEl.src = streamUrl;
-        audioEl.load();
-        audioEl.play().catch(function() {});
-      }
-      if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
-        activeMonitorIndex = 1 - activeMonitorIndex;
-        inactivePreloadedId = null;
-      }
-    }
     var waveformEl = document.getElementById('djWaveformAudio');
     if (waveformEl) {
       waveformEl.setAttribute('data-current-id', String(musicIdNum));
@@ -1494,6 +1477,29 @@
       if (data) channel = data;
       renderQueue();
       updateNowPlayingDisplay();
+      var useChannelStream = channel && channel.status === 'live' && getChannelStreamUrl();
+      var audioEl = getInactiveMonitorAudio();
+      if (!audioEl) audioEl = getActiveMonitorAudio();
+      if (audioEl) {
+        audioEl.removeAttribute('data-local-id');
+        audioEl.setAttribute('data-current-id', String(musicIdNum));
+        if (useChannelStream) {
+          audioEl.setAttribute('data-channel-stream', '1');
+          audioEl.src = useChannelStream;
+        } else {
+          audioEl.removeAttribute('data-channel-stream');
+          audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+        }
+        audioEl.load();
+        audioEl.play().catch(function() {
+          var hint = document.getElementById('monitorPlayHint');
+          if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+        });
+      }
+      if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
+        activeMonitorIndex = 1 - activeMonitorIndex;
+        inactivePreloadedId = null;
+      }
     }).catch(function(e) { alert(networkErrorMsg(e) || '지금 재생 설정 실패'); });
   }
 
