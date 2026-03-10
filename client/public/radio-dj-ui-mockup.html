@@ -1328,6 +1328,54 @@
     inactivePreloadedId = next.id;
   }
 
+  /** 서버에서 곡이 바뀌었다고 알려줬을 때(radio_now_playing) 모니터 오디오를 해당 곡으로 맞춘다. PATCH는 하지 않는다. */
+  function loadMonitorAudioForTrackId(musicId) {
+    var musicIdNum = musicId != null ? (typeof musicId === 'number' ? musicId : parseInt(musicId, 10)) : null;
+    if (musicIdNum == null || Number.isNaN(musicIdNum)) {
+      currentLocalItem = null;
+      if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+      var list = monitorAudios && monitorAudios.length ? monitorAudios : (function() { var e = document.getElementById('djMonitorAudio'); return e ? [e] : []; })();
+      list.forEach(function(el) {
+        if (el) { try { el.pause(); } catch (e) {} el.removeAttribute('src'); el.removeAttribute('data-current-id'); el.removeAttribute('data-local-id'); el.load(); }
+      });
+      var wf = document.getElementById('djWaveformAudio');
+      if (wf) { wf.pause(); wf.removeAttribute('src'); wf.load(); }
+      if (waveformSource) { try { waveformSource.disconnect(); } catch (e) {} waveformSource = null; }
+      updateNowPlayingDisplay();
+      return;
+    }
+    currentLocalItem = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+    var audioEl = getInactiveMonitorAudio();
+    if (!audioEl) audioEl = getActiveMonitorAudio();
+    if (audioEl) {
+      audioEl.removeAttribute('data-local-id');
+      audioEl.setAttribute('data-current-id', String(musicIdNum));
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      audioEl.load();
+      audioEl.play().catch(function() {});
+    }
+    if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
+      activeMonitorIndex = 1 - activeMonitorIndex;
+      inactivePreloadedId = null;
+    }
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (waveformEl) {
+      waveformEl.setAttribute('data-current-id', String(musicIdNum));
+      waveformEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      waveformEl.load();
+    }
+    if (waveformSource && getActiveMonitorAudio()) {
+      try { waveformSource.disconnect(); } catch (e) {} waveformSource = null;
+    }
+    if (getActiveMonitorAudio() && getActiveMonitorAudio().src) startWaveform(getActiveMonitorAudio());
+    preloadNextInQueue();
+    updateNowPlayingDisplay();
+  }
+
   function setNowPlaying(musicId) {
     if (!channel || !channel.slug) return;
     if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
@@ -1707,7 +1755,11 @@
             channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
             channel.nowPlayingStartedAt = msg.startedAt || null;
             renderQueue();
-            updateNowPlayingDisplay();
+            if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
+              loadMonitorAudioForTrackId(msg.musicId);
+            } else {
+              loadMonitorAudioForTrackId(null);
+            }
           }
         }
         if (msg.type === 'radio_broadcast_ended' && (msg.slug == null || String(msg.slug).toLowerCase() === slug)) {
