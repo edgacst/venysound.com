@@ -2129,10 +2129,21 @@
     });
     function onMonitorEnded(e) {
       // 모니터 오디오가 끝났을 때는 서버(auto-advance)가 다음 곡을 결정합니다.
-      // 여기서는 로컬에서 다음 곡을 선택하거나 방송 상태를 변경하지 않습니다.
+      // WS가 끊겼거나 이벤트를 놓치더라도 다음 곡을 이어서 모니터링할 수 있게,
+      // 채널을 한 번 다시 조회한 뒤 현재 nowPlaying으로 모니터를 재동기화합니다.
       var el = e && e.target ? e.target : null;
       if (!el) return;
       try { el.pause(); } catch (err) {}
+      setTimeout(function() {
+        try {
+          fetchChannelAndUpdate();
+          setTimeout(function() {
+            if (channel && channel.nowPlayingMusicId != null) {
+              loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+            }
+          }, 300);
+        } catch (_) {}
+      }, 200);
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
