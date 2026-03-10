@@ -1346,7 +1346,7 @@
         fetchChannelAndUpdate();
         loadRequests();
       }
-    }, 5000);
+    }, 1000);
   }
 
   function stopPolling() {
@@ -1842,6 +1842,7 @@
     var wsHost = API_BASE ? API_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '') : window.location.host;
     var protocol = (API_BASE && API_BASE.indexOf('https:') === 0) ? 'wss:' : 'ws:';
     ws = new WebSocket(protocol + '//' + wsHost + '/ws');
+    try { window.ws = ws; } catch (_) {}
     ws.onopen = function() {
       wsAuthenticated = false;
       ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
@@ -1931,6 +1932,7 @@
     ws.onclose = function() {
       wsAuthenticated = false;
       ws = null;
+      try { window.ws = null; } catch (_) {}
       var inp = document.getElementById('chatInput');
       var btn = document.getElementById('chatSend');
       if (inp) { inp.disabled = true; inp.placeholder = '재연결 중...'; }
