@@ -255,8 +255,9 @@
       padding: 6px 10px;
       border-radius: 8px;
       background: #18181b;
-      max-height: 120px;
-      overflow-y: auto;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
     }
     .participants-title {
       font-size: 0.7rem;
@@ -269,9 +270,14 @@
       margin: 0;
       font-size: 0.8rem;
       color: #e4e4e7;
+      display: inline-flex;
+      gap: 6px;
     }
     .participants-list li {
-      padding: 2px 0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #27272a;
+      flex-shrink: 0;
     }
     .participants-list li.empty {
       color: #71717a;

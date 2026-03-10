@@ -498,7 +498,22 @@ export function MusicCard({ music }: MusicCardProps) {
             alt={music.title} 
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
-          
+
+          {isPlaying && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="flex items-end gap-0.5 h-8">
+                <span className="w-1.5 bg-white/90 rounded-full animate-pulse" style={{ height: "60%" }} />
+                <span className="w-1.5 bg-white/80 rounded-full animate-[pulse_1s_ease-in-out_infinite_alternate]" style={{ height: "90%" }} />
+                <span className="w-1.5 bg-white/70 rounded-full animate-pulse" style={{ height: "50%" }} />
+                <span className="w-1.5 bg-white/80 rounded-full animate-[pulse_1.2s_ease-in-out_infinite_alternate]" style={{ height: "80%" }} />
+                <span className="w-1.5 bg-white/60 rounded-full animate-pulse" style={{ height: "40%" }} />
+              </div>
+              <div className="absolute bottom-2 right-2">
+                <Loader2Icon className="w-4 h-4 text-white/90 animate-spin" />
+              </div>
+            </div>
+          )}
+
           <div className={`absolute inset-0 bg-black/40 flex items-center justify-center gap-4 transition-opacity duration-300 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
             <Button 
               size="icon" 
