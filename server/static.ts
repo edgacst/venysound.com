@@ -10,7 +10,16 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // HTML은 캐시가 남으면 배포 반영이 안 된 것처럼 보이므로 no-store로 강제
+  app.use(
+    express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-store");
+        }
+      },
+    }),
+  );
 
   const indexPath = path.resolve(distPath, "index.html");
   app.get("/", (_req, res) => res.sendFile(indexPath));
