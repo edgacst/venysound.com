@@ -226,33 +226,12 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
               el.removeAttribute("src");
               el.load();
             }
+            // 다음 곡 전환은 서버 auto-advance + WebSocket(radio_now_playing)에서만 처리
             setPlaying(false);
             setUserStopped(false);
-            if (!slug) return;
-            const endedStreamUrl = streamUrl;
-            queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
-            const tryFetch = () => {
-              fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" })
-                .then((res) => (res.ok ? res.json() : null))
-                .then((data) => {
-                  if (!data || data?.status !== "live") return;
-                  const nowPlayingId = data?.nowPlayingMusicId ?? null;
-                  const nowPlayingObjectPath = data?.nowPlayingObjectPath ?? null;
-                  const newStreamUrl =
-                    nowPlayingObjectPath != null
-                      ? nowPlayingObjectPath
-                      : nowPlayingId != null
-                        ? `/api/music/${nowPlayingId}/stream`
-                        : null;
-                  if (newStreamUrl && newStreamUrl !== endedStreamUrl) {
-                    setStream(slug, (data?.name ?? useRadioPlayerStore.getState().channelName) ?? "", newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
-                  }
-                })
-                .catch(() => {});
-            };
-            tryFetch();
-            setTimeout(tryFetch, 600);
-            setTimeout(tryFetch, 1400);
+            if (slug) {
+              queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+            }
           }}
           onCanPlay={() => {
             const el = audioRef.current;

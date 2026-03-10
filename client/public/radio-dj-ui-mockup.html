@@ -1039,6 +1039,24 @@
     if (!audio || !fill || !timeEl) return;
     var cur = audio.currentTime;
     var dur = audio.duration;
+    // 모니터 오디오가 로딩되지 않았거나 duration 정보를 줄 수 없는 경우,
+    // 서버의 nowPlayingStartedAt + playlistSnapshot 기준으로 대략적인 진행률을 계산한다.
+    if ((!audio.src || !isFinite(cur) || cur === 0) && channel && channel.nowPlayingStartedAt && channel.playlistSnapshot) {
+      try {
+        var startedAtMs = new Date(channel.nowPlayingStartedAt).getTime();
+        if (isFinite(startedAtMs)) {
+          var elapsed = (Date.now() - startedAtMs) / 1000;
+          if (elapsed < 0) elapsed = 0;
+          cur = elapsed;
+          var snap = channel.playlistSnapshot;
+          var idx = typeof snap.currentIndex === 'number' ? snap.currentIndex : 0;
+          var snapDur = Array.isArray(snap.durationsSeconds) ? snap.durationsSeconds[idx] : null;
+          if (typeof snapDur === 'number' && snapDur > 0) {
+            dur = snapDur;
+          }
+        }
+      } catch (e) {}
+    }
     if (currentLocalDurationSec != null && (!isFinite(dur) || dur <= 0 || dur === Infinity)) {
       dur = currentLocalDurationSec;
     }
