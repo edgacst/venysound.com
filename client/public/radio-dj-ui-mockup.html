@@ -902,7 +902,9 @@
       waveformAnalyser.fftSize = 2048;
       waveformSource.connect(musicGainNode);
       musicGainNode.connect(waveformAnalyser);
-      // 웨이브폼만 분석용으로 사용, 스피커 출력 안 함 (모니터 소리는 djMonitorAudio가 담당)
+      // 모니터 오디오는 실제로 스피커로도 출력되어야 한다.
+      // MediaElementSource로 연결하면 기본 출력이 WebAudio 그래프로 라우팅되므로 destination 연결이 필요함.
+      try { musicGainNode.connect(waveformCtx.destination); } catch (e) {}
       var canvas = document.getElementById('waveformCanvas');
       if (canvas) canvas.style.display = 'block';
       waveformCtx.resume().then(function() {
