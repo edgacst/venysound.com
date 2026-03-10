@@ -1388,15 +1388,13 @@
     if (!waveformCtx || waveformCtx.state === 'closed') {
       try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
     }
-    var streamUrl = getChannelStreamUrl();
-    if (!streamUrl) return;
     var audioEl = getInactiveMonitorAudio();
     if (!audioEl) audioEl = getActiveMonitorAudio();
     if (audioEl) {
       audioEl.removeAttribute('data-local-id');
       audioEl.setAttribute('data-current-id', String(musicIdNum));
-      audioEl.setAttribute('data-channel-stream', '1');
-      audioEl.src = streamUrl;
+      audioEl.removeAttribute('data-channel-stream');
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
       audioEl.load();
       audioEl.play().catch(function() {
         var hint = document.getElementById('monitorPlayHint');
@@ -1833,7 +1831,9 @@
               }
             }
             renderQueue();
-            if (typeof msg.musicId !== 'number' && (msg.musicId == null || isNaN(Number(msg.musicId)))) {
+            if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
+              loadMonitorAudioForTrackId(msg.musicId);
+            } else {
               loadMonitorAudioForTrackId(null);
             }
           }

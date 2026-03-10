@@ -453,7 +453,21 @@ export default function RadioChannel() {
       if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
+        const startedAt = (msg as { startedAt?: string }).startedAt ?? null;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
+        queryClient.setQueryData(
+          ["/api/radio/channels", slug],
+          (old: Record<string, unknown> | undefined) => {
+            if (!old) return old;
+            return {
+              ...old,
+              nowPlayingMusicId: musicId,
+              nowPlayingStartedAt: startedAt,
+              nowPlayingElapsedSeconds: elapsedSeconds,
+            };
+          }
+        );
+        queryClient.invalidateQueries({ queryKey: ["/api/music"] });
         refetchChannel();
         if (musicId === null && !(msg as any).nowPlayingObjectPath) {
           clearRadioPlayer();
@@ -491,7 +505,7 @@ export default function RadioChannel() {
       });
     });
     return unsub;
-  }, [slug, clearRadioPlayer]);
+  }, [slug, clearRadioPlayer, queryClient]);
 
   const [tipOpen, setTipOpen] = useState(false);
   const [tipAmount, setTipAmount] = useState(1000);
