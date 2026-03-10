@@ -1025,6 +1025,52 @@
       wrap.style.display = 'block';
     }
   }
+  var lastAutoStartedNextForMusicId = null;
+  function autoStartNextBeforeEnded(e) {
+    try {
+      if (!e || !e.target) return;
+      if (e.target !== getActiveMonitorAudio()) return;
+      if (!channel || !channel.slug) return;
+      if (currentLocalItem) return;
+      var curId = e.target.getAttribute('data-current-id');
+      if (!curId) return;
+      var curNum = parseInt(curId, 10);
+      if (Number.isNaN(curNum)) return;
+      if (channel.nowPlayingMusicId == null || channel.nowPlayingMusicId !== curNum) return;
+      var dur = e.target.duration;
+      var cur = e.target.currentTime;
+      if (!isFinite(dur) || !isFinite(cur) || dur <= 0) return;
+      var remaining = dur - cur;
+      // 끝나기 직전에 다음 곡을 미리 재생 시작(브라우저 자동재생 정책 회피)
+      if (remaining > 1.0) return;
+      if (lastAutoStartedNextForMusicId === curNum) return;
+      var next = getNextInQueue();
+      if (!next || next.localId || typeof next.id !== 'number') return;
+      lastAutoStartedNextForMusicId = curNum;
+      preloadNextInQueue();
+      var inactive = getInactiveMonitorAudio();
+      if (!inactive || inactive === getActiveMonitorAudio()) return;
+      // preloaded가 준비 안 됐으면 src를 직접 세팅
+      if (inactivePreloadedId !== next.id) {
+        inactive.setAttribute('data-current-id', String(next.id));
+        inactive.removeAttribute('data-local-id');
+        inactive.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+        inactive.load();
+        inactivePreloadedId = next.id;
+      }
+      // inactive를 active로 스왑 후 재생
+      if (monitorAudios && monitorAudios.length >= 2) {
+        activeMonitorIndex = 1 - activeMonitorIndex;
+      }
+      var newActive = getActiveMonitorAudio();
+      if (newActive) {
+        newActive.play().catch(function() {
+          var hint = document.getElementById('monitorPlayHint');
+          if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+        });
+      }
+    } catch (_) {}
+  }
 
   function formatTime(sec) {
     if (isNaN(sec) || !isFinite(sec) || sec < 0) return '0:00';
@@ -2183,6 +2229,7 @@
         monEl.addEventListener('playing', onMonitorPlaying);
         monEl.addEventListener('timeupdate', updateMonitorProgress);
         monEl.addEventListener('timeupdate', updateSyncedLyric);
+        monEl.addEventListener('timeupdate', autoStartNextBeforeEnded);
         monEl.addEventListener('loadedmetadata', updateMonitorProgress);
         monEl.addEventListener('durationchange', updateMonitorProgress);
         monEl.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
@@ -2194,6 +2241,7 @@
         monAudio.addEventListener('playing', onMonitorPlaying);
         monAudio.addEventListener('timeupdate', updateMonitorProgress);
         monAudio.addEventListener('timeupdate', updateSyncedLyric);
+        monAudio.addEventListener('timeupdate', autoStartNextBeforeEnded);
         monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
         monAudio.addEventListener('durationchange', updateMonitorProgress);
         monAudio.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
