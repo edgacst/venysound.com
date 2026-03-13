@@ -157,3 +157,11 @@
 }
 
 /* .music-grid: 카드 리스트 공통 클래스 (레이아웃은 Tailwind 반응형에 맡김) */
+
+/* 모바일 가로에서 PC처럼 보이도록: 폭이 충분히 넓은 휴대폰 가로를 PC 그리드처럼 취급 */
+@media (orientation: landscape) and (min-width: 800px) and (max-width: 1023px) {
+  .music-grid {
+    /* 원래 lg(>=1024px)에서 사용하는 4열 그리드를 강제로 적용 */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
