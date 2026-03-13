@@ -133,8 +133,9 @@
   display: none;
 }
 
-/* 모바일(폭 1024px 이하 또는 낮은 세로 높이)에서는 컨테이너/본문 폭을 화면 가로로 확장 */
-@media (max-width: 1024px), (orientation: landscape) and (max-height: 600px) {
+/* 모바일(폭 1024px 이하) 세로 모드에서는 컨테이너/본문 폭을 화면 가로로 확장
+   가로 모드에서는 PC처럼 중앙 정렬(max-width) 유지 */
+@media (max-width: 1024px) and (orientation: portrait) {
   .container,
   .max-w-2xl,
   .max-w-3xl,
@@ -158,10 +159,12 @@
 
 /* .music-grid: 카드 리스트 공통 클래스 (레이아웃은 Tailwind 반응형에 맡김) */
 
-/* 모바일 가로에서 PC처럼 보이도록: 폭이 충분히 넓은 휴대폰 가로를 PC 그리드처럼 취급 */
-@media (orientation: landscape) and (min-width: 800px) and (max-width: 1023px) {
+/* 모바일 가로에서 PC처럼 보이도록: 폭이 어느 정도만 넓어도 가로 레이아웃을 강하게 적용
+   - orientation: landscape  => 가로 모드일 때만
+   - min-width: 600px        => 대부분의 휴대폰 가로 해상도 포함 */
+@media (orientation: landscape) and (min-width: 600px) {
   .music-grid {
-    /* 원래 lg(>=1024px)에서 사용하는 4열 그리드를 강제로 적용 */
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    /* Tailwind grid-cols-2/3/4/5 보다 우선되도록 !important 사용 */
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
 }
