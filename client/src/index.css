@@ -156,9 +156,4 @@
   }
 }
 
-/* 휴대폰 가로(폭 1024px 이하)에서는 음원 카드 그리드를 5열로 고정해서 화면을 더 채우기 */
-@media (orientation: landscape) and (max-width: 1024px) {
-  .music-grid {
-    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-  }
-}
+/* .music-grid: 카드 리스트 공통 클래스 (레이아웃은 Tailwind 반응형에 맡김) */
