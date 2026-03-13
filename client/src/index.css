@@ -154,4 +154,8 @@
   .hero-section .hero-inner {
     max-width: 100% !important;
   }
+  /* 가로 모드일 때 음원 카드 그리드를 5열로 늘려서 화면을 더 채우기 */
+  .music-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }

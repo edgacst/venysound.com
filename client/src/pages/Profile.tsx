@@ -189,7 +189,7 @@ function PlaylistSection({ profilePlaylists, isOwnProfile, userId }: { profilePl
             <p>{t('profile.emptyPlaylist', '이 플레이리스트에 곡이 없습니다')}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
             {playlistDetail.musics.map((m: any) => (
               <div key={m.id} className="relative group transform scale-90 md:scale-90 origin-top-left">
                 <MusicCard music={m} />

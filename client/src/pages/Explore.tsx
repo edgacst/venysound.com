@@ -189,7 +189,7 @@ export default function Explore() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {musicList?.map((music) => (
             <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
               <MusicCard music={music} />

@@ -205,7 +205,7 @@ export default function Home() {
             {t('home.weeklyArtistTracks', '이 아티스트의 인기 트랙')}
           </h3>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {data.tracks.slice(0, 8).map((track) => (
             <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
               <MusicCard music={track} />
@@ -472,7 +472,7 @@ export default function Home() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true }}
-            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+            className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
           >
             {weeklyTop.slice(0, 10).map((music) => (
               <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
@@ -503,7 +503,7 @@ export default function Home() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true }}
-            className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+            className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
           >
             {musicList?.slice(0, 10).map((music) => (
               <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
