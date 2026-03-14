@@ -155,6 +155,8 @@
   "explore": {
     "title": "음원 목록",
     "totalCount": "총 {{count}}곡",
+    "recommendedForYou": "이런 곡은 어때요",
+    "tags": "태그",
     "themedPlaylists": "테마 플레이리스트",
     "searchPlaceholder": "듣고 싶은 음악이나 아티스트 검색...",
     "playAll": "음원 전체재생",

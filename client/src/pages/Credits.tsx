@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,13 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
+import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
 const CREDIT_PACKAGES = [
   { amount: 1000, label: "1,000" },
@@ -41,6 +42,7 @@ export default function Credits() {
     orderId: string;
     message: string;
   } | null>(null);
+  const [tossLoading, setTossLoading] = useState(false);
 
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
@@ -56,6 +58,50 @@ export default function Credits() {
     queryKey: ["/api/subscription/bank-info"],
     enabled: !!user || bankModalOpen,
   });
+
+  const { data: tossClientKey } = useQuery<{ clientKey: string | null }>({
+    queryKey: ["/api/toss/client-key"],
+  });
+
+  const searchString = useSearch();
+  const isTossAvailable = !!tossClientKey?.clientKey;
+
+  // Handle Toss redirect: successUrl returns with ?paymentKey=...&orderId=...
+  useEffect(() => {
+    if (!user || !searchString) return;
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    const paymentKey = params.get("paymentKey");
+    const orderId = params.get("orderId");
+    if (!paymentKey || !orderId) return;
+    const stored = sessionStorage.getItem("credit_charge");
+    sessionStorage.removeItem("credit_charge");
+    if (!stored) return;
+    try {
+      const { amount } = JSON.parse(stored) as { amount: number };
+      if (!amount) return;
+      fetch("/api/credits/charge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, paymentKey, orderId }),
+        credentials: "include",
+      })
+        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+        .then(({ ok, data }) => {
+          if (ok) {
+            queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
+            toast({ title: t("credits.chargeComplete", "충전 완료"), description: t("credits.chargeCompleteDesc", "크레딧이 충전되었습니다. 현재 잔액: ") + (data.credits ?? 0).toLocaleString() });
+          } else {
+            toast({ title: t("credits.chargeFailed", "충전 실패"), description: data?.message ?? "결제 확인에 실패했습니다", variant: "destructive" });
+          }
+        })
+        .catch(() => toast({ title: t("credits.chargeFailed", "충전 실패"), variant: "destructive" }));
+      window.history.replaceState(null, "", "/credits");
+    } catch {
+      /* ignore */
+    }
+  }, [user, searchString, queryClient, toast, t]);
 
   const requestBankMutation = useMutation({
     mutationFn: async (totalPayment: number) => {
@@ -125,6 +171,33 @@ export default function Credits() {
       case "tip_received": return <Gift size={14} className="text-green-400" />;
       case "purchase": return <Download size={14} className="text-blue-400" />;
       default: return <Coins size={14} />;
+    }
+  };
+
+  const handleTossPayment = async () => {
+    if (!selectedPackage || !user || !tossClientKey?.clientKey) return;
+    const amount = totalWithVat(selectedPackage);
+    const orderId = `CREDIT_${String(user.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)}_${Date.now()}`;
+    sessionStorage.setItem("credit_charge", JSON.stringify({ amount }));
+    setTossLoading(true);
+    try {
+      const tossPayments = await loadTossPayments(tossClientKey.clientKey);
+      const baseUrl = window.location.origin;
+      await tossPayments.requestPayment("카드", {
+        amount,
+        orderId,
+        orderName: t("credits.orderName", "크레딧 충전"),
+        successUrl: `${baseUrl}/credits?payment=success`,
+        failUrl: `${baseUrl}/credits?payment=fail`,
+      });
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "message" in err ? String((err as { message: string }).message) : "";
+      if (msg && !msg.includes("popup") && !msg.includes("cancel")) {
+        toast({ title: t("credits.chargeFailed", "충전 실패"), description: msg, variant: "destructive" });
+      }
+      sessionStorage.removeItem("credit_charge");
+    } finally {
+      setTossLoading(false);
     }
   };
 

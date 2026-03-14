@@ -361,6 +361,49 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.get("/api/music/tags", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        WITH expanded AS (
+          SELECT trim(unnest(string_to_array(music.tags, ','))) AS tag
+          FROM music
+          WHERE music.tags IS NOT NULL AND trim(music.tags) != ''
+        )
+        SELECT tag, count(*)::int AS cnt
+        FROM expanded
+        WHERE tag != ''
+        GROUP BY tag
+        ORDER BY cnt DESC
+        LIMIT 30
+      `);
+      const tags = (result.rows as { tag: string; cnt: number }[]).map((r) => r.tag);
+      res.json(tags);
+    } catch (e) {
+      console.error("[music/tags]", e);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/music/genres", async (_req, res) => {
+    try {
+      const [distinctMusic, curatedList] = await Promise.all([
+        db.execute(sql`SELECT DISTINCT genre FROM music WHERE genre IS NOT NULL AND trim(genre) != '' ORDER BY genre`),
+        storage.getCuratedPlaylists(),
+      ]);
+      const fromMusic = (distinctMusic.rows as { genre: string }[]).map((r) => r.genre.trim());
+      const fromCurated: string[] = [];
+      for (const pl of curatedList) {
+        if (pl.genreMain && pl.genreMain.trim()) fromCurated.push(pl.genreMain.trim());
+        if (pl.genreSub && pl.genreSub.trim()) fromCurated.push(pl.genreSub.trim());
+      }
+      const combined = Array.from(new Set([...fromMusic, ...fromCurated])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+      res.json(combined);
+    } catch (e) {
+      console.error("[music/genres]", e);
+      res.json([]);
+    }
+  });
+
   app.get("/api/music/my-likes", isAuthenticated, async (req, res) => {
     // @ts-ignore
     const userId = req.user.claims.sub;

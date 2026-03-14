@@ -4,7 +4,7 @@ import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, ChevronLeft, ChevronRight, ListMusic } from "lucide-react";
+import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Tag } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -25,22 +25,26 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const ITEMS_PER_PAGE = 30;
 
+const FALLBACK_GENRES = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "힐링", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
+
 export default function Explore() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | undefined>(undefined);
+  const [selectedTag, setSelectedTag] = useState<string | undefined>(undefined);
   const [currentPage, setCurrentPage] = useState(1);
   
   const debouncedSearch = useDebounce(searchTerm, 500);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedGenre]);
+  }, [debouncedSearch, selectedGenre, selectedTag]);
 
   const { data: musicResult, isLoading } = useMusicList({ 
     search: debouncedSearch,
     genre: selectedGenre,
+    tag: selectedTag,
     page: currentPage,
     limit: ITEMS_PER_PAGE,
   });
@@ -60,7 +64,34 @@ export default function Explore() {
     },
   });
 
-  const genres = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "힐링", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
+  const { data: popularTracks } = useQuery<any[]>({
+    queryKey: ["/api/music/popular"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/popular");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: genreList } = useQuery<string[]>({
+    queryKey: ["/api/music/genres"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/genres");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: popularTags } = useQuery<string[]>({
+    queryKey: ["/api/music/tags"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/tags");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const genres = genreList && genreList.length > 0 ? ["전체", ...genreList] : FALLBACK_GENRES;
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -130,6 +161,22 @@ export default function Explore() {
           </div>
         </div>
 
+        {Array.isArray(popularTracks) && popularTracks.length > 0 && (
+          <section className="mb-8">
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <TrendingUp size={20} className="text-primary" />
+              {t('explore.recommendedForYou', '이런 곡은 어때요')}
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {popularTracks.map((track) => (
+                <div key={track.id} className="w-[140px] sm:w-[160px] flex-shrink-0">
+                  <MusicCard music={track} />
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         {Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
           <section className="mb-8">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
@@ -171,7 +218,7 @@ export default function Explore() {
           </section>
         )}
 
-        <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide">
+        <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide">
           {genres.map((genre) => (
             <button
               key={genre}
@@ -188,6 +235,30 @@ export default function Explore() {
             </button>
           ))}
         </div>
+
+        {Array.isArray(popularTags) && popularTags.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide items-center flex-wrap">
+            <span className="text-sm text-muted-foreground flex items-center gap-1 shrink-0">
+              <Tag size={14} />
+              {t('explore.tags', '태그')}
+            </span>
+            {popularTags.map((tag) => (
+              <button
+                key={tag}
+                onClick={() => setSelectedTag(selectedTag === tag ? undefined : tag)}
+                data-testid={`button-tag-${tag}`}
+                className={`
+                  px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors
+                  ${selectedTag === tag
+                    ? "bg-primary text-white"
+                    : "bg-secondary text-muted-foreground hover:bg-secondary/80"}
+                `}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {musicList?.map((music) => (

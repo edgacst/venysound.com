@@ -13,6 +13,7 @@ import { authStorage } from "./storage";
 import { db } from "../db";
 import { users } from "../../shared/models/auth";
 import { eq, or } from "drizzle-orm";
+import { sendWelcomeEmail } from "../email";
 
 function buildUserSession(
   id: string,
@@ -88,7 +89,13 @@ export async function setupAuth(app: Express) {
             const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
             const profileImageUrl = profile.photos?.[0]?.value || "";
             const id = `google_${profile.id}`;
+            const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "google" });
+            if (!existing && user.email) {
+              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+                console.error("[auth] welcome email failed:", e)
+              );
+            }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -115,7 +122,13 @@ export async function setupAuth(app: Express) {
             const firstName = profile.name || profile.nickname || "";
             const profileImageUrl = profile.profileImage || "";
             const id = `naver_${profile.id}`;
+            const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "naver" });
+            if (!existing && user.email) {
+              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+                console.error("[auth] welcome email failed:", e)
+              );
+            }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -144,7 +157,13 @@ export async function setupAuth(app: Express) {
             const firstName = kakaoProfile.nickname || profile.displayName || "";
             const profileImageUrl = kakaoProfile.profile_image_url || "";
             const id = `kakao_${profile.id}`;
+            const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "kakao" });
+            if (!existing && user.email) {
+              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+                console.error("[auth] welcome email failed:", e)
+              );
+            }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
@@ -173,7 +192,13 @@ export async function setupAuth(app: Express) {
             const lastName = profile.name?.familyName || profile.displayName?.split(" ").slice(1).join(" ") || "";
             const profileImageUrl = profile.photos?.[0]?.value || "";
             const id = `facebook_${profile.id}`;
+            const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "facebook" });
+            if (!existing && user.email) {
+              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+                console.error("[auth] welcome email failed:", e)
+              );
+            }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken));
           } catch (error) {
             done(error as Error);
@@ -244,6 +269,12 @@ export async function setupAuth(app: Express) {
           registerSource: "email",
         })
         .returning();
+      if (user.email) {
+        const locale = typeof req.body?.locale === "string" ? req.body.locale : undefined;
+        sendWelcomeEmail(user.email, { username: user.username, locale }).catch((e) =>
+          console.error("[auth] welcome email failed:", e)
+        );
+      }
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", "", "local");
       req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "가입 후 로그인 실패" });

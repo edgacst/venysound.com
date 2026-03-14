@@ -155,6 +155,8 @@
   "explore": {
     "title": "Music Library",
     "totalCount": "{{count}} tracks total",
+    "recommendedForYou": "Recommended for you",
+    "tags": "Tags",
     "themedPlaylists": "Theme Playlists",
     "searchPlaceholder": "Search for music or artists...",
     "playAll": "Play All",
