@@ -59,6 +59,14 @@
   }
 }
 
+/* 모바일만: 가로 넘침 방지 (데스크톱 레이아웃에는 영향 없음) */
+@media (max-width: 767px) {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
@@ -133,19 +141,8 @@
   display: none;
 }
 
-/* 모바일(폭 1024px 이하) 세로 모드에서는 컨테이너/본문 폭을 화면 가로로 확장
-   가로 모드에서는 PC처럼 중앙 정렬(max-width) 유지 */
-@media (max-width: 1024px) and (orientation: portrait) {
-  .container,
-  .max-w-2xl,
-  .max-w-3xl,
-  .max-w-4xl,
-  .max-w-5xl,
-  .max-w-6xl,
-  .max-w-7xl {
-    max-width: 100% !important;
-  }
-}
+/* 제거: max-width: 100% !important가 Tailwind 반응형(sm, md, lg)을 무력화해 가로 모드 반응형이 깨짐.
+   대신 각 페이지의 Tailwind 클래스(container, px-4, grid-cols-2 md:grid-cols-4 등)에 맡김. */
 
 /* 휴대폰 가로(높이 낮은)에서는 홈 히어로 영역만 더 넓게 */
 @media (orientation: landscape) and (max-height: 600px) {
@@ -157,14 +154,12 @@
   }
 }
 
-/* .music-grid: 카드 리스트 공통 클래스 (레이아웃은 Tailwind 반응형에 맡김) */
-
-/* 모바일 가로에서 PC처럼 보이도록: 폭이 어느 정도만 넓어도 가로 레이아웃을 강하게 적용
-   - orientation: landscape  => 가로 모드일 때만
-   - min-width: 600px        => 대부분의 휴대폰 가로 해상도 포함 */
+/* .music-grid: 모바일 가로(landscape)에서도 반응형 유지.
+   고정 6열 대신 auto-fill + minmax로 작은 폰 가로에서는 열 수가 줄어들게 함. */
 @media (orientation: landscape) and (min-width: 600px) {
   .music-grid {
-    /* 모바일 가로에서 한 줄에 6개 카드 */
-    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    display: grid;
+    gap: 1rem;
   }
 }
