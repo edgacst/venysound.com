@@ -654,6 +654,7 @@
   var lastAdvancedMusicId = null;
   var lastAdvancedTime = 0;
   var weJustSentAdvance = false;
+  var isAdvancing = false;
   var lastNowTitle = '';
   var lastNowArtist = '';
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
@@ -2275,51 +2276,71 @@
       if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
     });
     function onMonitorEnded(e) {
+      if (isAdvancing) return;
       var el = e && e.target ? e.target : null;
       if (!el) return;
       var endedTrackId = el.getAttribute('data-current-id');
       if (endedTrackId && endedTrackId === lastEndedTrackIdForAdvance && (Date.now() - lastEndedTrackTime) < 3000) return;
       lastEndedTrackIdForAdvance = endedTrackId;
       lastEndedTrackTime = Date.now();
-      try { el.pause(); } catch (err) {}
-      el.currentTime = 0;
-      el.src = '';
-      el.load();
-      if (!channel || !channel.slug) return;
-      var slug = String(channel.slug).trim().toLowerCase();
-      var currentTrackIdNum = endedTrackId ? parseInt(endedTrackId, 10) : null;
-      if (currentTrackIdNum != null && isNaN(currentTrackIdNum)) currentTrackIdNum = null;
-      weJustSentAdvance = true;
-      var body = { advanceToNextTrack: true };
-      if (currentTrackIdNum != null) body.currentTrackId = currentTrackIdNum;
-      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(data) {
-          weJustSentAdvance = false;
-          if (data) {
-            channel = data;
-            if (channel.nowPlayingMusicId != null) {
-              lastAdvancedMusicId = channel.nowPlayingMusicId;
-              lastAdvancedTime = Date.now();
-              loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
-            } else {
+      isAdvancing = true;
+      try {
+        try { el.pause(); } catch (err) {}
+        el.currentTime = 0;
+        el.src = '';
+        el.load();
+        if (!channel || !channel.slug) { isAdvancing = false; return; }
+        var slug = String(channel.slug).trim().toLowerCase();
+        var currentTrackIdNum = endedTrackId ? parseInt(endedTrackId, 10) : null;
+        if (currentTrackIdNum != null && isNaN(currentTrackIdNum)) currentTrackIdNum = null;
+        weJustSentAdvance = true;
+        var body = { advanceToNextTrack: true };
+        if (currentTrackIdNum != null) body.currentTrackId = currentTrackIdNum;
+        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
+          .then(function(r) {
+            if (r.status === 409) return r.json().then(function(data) {
+              if (data && data._alreadyAdvanced) {
+                channel = data;
+                if (channel.nowPlayingMusicId != null) {
+                  lastAdvancedMusicId = channel.nowPlayingMusicId;
+                  lastAdvancedTime = Date.now();
+                  loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+                } else { fetchChannelAndUpdate(); }
+              }
+              return data;
+            });
+            return r.ok ? r.json() : null;
+          })
+          .then(function(data) {
+            weJustSentAdvance = false;
+            if (data && !data._alreadyAdvanced) {
+              channel = data;
+              if (channel.nowPlayingMusicId != null) {
+                lastAdvancedMusicId = channel.nowPlayingMusicId;
+                lastAdvancedTime = Date.now();
+                loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+              } else {
+                fetchChannelAndUpdate();
+              }
+            } else if (!data) {
               fetchChannelAndUpdate();
+              setTimeout(function() {
+                if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+              }, 500);
             }
-          } else {
+          })
+          .catch(function() {
+            weJustSentAdvance = false;
             fetchChannelAndUpdate();
             setTimeout(function() {
               if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
             }, 500);
-          }
-        })
-        .catch(function() {
-          weJustSentAdvance = false;
-          fetchChannelAndUpdate();
-          setTimeout(function() {
-            if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
-          }, 500);
-        });
-      setTimeout(function() { weJustSentAdvance = false; }, 5000);
+          })
+          .finally(function() { isAdvancing = false; });
+        setTimeout(function() { weJustSentAdvance = false; }, 5000);
+      } catch (err) {
+        isAdvancing = false;
+      }
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;

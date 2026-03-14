@@ -185,7 +185,9 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
     let cancelled = false;
     const rafId = requestAnimationFrame(() => {
       if (cancelled) return;
+      const active = getActiveAudio();
       const inactive = getInactiveAudio();
+      if ((active?.src === streamUrl || inactive?.src === streamUrl)) return;
       if (!inactive || typeof inactive.pause !== "function") return;
       inactive.pause();
       inactive.currentTime = 0;

@@ -3001,7 +3001,7 @@ export async function registerRoutes(
             const serverTrackId = ch.nowPlayingMusicId ?? null;
             if (serverTrackId !== expectedTrackId) {
               const updated = await storage.getRadioChannelBySlug(slug);
-              return res.json(updated);
+              return res.status(409).json({ ...updated, _alreadyAdvanced: true });
             }
           }
           let nextId: number;
