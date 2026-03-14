@@ -136,9 +136,15 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   // 전역 라디오 오디오(활성 채널) → Analyser → 파형 버퍼 (리스너 캔버스에서 사용)
   const activeAudio = activeIndex === 0 ? audioARef.current : audioBRef.current;
   useEffect(() => {
-    if (!streamUrl || !waveformBufferRef || !activeAudio) return;
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const source = ctx.createMediaElementSource(activeAudio);
+    if (!streamUrl || !waveformBufferRef || !activeAudio || typeof (activeAudio as HTMLMediaElement).play !== "function") return;
+    let ctx: AudioContext;
+    let source: MediaElementAudioSourceNode;
+    try {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      source = ctx.createMediaElementSource(activeAudio as HTMLMediaElement);
+    } catch {
+      return;
+    }
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.8;
@@ -165,65 +171,71 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
     };
   }, [streamUrl, waveformBufferRef, activeIndex, activeAudio]);
 
-  // streamUrl 변경 시: 비활성(다음) 플레이어에 로드, 재생/크로스페이드는 onCanPlayThrough에서
+  // streamUrl 변경 시: 비활성(다음) 플레이어에 로드, 재생/크로스페이드는 onCanPlayThrough에서 (다음 틱에 실행해 ref 보장)
   useEffect(() => {
     if (!streamUrl) return;
-    const inactive = getInactiveAudio();
-    if (!inactive) return;
-    inactive.pause();
-    inactive.currentTime = 0;
-    inactive.removeAttribute("src");
-    inactive.load();
-    pendingSeekRef.current = useRadioPlayerStore.getState().initialSeekSeconds ?? null;
-    inactive.src = streamUrl;
-    const onReady = () => {
-      inactive.oncanplaythrough = null;
-      const seek = pendingSeekRef.current;
-      if (seek != null && seek > 0) {
-        inactive.currentTime = Math.max(0, seek);
-        pendingSeekRef.current = null;
-        useRadioPlayerStore.setState({ initialSeekSeconds: null });
-      }
-      const active = getActiveAudio();
-      const userStoppedNow = useRadioPlayerStore.getState().userStopped;
-      if (userStoppedNow) return;
-      // 첫 트랙이면 바로 재생, 아니면 크로스페이드
-      if (!active?.src || active.paused) {
-        activeIndexRef.current = 1 - activeIndexRef.current;
-        setActiveIndex(activeIndexRef.current);
-        inactive.volume = 1;
-        inactive.play().catch(() => {});
-        return;
-      }
-      inactive.volume = 0;
-      inactive.play().catch(() => {});
-      const start = performance.now();
-      const run = () => {
-        const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
-        const ease = t * (2 - t);
-        if (active) {
-          active.volume = 1 - ease;
+    let cancelled = false;
+    const rafId = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const inactive = getInactiveAudio();
+      if (!inactive || typeof inactive.pause !== "function") return;
+      inactive.pause();
+      inactive.currentTime = 0;
+      inactive.removeAttribute("src");
+      inactive.load();
+      pendingSeekRef.current = useRadioPlayerStore.getState().initialSeekSeconds ?? null;
+      inactive.src = streamUrl;
+      const onReady = () => {
+        inactive.oncanplaythrough = null;
+        const seek = pendingSeekRef.current;
+        if (seek != null && seek > 0) {
+          inactive.currentTime = Math.max(0, seek);
+          pendingSeekRef.current = null;
+          useRadioPlayerStore.setState({ initialSeekSeconds: null });
         }
-        inactive.volume = ease;
-        if (t < 1) {
-          crossfadeRafRef.current = requestAnimationFrame(run);
-        } else {
-          crossfadeRafRef.current = null;
-          if (active) {
-            active.pause();
-            active.currentTime = 0;
-            active.removeAttribute("src");
-            active.load();
-          }
+        const active = getActiveAudio();
+        const userStoppedNow = useRadioPlayerStore.getState().userStopped;
+        if (userStoppedNow) return;
+        // 첫 트랙이면 바로 재생, 아니면 크로스페이드
+        if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
+          inactive.volume = 1;
+          inactive.play().catch(() => {});
+          return;
         }
+        inactive.volume = 0;
+        inactive.play().catch(() => {});
+        const start = performance.now();
+        const run = () => {
+          const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
+          const ease = t * (2 - t);
+          if (active) {
+            active.volume = 1 - ease;
+          }
+          inactive.volume = ease;
+          if (t < 1) {
+            crossfadeRafRef.current = requestAnimationFrame(run);
+          } else {
+            crossfadeRafRef.current = null;
+            if (active) {
+              active.pause();
+              active.currentTime = 0;
+              active.removeAttribute("src");
+              active.load();
+            }
+            activeIndexRef.current = 1 - activeIndexRef.current;
+            setActiveIndex(activeIndexRef.current);
+          }
+        };
+        crossfadeRafRef.current = requestAnimationFrame(run);
       };
-      crossfadeRafRef.current = requestAnimationFrame(run);
-    };
-    inactive.oncanplaythrough = onReady;
-    inactive.load();
+      inactive.oncanplaythrough = onReady;
+      inactive.load();
+    });
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
       if (crossfadeRafRef.current != null) {
         cancelAnimationFrame(crossfadeRafRef.current);
         crossfadeRafRef.current = null;
