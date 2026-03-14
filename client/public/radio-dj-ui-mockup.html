@@ -2269,6 +2269,9 @@
     var btnMonitorPlay = document.getElementById('btnMonitorPlay');
     if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
       markUserGestureForAudio();
+      if (waveformCtx && waveformCtx.state === 'suspended') {
+        waveformCtx.resume().then(function() {}).catch(function() {});
+      }
       var audio = getActiveMonitorAudio();
       if (!audio || !audio.src) return;
       audio.play().catch(function() {});

@@ -81,7 +81,11 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    playNowRef.current = () => getActiveAudio()?.play().catch(() => {});
+    playNowRef.current = () => {
+      const ctx = analyserRef.current?.ctx;
+      if (ctx && ctx.state === "suspended") ctx.resume().then(() => {}).catch(() => {});
+      getActiveAudio()?.play().catch(() => {});
+    };
     setPlayNowRef(playNowRef);
     return () => setPlayNowRef(null);
   }, [getActiveAudio, setPlayNowRef]);
@@ -206,6 +210,18 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
         const active = getActiveAudio();
         const userStoppedNow = useRadioPlayerStore.getState().userStopped;
         if (userStoppedNow) return;
+        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        // 모바일: 자동 재생 금지. 활성만 바꿔두고 사용자가 재생 버튼 탭 시에만 play()
+        if (isMobile) {
+          const oldActive = getActiveAudio();
+          activeIndexRef.current = 1 - activeIndexRef.current;
+          setActiveIndex(activeIndexRef.current);
+          if (oldActive) {
+            oldActive.pause();
+            oldActive.currentTime = 0;
+          }
+          return;
+        }
         // 첫 트랙이면 바로 재생, 아니면 크로스페이드
         if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;

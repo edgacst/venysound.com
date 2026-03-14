@@ -3149,65 +3149,8 @@ export async function registerRoutes(
     }
   });
 
-  // DJ 송출 브라우저를 닫아도 리스너에게 다음 곡이 이어지도록 서버에서 자동 진행
-  const RADIO_AUTO_ADVANCE_INTERVAL_MS = 2000;
-  const RADIO_AUTO_ADVANCE_BUFFER_SEC = 0.5; // 저장된 곡 길이보다 0.5초 뒤에 다음 곡으로 (4초면 공백이 길어짐)
-  setInterval(async () => {
-    try {
-      const list = await storage.listLiveRadioChannelsForAutoAdvance();
-      for (const ch of list) {
-        const started = ch.nowPlayingStartedAt.getTime();
-        const elapsedSec = (Date.now() - started) / 1000;
-        let dur: number;
-        let nextId: number;
-        let nextIndex: number;
-        if (ch.nowPlayingObjectPath != null && ch.playlistSnapshot && ch.nowPlayingTempDurationSeconds != null && ch.nowPlayingTempNextSnapshotIndex != null) {
-          dur = ch.nowPlayingTempDurationSeconds;
-          nextIndex = ch.nowPlayingTempNextSnapshotIndex;
-          nextId = ch.playlistSnapshot.musicIds[nextIndex];
-          if (elapsedSec >= Math.max(1, dur) + RADIO_AUTO_ADVANCE_BUFFER_SEC) {
-            await storage.updateRadioChannel(ch.id, {
-              nowPlayingMusicId: nextId,
-              nowPlayingStartedAt: new Date(),
-              nowPlayingObjectPath: null,
-              nowPlayingTempDurationSeconds: null,
-              nowPlayingTempNextSnapshotIndex: null,
-              playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
-            });
-            broadcastToRadioChannel(ch.slug, {
-              type: "radio_now_playing",
-              slug: ch.slug,
-              musicId: nextId,
-              nowPlayingObjectPath: null,
-              startedAt: new Date().toISOString(),
-              elapsedSeconds: 0,
-            });
-          }
-        } else if (ch.nowPlayingMusicId != null && ch.playlistSnapshot) {
-          dur = ch.playlistSnapshot.durationsSeconds[ch.playlistSnapshot.currentIndex] ?? 240;
-          if (elapsedSec >= Math.max(1, dur) + RADIO_AUTO_ADVANCE_BUFFER_SEC) {
-            nextIndex = (ch.playlistSnapshot.currentIndex + 1) % ch.playlistSnapshot.musicIds.length;
-            nextId = ch.playlistSnapshot.musicIds[nextIndex];
-            await storage.updateRadioChannel(ch.id, {
-              nowPlayingMusicId: nextId,
-              nowPlayingStartedAt: new Date(),
-              playlistSnapshot: { musicIds: ch.playlistSnapshot.musicIds, durationsSeconds: ch.playlistSnapshot.durationsSeconds, currentIndex: nextIndex },
-            });
-            broadcastToRadioChannel(ch.slug, {
-              type: "radio_now_playing",
-              slug: ch.slug,
-              musicId: nextId,
-              nowPlayingObjectPath: null,
-              startedAt: new Date().toISOString(),
-              elapsedSeconds: 0,
-            });
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[radio auto-advance]", e);
-    }
-  }, RADIO_AUTO_ADVANCE_INTERVAL_MS);
+  // 옵션 A: 다음 곡 진행은 DJ의 advanceToNextTrack PATCH만 사용. 서버 setInterval 자동 진행 비활성화.
+  // (DJ 송출창을 닫으면 해당 채널은 다음 곡으로 넘어가지 않음)
 
   // 라디오 채팅 보관 기간: 1일 (오래된 채팅 자동 삭제)
   const RADIO_CHAT_TTL_DAYS = 1;
