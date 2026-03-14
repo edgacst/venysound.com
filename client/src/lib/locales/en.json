@@ -1000,7 +1000,10 @@
     "noTrackStatsYet": "No play or tip data yet",
     "trackTitle": "Track",
     "duration": "Duration",
-    "tips": "Tips"
+    "tips": "Tips",
+    "artist": "Artist",
+    "playsShort": "Plays",
+    "timeShort": "Time"
   },
   "profile": {
     "user": "User",

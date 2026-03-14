@@ -1020,7 +1020,10 @@
     "noTrackStatsYet": "아직 재생·후원 데이터가 없습니다",
     "trackTitle": "곡명",
     "duration": "재생 시간",
-    "tips": "후원"
+    "tips": "후원",
+    "artist": "아티스트",
+    "playsShort": "재생",
+    "timeShort": "시간"
   },
   "profile": {
     "user": "사용자",

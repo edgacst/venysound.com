@@ -16,8 +16,8 @@ self.addEventListener("push", (event) => {
   } catch (_) {}
   const opts = {
     body: data.body,
-    icon: "/favicon.ico",
-    badge: "/favicon.ico",
+    icon: "/favicon.png",
+    badge: "/favicon.png",
     data: { url: data.url || "/" },
   };
   event.waitUntil(

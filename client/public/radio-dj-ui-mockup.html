@@ -2012,7 +2012,7 @@
   function updateRequestBadge() {
     var badge = document.getElementById('requestBadge');
     if (!badge) return;
-    var count = songRequests.length;
+    var count = songRequests.filter(function(r) { return (r.status || 'pending') === 'pending'; }).length;
     if (count <= 0) {
       badge.style.display = 'none';
     } else {
@@ -2042,6 +2042,8 @@
       }).join('');
     ul.querySelectorAll('.btn-add-request').forEach(function(btn) {
       btn.addEventListener('click', function() {
+        var li = btn.closest('li');
+        var requestId = li ? parseInt(li.getAttribute('data-id'), 10) : NaN;
         var id = parseInt(btn.getAttribute('data-music-id'), 10);
         var title = btn.getAttribute('data-title') || '';
         var artist = btn.getAttribute('data-artist') || '';
@@ -2049,6 +2051,12 @@
         if (queue.some(function(q) { return q.id === id; })) return;
         queue.push({ id: id, title: title, artist: artist });
         renderQueue();
+        if (!Number.isNaN(requestId) && channel && channel.slug) {
+          var slug = String(channel.slug).trim().toLowerCase();
+          api('/api/radio/channels/' + encodeURIComponent(slug) + '/requests/' + requestId, { method: 'PATCH', body: { status: 'played' } }).then(function() {
+            loadRequests();
+          }).catch(function() {});
+        }
       });
     });
     }

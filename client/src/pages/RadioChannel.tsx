@@ -200,9 +200,14 @@ export default function RadioChannel() {
   const waveformBufferRef = useRadioWaveformRef();
 
   // 리스너: 전역 라디오 플레이어에 스트림 동기화 (다른 페이지로 나가도 재생 유지)
+  const prevStreamUrlRef = useRef<string | null>(null);
   useEffect(() => {
     if (!useGlobalRadio || !channel) return;
-    setRadioStream(slug, channel.name, audioStreamUrl, channel?.nowPlayingElapsedSeconds ?? undefined);
+    const streamChanged = prevStreamUrlRef.current !== audioStreamUrl;
+    prevStreamUrlRef.current = audioStreamUrl;
+    // 곡이 바뀐 경우에만 initialSeek 전달. 같은 곡인데 elapsed만 바뀐 경우 0으로 덮어쓰면 재생이 처음부터 다시 시작되는 현상 방지
+    const seekSec = streamChanged ? (channel?.nowPlayingElapsedSeconds ?? undefined) : undefined;
+    setRadioStream(slug, channel.name, audioStreamUrl, seekSec);
     radioRequestPlay(); // 전역 플레이어 재생 시작(채널 떠나도 바 표시·재생 유지)
   }, [useGlobalRadio, slug, channel?.name, channel?.nowPlayingElapsedSeconds, audioStreamUrl, setRadioStream, radioRequestPlay]);
 
@@ -468,7 +473,8 @@ export default function RadioChannel() {
           }
         );
         queryClient.invalidateQueries({ queryKey: ["/api/music"] });
-        refetchChannel();
+        // 즉시 refetch 시 서버 반영 전 응답으로 캐시가 덮어써져 같은 곡이 1초쯤 재생 후 처음부터 다시 로드되는 현상 방지
+        setTimeout(() => refetchChannel(), 1500);
         if (musicId === null && !(msg as any).nowPlayingObjectPath) {
           clearRadioPlayer();
           const audio = audioRef.current;

@@ -326,41 +326,50 @@ export default function Dashboard() {
                   <DollarSign size={18} className="text-green-500" />
                   {t('dashboard.trackRevenuePlays', '음원별 수익·재생')}
                 </h3>
-                {streamingStats?.tracks && streamingStats.tracks.length > 0 ? (
+                {streamingStats?.tracks || (Array.isArray(tipsReceived) && tipsReceived.length > 0) ? (
                   (() => {
                     const tipsByMusicId: Record<number, number> = {};
+                    let artistTipAmount = 0;
                     if (Array.isArray(tipsReceived)) {
                       for (const item of tipsReceived) {
                         const tip = item.tip ?? item;
                         const mid = tip.musicId ?? tip.music_id;
+                        const amt = Number(tip.amount ?? 0);
                         if (mid != null) {
-                          tipsByMusicId[mid] = (tipsByMusicId[mid] ?? 0) + Number(tip.amount ?? 0);
+                          tipsByMusicId[mid] = (tipsByMusicId[mid] ?? 0) + amt;
+                        } else {
+                          artistTipAmount += amt;
                         }
                       }
                     }
-                    const rows = streamingStats.tracks
+                    const trackRows = (streamingStats?.tracks ?? [])
                       .map((t) => ({ ...t, tipAmount: tipsByMusicId[t.musicId] ?? 0 }))
                       .filter((t) => t.playCount > 0 || t.tipAmount > 0)
                       .sort((a, b) => b.playCount - a.playCount)
                       .slice(0, 15);
+                    const artistRow = artistTipAmount > 0 ? [{ musicId: 0, title: t('dashboard.artist', '아티스트'), artist: '', totalSeconds: 0, playCount: 0, tipAmount: artistTipAmount }] : [];
+                    const rows = [...trackRows, ...artistRow];
                     return (
-                      <div className="space-y-2 max-h-80 overflow-y-auto">
-                        <div className="flex items-center justify-between gap-2 py-2 border-b border-border font-medium text-xs text-muted-foreground">
+                      <div className="space-y-1 max-h-80 overflow-y-auto">
+                        <div className="flex items-center justify-between gap-2 py-1.5 border-b border-border font-medium text-xs text-muted-foreground">
                           <div className="flex-1 min-w-0">{t('dashboard.trackTitle', '곡명')}</div>
-                          <span className="shrink-0 w-14 text-right">{t('dashboard.playCount', '재생 수')}</span>
-                          <span className="shrink-0 w-16 text-right">{t('dashboard.duration', '재생 시간')}</span>
-                          <span className="shrink-0 w-20 text-right">{t('dashboard.tips', '후원')}</span>
+                          <span className="shrink-0 w-12 text-right">{t('dashboard.playsShort', '재생')}</span>
+                          <span className="shrink-0 w-14 text-right">{t('dashboard.timeShort', '시간')}</span>
+                          <span className="shrink-0 w-16 text-right">{t('dashboard.tips', '후원')}</span>
                         </div>
                         {rows.map((track) => (
-                          <div key={track.musicId} className="flex items-center justify-between gap-2 py-2 border-b border-border/50 last:border-0 text-sm">
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium truncate">{track.title}</p>
-                              <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
+                          <div key={track.musicId} className="flex items-center justify-between gap-2 py-1.5 border-b border-border/50 last:border-0 text-xs">
+                            <div className="flex-1 min-w-0 truncate">
+                              {track.artist ? (
+                                <span className="truncate block" title={`${track.title} · ${track.artist}`}>{track.title} · {track.artist}</span>
+                              ) : (
+                                <span className="font-medium truncate block">{track.title}</span>
+                              )}
                             </div>
-                            <div className="flex items-center gap-4 shrink-0">
-                              <span className="text-muted-foreground tabular-nums">{Number(track.playCount).toLocaleString()}{t('dashboard.playUnit', '회')}</span>
-                              <span className="text-muted-foreground tabular-nums w-16 text-right">{formatDuration(Number(track.totalSeconds))}</span>
-                              <span className="font-medium text-yellow-500 tabular-nums w-20 text-right">
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-muted-foreground tabular-nums w-12 text-right">{Number(track.playCount).toLocaleString()}{t('dashboard.playUnit', '회')}</span>
+                              <span className="text-muted-foreground tabular-nums w-14 text-right">{formatDuration(Number(track.totalSeconds))}</span>
+                              <span className="font-medium text-yellow-500 tabular-nums w-16 text-right">
                                 {track.tipAmount > 0 ? `${Number(track.tipAmount).toLocaleString()}${t('dashboard.won', '원')}` : "-"}
                               </span>
                             </div>
