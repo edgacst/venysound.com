@@ -2974,7 +2974,7 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds } = req.body || {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
@@ -2992,6 +2992,41 @@ export async function registerRoutes(
         return res.status(403).json({ message: "방송 종료는 방장 또는 현재 송출 호스트만 가능합니다." });
       }
       if (canManage) {
+        // DJ 모니터 곡 끝 시 즉시 다음 곡으로 진행 (같은 곡 반복 방지)
+        const snap = (channel as any).playlistSnapshot as { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null;
+        if (bodyAdvanceToNextTrack && snap && Array.isArray(snap.musicIds) && snap.musicIds.length > 0) {
+          const ch = channel as any;
+          let nextId: number;
+          let nextIndex: number;
+          if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempNextSnapshotIndex != null) {
+            nextIndex = ch.nowPlayingTempNextSnapshotIndex;
+            nextId = snap.musicIds[nextIndex];
+          } else if (ch.nowPlayingMusicId != null) {
+            nextIndex = (snap.currentIndex + 1) % snap.musicIds.length;
+            nextId = snap.musicIds[nextIndex];
+          } else {
+            nextIndex = 0;
+            nextId = snap.musicIds[0];
+          }
+          await storage.updateRadioChannel(channel.id, {
+            nowPlayingMusicId: nextId,
+            nowPlayingStartedAt: new Date(),
+            nowPlayingObjectPath: null,
+            nowPlayingTempDurationSeconds: null,
+            nowPlayingTempNextSnapshotIndex: null,
+            playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
+          });
+          const updated = await storage.getRadioChannelBySlug(slug);
+          broadcastToRadioChannel(slug, {
+            type: "radio_now_playing",
+            slug,
+            musicId: nextId,
+            nowPlayingObjectPath: null,
+            startedAt: new Date().toISOString(),
+            elapsedSeconds: 0,
+          });
+          return res.json(updated);
+        }
         if (status !== undefined && ["draft", "live", "paused", "ended"].includes(String(status))) {
           updates.status = String(status);
           if (String(status) === "ended") {

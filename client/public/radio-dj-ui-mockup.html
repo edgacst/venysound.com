@@ -476,9 +476,9 @@
           <audio id="djMonitorAudio2" preload="auto" style="display: none;"></audio>
           <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
           <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
-            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm">▶ 모니터 재생</button>
+            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm" style="min-height: 44px; -webkit-tap-highlight-color: transparent;">▶ 모니터 재생</button>
             <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm">곡 정지</button>
-            <span id="monitorPlayHint" style="display: none; font-size: 0.75rem; color: #f59e0b; max-width: 280px;">곡이 바뀌었습니다. 소리를 들으려면 [모니터 재생]을 눌러주세요.</span>
+            <span id="monitorPlayHint" style="display: none; font-size: 0.75rem; color: #f59e0b; max-width: 320px;">소리를 들으려면 [모니터 재생] 버튼을 눌러주세요. (모바일에서는 필수)</span>
             <button type="button" id="btnShowGuide" class="btn btn-secondary btn-sm">방송송출 방법 및 방송약관</button>
           </div>
         </div>
@@ -635,6 +635,9 @@
         waveformCtx.resume().then(function() {}).catch(function() {});
       }
     } catch (e) {}
+  }
+  function isMobileOrNoGesture() {
+    return !hasUserGestureForAudio || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   }
   var monitorAudios = null;
   var activeMonitorIndex = 0;
@@ -1498,12 +1501,17 @@
     }
     var audioEl = getInactiveMonitorAudio();
     if (!audioEl) audioEl = getActiveMonitorAudio();
+    if (isMobileOrNoGesture()) { audioEl = getActiveMonitorAudio(); }
     if (audioEl) {
       audioEl.removeAttribute('data-local-id');
       audioEl.setAttribute('data-current-id', String(musicIdNum));
       audioEl.removeAttribute('data-channel-stream');
       audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
-      var isInactive = monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio() && getInactiveMonitorAudio() !== getActiveMonitorAudio();
+      var isInactive = !isMobileOrNoGesture() && monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio() && getInactiveMonitorAudio() !== getActiveMonitorAudio();
+      if (isMobileOrNoGesture()) {
+        var hint = document.getElementById('monitorPlayHint');
+        if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+      }
       audioEl.oncanplaythrough = function onReady() {
         audioEl.oncanplaythrough = null;
         if (isInactive) {
@@ -2254,23 +2262,38 @@
       if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
     });
     function onMonitorEnded(e) {
-      // 모니터 오디오가 끝났을 때: 버퍼 flush 후 다음 곡 로드 (이전 곡 끝 glitch 방지)
+      // 모니터 오디오가 끝났을 때: 버퍼 flush → 서버에 다음 곡으로 진행 요청 → 새 곡 로드 (같은 곡 반복 방지)
       var el = e && e.target ? e.target : null;
       if (!el) return;
       try { el.pause(); } catch (err) {}
       el.currentTime = 0;
       el.src = '';
       el.load();
-      setTimeout(function() {
-        try {
+      if (!channel || !channel.slug) return;
+      var slug = String(channel.slug).trim().toLowerCase();
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { advanceToNextTrack: true } })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (data) {
+            channel = data;
+            if (channel.nowPlayingMusicId != null) {
+              loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+            } else {
+              fetchChannelAndUpdate();
+            }
+          } else {
+            fetchChannelAndUpdate();
+            setTimeout(function() {
+              if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+            }, 500);
+          }
+        })
+        .catch(function() {
           fetchChannelAndUpdate();
           setTimeout(function() {
-            if (channel && channel.nowPlayingMusicId != null) {
-              loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
-            }
-          }, 300);
-        } catch (_) {}
-      }, 200);
+            if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+          }, 500);
+        });
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
