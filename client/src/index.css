@@ -67,6 +67,29 @@
   }
 }
 
+/* 상단 네비게이션: 좁은 화면·가로 모드에서 메뉴 겹침 방지 */
+@media (max-width: 900px) {
+  nav > div {
+    gap: 0.5rem !important;
+  }
+  nav a > div,
+  nav button {
+    font-size: 0.85rem !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+}
+
+/* 컨테이너: 1024px 이하에서 꽉 채우지 않고 양옆 여백 유지 */
+@media (max-width: 1024px) {
+  .container {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+}
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
@@ -154,12 +177,11 @@
   }
 }
 
-/* .music-grid: 모바일 가로(landscape)에서도 반응형 유지.
-   고정 6열 대신 auto-fill + minmax로 작은 폰 가로에서는 열 수가 줄어들게 함. */
+/* .music-grid: 모바일 가로(landscape)에서 최소 너비 유지하며 자동 채우기 */
 @media (orientation: landscape) and (min-width: 600px) {
   .music-grid {
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    display: grid;
-    gap: 1rem;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    gap: 1.25rem !important;
   }
 }
