@@ -1061,7 +1061,6 @@ export default function RadioChannel() {
                     </div>
                     {isOwner && (
                     <audio
-                      key={audioStreamUrl}
                       ref={audioRef}
                       src={audioStreamUrl}
                       className="hidden"

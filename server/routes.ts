@@ -3106,7 +3106,7 @@ export async function registerRoutes(
 
   // DJ 송출 브라우저를 닫아도 리스너에게 다음 곡이 이어지도록 서버에서 자동 진행
   const RADIO_AUTO_ADVANCE_INTERVAL_MS = 2000;
-  const RADIO_AUTO_ADVANCE_BUFFER_SEC = 4; // 저장된 곡 길이보다 4초 뒤에 다음 곡으로 → 한 곡이 끝나기 전에 다음 곡 나오는 현상 방지
+  const RADIO_AUTO_ADVANCE_BUFFER_SEC = 0.5; // 저장된 곡 길이보다 0.5초 뒤에 다음 곡으로 (4초면 공백이 길어짐)
   setInterval(async () => {
     try {
       const list = await storage.listLiveRadioChannelsForAutoAdvance();
