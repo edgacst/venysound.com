@@ -662,6 +662,35 @@
     if (!monitorAudios || monitorAudios.length < 2) return monitorAudios ? monitorAudios[0] : document.getElementById('djMonitorAudio');
     return monitorAudios[1 - activeMonitorIndex];
   }
+  var CROSSFADE_DURATION_MS = 1500;
+  var crossfadeRafId = null;
+  function runCrossfadeToInactive() {
+    if (!monitorAudios || monitorAudios.length < 2) return;
+    var active = getActiveMonitorAudio();
+    var inactive = getInactiveMonitorAudio();
+    if (!inactive || !inactive.src || inactive === active) return;
+    inactive.volume = 0;
+    inactive.play().catch(function() {});
+    var start = performance.now();
+    function step() {
+      crossfadeRafId = null;
+      var t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
+      var ease = t * (2 - t);
+      active.volume = 1 - ease;
+      inactive.volume = ease;
+      if (t < 1) {
+        crossfadeRafId = requestAnimationFrame(step);
+      } else {
+        active.pause();
+        active.currentTime = 0;
+        active.removeAttribute('src');
+        active.load();
+        activeMonitorIndex = 1 - activeMonitorIndex;
+        inactivePreloadedId = null;
+      }
+    }
+    crossfadeRafId = requestAnimationFrame(step);
+  }
   if (window.location.port === '5173' || window.location.port === '3000') {
     API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
   }
@@ -1076,7 +1105,21 @@
         inactive.load();
         inactivePreloadedId = next.id;
       }
-      // inactive를 active로 스왑 후 재생
+      // 2개 플레이어면 크로스페이드, 아니면 스왑 후 재생
+      if (monitorAudios && monitorAudios.length >= 2) {
+        var inactive = getInactiveMonitorAudio();
+        if (inactive && inactive.src && inactive !== getActiveMonitorAudio()) {
+          if (inactive.readyState >= 3) {
+            runCrossfadeToInactive();
+          } else {
+            inactive.oncanplaythrough = function onReady() {
+              inactive.oncanplaythrough = null;
+              runCrossfadeToInactive();
+            };
+          }
+          return;
+        }
+      }
       if (monitorAudios && monitorAudios.length >= 2) {
         activeMonitorIndex = 1 - activeMonitorIndex;
       }
@@ -1460,15 +1503,19 @@
       audioEl.setAttribute('data-current-id', String(musicIdNum));
       audioEl.removeAttribute('data-channel-stream');
       audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      var isInactive = monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio() && getInactiveMonitorAudio() !== getActiveMonitorAudio();
+      audioEl.oncanplaythrough = function onReady() {
+        audioEl.oncanplaythrough = null;
+        if (isInactive) {
+          runCrossfadeToInactive();
+        } else {
+          audioEl.play().catch(function() {
+            var hint = document.getElementById('monitorPlayHint');
+            if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+          });
+        }
+      };
       audioEl.load();
-      audioEl.play().catch(function() {
-        var hint = document.getElementById('monitorPlayHint');
-        if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
-      });
-    }
-    if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
-      activeMonitorIndex = 1 - activeMonitorIndex;
-      inactivePreloadedId = null;
     }
     var waveformEl = document.getElementById('djWaveformAudio');
     if (waveformEl) {
@@ -1532,11 +1579,14 @@
       audioEl.setAttribute('data-current-id', String(musicIdNum));
       audioEl.removeAttribute('data-channel-stream');
       audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      audioEl.oncanplaythrough = function onReady() {
+        audioEl.oncanplaythrough = null;
+        audioEl.play().catch(function() {
+          var hint = document.getElementById('monitorPlayHint');
+          if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+        });
+      };
       audioEl.load();
-      audioEl.play().catch(function() {
-        var hint = document.getElementById('monitorPlayHint');
-        if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
-      });
     }
     if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
       activeMonitorIndex = 1 - activeMonitorIndex;
@@ -2204,12 +2254,13 @@
       if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
     });
     function onMonitorEnded(e) {
-      // 모니터 오디오가 끝났을 때는 서버(auto-advance)가 다음 곡을 결정합니다.
-      // WS가 끊겼거나 이벤트를 놓치더라도 다음 곡을 이어서 모니터링할 수 있게,
-      // 채널을 한 번 다시 조회한 뒤 현재 nowPlaying으로 모니터를 재동기화합니다.
+      // 모니터 오디오가 끝났을 때: 버퍼 flush 후 다음 곡 로드 (이전 곡 끝 glitch 방지)
       var el = e && e.target ? e.target : null;
       if (!el) return;
       try { el.pause(); } catch (err) {}
+      el.currentTime = 0;
+      el.src = '';
+      el.load();
       setTimeout(function() {
         try {
           fetchChannelAndUpdate();
