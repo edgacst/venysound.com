@@ -2974,7 +2974,7 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack } = req.body || {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
@@ -2992,17 +2992,27 @@ export async function registerRoutes(
         return res.status(403).json({ message: "방송 종료는 방장 또는 현재 송출 호스트만 가능합니다." });
       }
       if (canManage) {
-        // DJ 모니터 곡 끝 시 즉시 다음 곡으로 진행 (같은 곡 반복 방지)
+        // DJ 모니터 곡 끝 시 즉시 다음 곡으로 진행 (낙관적 락: currentTrackId 일치할 때만 진행)
         const snap = (channel as any).playlistSnapshot as { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null;
         if (bodyAdvanceToNextTrack && snap && Array.isArray(snap.musicIds) && snap.musicIds.length > 0) {
           const ch = channel as any;
+          const expectedTrackId = bodyCurrentTrackId != null ? Number(bodyCurrentTrackId) : null;
+          if (expectedTrackId != null && !Number.isNaN(expectedTrackId)) {
+            const serverTrackId = ch.nowPlayingMusicId ?? null;
+            if (serverTrackId !== expectedTrackId) {
+              const updated = await storage.getRadioChannelBySlug(slug);
+              return res.json(updated);
+            }
+          }
           let nextId: number;
           let nextIndex: number;
           if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempNextSnapshotIndex != null) {
             nextIndex = ch.nowPlayingTempNextSnapshotIndex;
             nextId = snap.musicIds[nextIndex];
           } else if (ch.nowPlayingMusicId != null) {
-            nextIndex = (snap.currentIndex + 1) % snap.musicIds.length;
+            const currentIdx = snap.musicIds.indexOf(ch.nowPlayingMusicId);
+            const fromIndex = currentIdx >= 0 ? currentIdx : snap.currentIndex;
+            nextIndex = (fromIndex + 1) % snap.musicIds.length;
             nextId = snap.musicIds[nextIndex];
           } else {
             nextIndex = 0;

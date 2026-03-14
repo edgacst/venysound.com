@@ -649,6 +649,11 @@
   var scheduleInputsApplied = false;
   var lastLoadedLyricsMusicId = null;
   var lastSyncedStartMusicId = null;
+  var lastEndedTrackIdForAdvance = null;
+  var lastEndedTrackTime = 0;
+  var lastAdvancedMusicId = null;
+  var lastAdvancedTime = 0;
+  var weJustSentAdvance = false;
   var lastNowTitle = '';
   var lastNowArtist = '';
   var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
@@ -1955,6 +1960,14 @@
               }
             }
             renderQueue();
+            if (weJustSentAdvance) {
+              weJustSentAdvance = false;
+              return;
+            }
+            var musicIdNum = typeof msg.musicId === 'number' ? msg.musicId : (msg.musicId != null && !isNaN(Number(msg.musicId)) ? Number(msg.musicId) : null);
+            if (musicIdNum != null && lastAdvancedMusicId === musicIdNum && (Date.now() - lastAdvancedTime) < 5000) {
+              return;
+            }
             if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
               loadMonitorAudioForTrackId(msg.musicId);
             } else {
@@ -2262,21 +2275,32 @@
       if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
     });
     function onMonitorEnded(e) {
-      // 모니터 오디오가 끝났을 때: 버퍼 flush → 서버에 다음 곡으로 진행 요청 → 새 곡 로드 (같은 곡 반복 방지)
       var el = e && e.target ? e.target : null;
       if (!el) return;
+      var endedTrackId = el.getAttribute('data-current-id');
+      if (endedTrackId && endedTrackId === lastEndedTrackIdForAdvance && (Date.now() - lastEndedTrackTime) < 3000) return;
+      lastEndedTrackIdForAdvance = endedTrackId;
+      lastEndedTrackTime = Date.now();
       try { el.pause(); } catch (err) {}
       el.currentTime = 0;
       el.src = '';
       el.load();
       if (!channel || !channel.slug) return;
       var slug = String(channel.slug).trim().toLowerCase();
-      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { advanceToNextTrack: true } })
+      var currentTrackIdNum = endedTrackId ? parseInt(endedTrackId, 10) : null;
+      if (currentTrackIdNum != null && isNaN(currentTrackIdNum)) currentTrackIdNum = null;
+      weJustSentAdvance = true;
+      var body = { advanceToNextTrack: true };
+      if (currentTrackIdNum != null) body.currentTrackId = currentTrackIdNum;
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(data) {
+          weJustSentAdvance = false;
           if (data) {
             channel = data;
             if (channel.nowPlayingMusicId != null) {
+              lastAdvancedMusicId = channel.nowPlayingMusicId;
+              lastAdvancedTime = Date.now();
               loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
             } else {
               fetchChannelAndUpdate();
@@ -2289,11 +2313,13 @@
           }
         })
         .catch(function() {
+          weJustSentAdvance = false;
           fetchChannelAndUpdate();
           setTimeout(function() {
             if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
           }, 500);
         });
+      setTimeout(function() { weJustSentAdvance = false; }, 5000);
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;

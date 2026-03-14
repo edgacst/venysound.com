@@ -12,9 +12,12 @@ type RadioPlayerState = {
   playTrigger: number;
   /** Increment to request pause from GlobalRadioPlayer. */
   pauseTrigger: number;
+  /** 모바일: 사용자 제스처 직후 동기적으로 play() 호출용. GlobalRadioPlayer가 설정. */
+  playNowRef: { current: (() => void) | null } | null;
   setStream: (slug: string, channelName: string, streamUrl: string, initialSeekSeconds?: number) => void;
   setPlaying: (playing: boolean) => void;
   setUserStopped: (stopped: boolean) => void;
+  setPlayNowRef: (ref: { current: (() => void) | null } | null) => void;
   requestPlay: () => void;
   requestPause: () => void;
   clear: () => void;
@@ -29,6 +32,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   initialSeekSeconds: null,
   playTrigger: 0,
   pauseTrigger: 0,
+  playNowRef: null,
   setStream: (slug, channelName, streamUrl, initialSeekSeconds) =>
     set({
       slug,
@@ -38,7 +42,11 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
     }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setUserStopped: (userStopped) => set({ userStopped }),
-  requestPlay: () => set((s) => ({ playTrigger: s.playTrigger + 1, userStopped: false })),
+  setPlayNowRef: (playNowRef) => set({ playNowRef }),
+  requestPlay: () => {
+    set((s) => ({ playTrigger: s.playTrigger + 1, userStopped: false }));
+    useRadioPlayerStore.getState().playNowRef?.current?.();
+  },
   requestPause: () => set((s) => ({ pauseTrigger: s.pauseTrigger + 1, userStopped: true })),
   clear: () =>
     set({
@@ -48,5 +56,6 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       isPlaying: false,
       userStopped: false,
       initialSeekSeconds: null,
+      playNowRef: null,
     }),
 }));

@@ -34,6 +34,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
     setStream,
     setPlaying,
     setUserStopped,
+    setPlayNowRef,
     clear,
   } = useRadioPlayerStore();
 
@@ -77,6 +78,13 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
+
+  const playNowRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    playNowRef.current = () => getActiveAudio()?.play().catch(() => {});
+    setPlayNowRef(playNowRef);
+    return () => setPlayNowRef(null);
+  }, [getActiveAudio, setPlayNowRef]);
 
   // WebSocket: 곡 없으면 정지, 새 곡 오면 즉시 전환 (다음 곡 자연스럽게 이어지기)
   useEffect(() => {
