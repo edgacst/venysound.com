@@ -185,3 +185,43 @@
     gap: 1.25rem !important;
   }
 }
+
+/* ===== 모바일 가로 모드(높이 낮은 환경) 헤더 최적화: 로그아웃/로그인 공통 ===== */
+@media (orientation: landscape) and (max-height: 500px) {
+  nav > div {
+    gap: 0.35rem !important;
+  }
+  nav a > div,
+  nav button {
+    font-size: 0.75rem !important;
+    padding-left: 0.4rem !important;
+    padding-right: 0.4rem !important;
+  }
+  nav svg {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  /* 로고 텍스트 숨김 (아이콘만 남겨 공간 확보) */
+  nav [data-testid="nav-logo"] span.font-bold {
+    display: none !important;
+  }
+  /* 소개·프리미엄·공지 메뉴 숨김 (덜 중요한 메뉴) */
+  nav > div > div:nth-child(2) > a:nth-child(5),
+  nav > div > div:nth-child(2) > a:nth-child(6),
+  nav > div > div:nth-child(2) > a:nth-child(7) {
+    display: none !important;
+  }
+  /* 로그인 시: 업로드 버튼 텍스트 숨기고 아이콘만 */
+  nav [data-testid="button-upload"] span {
+    display: none !important;
+  }
+  nav [data-testid="button-my-music"] span {
+    display: none !important;
+  }
+  /* 프로필 아바타 크기 축소 */
+  nav [data-testid="button-user-menu"] {
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+  }
+}
