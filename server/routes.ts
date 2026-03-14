@@ -420,6 +420,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/music/play-counts", async (_req, res) => {
+    try {
+      const counts = await storage.getMusicPlayCounts();
+      res.json(counts);
+    } catch (err) {
+      res.status(500).json({ message: "재생 수를 불러올 수 없습니다" });
+    }
+  });
+
   app.get("/api/music/top-weekly", async (req, res) => {
     try {
       const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 10));

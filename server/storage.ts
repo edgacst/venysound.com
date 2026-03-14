@@ -30,6 +30,7 @@ export interface IStorage {
   isLiked(userId: string, musicId: number): Promise<boolean>;
   getMusicLikeCounts(): Promise<Record<number, number>>;
   getMusicLikeCount(musicId: number): Promise<number>;
+  getMusicPlayCounts(): Promise<Record<number, number>>;
 
   // Follows
   toggleFollow(followerId: string, followedId: string): Promise<boolean>;
@@ -732,6 +733,18 @@ export class DatabaseStorage implements IStorage {
       count: sql<number>`count(*)::int`,
     }).from(likes).where(eq(likes.musicId, musicId));
     return result?.count ?? 0;
+  }
+
+  async getMusicPlayCounts(): Promise<Record<number, number>> {
+    const results = await db.select({
+      musicId: streamingLogs.musicId,
+      count: sql<number>`count(*)::int`,
+    }).from(streamingLogs).groupBy(streamingLogs.musicId);
+    const map: Record<number, number> = {};
+    for (const r of results) {
+      map[r.musicId] = r.count;
+    }
+    return map;
   }
 
   // Follows

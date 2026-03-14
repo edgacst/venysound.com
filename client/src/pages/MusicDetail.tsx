@@ -3,7 +3,7 @@ import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/use-auth";
 import { useRoute, Link, useLocation, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLikeMusic, useMyLikes, useLikeCounts } from "@/hooks/use-music";
+import { useLikeMusic, useMyLikes, useLikeCounts, usePlayCounts } from "@/hooks/use-music";
 import { useFollowUser } from "@/hooks/use-user-profile";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ function MiniMusicCard({ item, onPlay }: { item: any; onPlay: (id: number) => vo
   const [, navigate] = useLocation();
   const { activeMusicId } = usePlayerStore();
   const { data: likeCounts } = useLikeCounts();
+  const { data: playCounts } = usePlayCounts();
   const isActive = activeMusicId === item.id;
   const coverImg = item.imageFilename
     ? (item.imageFilename.startsWith("http") ? item.imageFilename : resolveStorageUrl(item.imageFilename))
@@ -64,9 +65,15 @@ function MiniMusicCard({ item, onPlay }: { item: any; onPlay: (id: number) => vo
         <p className="text-sm font-medium truncate" title={item.title}>{item.title}</p>
         <p className="text-xs text-muted-foreground truncate" title={item.artist}>{item.artist}</p>
       </div>
-      <div className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-        <Heart size={10} />
-        <span>{likeCounts?.[item.id] || 0}</span>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+        <span className="flex items-center gap-0.5">
+          <Heart size={10} />
+          <span>{likeCounts?.[item.id] || 0}</span>
+        </span>
+        <span className="flex items-center gap-0.5">
+          <Headphones size={10} />
+          <span>{playCounts?.[item.id] ?? 0}</span>
+        </span>
       </div>
     </div>
   );

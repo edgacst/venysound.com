@@ -143,6 +143,17 @@ export function useLikeCounts() {
   });
 }
 
+export function usePlayCounts() {
+  return useQuery<Record<number, number>>({
+    queryKey: ["/api/music/play-counts"],
+    queryFn: async () => {
+      const res = await fetch("/api/music/play-counts", { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+  });
+}
+
 export function useLikeMusic() {
   const queryClient = useQueryClient();
   const { toast } = useToast();

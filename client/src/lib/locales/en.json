@@ -988,7 +988,19 @@
     "announcementCreated": "Announcement Sent",
     "announcementCreatedDesc": "Notifications sent to your followers.",
     "announcementFailed": "Announcement Failed",
-    "announcementDeleted": "Announcement deleted"
+    "announcementDeleted": "Announcement deleted",
+    "tipsSummary": "Tips Summary",
+    "totalTipsReceived": "Total Tips Received",
+    "won": " KRW",
+    "totalSales": "Total Sales",
+    "recentTips": "Recent Tips",
+    "noTipsYet": "No tips received yet",
+    "anonymous": "Anonymous",
+    "trackRevenuePlays": "Revenue & Plays by Track",
+    "noTrackStatsYet": "No play or tip data yet",
+    "trackTitle": "Track",
+    "duration": "Duration",
+    "tips": "Tips"
   },
   "profile": {
     "user": "User",

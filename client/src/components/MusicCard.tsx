@@ -1,10 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Music } from "@shared/schema";
-import { Play, Pause, Heart, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check, Sparkles } from "lucide-react";
+import { Play, Pause, Heart, Headphones, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check, Sparkles } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "./AudioPlayer";
-import { useLikeMusic, useMyLikes, useLikeCounts, useUpdateMusic, useDeleteMusic } from "@/hooks/use-music";
+import { useLikeMusic, useMyLikes, useLikeCounts, usePlayCounts, useUpdateMusic, useDeleteMusic } from "@/hooks/use-music";
 import { useAuth } from "@/hooks/use-auth";
 import { redirectToLogin } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -237,7 +237,9 @@ export function MusicCard({ music }: MusicCardProps) {
   const { toast } = useToast();
   const { data: myLikes } = useMyLikes();
   const { data: likeCounts } = useLikeCounts();
+  const { data: playCounts } = usePlayCounts();
   const likeCount = likeCounts?.[music.id] || 0;
+  const playCount = playCounts?.[music.id] ?? 0;
   const queryClient = useQueryClient();
 
   const [editOpen, setEditOpen] = useState(false);
@@ -654,6 +656,10 @@ export function MusicCard({ music }: MusicCardProps) {
                   />
                   <span className="text-xs tabular-nums" data-testid={`text-like-count-${music.id}`}>{likeCount}</span>
                 </Button>
+                <span className="flex items-center gap-1 text-xs text-muted-foreground px-1.5" data-testid={`text-play-count-${music.id}`} title={t('music.playCount', '재생 수')}>
+                  <Headphones size={12} className="shrink-0" />
+                  <span className="tabular-nums">{playCount}</span>
+                </span>
               </div>
               <span className="flex items-center gap-1 text-xs text-muted-foreground truncate" data-testid={`text-uploader-${music.id}`} title={music.userId}>
                 <UserIcon size={11} className="shrink-0" />

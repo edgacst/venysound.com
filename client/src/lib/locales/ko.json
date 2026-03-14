@@ -1008,7 +1008,19 @@
     "announcementCreated": "공지 등록 완료",
     "announcementCreatedDesc": "팔로워들에게 알림이 전송되었습니다.",
     "announcementFailed": "공지 등록 실패",
-    "announcementDeleted": "공지가 삭제되었습니다"
+    "announcementDeleted": "공지가 삭제되었습니다",
+    "tipsSummary": "후원 내역 요약",
+    "totalTipsReceived": "총 받은 후원",
+    "won": "원",
+    "totalSales": "총 판매 수익",
+    "recentTips": "최근 후원",
+    "noTipsYet": "아직 받은 후원이 없습니다",
+    "anonymous": "익명",
+    "trackRevenuePlays": "음원별 수익·재생",
+    "noTrackStatsYet": "아직 재생·후원 데이터가 없습니다",
+    "trackTitle": "곡명",
+    "duration": "재생 시간",
+    "tips": "후원"
   },
   "profile": {
     "user": "사용자",

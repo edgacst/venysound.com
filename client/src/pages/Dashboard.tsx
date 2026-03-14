@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { BarChart3, Clock, Users, Music, TrendingUp, Megaphone, Trash2, Plus, Loader2 } from "lucide-react";
+import { BarChart3, Clock, Users, Music, TrendingUp, Megaphone, Trash2, Plus, Loader2, Gift, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
@@ -42,6 +42,31 @@ export default function Dashboard() {
   const { data: myAnnouncements } = useQuery<any[]>({
     queryKey: ["/api/announcements/my"],
     enabled: !!user,
+  });
+
+  const { data: earnings } = useQuery<{ totalTips: number; totalSales: number; balance: number; credits: number }>({
+    queryKey: ["/api/earnings"],
+    enabled: !!user,
+  });
+
+  const { data: tipsReceived } = useQuery<any[]>({
+    queryKey: ["/api/tips/received"],
+    enabled: !!user,
+  });
+
+  const { data: streamingStats } = useQuery<{
+    totalSeconds: number;
+    totalPlays: number;
+    tracks: Array<{ musicId: number; title: string; artist: string; image: string; totalSeconds: number; playCount: number }>;
+  }>({
+    queryKey: ["/api/streaming-stats", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { totalSeconds: 0, totalPlays: 0, tracks: [] };
+      const res = await fetch(`/api/streaming-stats/${user.id}`, { credentials: "include" });
+      if (!res.ok) return { totalSeconds: 0, totalPlays: 0, tracks: [] };
+      return res.json();
+    },
+    enabled: !!user?.id,
   });
 
   const createAnnouncement = useMutation({
@@ -250,6 +275,105 @@ export default function Dashboard() {
                 </div>
               </Card>
             )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <Card className="p-5">
+                <h3 className="font-semibold mb-4 flex items-center gap-2">
+                  <Gift size={18} className="text-yellow-500" />
+                  {t('dashboard.tipsSummary', '후원 내역 요약')}
+                </h3>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+                    <span className="text-sm text-muted-foreground">{t('dashboard.totalTipsReceived', '총 받은 후원')}</span>
+                    <span className="text-xl font-bold text-yellow-500" data-testid="text-total-tips">
+                      {(earnings?.totalTips ?? 0).toLocaleString()}{t('dashboard.won', '원')}
+                    </span>
+                  </div>
+                  {earnings && (earnings.totalSales ?? 0) > 0 && (
+                    <div className="flex items-center justify-between rounded-lg bg-muted/50 p-4">
+                      <span className="text-sm text-muted-foreground">{t('dashboard.totalSales', '총 판매 수익')}</span>
+                      <span className="text-xl font-bold text-green-500">
+                        {(earnings.totalSales ?? 0).toLocaleString()}{t('dashboard.won', '원')}
+                      </span>
+                    </div>
+                  )}
+                  {Array.isArray(tipsReceived) && tipsReceived.length > 0 ? (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-2">{t('dashboard.recentTips', '최근 후원')}</p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {tipsReceived.slice(0, 10).map((item: any) => {
+                          const tip = item.tip ?? item;
+                          const fromUser = item.fromUser;
+                          return (
+                            <div key={tip.id} className="flex items-center justify-between text-sm py-1.5 border-b border-border/50 last:border-0">
+                              <span className="truncate text-muted-foreground">
+                                {fromUser?.firstName ?? fromUser?.email ?? t('dashboard.anonymous', '익명')}
+                              </span>
+                              <span className="font-medium shrink-0 ml-2">{Number(tip.amount).toLocaleString()}{t('dashboard.won', '원')}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground py-2">{t('dashboard.noTipsYet', '아직 받은 후원이 없습니다')}</p>
+                  )}
+                </div>
+              </Card>
+
+              <Card className="p-5">
+                <h3 className="font-semibold mb-4 flex items-center gap-2">
+                  <DollarSign size={18} className="text-green-500" />
+                  {t('dashboard.trackRevenuePlays', '음원별 수익·재생')}
+                </h3>
+                {streamingStats?.tracks && streamingStats.tracks.length > 0 ? (
+                  (() => {
+                    const tipsByMusicId: Record<number, number> = {};
+                    if (Array.isArray(tipsReceived)) {
+                      for (const item of tipsReceived) {
+                        const tip = item.tip ?? item;
+                        const mid = tip.musicId ?? tip.music_id;
+                        if (mid != null) {
+                          tipsByMusicId[mid] = (tipsByMusicId[mid] ?? 0) + Number(tip.amount ?? 0);
+                        }
+                      }
+                    }
+                    const rows = streamingStats.tracks
+                      .map((t) => ({ ...t, tipAmount: tipsByMusicId[t.musicId] ?? 0 }))
+                      .filter((t) => t.playCount > 0 || t.tipAmount > 0)
+                      .sort((a, b) => b.playCount - a.playCount)
+                      .slice(0, 15);
+                    return (
+                      <div className="space-y-2 max-h-80 overflow-y-auto">
+                        <div className="flex items-center justify-between gap-2 py-2 border-b border-border font-medium text-xs text-muted-foreground">
+                          <div className="flex-1 min-w-0">{t('dashboard.trackTitle', '곡명')}</div>
+                          <span className="shrink-0 w-14 text-right">{t('dashboard.playCount', '재생 수')}</span>
+                          <span className="shrink-0 w-16 text-right">{t('dashboard.duration', '재생 시간')}</span>
+                          <span className="shrink-0 w-20 text-right">{t('dashboard.tips', '후원')}</span>
+                        </div>
+                        {rows.map((track) => (
+                          <div key={track.musicId} className="flex items-center justify-between gap-2 py-2 border-b border-border/50 last:border-0 text-sm">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{track.title}</p>
+                              <p className="text-xs text-muted-foreground truncate">{track.artist}</p>
+                            </div>
+                            <div className="flex items-center gap-4 shrink-0">
+                              <span className="text-muted-foreground tabular-nums">{Number(track.playCount).toLocaleString()}{t('dashboard.playUnit', '회')}</span>
+                              <span className="text-muted-foreground tabular-nums w-16 text-right">{formatDuration(Number(track.totalSeconds))}</span>
+                              <span className="font-medium text-yellow-500 tabular-nums w-20 text-right">
+                                {track.tipAmount > 0 ? `${Number(track.tipAmount).toLocaleString()}${t('dashboard.won', '원')}` : "-"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <p className="text-sm text-muted-foreground py-8 text-center">{t('dashboard.noTrackStatsYet', '아직 재생·후원 데이터가 없습니다')}</p>
+                )}
+              </Card>
+            </div>
           </>
         )}
 
