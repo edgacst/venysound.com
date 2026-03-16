@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile, copyFile } from "fs/promises";
+import { rm, readFile, copyFile, writeFile } from "fs/promises";
 import { join } from "path";
 
 // server deps to bundle to reduce openat(2) syscalls
@@ -37,6 +37,20 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // 배포 반영 확인용: index.html에 빌드 시각 주입 (페이지 소스에서 확인 가능)
+  const publicIndex = join(process.cwd(), "dist/public/index.html");
+  try {
+    let html = await readFile(publicIndex, "utf-8");
+    const buildTime = new Date().toISOString();
+    const buildComment = `<!-- build: ${buildTime} -->`;
+    if (html.includes("<!-- build:")) {
+      html = html.replace(/<!-- build: [^>]+ -->/, buildComment);
+    } else {
+      html = html.replace("</head>", `\n    ${buildComment}\n  </head>`);
+    }
+    await writeFile(publicIndex, html);
+  } catch (_) {}
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));

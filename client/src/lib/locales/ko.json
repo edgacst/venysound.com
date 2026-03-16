@@ -1306,6 +1306,7 @@
     "descriptionPlaceholder": "예: 여름 해변을 테마로 한 경쾌한 팝송, 캐치한 후렴구",
     "submit": "음악 생성하기",
     "generating": "생성 중... (약 1~2분 소요)",
+    "generatingElapsed": "생성 중... (경과 %s)",
     "failed": "생성 실패",
     "resultsTitle": "생성된 곡",
     "untitled": "제목 없음",

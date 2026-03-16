@@ -5,12 +5,12 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import * as schema from "@shared/schema";
 
-// 프로덕션 CJS 번들에서는 import.meta.url이 ''로 대체되므로 fileURLToPath('')가 Invalid URL로 크래시함. 이 경우 __dirname 사용.
+// 프로덕션 CJS 번들에서는 __dirname 사용. ESM(tsx)에서는 import.meta.url 사용. (CJS에서 import.meta 참조 시 esbuild 경고 방지 위해 __dirname 먼저)
 const _dir =
-  typeof import.meta !== "undefined" && import.meta.url
-    ? path.dirname(fileURLToPath(import.meta.url))
-    : typeof __dirname !== "undefined"
-      ? __dirname
+  typeof __dirname !== "undefined"
+    ? __dirname
+    : typeof import.meta !== "undefined" && import.meta.url
+      ? path.dirname(fileURLToPath(import.meta.url))
       : process.cwd();
 const envPath = path.resolve(_dir, "..", ".env");
 dotenv.config({ path: envPath, override: true });

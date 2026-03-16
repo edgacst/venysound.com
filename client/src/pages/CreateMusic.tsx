@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-const POLL_INTERVAL_MS = 10000;
+const POLL_INTERVAL_MS = 5000;
 const AI_MUSIC_TASK_KEY = "ai_music_last_task";
 const SAVED_TRACKS_KEY = "createMusic_savedTracks";
 
@@ -171,10 +171,21 @@ export default function CreateMusic() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [taskProvider, setTaskProvider] = useState<string | null>(null);
   const [savedTracksSearch, setSavedTracksSearch] = useState("");
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
   const submittedLyricsRef = useRef<string>("");
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
+
+  useEffect(() => {
+    if (status !== "pending" && status !== "running") return;
+    const t = setInterval(() => {
+      const start = generationStartRef.current;
+      if (start) setElapsedSec(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [status]);
 
   useEffect(() => {
     try {
@@ -305,6 +316,7 @@ export default function CreateMusic() {
       const state = data.state ?? "pending";
       setStatus(state);
       if (state === "succeeded" && Array.isArray(data.data)) {
+        generationStartRef.current = null;
         setResultTracks(data.data);
         setTaskId(null);
         const now = Date.now();
@@ -331,6 +343,7 @@ export default function CreateMusic() {
         });
       }
       if (state === "failed") {
+        generationStartRef.current = null;
         setErrorMessage(data.message ?? "생성에 실패했습니다.");
         setTaskId(null);
       }
@@ -358,6 +371,8 @@ export default function CreateMusic() {
     setErrorMessage(null);
     setResultTracks([]);
     setStatus("pending");
+    setElapsedSec(0);
+    generationStartRef.current = Date.now();
     submitModeRef.current = mode;
     if (mode === "custom") submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
@@ -519,7 +534,12 @@ export default function CreateMusic() {
                       <Button type="submit" disabled={isSubmitting || status === "pending" || status === "running"} className="w-full rounded-full gap-2" size="lg">
                         {(status === "pending" || status === "running") && <Loader2 className="w-5 h-5 animate-spin" />}
                         {status === "pending" || status === "running"
-                          ? t("createMusic.generating", "생성 중... (약 1~2분 소요)")
+                          ? (() => {
+                              const m = Math.floor(elapsedSec / 60);
+                              const s = elapsedSec % 60;
+                              const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
+                              return t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`;
+                            })()
                           : t("createMusic.submit", "음악 생성하기")}
                       </Button>
                     </form>
@@ -561,12 +581,17 @@ export default function CreateMusic() {
                         />
                       </div>
                     )}
-                    {(status === "pending" || status === "running") && (
+                    {(status === "pending" || status === "running") && (() => {
+                        const m = Math.floor(elapsedSec / 60);
+                        const s = elapsedSec % 60;
+                        const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
+                        return (
                       <div className="flex items-center gap-2 text-muted-foreground text-sm mb-4">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        {t("createMusic.generating", "생성 중... (약 1~2분 소요)")}
+                        {t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`}
                       </div>
-                    )}
+                        );
+                      })()}
                     {savedTracks.length === 0 && status !== "pending" && status !== "running" ? (
                       <p className="text-muted-foreground text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 왼쪽에서 음악을 생성해 보세요.")}</p>
                     ) : (() => {
