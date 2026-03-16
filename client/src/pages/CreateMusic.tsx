@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 3000;
 const AI_MUSIC_TASK_KEY = "ai_music_last_task";
 const SAVED_TRACKS_KEY = "createMusic_savedTracks";
 

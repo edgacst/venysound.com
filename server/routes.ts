@@ -369,9 +369,32 @@ export async function registerRoutes(
 
   const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
 
-  // Suno API 콜백 수신용 (필수 파라미터라 URL만 제공, 폴링으로 결과 조회)
+  // Suno 콜백 결과 저장 (first: 30~40초, complete: 2~3분) — 폴링 시 즉시 반환해 체감 속도 개선
+  const sunoCallbackResults = new Map<string, { state: "succeeded"; data: { clip_id?: string; audio_url?: string; image_url?: string; title?: string; tags?: string; prompt?: string; custom_mode?: boolean }[] }>();
+
   app.post("/api/ai-music/suno-callback", (req, res) => {
     res.status(200).json({ received: true });
+    try {
+      const body = req.body as { code?: number; data?: { callbackType?: string; task_id?: string; data?: unknown[] } };
+      const cbType = body?.data?.callbackType;
+      const taskId = body?.data?.task_id;
+      const rawList = Array.isArray(body?.data?.data) ? body.data.data : [];
+      if ((cbType === "first" || cbType === "complete") && taskId && rawList.length > 0) {
+        const tracks = rawList.map((t: unknown) => {
+          const r = t as Record<string, unknown>;
+          return {
+            clip_id: r.id as string | undefined,
+            audio_url: (r.audio_url || r.stream_audio_url) as string | undefined,
+            image_url: r.image_url as string | undefined,
+            title: r.title as string | undefined,
+            tags: r.tags as string | undefined,
+            prompt: r.prompt as string | undefined,
+            custom_mode: undefined as boolean | undefined,
+          };
+        });
+        sunoCallbackResults.set(taskId, { state: "succeeded", data: tracks });
+      }
+    } catch (_) {}
   });
 
   // AI 음악 생성 커버/오디오 프록시: 자기 자신 URL이 넘어오면 내부 url 쿼리만 꺼내서 사용 (재귀 호출 시 쿠키 없어 401 나는 것 방지)
@@ -760,6 +783,11 @@ export async function registerRoutes(
 
     if (provider === "suno" && SUNOAPI_KEY) {
       try {
+        const cached = sunoCallbackResults.get(taskId);
+        if (cached) {
+          sunoCallbackResults.delete(taskId);
+          return res.json(cached);
+        }
         const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
           headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
         });
