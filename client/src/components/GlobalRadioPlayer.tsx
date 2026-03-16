@@ -6,6 +6,7 @@ import { useRadioPlayerStore } from "@/stores/radio-player";
 import { useWs } from "@/contexts/WsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 const REFETCH_INTERVAL_MS = 8000;
 const WAVEFORM_BUFFER_LENGTH = 128;
@@ -15,6 +16,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { subscribe } = useWs();
+  const { toast } = useToast();
   const audioARef = useRef<HTMLAudioElement | null>(null);
   const audioBRef = useRef<HTMLAudioElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -22,6 +24,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   const pendingSeekRef = useRef<number | null>(null);
   const crossfadeRafRef = useRef<number | null>(null);
   const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
+  const [playError, setPlayError] = useState(false);
   const {
     slug,
     channelName,
@@ -134,6 +137,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   }, [slug, channelName, subscribe, clear, setStream]);
 
   const handlePlay = useCallback(() => {
+    setPlayError(false);
     setUserStopped(false);
     const el = getActiveAudio();
     if (el) el.play().catch(() => {});
@@ -282,6 +286,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   }, [pauseTrigger, getActiveAudio]);
 
   const handleStop = useCallback(() => {
+    setPlayError(false);
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) {
         el.pause();
@@ -304,7 +309,11 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
             <Radio className="h-5 w-5 shrink-0 text-primary" />
             <span className="truncate text-sm font-medium">{channelName}</span>
             <span className="text-xs text-muted-foreground">
-              {isPlaying ? t("radio.listeningTo", "지금 재생 중") : t("radio.listeningPaused", "일시정지")}
+              {playError
+                ? t("radio.listenError", "재생 오류 – 잠시 후 다시 시도해 주세요")
+                : isPlaying
+                  ? t("radio.listeningTo", "지금 재생 중")
+                  : t("radio.listeningPaused", "일시정지")}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -334,11 +343,22 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
           <audio
             ref={audioARef}
             className="hidden"
+            preload="auto"
+            playsInline
             onPlay={(e) => {
               if (e.target === getActiveAudio()) setPlaying(true);
             }}
             onPause={(e) => {
               if (e.target === getActiveAudio()) setPlaying(false);
+            }}
+            onError={() => {
+              setPlayError(true);
+              setPlaying(false);
+              toast({
+                title: t("radio.listenErrorTitle", "방송을 재생할 수 없습니다"),
+                description: t("radio.listenErrorDesc", "네트워크 상태를 확인한 뒤 다시 시도해 주세요."),
+                variant: "destructive",
+              });
             }}
             onEnded={(e) => {
               const el = e.target as HTMLAudioElement;
@@ -357,11 +377,22 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
           <audio
             ref={audioBRef}
             className="hidden"
+            preload="auto"
+            playsInline
             onPlay={(e) => {
               if (e.target === getActiveAudio()) setPlaying(true);
             }}
             onPause={(e) => {
               if (e.target === getActiveAudio()) setPlaying(false);
+            }}
+            onError={() => {
+              setPlayError(true);
+              setPlaying(false);
+              toast({
+                title: t("radio.listenErrorTitle", "방송을 재생할 수 없습니다"),
+                description: t("radio.listenErrorDesc", "네트워크 상태를 확인한 뒤 다시 시도해 주세요."),
+                variant: "destructive",
+              });
             }}
             onEnded={(e) => {
               const el = e.target as HTMLAudioElement;
