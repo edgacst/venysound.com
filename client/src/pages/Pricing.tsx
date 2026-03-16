@@ -212,8 +212,8 @@ export default function Pricing() {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-              <Card className="p-6 relative" data-testid="card-free-plan">
+            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
+              <Card className="p-6 relative flex flex-col" data-testid="card-free-plan">
                 <div className="mb-4">
                   <h3 className="text-lg font-bold mb-1">{t('pricing.freePlanName', 'Free')}</h3>
                   <p className="text-muted-foreground text-xs">{t('pricing.freeDescription', '기본적인 음악 스트리밍')}</p>
@@ -230,26 +230,28 @@ export default function Pricing() {
                     </div>
                   ))}
                 </div>
-                {!isPaid ? (
-                  <Button variant="outline" className="w-full" disabled size="sm" data-testid="button-current-free">
-                    {t('pricing.currentPlan', '현재 플랜')}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    size="sm"
-                    onClick={() => cancelMutation.mutate()}
-                    disabled={cancelMutation.isPending}
-                    data-testid="button-downgrade"
-                  >
-                    <XCircle size={14} className="mr-2" />
-                    {cancelMutation.isPending ? t('pricing.processing', '처리 중...') : t('pricing.cancelSubscription', '구독 해지')}
-                  </Button>
-                )}
+                <div className="mt-auto">
+                  {!isPaid ? (
+                    <Button variant="outline" className="w-full" disabled size="sm" data-testid="button-current-free">
+                      {t('pricing.currentPlan', '현재 플랜')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      size="sm"
+                      onClick={() => cancelMutation.mutate()}
+                      disabled={cancelMutation.isPending}
+                      data-testid="button-downgrade"
+                    >
+                      <XCircle size={14} className="mr-2" />
+                      {cancelMutation.isPending ? t('pricing.processing', '처리 중...') : t('pricing.cancelSubscription', '구독 해지')}
+                    </Button>
+                  )}
+                </div>
               </Card>
 
-              <Card className="p-6 relative border-primary/50 shadow-lg shadow-primary/10" data-testid="card-pro-plan">
+              <Card className="p-6 relative border-primary/50 shadow-lg shadow-primary/10 flex flex-col" data-testid="card-pro-plan">
                 <Badge variant="default" className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-primary px-3 text-xs no-default-hover-elevate no-default-active-elevate">
                   {t('pricing.popular', '인기')}
                 </Badge>
@@ -277,34 +279,36 @@ export default function Pricing() {
                     </div>
                   ))}
                 </div>
-                {isPro ? (
-                  <div className="space-y-2">
-                    <Button className="w-full" size="sm" disabled data-testid="button-current-pro">
-                      <Zap size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
-                    </Button>
-                    {subscriptionData?.expiresAt && (
-                      <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                        <Calendar size={12} />
-                        {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
-                      </p>
-                    )}
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
-                      <XCircle size={14} className="mr-2" />
-                      {t('pricing.cancelSubscription', '구독 해지')}
-                    </Button>
-                  </div>
-                ) : (
-                  <div>
-                    <Button className="w-full bg-primary" size="sm" onClick={() => handleBankTransferClick("pro")} data-testid="button-bank-subscribe-pro">
-                      <Landmark size={14} className="mr-2" />
-                      {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
-                    </Button>
-                    <p className="text-xs text-muted-foreground text-center mt-1.5">{t('pricing.bankTransferOnlyNote', '당분간은 계좌 이체만 가능합니다')}</p>
-                  </div>
-                )}
+                <div className="mt-auto">
+                  {isPro ? (
+                    <div className="space-y-2">
+                      <Button className="w-full" size="sm" disabled data-testid="button-current-pro">
+                        <Zap size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
+                      </Button>
+                      {subscriptionData?.expiresAt && (
+                        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Calendar size={12} />
+                          {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
+                        </p>
+                      )}
+                      <Button variant="outline" size="sm" className="w-full" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                        <XCircle size={14} className="mr-2" />
+                        {t('pricing.cancelSubscription', '구독 해지')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <Button className="w-full bg-primary" size="sm" onClick={() => handleBankTransferClick("pro")} data-testid="button-bank-subscribe-pro">
+                        <Landmark size={14} className="mr-2" />
+                        {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center mt-1.5">{t('pricing.bankTransferOnlyNote', '당분간은 계좌 이체만 가능합니다')}</p>
+                    </div>
+                  )}
+                </div>
               </Card>
 
-              <Card className="p-6 relative" data-testid="card-premium-plan">
+              <Card className="p-6 relative flex flex-col" data-testid="card-premium-plan">
                 <div className="mb-4">
                   <h3 className="text-lg font-bold mb-1 flex items-center gap-1.5">
                     <Crown size={18} className="text-yellow-500" />
@@ -329,31 +333,48 @@ export default function Pricing() {
                     </div>
                   ))}
                 </div>
-                {isPremium ? (
-                  <div className="space-y-2">
-                    <Button className="w-full" size="sm" disabled data-testid="button-current-premium">
-                      <Crown size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
-                    </Button>
-                    {subscriptionData?.expiresAt && (
-                      <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                        <Calendar size={12} />
-                        {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
+                <div className="mt-auto">
+                  {isPremium ? (
+                    <div className="space-y-2">
+                      <Button className="w-full" size="sm" disabled data-testid="button-current-premium">
+                        <Crown size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
+                      </Button>
+                      {subscriptionData?.expiresAt && (
+                        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                          <Calendar size={12} />
+                          {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
+                        </p>
+                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => cancelMutation.mutate()}
+                        disabled={cancelMutation.isPending}
+                        data-testid="button-cancel-subscription"
+                      >
+                        <XCircle size={14} className="mr-2" />
+                        {t('pricing.cancelSubscription', '구독 해지')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <Button
+                        variant="outline"
+                        className="w-full border-yellow-500/50 text-yellow-600 dark:text-yellow-400"
+                        size="sm"
+                        onClick={() => handleBankTransferClick("premium")}
+                        data-testid="button-bank-subscribe-premium"
+                      >
+                        <Landmark size={14} className="mr-2" />
+                        {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center mt-1.5">
+                        {t('pricing.bankTransferOnlyNote', '당분간은 계좌 이체만 가능합니다')}
                       </p>
-                    )}
-                    <Button variant="outline" size="sm" className="w-full" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending} data-testid="button-cancel-subscription">
-                      <XCircle size={14} className="mr-2" />
-                      {t('pricing.cancelSubscription', '구독 해지')}
-                    </Button>
-                  </div>
-                ) : (
-                  <div>
-                    <Button variant="outline" className="w-full border-yellow-500/50 text-yellow-600 dark:text-yellow-400" size="sm" onClick={() => handleBankTransferClick("premium")} data-testid="button-bank-subscribe-premium">
-                      <Landmark size={14} className="mr-2" />
-                      {t('pricing.bankTransferSubscribe', '계좌이체로 구독하기')}
-                    </Button>
-                    <p className="text-xs text-muted-foreground text-center mt-1.5">{t('pricing.bankTransferOnlyNote', '당분간은 계좌 이체만 가능합니다')}</p>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </Card>
             </div>
           </>

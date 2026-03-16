@@ -524,6 +524,15 @@ export async function registerRoutes(
 
   // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI 우선, 없으면 AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
+    if (limit >= 0 && used >= FREE_AI_MUSIC_LIMIT_PER_MONTH && (user?.subscriptionTier ?? "free") === "free") {
+      return res.status(403).json({
+        message: `Free 플랜은 월 ${FREE_AI_MUSIC_LIMIT_PER_MONTH}곡까지 AI 음악 생성이 가능합니다. Pro로 업그레이드하면 월 2,000 크레딧을 사용할 수 있습니다.`,
+        code: "AI_MUSIC_LIMIT_REACHED",
+        limit: FREE_AI_MUSIC_LIMIT_PER_MONTH,
+        usedThisMonth: used,
+      });
+    }
+
     if (SUNOAPI_KEY) {
       try {
         const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, {
@@ -571,7 +580,8 @@ export async function registerRoutes(
 
   const FREE_AI_MUSIC_LIMIT_PER_MONTH = 2;
   const PRO_AI_MUSIC_CREDITS_PER_MONTH = 2000;
-  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 3000;
+  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 4000;
+  const AI_MUSIC_CREDITS_PER_TRACK = 20;
 
   function getAiMusicLimit(tier: string | null, role: string | null): number {
     if (role === "admin") return -1;
@@ -669,13 +679,34 @@ export async function registerRoutes(
     const customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
 
-    async function incrementAiMusicUsage() {
+    async function incrementAiMusicUsageAndDeductCredits() {
       if (user?.role === "admin") return;
-      await db.execute(sql`
-        INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-        VALUES (${userId}, ${periodMonth}, 1, NOW())
-        ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
-      `);
+      // Free: 월 2곡까지만, 크레딧 차감 없이 카운트만
+      if ((user?.subscriptionTier ?? "free") === "free") {
+        await db.execute(sql`
+          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+          VALUES (${userId}, ${periodMonth}, 1, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+        `);
+        return;
+      }
+      // Pro / Premium: 크레딧 차감 + 사용량 카운트
+      await db.transaction(async (tx) => {
+        const [u] = await tx.select().from(users).where(eq(users.id, userId)).forUpdate();
+        const currentCredits = u?.credits ?? 0;
+        if (currentCredits < AI_MUSIC_CREDITS_PER_TRACK) {
+          throw new Error("INSUFFICIENT_CREDITS");
+        }
+        await tx
+          .update(users)
+          .set({ credits: currentCredits - AI_MUSIC_CREDITS_PER_TRACK, updatedAt: new Date() })
+          .where(eq(users.id, userId));
+        await tx.execute(sql`
+          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+          VALUES (${userId}, ${periodMonth}, 1, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+        `);
+      });
     }
 
     if (SUNOAPI_KEY) {
@@ -721,7 +752,7 @@ export async function registerRoutes(
           console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
-        await incrementAiMusicUsage();
+        await incrementAiMusicUsageAndDeductCredits();
         return res.json({ task_id: taskId, provider: "suno" });
       } catch (e) {
         console.error("[ai-music create suno]", e);
@@ -765,7 +796,7 @@ export async function registerRoutes(
         console.warn("[ai-music create aimusicapi] 응답 구조:", JSON.stringify(data).slice(0, 300));
         return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
       }
-      await incrementAiMusicUsage();
+      await incrementAiMusicUsageAndDeductCredits();
       res.json({ task_id: taskId, provider: "aimusicapi" });
     } catch (e) {
       console.error("[ai-music create]", e);

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -83,10 +83,16 @@ function TrackCard({
                   <button type="button" onClick={onDownload} className="inline-flex items-center gap-0.5 hover:underline">
                     <Download className="w-3 h-3" />
                     {t("createMusic.download", "다운로드")}
+                    {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
+                      <span className="text-[10px] text-muted-foreground ml-0.5">({track.downloadCount})</span>
+                    )}
                   </button>
                   <button type="button" onClick={onUpload} className="inline-flex items-center gap-0.5 hover:underline">
                     <CloudUpload className="w-3 h-3" />
                     {t("createMusic.uploadThis", "업로드")}
+                    {typeof track.uploadCount === "number" && track.uploadCount > 0 && (
+                      <span className="text-[10px] text-muted-foreground ml-0.5">({track.uploadCount})</span>
+                    )}
                   </button>
                 </>
               )}
@@ -146,7 +152,12 @@ type GeneratedTrack = {
   custom_mode?: boolean;
 };
 
-type SavedTrack = GeneratedTrack & { id: string; createdAt: number };
+type SavedTrack = GeneratedTrack & {
+  id: string;
+  createdAt: number;
+  uploadCount?: number;
+  downloadCount?: number;
+};
 
 export default function CreateMusic() {
   const { t } = useTranslation();
@@ -178,6 +189,15 @@ export default function CreateMusic() {
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
 
+  const totalUploads = useMemo(
+    () => savedTracks.reduce((sum, t) => sum + (t.uploadCount ?? 0), 0),
+    [savedTracks]
+  );
+  const totalDownloads = useMemo(
+    () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
+    [savedTracks]
+  );
+
   useEffect(() => {
     if (status !== "pending" && status !== "running") return;
     const t = setInterval(() => {
@@ -204,10 +224,14 @@ export default function CreateMusic() {
         const t = item as Record<string, unknown>;
         const id = typeof t.id === "string" ? t.id : `saved-${Date.now()}-${i}-${t.clip_id ?? t.id ?? i}`;
         const createdAt = typeof t.createdAt === "number" ? t.createdAt : (typeof t.created_at === "number" ? t.created_at : Date.now());
+        const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
+        const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
         return {
           ...(item as object),
           id,
           createdAt,
+          uploadCount,
+          downloadCount,
           audio_url: (t.audio_url ?? t.audioUrl) as string | undefined,
           image_url: (t.image_url ?? t.imageUrl) as string | undefined,
           clip_id: t.clip_id ?? t.id,
@@ -262,9 +286,17 @@ export default function CreateMusic() {
         const lyricsText = (track.original_prompt ?? track.prompt ?? "").trim();
         if (lyricsText) sessionStorage.setItem("createMusic_uploadLyrics", lyricsText);
       } catch {}
+      // 업로드 횟수 카운트
+      setSavedTracks((prev) => {
+        const next = prev.map((t) =>
+          t.id === track.id ? { ...t, uploadCount: (t.uploadCount ?? 0) + 1 } : t
+        );
+        persistTracks(next);
+        return next;
+      });
       setLocation("/upload");
     },
-    [setLocation]
+    [setLocation, persistTracks]
   );
 
   const playTrackInGlobalPlayer = useCallback((track: SavedTrack) => {
@@ -301,6 +333,14 @@ export default function CreateMusic() {
       a.rel = "noopener";
       a.click();
     }
+    // 다운로드 횟수 카운트
+    setSavedTracks((prev) => {
+      const next = prev.map((t) =>
+        t.id === track.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t
+      );
+      persistTracks(next);
+      return next;
+    });
   }, []);
 
   const pollTask = useCallback(
@@ -334,6 +374,8 @@ export default function CreateMusic() {
             createdAt: now,
             custom_mode: tr.custom_mode ?? (submitModeRef.current === "custom"),
             original_prompt: submitModeRef.current === "custom" ? submittedLyricsRef.current : undefined,
+            uploadCount: 0,
+            downloadCount: 0,
           };
         });
         setSavedTracks((prev) => {
@@ -566,9 +608,25 @@ export default function CreateMusic() {
 
                   {/* 오른쪽: 생성된 곡 목록 (저장됨, 삭제할 때까지 유지) */}
                   <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 md:p-6 lg:min-h-[320px] min-w-0">
-                    <h2 className="text-lg font-bold mb-3">
-                      {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
-                    </h2>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <h2 className="text-lg font-bold">
+                        {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
+                      </h2>
+                      {savedTracks.length > 0 && (totalUploads > 0 || totalDownloads > 0) && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          {totalDownloads > 0 && (
+                            <span>
+                              {t("createMusic.download", "다운로드")}: {totalDownloads}
+                            </span>
+                          )}
+                          {totalUploads > 0 && (
+                            <span>
+                              {t("createMusic.uploadThis", "업로드")}: {totalUploads}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     {savedTracks.length > 0 && (
                       <div className="relative mb-3">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />

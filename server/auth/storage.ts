@@ -62,16 +62,11 @@ class AuthStorage implements IAuthStorage {
       }
     }
 
-    const premiumExpiresAt = new Date();
-    premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
     const [user] = await db
       .insert(users)
       .values({
         ...userData,
         role: isAdmin ? "admin" : "user",
-        subscriptionTier: "premium",
-        subscriptionPlan: "premium",
-        subscriptionExpiresAt: premiumExpiresAt,
       })
       .onConflictDoUpdate({
         target: users.id,

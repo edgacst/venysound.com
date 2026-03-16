@@ -611,11 +611,17 @@ export function MusicCard({ music }: MusicCardProps) {
           </p>
           
           <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex gap-1.5 flex-wrap items-center">
-              <span className="text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground truncate max-w-full">{music.genre || t('music.other')}</span>
+            <div className="flex items-center justify-between gap-1.5 overflow-hidden">
+              <span className="text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground truncate max-w-[65%]">
+                {music.genre || t('music.other')}
+              </span>
               {uploaderIsPremium && music.isDownloadable && music.price && music.price > 0 && (
-                <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1" data-testid={`badge-price-${music.id}`}>
-                  <DollarSign size={10} />{music.price.toLocaleString()}원
+                <span
+                  className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0"
+                  data-testid={`badge-price-${music.id}`}
+                >
+                  <DollarSign size={10} />
+                  {music.price.toLocaleString()}원
                 </span>
               )}
             </div>
