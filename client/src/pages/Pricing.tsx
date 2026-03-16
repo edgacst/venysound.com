@@ -60,8 +60,7 @@ export default function Pricing() {
 
   const PREMIUM_FEATURES = [
     { icon: Crown, text: t('pricing.premiumFeatureAllPro', 'Pro 모든 기능') },
-    { icon: Sparkles, text: t('pricing.premiumFeatureCredits', 'AI 음악 생성 3,000 크레딧/월') },
-    { icon: Music, text: t('pricing.premiumFeatureMusicVideo', '뮤직비디오 생성') },
+    { icon: Sparkles, text: t('pricing.premiumFeatureCredits', 'AI 음악 생성 4,000 크레딧/월') },
     { icon: Crown, text: t('pricing.premiumFeature6', '프리미엄 배지') },
     { icon: Shield, text: t('pricing.premiumFeatureSupport', '우선 지원') },
   ];
@@ -215,7 +214,7 @@ export default function Pricing() {
             </div>
 
             <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
-              <Card className="p-6 relative flex flex-col" data-testid="card-free-plan">
+              <Card className="p-6 relative" data-testid="card-free-plan">
                 <div className="mb-4">
                   <h3 className="text-lg font-bold mb-1">{t('pricing.freePlanName', 'Free')}</h3>
                   <p className="text-muted-foreground text-xs">{t('pricing.freeDescription', '기본적인 음악 스트리밍')}</p>
@@ -224,7 +223,7 @@ export default function Pricing() {
                   <span className="text-3xl font-bold">0{t('pricing.won', '원')}</span>
                   <span className="text-muted-foreground text-sm">/{t('pricing.perMonth', '월')}</span>
                 </div>
-                <div className="space-y-2 mb-6">
+                <div className="space-y-2 mb-4">
                   {FREE_FEATURES.map((feature, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <Check size={14} className="text-muted-foreground shrink-0" />
@@ -232,12 +231,8 @@ export default function Pricing() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-auto">
-                  {!isPaid ? (
-                    <Button variant="outline" className="w-full" disabled size="sm" data-testid="button-current-free">
-                      {t('pricing.currentPlan', '현재 플랜')}
-                    </Button>
-                  ) : (
+                <div className="mt-4">
+                  {!isPaid ? null : (
                     <div className="grid gap-2">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="flex items-center justify-center text-xs text-muted-foreground border border-transparent rounded-md">
