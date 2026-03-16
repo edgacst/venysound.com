@@ -5,8 +5,14 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import * as schema from "@shared/schema";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const envPath = path.resolve(__dirname, "..", ".env");
+// 프로덕션 CJS 번들에서는 import.meta.url이 ''로 대체되므로 fileURLToPath('')가 Invalid URL로 크래시함. 이 경우 __dirname 사용.
+const _dir =
+  typeof import.meta !== "undefined" && import.meta.url
+    ? path.dirname(fileURLToPath(import.meta.url))
+    : typeof __dirname !== "undefined"
+      ? __dirname
+      : process.cwd();
+const envPath = path.resolve(_dir, "..", ".env");
 dotenv.config({ path: envPath, override: true });
 if (!process.env.DATABASE_URL?.startsWith("postgresql://") && !process.env.DATABASE_URL?.startsWith("postgres://")) {
   dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
