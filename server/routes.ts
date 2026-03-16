@@ -16,7 +16,7 @@ import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail } from "./email";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
-import { subscriptionPlans, payments } from "../shared/models/auth";
+import { subscriptionPlans, payments, aiMusicUsage } from "../shared/models/auth";
 import { db } from "./db";
 import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
@@ -81,17 +81,19 @@ export async function registerRoutes(
     }
   }
 
-  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 프리미엄(또는 admin)인지 반환 */
+  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 유료(Pro/Premium 또는 admin)인지 반환 */
   async function ensureExpiredSubscriptionDowngrade(userId: string): Promise<{ isPremium: boolean }> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user) return { isPremium: false };
     if (user.role === "admin") return { isPremium: true };
     const now = new Date();
-    if (user.subscriptionTier === "premium" && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
+    const paidTiers = ["pro", "premium"];
+    const isPaid = paidTiers.includes(user.subscriptionTier ?? "") && (!user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now);
+    if ((user.subscriptionTier === "pro" || user.subscriptionTier === "premium") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
       await db.update(users).set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null }).where(eq(users.id, userId));
       return { isPremium: false };
     }
-    return { isPremium: user.subscriptionTier === "premium" };
+    return { isPremium: isPaid };
   }
 
   // Setup Auth
@@ -335,6 +337,7 @@ export async function registerRoutes(
       "/guide",
       "/file-guide",
       "/suno-guide",
+      "/create-music",
     ];
     const now = new Date().toISOString().slice(0, 10);
     let urls = staticPaths.map(
@@ -350,6 +353,484 @@ export async function registerRoutes(
     }
     const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
     res.type("application/xml").send(xml);
+  });
+
+  // === AI Music: Suno API (sunoapi.org) 또는 AIMusicAPI 프록시 ===
+  const SUNOAPI_BASE = "https://api.sunoapi.org";
+  const rawSunoKey = (process.env.SUNOAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
+  const SUNOAPI_KEY = rawSunoKey || undefined;
+
+  const AIMUSICAPI_BASE = "https://api.aimusicapi.ai";
+  const rawKey = process.env.AIMUSICAPI_API_KEY ?? "";
+  const AIMUSICAPI_KEY = rawKey
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?|\n/g, "")
+    .trim() || undefined;
+
+  const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
+
+  // Suno API 콜백 수신용 (필수 파라미터라 URL만 제공, 폴링으로 결과 조회)
+  app.post("/api/ai-music/suno-callback", (req, res) => {
+    res.status(200).json({ received: true });
+  });
+
+  // AI 음악 생성 커버/오디오 프록시: 자기 자신 URL이 넘어오면 내부 url 쿼리만 꺼내서 사용 (재귀 호출 시 쿠키 없어 401 나는 것 방지)
+  const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  function resolveProxyUrl(given: string, proxyPath: "/api/ai-music/cover-proxy" | "/api/ai-music/audio-proxy"): string {
+    try {
+      const u = new URL(given);
+      const base = new URL(siteBase);
+      if (u.origin === base.origin && u.pathname === proxyPath && typeof u.searchParams.get("url") === "string") {
+        return u.searchParams.get("url")!;
+      }
+    } catch {}
+    return given;
+  }
+
+  // AI 음악 생성 커버 이미지 프록시 (업로드 페이지에서 CORS 없이 커버 사용, 로그인 사용자만)
+  const COVER_PROXY_MAX_BYTES = 5 * 1024 * 1024; // 5MB
+  app.get("/api/ai-music/cover-proxy", isAuthenticated, async (req, res) => {
+    let rawUrl = req.query.url as string;
+    if (!rawUrl || typeof rawUrl !== "string") {
+      return res.status(400).json({ message: "url이 필요합니다." });
+    }
+    rawUrl = resolveProxyUrl(rawUrl, "/api/ai-music/cover-proxy");
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ message: "잘못된 URL입니다." });
+    }
+    if (parsed.protocol !== "https:") {
+      return res.status(400).json({ message: "https URL만 가능합니다." });
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const imgRes = await fetch(rawUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!imgRes.ok) {
+        console.warn("[ai-music cover-proxy] 이미지 응답 실패:", imgRes.status, parsed.hostname, rawUrl.slice(0, 60));
+        return res.status(502).json({ message: "이미지를 가져오지 못했습니다." });
+      }
+      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+      const contentLength = imgRes.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > COVER_PROXY_MAX_BYTES) {
+        return res.status(413).json({ message: "이미지 용량이 너무 큽니다." });
+      }
+      const buf = await imgRes.arrayBuffer();
+      if (buf.byteLength > COVER_PROXY_MAX_BYTES) {
+        return res.status(413).json({ message: "이미지 용량이 너무 큽니다." });
+      }
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.send(Buffer.from(buf));
+    } catch (e) {
+      console.error("[ai-music cover-proxy]", (e as Error).message, parsed.hostname, rawUrl.slice(0, 60));
+      res.status(502).json({ message: "이미지를 가져오지 못했습니다." });
+    }
+  });
+
+  const AUDIO_PROXY_MAX_BYTES = 50 * 1024 * 1024; // 50MB
+  app.get("/api/ai-music/audio-proxy", isAuthenticated, async (req, res) => {
+    let rawUrl = req.query.url as string;
+    if (!rawUrl || typeof rawUrl !== "string") {
+      return res.status(400).json({ message: "url이 필요합니다." });
+    }
+    rawUrl = resolveProxyUrl(rawUrl, "/api/ai-music/audio-proxy");
+    if (/\/None\.(mp3|wav|ogg)|undefined|null/i.test(rawUrl)) {
+      return res.status(400).json({ message: "음원 주소가 올바르지 않습니다. 생성된 곡을 다운로드한 뒤 파일을 직접 선택해 주세요." });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ message: "잘못된 URL입니다." });
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return res.status(400).json({ message: "http(s) URL만 가능합니다." });
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
+      const audioRes = await fetch(rawUrl, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "audio/*,*/*;q=0.8",
+          Referer: parsed.origin + "/",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!audioRes.ok) {
+        console.warn("[ai-music audio-proxy] 오디오 응답 실패:", audioRes.status, parsed.hostname, rawUrl.slice(0, 60));
+        const expiredHint = audioRes.status === 403 || audioRes.status === 404
+          ? " 음원 링크가 만료되었을 수 있습니다. 생성된 곡을 다운로드한 뒤 파일을 직접 선택해 주세요."
+          : "";
+        return res.status(502).json({ message: "음원을 가져오지 못했습니다." + expiredHint });
+      }
+      const contentType = audioRes.headers.get("content-type") || "audio/mpeg";
+      const ct = contentType.split(";")[0].toLowerCase();
+      if (ct && ct !== "application/octet-stream" && !ct.startsWith("audio/")) {
+        console.warn("[ai-music audio-proxy] 오디오가 아님:", ct, rawUrl.slice(0, 60));
+        return res.status(502).json({ message: "음원을 가져오지 못했습니다. 링크가 만료되었을 수 있습니다. 생성된 곡을 다운로드한 뒤 파일을 직접 선택해 주세요." });
+      }
+      const contentLength = audioRes.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > AUDIO_PROXY_MAX_BYTES) {
+        return res.status(413).json({ message: "음원 용량이 너무 큽니다." });
+      }
+      const buf = await audioRes.arrayBuffer();
+      if (buf.byteLength > AUDIO_PROXY_MAX_BYTES) {
+        return res.status(413).json({ message: "음원 용량이 너무 큽니다." });
+      }
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.send(Buffer.from(buf));
+    } catch (e) {
+      console.error("[ai-music audio-proxy]", (e as Error).message, parsed.hostname, rawUrl.slice(0, 60));
+      res.status(502).json({ message: "음원을 가져오지 못했습니다." });
+    }
+  });
+
+  // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI 우선, 없으면 AIMusicAPI.
+  app.get("/api/ai-music/check-key", async (_req, res) => {
+    if (SUNOAPI_KEY) {
+      try {
+        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, {
+          headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (apiRes.ok && (data as { code?: number }).code === 200) {
+          return res.json({ ok: true, provider: "suno", credits: (data as { data?: number }).data, keyLength: SUNOAPI_KEY.length });
+        }
+        return res.status(200).json({
+          ok: false,
+          provider: "suno",
+          status: apiRes.status,
+          message: (data as { msg?: string }).msg ?? "API 오류",
+          keyLength: SUNOAPI_KEY.length,
+        });
+      } catch (e) {
+        console.error("[ai-music check-key suno]", e);
+        return res.status(500).json({ ok: false, provider: "suno", message: "연결 실패" });
+      }
+    }
+    if (!AIMUSICAPI_KEY) {
+      return res.status(503).json({ ok: false, message: "SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.", keyLength: 0 });
+    }
+    try {
+      const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/get-credits`, {
+        headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (apiRes.ok) {
+        return res.json({ ok: true, provider: "aimusicapi", credits: data, keyLength: AIMUSICAPI_KEY.length });
+      }
+      return res.status(200).json({
+        ok: false,
+        provider: "aimusicapi",
+        status: apiRes.status,
+        message: (data as { error?: string }).error ?? (data as { message?: string }).message ?? "API 오류",
+        keyLength: AIMUSICAPI_KEY.length,
+      });
+    } catch (e) {
+      console.error("[ai-music check-key]", e);
+      return res.status(500).json({ ok: false, message: "연결 실패" });
+    }
+  });
+
+  const FREE_AI_MUSIC_LIMIT_PER_MONTH = 2;
+  const PRO_AI_MUSIC_CREDITS_PER_MONTH = 2000;
+  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 3000;
+
+  function getAiMusicLimit(tier: string | null, role: string | null): number {
+    if (role === "admin") return -1;
+    if (tier === "premium") return PREMIUM_AI_MUSIC_CREDITS_PER_MONTH;
+    if (tier === "pro") return PRO_AI_MUSIC_CREDITS_PER_MONTH;
+    return FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  }
+
+  app.get("/api/ai-music/usage", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      const now = new Date();
+      const isPaidTier = user?.role === "admin" || (
+        (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
+        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
+      );
+      const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
+      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+      const usedThisMonth = usage?.count ?? 0;
+      return res.json({ limit, usedThisMonth, isPaidTier });
+    } catch (e) {
+      console.error("[ai-music usage]", e);
+      res.status(500).json({ limit: FREE_AI_MUSIC_LIMIT_PER_MONTH, usedThisMonth: 0, isPaidTier: false });
+    }
+  });
+
+  app.get("/api/ai-music/check", isAuthenticated, async (_req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ ok: false, message: "SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다." });
+    }
+    if (SUNOAPI_KEY) {
+      try {
+        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, { headers: { Authorization: `Bearer ${SUNOAPI_KEY}` } });
+        const data = await apiRes.json().catch(() => ({}));
+        if (apiRes.ok && (data as { code?: number }).code === 200) {
+          return res.json({ ok: true, provider: "suno", credits: (data as { data?: number }).data });
+        }
+        return res.status(200).json({ ok: false, status: apiRes.status, message: (data as { msg?: string }).msg ?? "API 오류" });
+      } catch (e) {
+        console.error("[ai-music check suno]", e);
+        return res.status(500).json({ ok: false, message: "연결 실패" });
+      }
+    }
+    try {
+      const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/get-credits`, { headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` } });
+      const data = await apiRes.json().catch(() => ({}));
+      if (apiRes.ok) return res.json({ ok: true, provider: "aimusicapi", credits: data });
+      return res.status(200).json({ ok: false, status: apiRes.status, message: (data as { error?: string }).error ?? (data as { message?: string }).message ?? "API 오류" });
+    } catch (e) {
+      console.error("[ai-music check]", e);
+      return res.status(500).json({ ok: false, message: "연결 실패" });
+    }
+  });
+
+  app.post("/api/ai-music/create", isAuthenticated, async (req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다. .env에 SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요." });
+    }
+    // @ts-ignore
+    const userId = req.user?.claims?.sub as string;
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const now = new Date();
+    const isPaidTier = user?.role === "admin" || (
+      (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
+      (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
+    );
+    const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
+    const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+    const used = usage?.count ?? 0;
+    if (limit >= 0 && used >= limit) {
+      return res.status(403).json({
+        message: limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
+          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. Pro로 업그레이드하면 월 2,000 크레딧을 사용할 수 있습니다.`
+          : `이번 달 AI 음악 생성 한도(${limit} 크레딧)를 모두 사용했습니다.`,
+        code: "AI_MUSIC_LIMIT_REACHED",
+        limit,
+        usedThisMonth: used,
+      });
+    }
+
+    const body = req.body as {
+      custom_mode?: boolean;
+      prompt?: string;
+      gpt_description_prompt?: string;
+      title?: string;
+      tags?: string;
+      mv?: string;
+      vocal_gender?: "f" | "m";
+      make_instrumental?: boolean;
+    };
+    const customMode = body.custom_mode ?? false;
+    const makeInstrumental = body.make_instrumental === true;
+
+    async function incrementAiMusicUsage() {
+      if (user?.role === "admin") return;
+      await db.execute(sql`
+        INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+        VALUES (${userId}, ${periodMonth}, 1, NOW())
+        ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+      `);
+    }
+
+    if (SUNOAPI_KEY) {
+      const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
+      const model = (body.mv === "V5" || body.mv === "V4_5" || body.mv === "V4_5PLUS" || body.mv === "V4") ? body.mv : "V4_5ALL";
+      const payload: Record<string, unknown> = {
+        customMode,
+        instrumental: makeInstrumental,
+        model,
+        callBackUrl,
+      };
+      if (customMode) {
+        payload.style = (body.tags ?? "").trim() || "pop";
+        payload.title = (body.title ?? "").trim() || "Untitled";
+        if (!makeInstrumental) payload.prompt = (body.prompt ?? "").trim() || "";
+      } else {
+        const stylePart = (body.tags ?? "").trim();
+        const descPart = (body.gpt_description_prompt ?? body.prompt ?? "").trim();
+        const combined = stylePart ? `[스타일] ${stylePart}${descPart ? "\n\n" + descPart : ""}` : descPart;
+        payload.prompt = combined.slice(0, 500);
+      }
+      if (body.vocal_gender) payload.vocalGender = body.vocal_gender;
+      try {
+        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${SUNOAPI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const d = data as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string };
+        const taskId =
+          (typeof d?.data?.taskId === "string" && d.data.taskId) ||
+          (typeof d?.data?.task_id === "string" && d.data.task_id) ||
+          (typeof d?.taskId === "string" && d.taskId) ||
+          (typeof d?.task_id === "string" && d.task_id) ||
+          "";
+        if (!taskId) {
+          console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
+          return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+        }
+        await incrementAiMusicUsage();
+        return res.json({ task_id: taskId, provider: "suno" });
+      } catch (e) {
+        console.error("[ai-music create suno]", e);
+        return res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
+      }
+    }
+
+    try {
+      const mv = body.mv || "sonic-v4-5";
+      const payload: Record<string, unknown> = { task_type: "create_music", custom_mode: customMode, mv };
+      if (customMode && body.prompt) payload.prompt = body.prompt;
+      else if (!customMode) {
+        const stylePart = (body.tags ?? "").trim();
+        const descPart = (body.gpt_description_prompt ?? body.prompt ?? "").trim();
+        payload.gpt_description_prompt = stylePart ? `[스타일] ${stylePart}${descPart ? "\n\n" + descPart : ""}` : descPart;
+      }
+      if (body.title) payload.title = body.title;
+      if (body.tags) payload.tags = body.tags;
+      if (body.vocal_gender) payload.vocal_gender = body.vocal_gender;
+      if (makeInstrumental) payload.make_instrumental = true;
+
+      const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/create`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok) {
+        const msg = (data as { error?: string; message?: string }).error ?? (data as { message?: string }).message ?? "API 요청 실패";
+        const hint = apiRes.status === 401 ? " .env의 AIMUSICAPI_API_KEY를 확인하세요." : "";
+        return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) + hint });
+      }
+      const d = data as { task_id?: string; taskId?: string; data?: { task_id?: string; taskId?: string } };
+      const taskId =
+        (typeof d?.task_id === "string" && d.task_id) ||
+        (typeof d?.taskId === "string" && d.taskId) ||
+        (typeof d?.data?.task_id === "string" && d.data.task_id) ||
+        (typeof d?.data?.taskId === "string" && d.data.taskId) ||
+        "";
+      if (!taskId) {
+        console.warn("[ai-music create aimusicapi] 응답 구조:", JSON.stringify(data).slice(0, 300));
+        return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
+      }
+      await incrementAiMusicUsage();
+      res.json({ task_id: taskId, provider: "aimusicapi" });
+    } catch (e) {
+      console.error("[ai-music create]", e);
+      res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.get("/api/ai-music/task/:taskId", isAuthenticated, async (req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+    }
+    const taskId = req.params.taskId;
+    const provider = (req.query.provider as string) || AI_MUSIC_PROVIDER;
+    if (!taskId) return res.status(400).json({ message: "task_id가 필요합니다." });
+
+    if (provider === "suno" && SUNOAPI_KEY) {
+      try {
+        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
+          headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: (data as { msg?: string }).msg ?? "조회 실패" });
+        }
+        const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[] }; errorMessage?: string; param?: string } }).data;
+        const status = d?.status ?? "PENDING";
+        if (status === "SUCCESS" && Array.isArray(d?.response?.sunoData)) {
+          let customMode = false;
+          try {
+            if (typeof d?.param === "string") {
+              const param = JSON.parse(d.param) as { customMode?: boolean };
+              customMode = param.customMode === true;
+            }
+          } catch {}
+          const list = (d.response.sunoData as { id?: string; audioUrl?: string; imageUrl?: string; title?: string; tags?: string; prompt?: string }[]).map((t) => ({
+            clip_id: t.id,
+            audio_url: t.audioUrl,
+            image_url: t.imageUrl,
+            title: t.title,
+            tags: t.tags,
+            prompt: t.prompt,
+            custom_mode: customMode,
+          }));
+          return res.json({ state: "succeeded", data: list });
+        }
+        if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
+          return res.json({ state: "failed", message: d?.errorMessage ?? "생성에 실패했습니다.", data: null });
+        }
+        return res.json({ state: status === "TEXT_SUCCESS" || status === "FIRST_SUCCESS" ? "running" : "pending", data: null });
+      } catch (e) {
+        console.error("[ai-music task suno]", e);
+        return res.status(500).json({ message: "작업 조회 중 오류가 발생했습니다." });
+      }
+    }
+
+    try {
+      const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
+        headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok) {
+        return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: (data as { message?: string }).message ?? "조회 실패" });
+      }
+      const arr = (data as { data?: unknown[] }).data;
+      const rawList = Array.isArray(arr) ? arr : [];
+      const first = rawList[0] as { state?: string } | undefined;
+      const state = first?.state ?? "pending";
+      if (state === "succeeded") {
+        const list = rawList.map((item: any) => {
+          const t = item?.full ?? item?.extended ?? item;
+          return {
+            clip_id: t?.clip_id ?? t?.id,
+            audio_url: t?.audio_url ?? t?.audioUrl,
+            image_url: t?.image_url ?? t?.imageUrl,
+            title: t?.title,
+            tags: t?.tags,
+            prompt: t?.prompt ?? t?.lyrics ?? t?.gpt_description_prompt,
+            custom_mode: false,
+          };
+        });
+        return res.json({ state: "succeeded", data: list });
+      }
+      if (state === "failed") return res.json({ state: "failed", message: (first as { error?: string }).error ?? "생성에 실패했습니다.", data: null });
+      res.json({ state: state === "running" ? "running" : "pending", data: null });
+    } catch (e) {
+      console.error("[ai-music task]", e);
+      res.status(500).json({ message: "작업 조회 중 오류가 발생했습니다." });
+    }
   });
 
   // === Music Routes ===
@@ -489,7 +970,7 @@ export async function registerRoutes(
       const rows = (result.rows as any[]).map(r => {
         const tier = r.uploader_subscription_tier;
         const expiresAt = r.uploader_subscription_expires_at;
-        const subscriptionPremium = tier === "premium" && (expiresAt == null || new Date(expiresAt) > now);
+        const subscriptionPremium = (tier === "pro" || tier === "premium") && (expiresAt == null || new Date(expiresAt) > now);
         const isPremium = r.uploader_role === "admin" || subscriptionPremium;
         return {
           id: Number(r.id),
@@ -504,7 +985,7 @@ export async function registerRoutes(
           isDownloadable: r.is_downloadable,
           userId: r.user_id,
           createdAt: r.created_at,
-          uploaderSubscriptionTier: isPremium ? "premium" : "free",
+          uploaderSubscriptionTier: isPremium ? (tier ?? "pro") : "free",
           likeCount: Number(r.like_count || 0),
           streamSeconds: Number(r.stream_seconds || 0),
         };
@@ -692,11 +1173,11 @@ export async function registerRoutes(
       }
       const uploader = await storage.getUserById(music.userId);
       const now = new Date();
-      const subscriptionPremium = uploader?.subscriptionTier === "premium" && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+      const subscriptionPremium = (uploader?.subscriptionTier === "pro" || uploader?.subscriptionTier === "premium") && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
       const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
       res.json({
         ...music,
-        uploaderSubscriptionTier: uploaderIsPremium ? "premium" : "free",
+        uploaderSubscriptionTier: uploaderIsPremium ? (uploader?.subscriptionTier ?? "pro") : "free",
         uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
         uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
       });
@@ -1742,6 +2223,7 @@ export async function registerRoutes(
           content: a.content,
           imageUrl: a.imageUrl ?? null,
           showAsPopup: (a as any).showAsPopup !== false,
+          viewCount: (a as any).viewCount ?? 0,
           startsAt: a.startsAt.toISOString(),
           endsAt: a.endsAt.toISOString(),
           createdAt: a.createdAt.toISOString(),
@@ -1750,6 +2232,19 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[announcements/site]", e);
       res.json([]);
+    }
+  });
+
+  // 공지 조회 시 조회수 증가 (공개)
+  app.post("/api/announcements/site/:id/view", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: "Invalid id" });
+      const viewCount = await storage.incrementSiteAnnouncementViewCount(id);
+      res.json({ viewCount });
+    } catch (e) {
+      console.error("[announcements/site view]", e);
+      res.status(500).json({ message: "Failed to record view" });
     }
   });
 
@@ -2070,20 +2565,20 @@ export async function registerRoutes(
     try {
       const targetId = req.params.id as string;
       const { tier } = req.body;
-      if (!tier || !["free", "premium"].includes(tier)) {
+      if (!tier || !["free", "pro", "premium"].includes(tier)) {
         return res.status(400).json({ message: "유효하지 않은 구독 플랜입니다" });
       }
       let expiresAt: Date | null = null;
-      if (tier === "premium") {
+      if (tier === "pro" || tier === "premium") {
         expiresAt = new Date();
         expiresAt.setFullYear(expiresAt.getFullYear() + 99);
       }
       await storage.updateUserSubscription(targetId, tier, expiresAt);
-      if (tier === "premium") {
+      if (tier === "pro" || tier === "premium") {
         await storage.createNotification({
           userId: targetId,
           type: "system",
-          message: "관리자에 의해 프리미엄 회원으로 적용되었습니다.",
+          message: tier === "premium" ? "관리자에 의해 프리미엄 회원으로 적용되었습니다." : "관리자에 의해 Pro 회원으로 적용되었습니다.",
           url: "/pricing",
         });
       }
@@ -2245,16 +2740,18 @@ export async function registerRoutes(
       }
 
       const now = new Date();
-      if (user.subscriptionTier === "premium" && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > now) {
+      const paidTiers = ["pro", "premium"];
+      const isPaid = paidTiers.includes(user.subscriptionTier ?? "") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > now;
+      if (isPaid && user.subscriptionTier) {
         return res.json({
-          tier: "premium",
+          tier: user.subscriptionTier,
           plan: user.subscriptionPlan,
           expiresAt: user.subscriptionExpiresAt,
           hasBillingKey: !!user.tossBillingKey,
         });
       }
 
-      if (user.subscriptionTier === "premium" && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
+      if ((user.subscriptionTier === "pro" || user.subscriptionTier === "premium") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
         await db.update(users).set({
           subscriptionTier: "free",
           subscriptionPlan: null,
@@ -2339,11 +2836,11 @@ export async function registerRoutes(
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
       if (!user.tossBillingKey) return res.status(400).json({ message: "카드를 먼저 등록해주세요" });
 
-      const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, 'premium'));
+      const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, 'pro'));
       if (!plan) return res.status(500).json({ message: "플랜 정보를 찾을 수 없습니다" });
 
       const amount = billingPeriod === 'monthly' ? plan.monthlyPrice : plan.yearlyPrice;
-      const orderName = billingPeriod === 'monthly' ? 'Veny Sound Premium 월간 구독' : 'Veny Sound Premium 연간 구독';
+      const orderName = billingPeriod === 'monthly' ? 'Veny Sound Pro 월간 구독' : 'Veny Sound Pro 연간 구독';
       const orderId = `SW_${userId.substring(0, 8)}_${Date.now()}`;
 
       const secretKey = process.env.TOSS_SECRET_KEY;
@@ -2388,12 +2885,12 @@ export async function registerRoutes(
         paymentKey: data.paymentKey,
         amount,
         status: 'paid',
-        plan: 'premium',
+        plan: 'pro',
         billingPeriod,
       });
 
       await db.update(users).set({
-        subscriptionTier: 'premium',
+        subscriptionTier: 'pro',
         subscriptionPlan: billingPeriod,
         subscriptionExpiresAt: expiresAt,
       }).where(eq(users.id, userId));
@@ -2401,14 +2898,14 @@ export async function registerRoutes(
       await storage.createNotification({
         userId,
         type: "system",
-        message: `프리미엄 구독이 완료되었습니다. (${billingPeriod === "monthly" ? "월간" : "연간"})`,
+        message: `Pro 구독이 완료되었습니다. (${billingPeriod === "monthly" ? "월간" : "연간"})`,
         payload: { plan: billingPeriod, amount },
         url: "/pricing",
       });
 
       res.json({
         success: true,
-        tier: 'premium',
+        tier: 'pro',
         plan: billingPeriod,
         expiresAt,
         amount,
@@ -2460,15 +2957,19 @@ export async function registerRoutes(
     const bankName = process.env.BANK_NAME || "입력된 은행명 없음";
     const bankAccount = process.env.BANK_ACCOUNT || "";
     const bankHolder = process.env.BANK_HOLDER || "";
-    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
-    const amountMonthly = plan?.monthlyPrice ?? 5500;
-    const amountYearly = plan?.yearlyPrice ?? 59400;
+    const plans = await db.select().from(subscriptionPlans).where(inArray(subscriptionPlans.id, ["pro", "premium"]));
+    const proPlan = plans.find((p) => p.id === "pro");
+    const premiumPlan = plans.find((p) => p.id === "premium");
     res.json({
       bankName,
       bankAccount,
       bankHolder,
-      amountMonthly,
-      amountYearly,
+      plans: [
+        { id: "pro", name: proPlan?.name ?? "Pro", monthlyPrice: proPlan?.monthlyPrice ?? 15400, yearlyPrice: proPlan?.yearlyPrice ?? 166320 },
+        { id: "premium", name: premiumPlan?.name ?? "Premium", monthlyPrice: premiumPlan?.monthlyPrice ?? 33000, yearlyPrice: premiumPlan?.yearlyPrice ?? 356400 },
+      ],
+      amountMonthly: proPlan?.monthlyPrice ?? 15400,
+      amountYearly: proPlan?.yearlyPrice ?? 166320,
     });
   });
 
@@ -2476,19 +2977,20 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const { billingPeriod } = req.body;
+      const { billingPeriod, planId } = req.body;
       if (!billingPeriod || !["monthly", "yearly"].includes(billingPeriod)) {
         return res.status(400).json({ message: "결제 주기를 선택해주세요" });
       }
+      const plan = planId === "premium" ? "premium" : "pro";
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
       let amount: number;
       try {
-        const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, "premium")).limit(1);
-        amount = plan ? (billingPeriod === "monthly" ? plan.monthlyPrice : plan.yearlyPrice) : (billingPeriod === "monthly" ? 5500 : 59400);
+        const [planRow] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, plan)).limit(1);
+        amount = planRow ? (billingPeriod === "monthly" ? planRow.monthlyPrice : planRow.yearlyPrice) : (plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : billingPeriod === "monthly" ? 15400 : 166320);
       } catch {
-        amount = billingPeriod === "monthly" ? 5500 : 59400;
+        amount = plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : (billingPeriod === "monthly" ? 15400 : 166320);
       }
       const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
 
@@ -2498,7 +3000,7 @@ export async function registerRoutes(
         paymentKey: "bank_transfer",
         amount,
         status: "pending",
-        plan: "premium",
+        plan,
         billingPeriod,
       });
 
@@ -2511,7 +3013,8 @@ export async function registerRoutes(
         bankInfo: { bankName, bankAccount, bankHolder },
         amount,
         billingPeriod,
-        message: "입금 신청이 등록되었습니다. 월간 6,600원을 아래 계좌로 입금해 주시면 확인 후 즉시 프리미엄이 적용됩니다.",
+        planId: plan,
+        message: `입금 신청이 등록되었습니다. ${amount.toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 즉시 ${plan === "premium" ? "프리미엄" : "Pro"}이 적용됩니다.`,
       });
     } catch (err: any) {
       console.error("Request bank subscription error:", err);
@@ -2560,13 +3063,14 @@ export async function registerRoutes(
       } else {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       }
+      const tier = payment.plan === "premium" || payment.plan === "pro" ? payment.plan : "pro";
       await db.update(users).set({
-        subscriptionTier: "premium",
+        subscriptionTier: tier,
         subscriptionPlan: payment.billingPeriod,
         subscriptionExpiresAt: expiresAt,
       }).where(eq(users.id, payment.userId));
 
-      res.json({ success: true, expiresAt });
+      res.json({ success: true, expiresAt, tier });
     } catch (err) {
       console.error("Confirm bank payment error:", err);
       res.status(500).json({ message: "입금 확인 처리에 실패했습니다" });

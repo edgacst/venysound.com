@@ -13,8 +13,16 @@ import { useLocation } from "wouter";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
+export interface ExternalTrack {
+  url: string;
+  title: string;
+  artist?: string;
+  imageUrl?: string;
+}
+
 interface PlayerStore {
   activeMusicId: number | null;
+  activeExternalTrack: ExternalTrack | null;
   playlist: number[];
   queue: number[];
   pauseRequested: boolean;
@@ -24,6 +32,7 @@ interface PlayerStore {
   shuffledOrder: number[];
   playMusic: (id: number) => void;
   playMusicWithLyrics: (id: number) => void;
+  playExternalTrack: (track: ExternalTrack) => void;
   togglePause: () => void;
   setPlaylist: (ids: number[]) => void;
   closePlayer: () => void;
@@ -47,6 +56,7 @@ function shuffleArray(arr: number[]): number[] {
 
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   activeMusicId: null,
+  activeExternalTrack: null,
   playlist: [],
   queue: [],
   pauseRequested: false,
@@ -54,14 +64,15 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   repeatMode: 'none',
   shuffleEnabled: false,
   shuffledOrder: [],
-  playMusic: (id) => set({ activeMusicId: id, pauseRequested: false, lyricsRequested: false }),
-  playMusicWithLyrics: (id) => set({ activeMusicId: id, pauseRequested: false, lyricsRequested: true }),
+  playMusic: (id) => set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false }),
+  playMusicWithLyrics: (id) => set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: true }),
+  playExternalTrack: (track) => set({ activeMusicId: null, activeExternalTrack: track, pauseRequested: false, lyricsRequested: false }),
   togglePause: () => set((state) => ({ pauseRequested: !state.pauseRequested })),
   setPlaylist: (ids) => {
     const state = get();
     set({ playlist: ids, shuffledOrder: state.shuffleEnabled ? shuffleArray(ids) : [] });
   },
-  closePlayer: () => set({ activeMusicId: null, pauseRequested: false, lyricsRequested: false, queue: [] }),
+  closePlayer: () => set({ activeMusicId: null, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false, queue: [] }),
   clearLyricsRequest: () => set({ lyricsRequested: false }),
   toggleRepeat: () => set((state) => {
     const modes: RepeatMode[] = ['none', 'all', 'one'];
@@ -278,9 +289,9 @@ function SyncedLyricsPanel({ lyrics, currentTime, duration }: { lyrics: string; 
             <div
               key={i}
               ref={i === activeIndex ? activeRef : undefined}
-              className={`px-2 py-1.5 rounded-md transition-all duration-300 text-base leading-relaxed ${
+              className={`py-1 transition-all duration-300 text-base leading-relaxed ${
                 i === activeIndex
-                  ? "text-white font-semibold bg-primary/20 scale-[1.02]"
+                  ? "text-primary font-semibold"
                   : i < activeIndex
                     ? "text-muted-foreground/50"
                     : "text-muted-foreground"
@@ -443,7 +454,7 @@ export function GlobalAudioPlayer() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { activeMusicId, playlist, queue, playMusic, closePlayer, pauseRequested, lyricsRequested, clearLyricsRequest, repeatMode, shuffleEnabled, shuffledOrder, toggleRepeat, toggleShuffle, removeFromQueue, clearQueue, addToQueue } = usePlayerStore();
+  const { activeMusicId, activeExternalTrack, playlist, queue, playMusic, closePlayer, pauseRequested, lyricsRequested, clearLyricsRequest, repeatMode, shuffleEnabled, shuffledOrder, toggleRepeat, toggleShuffle, removeFromQueue, clearQueue, addToQueue } = usePlayerStore();
   const { data: music } = useMusic(activeMusicId || 0);
   const { data: allMusic } = useMusicList({ limit: 500 });
   const { toast } = useToast();
@@ -479,10 +490,15 @@ export function GlobalAudioPlayer() {
   const lastImageUrlRef = useRef<string>("");
   const isClosingRef = useRef(false);
 
-  if (activeMusicId) {
+  if (activeExternalTrack) {
+    lastAudioUrlRef.current = `/api/ai-music/audio-proxy?url=${encodeURIComponent(activeExternalTrack.url)}`;
+  } else if (activeMusicId) {
     lastAudioUrlRef.current = `/api/music/${activeMusicId}/stream`;
   }
-  if (music) {
+  if (activeExternalTrack) {
+    lastMusicRef.current = { title: activeExternalTrack.title, artist: activeExternalTrack.artist ?? "", lyrics: null };
+    lastImageUrlRef.current = activeExternalTrack.imageUrl || "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=150&h=150&fit=crop";
+  } else if (music) {
     lastMusicRef.current = music;
     lastImageUrlRef.current = music.imageFilename
       ? resolveStorageUrl(music.imageFilename)
@@ -492,6 +508,7 @@ export function GlobalAudioPlayer() {
   const displayMusic = music || lastMusicRef.current;
   const audioUrl = lastAudioUrlRef.current;
   const imageUrl = lastImageUrlRef.current;
+  const isExternalTrack = !!activeExternalTrack;
   const baseList = playlist.length > 0 ? playlist : (allMusic?.data?.map((m: any) => m.id) || []);
 
   useEffect(() => {
@@ -631,11 +648,12 @@ export function GlobalAudioPlayer() {
 
   useEffect(() => {
     setShowLyricsPanel(false);
-  }, [activeMusicId]);
+  }, [activeMusicId, activeExternalTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !audioUrl || !activeMusicId) return;
+    const hasTrack = activeMusicId || activeExternalTrack;
+    if (!audio || !audioUrl || !hasTrack) return;
 
     audio.src = audioUrl;
     audio.load();
@@ -643,11 +661,12 @@ export function GlobalAudioPlayer() {
     if (playPromise) {
       playPromise.catch(() => {});
     }
-  }, [audioUrl, activeMusicId]);
+  }, [audioUrl, activeMusicId, activeExternalTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !activeMusicId) return;
+    const hasTrack = activeMusicId || activeExternalTrack;
+    if (!audio || !hasTrack) return;
     if (pauseRequested) {
       audio.pause();
       setIsPlaying(false);
@@ -656,7 +675,7 @@ export function GlobalAudioPlayer() {
       if (p) p.catch(() => {});
       setIsPlaying(true);
     }
-  }, [pauseRequested, activeMusicId]);
+  }, [pauseRequested, activeMusicId, activeExternalTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -889,7 +908,7 @@ export function GlobalAudioPlayer() {
   return (
     <>
       <audio ref={audioRef} preload="auto" crossOrigin="anonymous" />
-      {activeMusicId && displayMusic && <AnimatePresence>
+      {((activeMusicId && displayMusic) || activeExternalTrack) && <AnimatePresence>
         <motion.div
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -921,7 +940,7 @@ export function GlobalAudioPlayer() {
           <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-1.5 sm:gap-4">
             <button
               type="button"
-              onClick={() => activeMusicId != null && setLocation(`/music/${activeMusicId}`)}
+              onClick={() => !isExternalTrack && activeMusicId != null && setLocation(`/music/${activeMusicId}`)}
               className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0 max-w-[28%] sm:max-w-[25%] text-left cursor-pointer rounded-md hover:bg-white/5 active:bg-white/10 transition-colors touch-manipulation"
               data-testid="button-player-go-detail"
             >

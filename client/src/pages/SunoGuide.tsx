@@ -1,8 +1,9 @@
+import { Link } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { PageTransition } from "@/components/PageTransition";
-import { Wand2, Music, Mic2, Sliders, ExternalLink, ChevronRight, Sparkles, Copy, Check } from "lucide-react";
+import { Wand2, Music, Mic2, Sliders, ChevronRight, Sparkles, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -25,11 +26,11 @@ const EXAMPLE_COLORS = [
   "from-amber-500 to-yellow-600",
 ];
 const STEP_ICONS = [
-  <ExternalLink className="w-5 h-5" />,
-  <Wand2 className="w-5 h-5" />,
-  <Mic2 className="w-5 h-5" />,
-  <Sliders className="w-5 h-5" />,
-  <Music className="w-5 h-5" />,
+  <Wand2 className="w-5 h-5" key="0" />,
+  <Wand2 className="w-5 h-5" key="1" />,
+  <Mic2 className="w-5 h-5" key="2" />,
+  <Sliders className="w-5 h-5" key="3" />,
+  <Music className="w-5 h-5" key="4" />,
 ];
 
 function CopyButton({ text }: { text: string }) {
@@ -55,6 +56,7 @@ export default function SunoGuide() {
   const steps = t("sunoGuide.steps", { returnObjects: true }) as { title: string; desc: string }[];
   const examples = t("sunoGuide.examples", { returnObjects: true }) as { category: string; result: string; tip: string }[];
   const tipsList = t("sunoGuide.tipsList", { returnObjects: true }) as string[];
+  const heroCredit = t("sunoGuide.heroCredit");
 
   return (
     <PageTransition>
@@ -79,16 +81,15 @@ export default function SunoGuide() {
               dangerouslySetInnerHTML={{ __html: t("sunoGuide.heroDesc") }}
             />
             <div className="flex flex-col items-center gap-2">
-              <a href="https://suno.com/invite/@freecompr20" target="_blank" rel="noopener noreferrer">
+              <Link href="/create-music">
                 <Button size="lg" className="rounded-full px-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg shadow-purple-500/25">
                   <Wand2 className="w-5 h-5 mr-2" />
                   {t("sunoGuide.heroCta")}
-                  <ExternalLink className="w-4 h-4 ml-2" />
                 </Button>
-              </a>
-              <p className="text-blue-400 text-sm font-medium">
-                {t("sunoGuide.heroCredit")}
-              </p>
+              </Link>
+              {heroCredit && (
+                <p className="text-blue-400 text-sm font-medium">{heroCredit}</p>
+              )}
             </div>
           </div>
         </section>
@@ -172,19 +173,18 @@ export default function SunoGuide() {
               ))}
             </ul>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="https://suno.com/invite/@freecompr20" target="_blank" rel="noopener noreferrer">
+              <Link href="/create-music">
                 <Button className="rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
                   <Wand2 className="w-4 h-4 mr-2" />
                   {t("sunoGuide.makeMusicCta")}
-                  <ExternalLink className="w-3.5 h-3.5 ml-2" />
                 </Button>
-              </a>
-              <a href="/upload">
+              </Link>
+              <Link href="/upload">
                 <Button variant="outline" className="rounded-full">
                   <Music className="w-4 h-4 mr-2" />
                   {t("sunoGuide.uploadCta")}
                 </Button>
-              </a>
+              </Link>
             </div>
           </div>
         </section>

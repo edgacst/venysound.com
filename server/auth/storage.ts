@@ -3,6 +3,11 @@ import { db } from "../db";
 import { eq } from "drizzle-orm";
 
 const ADMIN_USER_ID = process.env.ADMIN_USER_ID;
+/** 개발자/관리자로 지정할 이메일 (쉼표로 여러 개 가능). 로그인 시 해당 계정에 role=admin 부여 */
+const ADMIN_EMAILS = (process.env.ADMIN_EMAIL ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 
 export interface IAuthStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -35,7 +40,9 @@ class AuthStorage implements IAuthStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const isAdmin = ADMIN_USER_ID && userData.id === ADMIN_USER_ID;
+    const isAdminById = ADMIN_USER_ID && userData.id === ADMIN_USER_ID;
+    const isAdminByEmail = userData.email && ADMIN_EMAILS.includes(userData.email.trim().toLowerCase());
+    const isAdmin = isAdminById || isAdminByEmail;
 
     if (userData.email) {
       const existingByEmail = await this.getUserByEmail(userData.email);

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table (express-session + connect-pg-simple).
 export const sessions = pgTable(
@@ -64,3 +64,15 @@ export const payments = pgTable("payments", {
   billingPeriod: varchar("billing_period"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+/** Free 플랜 월별 AI 음악 생성 횟수 (제한: 2곡/월) */
+export const aiMusicUsage = pgTable(
+  "ai_music_usage",
+  {
+    userId: varchar("user_id").notNull(),
+    periodMonth: varchar("period_month").notNull(), // 'YYYY-MM'
+    count: integer("count").default(0).notNull(),
+    updatedAt: timestamp("updated_at").defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.periodMonth] })]
+);

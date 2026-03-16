@@ -77,7 +77,7 @@ export default function BulkUpload() {
   const [globalPrice, setGlobalPrice] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const isPremium = (user as any)?.subscriptionTier === "premium";
+  const isPremium = (user as any)?.subscriptionTier === "pro" || (user as any)?.subscriptionTier === "premium";
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {

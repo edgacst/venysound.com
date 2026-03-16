@@ -245,6 +245,7 @@ export const siteAnnouncements = pgTable("site_announcements", {
   textSize: text("text_size").default("md"),
   imageUrl: text("image_url"),
   showAsPopup: boolean("show_as_popup").default(true), // true=메인 팝업, false=게시판(/notices)에만
+  viewCount: integer("view_count").default(0),
   startsAt: timestamp("starts_at").notNull(),
   endsAt: timestamp("ends_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),

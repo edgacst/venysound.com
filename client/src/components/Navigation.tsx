@@ -25,6 +25,7 @@ import {
   Globe,
   Download,
   Megaphone,
+  Wand2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -94,11 +95,11 @@ export function Navigation() {
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-white/5 bg-background/80 backdrop-blur-xl">
-      <div className="w-full max-w-[1200px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
-        <Link href="/" className="flex-shrink-0 min-w-0 overflow-hidden">
+      <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
+        <Link href="/" className="flex-shrink-0 min-w-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
-            <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap max-w-[180px] sm:max-w-none truncate" title="Veny Sound">
+            <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap" title="Veny Sound">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
             </span>
@@ -108,34 +109,36 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="hidden md:flex items-center gap-1">
-          <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
-          <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
-          <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
-          <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
-          <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
-          <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
-          <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
+        <div className="hidden md:flex items-center min-w-0 flex-1 justify-center overflow-x-auto overflow-y-hidden">
+          <div className="flex items-center gap-1 shrink-0 py-1">
+            <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
+            <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
+            <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
+            <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
+            <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
+            <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
+            <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
+            <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
+          </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-2 flex-shrink-0 justify-end">
           {user ? (
             <>
-              <Link href={`/profile/${user.id}`}>
-                <Button size="sm" variant="ghost" className="gap-2 text-foreground" data-testid="button-my-music">
+              <Link href={`/profile/${user.id}`} className="shrink-0" title={t('nav.myMusic', '나의 음악')}>
+                <Button size="sm" variant="ghost" className="gap-2 text-foreground shrink-0" data-testid="button-my-music">
                   <User size={16} />
-                  {t('nav.myMusic', '나의 음악')}
+                  <span className="whitespace-nowrap">{t('nav.myMusic', '나의 음악')}</span>
                 </Button>
               </Link>
-              <Link href="/upload">
-                <Button size="sm" className="gap-2 bg-secondary text-foreground border border-white/10" data-testid="button-upload">
-                  <Upload size={16} />
-                  {t('nav.upload')}
+              <Link href="/upload" title={t('nav.upload')}>
+                <Button size="icon" variant="secondary" className="h-9 w-9 rounded-full border border-white/10 shrink-0" data-testid="button-upload">
+                  <Upload size={18} />
                 </Button>
               </Link>
               
-              <Link href="/messages">
-                <div className="relative p-2 rounded-full hover:bg-secondary/50 cursor-pointer transition-colors" data-testid="link-messages">
+              <Link href="/messages" className="shrink-0">
+                <div className="relative p-2 rounded-full hover:bg-secondary/50 cursor-pointer transition-colors shrink-0" data-testid="link-messages">
                   <MessageSquare size={20} className="text-muted-foreground" />
                   {unreadMsgCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-primary text-white text-[10px] font-bold rounded-full px-1 border-2 border-background" data-testid="badge-unread-msg-count">
@@ -145,8 +148,8 @@ export function Navigation() {
                 </div>
               </Link>
 
-              <Link href="/notifications">
-                <div className="relative p-2 rounded-full hover:bg-secondary/50 cursor-pointer transition-colors" data-testid="link-notifications">
+              <Link href="/notifications" className="shrink-0">
+                <div className="relative p-2 rounded-full hover:bg-secondary/50 cursor-pointer transition-colors shrink-0" data-testid="link-notifications">
                   <Bell size={20} className="text-muted-foreground" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1 border-2 border-background" data-testid="badge-notification-count">
@@ -158,7 +161,7 @@ export function Navigation() {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" data-testid="button-language-toggle">
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground min-w-[3.5rem] justify-center" data-testid="button-language-toggle">
                     <Globe size={16} />
                     {i18n.language === 'ko' ? 'KO' : i18n.language === 'en' ? 'EN' : i18n.language === 'zh' ? 'ZH' : 'JA'}
                   </Button>
@@ -183,9 +186,9 @@ export function Navigation() {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none flex items-center gap-1.5 flex-wrap">
                         {user.firstName || t('nav.user')}{t('nav.userSuffix')}
-                        {(user as any).subscriptionTier === "premium" && (
-                          <span className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-yellow-600/20 text-yellow-400">
-                            <Crown size={10} className="mr-0.5" />Premium
+                        {((user as any).subscriptionTier === "pro" || (user as any).subscriptionTier === "premium") && (
+                          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded ${(user as any).subscriptionTier === "premium" ? "bg-yellow-600/20 text-yellow-400" : "bg-primary/20 text-primary"}`}>
+                            {(user as any).subscriptionTier === "premium" ? <><Crown size={10} className="mr-0.5" />Premium</> : <>Pro</>}
                           </span>
                         )}
                       </p>
@@ -241,7 +244,7 @@ export function Navigation() {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground" data-testid="button-language-toggle">
+                  <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground min-w-[3.5rem] justify-center" data-testid="button-language-toggle">
                     <Globe size={16} />
                     {i18n.language === 'ko' ? 'KO' : i18n.language === 'en' ? 'EN' : i18n.language === 'zh' ? 'ZH' : 'JA'}
                   </Button>
@@ -284,6 +287,7 @@ export function Navigation() {
               <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
               <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
+              <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
               {user && (
                 <>
                   <div className="border-t border-white/10 my-2" />

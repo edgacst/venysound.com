@@ -47,6 +47,8 @@ function PageTitle() {
       notices: "공지사항 | VenySound",
       community: "커뮤니티 | VenySound",
       credits: "크레딧 | VenySound",
+      "create-music": "AI 음악 생성 | VenySound",
+      "suno-guide": "음악 만들기 가이드 | VenySound",
     };
     let title = DEFAULT_TITLE;
     if (path.startsWith("music/")) title = "음원 상세 | VenySound";
@@ -114,6 +116,7 @@ import MusicDetail from "@/pages/MusicDetail";
 import Dashboard from "@/pages/Dashboard";
 import Messages from "@/pages/Messages";
 import SunoGuide from "@/pages/SunoGuide";
+import CreateMusic from "@/pages/CreateMusic";
 import Privacy from "@/pages/Privacy";
 import RefundPolicy from "@/pages/RefundPolicy";
 import NotFound from "@/pages/not-found";
@@ -159,6 +162,7 @@ function Routes() {
       <Route path="/messages" component={Messages} />
       <Route path="/messages/:userId" component={Messages} />
       <Route path="/suno-guide" component={SunoGuide} />
+      <Route path="/create-music" component={CreateMusic} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>

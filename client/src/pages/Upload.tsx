@@ -111,6 +111,7 @@ export default function Upload() {
     });
   }, [t]);
   const [isFetchingUnsplash, setIsFetchingUnsplash] = useState(false);
+  const [isApplyingFromCreate, setIsApplyingFromCreate] = useState(false);
   const [selectedMainGenre, setSelectedMainGenre] = useState("");
   const [selectedSubGenre, setSelectedSubGenre] = useState("");
   /** 업로드 직후 가사만 넣었을 때 싱크 단계로 넘어가기 위함 */
@@ -141,6 +142,99 @@ export default function Upload() {
       if (extractedCoverUrl) URL.revokeObjectURL(extractedCoverUrl);
     };
   }, [extractedCoverUrl]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const coverUrl = sessionStorage.getItem("createMusic_uploadCoverUrl");
+    const audioUrl = sessionStorage.getItem("createMusic_uploadAudioUrl");
+    const title = sessionStorage.getItem("createMusic_uploadTitle");
+    const tags = sessionStorage.getItem("createMusic_uploadTags");
+    const lyrics = sessionStorage.getItem("createMusic_uploadLyrics");
+    if (title) form.setValue("title", title);
+    if (tags) form.setValue("tags", tags);
+    if (lyrics) form.setValue("lyrics", lyrics);
+    if (title || tags || lyrics) {
+      try {
+        sessionStorage.removeItem("createMusic_uploadTitle");
+        sessionStorage.removeItem("createMusic_uploadTags");
+        sessionStorage.removeItem("createMusic_uploadLyrics");
+      } catch {}
+    }
+    const hasCreateData = !!(coverUrl || audioUrl);
+    if (hasCreateData) setIsApplyingFromCreate(true);
+
+    const finishApplying = () => setIsApplyingFromCreate(false);
+    const promises: Promise<void>[] = [];
+
+    if (coverUrl) {
+      try {
+        sessionStorage.removeItem("createMusic_uploadCoverUrl");
+      } catch {}
+      const p = fetch(`/api/ai-music/cover-proxy?url=${encodeURIComponent(coverUrl)}`, { credentials: "include" })
+        .then((res) => {
+          if (!res.ok) throw new Error("Cover fetch failed");
+          return res.blob();
+        })
+        .then((blob) => {
+          const file = new File([blob], "cover.jpg", { type: blob.type || "image/jpeg" });
+          setImageFile(file);
+          setUnsplashUrl(null);
+          setExtractedCoverUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return URL.createObjectURL(blob);
+          });
+          toast({ title: t("upload.createdTrackCoverApplied", "생성된 곡 커버를 적용했습니다.") });
+        })
+        .catch(() => {
+          toast({
+            title: t("upload.createdTrackCoverFailed", "생성된 곡 커버를 불러오지 못했습니다."),
+            description: t("upload.createdTrackCoverFailedHint", "앨범 커버를 직접 선택하거나 '커버 랜덤 생성'을 눌러 주세요. 음원은 그대로 업로드할 수 있습니다."),
+            variant: "destructive",
+          });
+        });
+      promises.push(p);
+    }
+
+    if (audioUrl) {
+      try {
+        sessionStorage.removeItem("createMusic_uploadAudioUrl");
+      } catch {}
+      const audioProxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(audioUrl)}`;
+      const p = fetch(audioProxyUrl, { credentials: "include" })
+        .then((res) => {
+          if (!res.ok) {
+            return res.json().then((body) => {
+              const msg = (body as { message?: string }).message || "음원을 가져오지 못했습니다.";
+              throw new Error(msg);
+            }).catch(() => {
+              throw new Error("음원을 가져오지 못했습니다.");
+            });
+          }
+          return res.blob();
+        })
+        .then((blob) => {
+          const type = blob.type || "audio/mpeg";
+          const ext = type.includes("ogg") ? "ogg" : type.includes("wav") ? "wav" : "mp3";
+          const file = new File([blob], `generated.${ext}`, { type });
+          setAudioFile(file);
+          toast({ title: t("upload.createdTrackAudioApplied", "생성된 곡 음원을 적용했습니다.") });
+        })
+        .catch((err) => {
+          toast({
+            title: t("upload.createdTrackAudioFailed", "생성된 곡 음원을 불러오지 못했습니다."),
+            description: (err as Error).message || t("upload.createdTrackAudioFailedHint", "음원 파일을 직접 선택해 주세요."),
+            variant: "destructive",
+          });
+        });
+      promises.push(p);
+    }
+
+    if (promises.length > 0) {
+      Promise.allSettled(promises).finally(finishApplying);
+    } else {
+      finishApplying();
+    }
+  }, [isAuthenticated]);
 
   if (isAuthLoading || !isAuthenticated) return null;
 
@@ -203,7 +297,7 @@ export default function Upload() {
       return;
     }
 
-    const isPremium = (user as any)?.subscriptionTier === "premium";
+    const isPremium = (user as any)?.subscriptionTier === "pro" || (user as any)?.subscriptionTier === "premium";
     const payload = {
       ...values,
       isDownloadable: isPremium ? values.isDownloadable : false,
@@ -211,7 +305,7 @@ export default function Upload() {
     };
 
     try {
-      const audioRes = await uploadAudio(audioFile);
+      const audioRes = await uploadAudio(audioFile, { preferredName: values.title });
       if (!audioRes) throw new Error(t('upload.audioUploadFailed', '음원 업로드 실패'));
 
       let imagePath = unsplashUrl || null;
@@ -240,7 +334,9 @@ export default function Upload() {
       );
 
     } catch (error) {
-      console.error(t('upload.uploadFailed', '업로드 실패'), error);
+      console.error(t("upload.uploadFailed", "업로드 실패"), error);
+      const msg = error instanceof Error ? error.message : t("upload.uploadFailed", "업로드에 실패했습니다. 다시 시도해 주세요.");
+      toast({ title: t("upload.error", "오류"), description: msg, variant: "destructive" });
     }
   };
 
@@ -533,7 +629,7 @@ export default function Upload() {
                   <div className="flex items-center gap-2 mb-4">
                     <DollarSign className="w-5 h-5 text-primary" />
                     <h3 className="font-semibold text-sm">{t('upload.monetization', '수익 창출 설정')}</h3>
-                    {(user as any)?.subscriptionTier === "premium" && (
+                    {((user as any)?.subscriptionTier === "pro" || (user as any)?.subscriptionTier === "premium") && (
                       <span className="text-xs text-primary flex items-center gap-1 ml-auto">
                         <Crown size={12} /> Premium
                       </span>
@@ -543,7 +639,7 @@ export default function Upload() {
                     control={form.control}
                     name="isDownloadable"
                     render={({ field }) => {
-                      const isPremium = (user as any)?.subscriptionTier === "premium";
+                      const isPremium = (user as any)?.subscriptionTier === "pro" || (user as any)?.subscriptionTier === "premium";
                       return (
                         <FormItem className="flex flex-row items-center gap-3 space-y-0 mb-4">
                           <FormControl>
@@ -580,7 +676,7 @@ export default function Upload() {
                     }}
                   />
 
-                  {form.watch("isDownloadable") && (user as any)?.subscriptionTier === "premium" && (
+                  {form.watch("isDownloadable") && ((user as any)?.subscriptionTier === "pro" || (user as any)?.subscriptionTier === "premium") && (
                     <FormField
                       control={form.control}
                       name="price"
@@ -610,13 +706,13 @@ export default function Upload() {
                 <Button 
                   type="submit" 
                   className="w-full bg-primary text-white font-semibold"
-                  disabled={isUploadingAudio || isUploadingImage || isCreating || isFetchingUnsplash || (uploadLimit?.limited === true)}
+                  disabled={isUploadingAudio || isUploadingImage || isCreating || isFetchingUnsplash || isApplyingFromCreate || (uploadLimit?.limited === true)}
                   data-testid="button-submit-upload"
                 >
-                  {(isUploadingAudio || isUploadingImage || isCreating) ? (
+                  {(isApplyingFromCreate || isUploadingAudio || isUploadingImage || isCreating) ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {t('upload.uploading', '업로드 중...')}
+                      {isApplyingFromCreate && !isCreating ? t("upload.applyingFromCreate", "생성된 곡 적용 중...") : t("upload.uploading", "업로드 중...")}
                     </>
                   ) : (
                     t('upload.submitUpload', '음원 업로드')

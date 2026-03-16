@@ -29,6 +29,19 @@ export default function Login() {
     if (!isLoading && user) setLocation("/");
   }, [isLoading, user, setLocation]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    if (err === "google") {
+      toast({
+        title: t("login.oauthFailed", "Google 로그인 실패"),
+        description: t("login.oauthFailedHint", "redirect URI가 Google 콘솔과 일치하는지, .env의 SITE_URL이 실제 접속 주소인지 확인해 주세요."),
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", "/login");
+    }
+  }, [toast, t]);
+
   const handleDevLogin = async () => {
     setDevLoggingIn(true);
     try {

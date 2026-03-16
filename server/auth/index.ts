@@ -74,12 +74,14 @@ export async function setupAuth(app: Express) {
   const hasTikTok = !!(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
 
   if (hasGoogle) {
+    const googleCallback =
+      process.env.SITE_URL ? `${process.env.SITE_URL.replace(/\/$/, "")}/api/auth/google/callback` : "/api/auth/google/callback";
     passport.use(
       new GoogleStrategy(
         {
           clientID: process.env.GOOGLE_CLIENT_ID!,
           clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-          callbackURL: "/api/auth/google/callback",
+          callbackURL: googleCallback,
           proxy: true,
         },
         async (accessToken, refreshToken, profile, done) => {
@@ -353,7 +355,25 @@ export async function setupAuth(app: Express) {
 
   if (hasGoogle) {
     app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"], prompt: "select_account" }));
-    app.get("/api/auth/google/callback", passport.authenticate("google", { failureRedirect: "/login", successRedirect: "/" }));
+    app.get(
+      "/api/auth/google/callback",
+      (req, res, next) => {
+        passport.authenticate("google", (err: Error | null, user: unknown) => {
+          if (err) {
+            console.error("[auth] Google callback error:", err.message);
+            return res.redirect("/login?error=google");
+          }
+          if (!user) return res.redirect("/login?error=google");
+          req.login(user, (loginErr) => {
+            if (loginErr) {
+              console.error("[auth] Google session error:", loginErr);
+              return res.redirect("/login?error=google");
+            }
+            res.redirect("/");
+          });
+        })(req, res, next);
+      }
+    );
   }
 
   if (hasNaver) {

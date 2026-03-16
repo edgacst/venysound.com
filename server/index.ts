@@ -70,6 +70,16 @@ app.use((req, res, next) => {
   }
   await registerRoutes(httpServer, app);
 
+  const sunoRaw = (process.env.SUNOAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
+  const aimusicRaw = (process.env.AIMUSICAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
+  if (sunoRaw) {
+    log(`[aimusic] Suno API (sunoapi.org) 키 설정됨 (길이 ${sunoRaw.length}) — create-music 사용 가능`);
+  } else if (aimusicRaw) {
+    log(`[aimusic] AIMusicAPI 키 설정됨 (길이 ${aimusicRaw.length}) — create-music 사용 가능`);
+  } else {
+    log("[aimusic] API key 없음 — .env에 SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY 설정 시 /create-music에서 음악 생성 가능");
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

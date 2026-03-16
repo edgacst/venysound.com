@@ -297,9 +297,9 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const data: MusicWithUploaderTier[] = rows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
 
     return { data, total };
@@ -356,9 +356,9 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return rows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as (typeof rows)[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
   }
 
@@ -423,9 +423,9 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return rows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
   }
 
@@ -467,7 +467,7 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return rows.map((r) => {
       const subscriptionPremium =
-        r.uploader_subscription_tier === "premium" &&
+        (r.uploader_subscription_tier === "pro" || r.uploader_subscription_tier === "premium") &&
         (r.uploader_subscription_expires_at == null || new Date(r.uploader_subscription_expires_at) > now);
       const isPremium = r.uploader_role === "admin" || subscriptionPremium;
       const base: MusicWithUploaderTier = {
@@ -484,7 +484,7 @@ export class DatabaseStorage implements IStorage {
         isDownloadable: r.is_downloadable,
         userId: r.user_id,
         createdAt: r.created_at,
-        uploaderSubscriptionTier: isPremium ? "premium" : "free",
+        uploaderSubscriptionTier: isPremium ? (r.uploader_subscription_tier ?? "pro") : "free",
         uploaderDonationBadge: null,
       };
       return {
@@ -551,10 +551,10 @@ export class DatabaseStorage implements IStorage {
     return rows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
       const subscriptionPremium =
-        _uploaderTier === "premium" &&
+        (_uploaderTier === "pro" || _uploaderTier === "premium") &&
         (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
   }
 
@@ -613,10 +613,10 @@ export class DatabaseStorage implements IStorage {
     const tracks: MusicWithUploaderTier[] = trackRows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof trackRows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
       const subscriptionPremium =
-        _uploaderTier === "premium" &&
+        (_uploaderTier === "pro" || _uploaderTier === "premium") &&
         (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
 
     return {
@@ -660,9 +660,9 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return rows.map((r) => {
       const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
       const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
+      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
     });
   }
 
@@ -1861,18 +1861,27 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; showAsPopup: boolean; viewCount: number; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
     const rows = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
       imageUrl: siteAnnouncements.imageUrl,
       textSize: siteAnnouncements.textSize,
       showAsPopup: siteAnnouncements.showAsPopup,
+      viewCount: siteAnnouncements.viewCount,
       startsAt: siteAnnouncements.startsAt,
       endsAt: siteAnnouncements.endsAt,
       createdAt: siteAnnouncements.createdAt,
     }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
-    return rows.map((r) => ({ ...r, showAsPopup: r.showAsPopup ?? true, createdAt: r.createdAt ?? new Date() }));
+    return rows.map((r) => ({ ...r, showAsPopup: r.showAsPopup ?? true, viewCount: r.viewCount ?? 0, createdAt: r.createdAt ?? new Date() }));
+  }
+
+  async incrementSiteAnnouncementViewCount(id: number): Promise<number> {
+    const [row] = await db.update(siteAnnouncements)
+      .set({ viewCount: sql`view_count + 1`, updatedAt: new Date() })
+      .where(eq(siteAnnouncements.id, id))
+      .returning({ viewCount: siteAnnouncements.viewCount });
+    return row?.viewCount ?? 0;
   }
 
   async saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }> {
@@ -2070,9 +2079,9 @@ export class DatabaseStorage implements IStorage {
     const tracks: MusicWithUploaderTier[] = rows
       .map((r) => {
         const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-        const subscriptionPremium = _uploaderTier === "premium" && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-        const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-        return { ...rest, uploaderSubscriptionTier: isPremium ? "premium" : "free", uploaderDonationBadge: null } as MusicWithUploaderTier & { _sortOrder: number };
+const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+        return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier & { _sortOrder: number };
       })
       .map((t) => {
         const sortOrder = orderMap.get(t.id) ?? 999;

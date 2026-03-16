@@ -16,3 +16,5 @@ ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS content_translations JSO
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS text_size TEXT DEFAULT 'md';
 -- true=메인 팝업 노출, false=게시판(/notices)에만 노출
 ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS show_as_popup BOOLEAN DEFAULT true;
+-- 공지 조회수
+ALTER TABLE site_announcements ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0;

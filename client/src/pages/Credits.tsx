@@ -358,37 +358,39 @@ export default function Credits() {
               <p className="text-muted-foreground">{t('credits.noTransactions', '아직 거래 내역이 없습니다')}</p>
             </Card>
           ) : (
-            <div className="space-y-2">
-              {transactions.map((tx: any) => (
-                <Card key={tx.id} className="p-4" data-testid={`card-transaction-${tx.id}`}>
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                        {getTypeIcon(tx.type)}
+            <div className="max-h-[600px] overflow-y-auto pr-1">
+              <div className="space-y-2">
+                {transactions.map((tx: any) => (
+                  <Card key={tx.id} className="p-4" data-testid={`card-transaction-${tx.id}`}>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                          {getTypeIcon(tx.type)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{getTypeLabel(tx.type)}</p>
+                          {tx.description && <p className="text-xs text-muted-foreground truncate">{tx.description}</p>}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{getTypeLabel(tx.type)}</p>
-                        {tx.description && <p className="text-xs text-muted-foreground truncate">{tx.description}</p>}
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
+                          {tx.amount > 0 ? "+" : ""}{tx.amount.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {tx.createdAt
+                            ? new Intl.DateTimeFormat("ko-KR", {
+                                timeZone: "Asia/Seoul",
+                                dateStyle: "short",
+                                timeStyle: "short",
+                                hour12: false,
+                              }).format(new Date(tx.createdAt))
+                            : ""}
+                        </p>
                       </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
-                        {tx.amount > 0 ? "+" : ""}{tx.amount.toLocaleString()}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {tx.createdAt
-                          ? new Intl.DateTimeFormat("ko-KR", {
-                              timeZone: "Asia/Seoul",
-                              dateStyle: "short",
-                              timeStyle: "short",
-                              hour12: false,
-                            }).format(new Date(tx.createdAt))
-                          : ""}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
         </div>

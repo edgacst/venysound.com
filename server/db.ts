@@ -1,12 +1,23 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 import * as schema from "@shared/schema";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.resolve(__dirname, "..", ".env");
+dotenv.config({ path: envPath, override: true });
+if (!process.env.DATABASE_URL?.startsWith("postgresql://") && !process.env.DATABASE_URL?.startsWith("postgres://")) {
+  dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
+}
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
+const rawUrl = process.env.DATABASE_URL ?? "";
+if (!rawUrl || rawUrl.includes("여기에") || rawUrl.includes("복붙")) {
   throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+    "DATABASE_URL must be set in .env (e.g. postgresql://user:password@host:port/dbname). Remove any placeholder text.",
   );
 }
 

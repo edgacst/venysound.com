@@ -77,6 +77,14 @@ export function registerObjectStorageRoutes(app: Express): void {
     }
   });
 
+  function sanitizeFilename(name: string, maxLen = 80): string {
+    const s = name
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim();
+    return s.slice(0, maxLen) || "track";
+  }
+
   app.post("/api/uploads/local", upload.single("file"), async (req, res) => {
     try {
       const file = req.file;
@@ -84,14 +92,16 @@ export function registerObjectStorageRoutes(app: Express): void {
         return res.status(400).json({ error: "파일이 없습니다" });
       }
       mkdirSync(UPLOADS_SUBDIR, { recursive: true });
-      const uuid = randomUUID();
       const ext = path.extname(file.originalname) || ".mp3";
       const extMap: Record<string, string> = {
         ".mp3": ".mp3", ".wav": ".wav", ".ogg": ".ogg",
         ".jpg": ".jpg", ".jpeg": ".jpg", ".png": ".png",
       };
       const safeExt = extMap[ext.toLowerCase()] || ".mp3";
-      const filename = `${uuid}${safeExt}`;
+      const rawDesired = (req.body?.desiredFilename as string)?.trim();
+      const baseName = rawDesired ? sanitizeFilename(rawDesired) : "";
+      const shortId = randomUUID().slice(0, 8);
+      const filename = baseName ? `${baseName}_${shortId}${safeExt}` : `${randomUUID()}${safeExt}`;
       const destPath = path.join(UPLOADS_SUBDIR, filename);
       await writeFile(destPath, file.buffer);
       const objectPath = `/objects/uploads/${filename}`;

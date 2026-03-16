@@ -51,7 +51,7 @@ interface UseUploadOptions {
  * }
  * ```
  */
-export function useUpload(options: UseUploadOptions = {}) {
+export function useUpload(hookOptions: UseUploadOptions = {}) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [progress, setProgress] = useState(0);
@@ -62,13 +62,20 @@ export function useUpload(options: UseUploadOptions = {}) {
    */
   const requestUploadUrl = useCallback(
     async (file: File): Promise<UploadResponse> => {
+      return requestUploadUrlWithName(file, file.name);
+    },
+    []
+  );
+
+  const requestUploadUrlWithName = useCallback(
+    async (file: File, name: string): Promise<UploadResponse> => {
       const response = await fetch("/api/uploads/request-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          name: file.name,
+          name: name || file.name,
           size: file.size,
           contentType: file.type || "application/octet-stream",
         }),
@@ -108,22 +115,27 @@ export function useUpload(options: UseUploadOptions = {}) {
    * Upload a file using the presigned URL flow.
    *
    * @param file - The file to upload
+   * @param options - Optional preferred filename (e.g. track title) for storage
    * @returns The upload response containing the object path
    */
   const uploadFile = useCallback(
-    async (file: File): Promise<UploadResponse | null> => {
+    async (file: File, options?: { preferredName?: string }): Promise<UploadResponse | null> => {
       setIsUploading(true);
       setError(null);
       setProgress(0);
 
+      const preferredName = options?.preferredName?.trim();
+      const sendName = preferredName || file.name;
+
       try {
         setProgress(10);
-        const uploadResponse = await requestUploadUrl(file);
+        const uploadResponse = await requestUploadUrlWithName(file, sendName);
 
         if ((uploadResponse as any).localMode) {
           setProgress(30);
           const formData = new FormData();
           formData.append("file", file);
+          if (preferredName) formData.append("desiredFilename", preferredName);
           const res = await fetch((uploadResponse as any).uploadEndpoint || "/api/uploads/local", {
             method: "POST",
             body: formData,
@@ -134,7 +146,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           }
           const data = await res.json();
           setProgress(100);
-          options.onSuccess?.(data);
+          hookOptions.onSuccess?.(data);
           return data;
         }
 
@@ -142,18 +154,18 @@ export function useUpload(options: UseUploadOptions = {}) {
         await uploadToPresignedUrl(file, uploadResponse.uploadURL);
 
         setProgress(100);
-        options.onSuccess?.(uploadResponse);
+        hookOptions.onSuccess?.(uploadResponse);
         return uploadResponse;
       } catch (err) {
         const error = err instanceof Error ? err : new Error("Upload failed");
         setError(error);
-        options.onError?.(error);
+        hookOptions.onError?.(error);
         return null;
       } finally {
         setIsUploading(false);
       }
     },
-    [requestUploadUrl, uploadToPresignedUrl, options]
+    [requestUploadUrlWithName, uploadToPresignedUrl, hookOptions]
   );
 
   /**

@@ -1010,9 +1010,9 @@ export default function Profile() {
             <div className="flex-1 pb-2">
               <h1 className="text-3xl font-display font-bold flex items-center gap-2 flex-wrap" data-testid="text-profile-name">
                 {user.firstName || t('profile.user', '사용자')}{user.lastName ? ` ${user.lastName}` : ""}
-                {(user as any).subscriptionTier === "premium" && (
-                  <Badge variant="default" className="bg-yellow-600/20 text-yellow-400 border-yellow-500/30 no-default-hover-elevate no-default-active-elevate">
-                    <Crown size={12} className="mr-1" /> Premium
+                {((user as any).subscriptionTier === "pro" || (user as any).subscriptionTier === "premium") && (
+                  <Badge variant="default" className={`no-default-hover-elevate no-default-active-elevate ${(user as any).subscriptionTier === "premium" ? "bg-yellow-600/20 text-yellow-400 border-yellow-500/30" : "bg-primary/20 text-primary border-primary/30"}`}>
+                    {(user as any).subscriptionTier === "premium" ? <><Crown size={12} className="mr-1" /> Premium</> : <>Pro</>}
                   </Badge>
                 )}
                 {(user as any).donationBadge && (

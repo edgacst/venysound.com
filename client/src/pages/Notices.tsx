@@ -1,16 +1,17 @@
-import { useState, Fragment } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, Fragment, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye } from "lucide-react";
 
 type SiteAnnouncement = {
   id: number;
   content: string;
   imageUrl: string | null;
   showAsPopup?: boolean;
+  viewCount?: number;
   startsAt: string;
   endsAt: string;
   createdAt: string;
@@ -24,6 +25,7 @@ function listTitle(content: string, maxLen = 40) {
 
 export default function Notices() {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const locale = i18n.language === "ja" ? "ja-JP" : i18n.language === "en" ? "en-US" : i18n.language === "zh" ? "zh-CN" : "ko-KR";
   const { data, isLoading } = useQuery<SiteAnnouncement[]>({
@@ -34,6 +36,33 @@ export default function Notices() {
       return res.json();
     },
   });
+
+  const recordView = useCallback(
+    (id: number) => {
+      fetch(`/api/announcements/site/${id}/view`, { method: "POST", credentials: "include" })
+        .then((res) => res.ok && res.json())
+        .then((body) => {
+          if (body?.viewCount != null) {
+            queryClient.setQueryData<SiteAnnouncement[]>(["/api/announcements/site"], (prev) =>
+              prev?.map((a) => (a.id === id ? { ...a, viewCount: body.viewCount } : a)) ?? []
+            );
+          }
+        })
+        .catch(() => {});
+    },
+    [queryClient]
+  );
+
+  const toggleExpand = useCallback(
+    (id: number) => {
+      setExpandedId((prev) => {
+        const next = prev === id ? null : id;
+        if (next === id) recordView(id);
+        return next;
+      });
+    },
+    [recordView]
+  );
 
   const now = new Date();
   const list = (data ?? []).map((a) => ({
@@ -64,10 +93,10 @@ export default function Notices() {
                   <div
                     key={a.id}
                     className="p-4 active:bg-muted/20"
-                    onClick={() => setExpandedId(isExpanded ? null : a.id)}
+                    onClick={() => toggleExpand(a.id)}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => e.key === "Enter" && setExpandedId(isExpanded ? null : a.id)}
+                    onKeyDown={(e) => e.key === "Enter" && toggleExpand(a.id)}
                   >
                     <div className="flex items-start gap-2">
                       <span className="text-muted-foreground text-xs shrink-0 w-6">{list.length - idx}</span>
@@ -77,6 +106,12 @@ export default function Notices() {
                           <span className="text-xs text-muted-foreground">
                             {new Date(a.createdAt).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" })}
                           </span>
+                          {typeof a.viewCount === "number" && (
+                            <span className="text-xs text-muted-foreground inline-flex items-center gap-0.5">
+                              <Eye size={12} />
+                              {a.viewCount.toLocaleString()}
+                            </span>
+                          )}
                           {isActive ? (
                             <span className="inline-flex px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">{t("noticesPage.statusActive")}</span>
                           ) : (
@@ -110,6 +145,7 @@ export default function Notices() {
                     <th className="text-left p-3 font-medium w-12 whitespace-nowrap">{t("noticesPage.no")}</th>
                     <th className="text-left p-3 font-medium max-w-[280px]">{t("noticesPage.subject")}</th>
                     <th className="text-left p-3 font-medium whitespace-nowrap min-w-[7.5rem]">{t("noticesPage.date")}</th>
+                    <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.viewCount", "조회수")}</th>
                     <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.status")}</th>
                     <th className="w-10" />
                   </tr>
@@ -122,7 +158,7 @@ export default function Notices() {
                       <Fragment key={a.id}>
                         <tr
                           className="border-b border-border/50 hover:bg-muted/20 cursor-pointer"
-                          onClick={() => setExpandedId(isExpanded ? null : a.id)}
+                          onClick={() => toggleExpand(a.id)}
                         >
                           <td className="p-3 text-muted-foreground">{list.length - idx}</td>
                           <td className="p-3 font-medium max-w-[280px]">
@@ -130,6 +166,16 @@ export default function Notices() {
                           </td>
                           <td className="p-3 text-muted-foreground whitespace-nowrap">
                             {new Date(a.createdAt).toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" })}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap text-muted-foreground">
+                            {typeof a.viewCount === "number" ? (
+                              <span className="inline-flex items-center justify-center gap-1">
+                                <Eye size={14} />
+                                {a.viewCount.toLocaleString()}
+                              </span>
+                            ) : (
+                              "-"
+                            )}
                           </td>
                           <td className="p-3 text-center whitespace-nowrap">
                             {isActive ? (
@@ -142,7 +188,7 @@ export default function Notices() {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-muted/10">
-                            <td colSpan={5} className="p-4">
+                            <td colSpan={6} className="p-4">
                               <div className="whitespace-pre-wrap text-foreground mb-3">{a.content}</div>
                               {a.imageUrl && (
                                 <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt="" className="max-w-full rounded-lg max-h-64 object-contain mt-2" />

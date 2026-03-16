@@ -1220,7 +1220,7 @@ export default function Admin() {
                   adminUsers.map((u: any) => {
                     const isSelf = u.id === user?.id;
                     const isUserAdmin = u.role === "admin";
-                    const isPremium = u.subscriptionTier === "premium";
+                    const isPremium = u.subscriptionTier === "pro" || u.subscriptionTier === "premium";
                     return (
                       <tr key={u.id} className="border-b border-border/50" data-testid={`row-user-${u.id}`}>
                         <td className="p-3 font-mono text-xs max-w-[100px] truncate align-middle" title={u.firstName || u.id}>{u.firstName || u.id}</td>
