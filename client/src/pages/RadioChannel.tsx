@@ -196,7 +196,8 @@ export default function RadioChannel() {
           : `/api/music/${nowPlayingId}/stream`;
   // 스트림 URL로 바로 재생(버퍼만 채우면 시작). 전체 파일 다운로드 후 재생하면 30초 이상 지연됨
   const audioStreamUrl = rawAudioUrl;
-  const useGlobalRadio = !isOwner && isLive && !!audioStreamUrl && !!slug && !!channel?.name;
+  // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
+  const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
 
   // 리스너: 전역 라디오 플레이어에 스트림 동기화 (다른 페이지로 나가도 재생 유지)
@@ -1025,10 +1026,6 @@ export default function RadioChannel() {
                         variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "outline" : "default"}
                         type="button"
                         onClick={() => {
-                          if (useGlobalRadio) {
-                            radioRequestPlay();
-                            return;
-                          }
                           const el = audioRef.current;
                           if (!el) return;
                           const ctx = analyserRef.current?.ctx;
@@ -1046,10 +1043,6 @@ export default function RadioChannel() {
                         variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "secondary" : "outline"}
                         type="button"
                         onClick={() => {
-                          if (useGlobalRadio) {
-                            radioRequestPause();
-                            return;
-                          }
                           const el = audioRef.current;
                           if (!el) return;
                           el.pause();
@@ -1059,7 +1052,6 @@ export default function RadioChannel() {
                         {t("radio.listenPause", "일시정지")}
                       </Button>
                     </div>
-                    {isOwner && (
                     <audio
                       ref={audioRef}
                       src={audioStreamUrl}
@@ -1133,7 +1125,6 @@ export default function RadioChannel() {
                       }}
                       onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
                     />
-                    )}
                     {nowPlayingMusic?.lyrics?.trim() && isOwner && (
                       <div className="mt-3">
                         <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>
