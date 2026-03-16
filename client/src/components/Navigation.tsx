@@ -81,7 +81,7 @@ export function Navigation() {
       <div
         data-testid={`nav-link-${href.replace(/\//g, '') || 'home'}`}
         className={`
-        flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 cursor-pointer shrink-0
+        flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0
         ${isActive(href) 
           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold" 
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -109,13 +109,12 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="hidden md:flex items-center min-w-0 flex-1 justify-center overflow-x-auto overflow-y-hidden">
+        <div className="hidden md:flex items-center min-w-0 flex-1 justify-center">
           <div className="flex items-center gap-1 shrink-0 py-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
             <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
             <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
-            <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
             <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
             <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
             <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
@@ -284,7 +283,6 @@ export function Navigation() {
               <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
-              <NavLink href="/about" icon={Info}>{t('nav.about')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
               <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
               <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
