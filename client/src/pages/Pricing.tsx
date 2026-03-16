@@ -156,10 +156,12 @@ export default function Pricing() {
   const isPro = tier === "pro";
   const isPremium = tier === "premium";
   const isPaid = isPro || isPremium;
-  const proMonthly = 15400;
-  const proYearly = 166320;
-  const premiumMonthly = 33000;
-  const premiumYearly = 356400;
+  const proMonthly = 14000;
+  const proYearly = 151200;
+  const premiumMonthly = 30000;
+  const premiumYearly = 324000;
+  const proMonthlyWithVat = Math.round(proMonthly * 1.1);
+  const premiumMonthlyWithVat = Math.round(premiumMonthly * 1.1);
   const displayPrice = selectedPlanId === "premium"
     ? (billingPeriod === "monthly" ? premiumMonthly : premiumYearly)
     : (billingPeriod === "monthly" ? proMonthly : proYearly);
@@ -236,17 +238,27 @@ export default function Pricing() {
                       {t('pricing.currentPlan', '현재 플랜')}
                     </Button>
                   ) : (
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      size="sm"
-                      onClick={() => cancelMutation.mutate()}
-                      disabled={cancelMutation.isPending}
-                      data-testid="button-downgrade"
-                    >
-                      <XCircle size={14} className="mr-2" />
-                      {cancelMutation.isPending ? t('pricing.processing', '처리 중...') : t('pricing.cancelSubscription', '구독 해지')}
-                    </Button>
+                    <div className="grid gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center justify-center text-xs text-muted-foreground border border-transparent rounded-md">
+                          {t('pricing.freePlanName', 'Free')}
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          size="sm"
+                          onClick={() => cancelMutation.mutate()}
+                          disabled={cancelMutation.isPending}
+                          data-testid="button-downgrade"
+                        >
+                          <XCircle size={14} className="mr-2" />
+                          {cancelMutation.isPending ? t('pricing.processing', '처리 중...') : t('pricing.cancelSubscription', '구독 해지')}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground text-center">
+                        {t('pricing.freePlanNote', 'Free 플랜은 언제든지 다시 선택할 수 있습니다.')}
+                      </p>
+                    </div>
                   )}
                 </div>
               </Card>
@@ -265,6 +277,9 @@ export default function Pricing() {
                 <div className="mb-4">
                   <span className="text-3xl font-bold" data-testid="text-pro-price">{proMonthly.toLocaleString("ko-KR")}{t('pricing.won', '원')}</span>
                   <span className="text-muted-foreground text-sm">/{t('pricing.perMonth', '월')}</span>
+                  <p className="text-xs text-green-400 mt-1">
+                    {`부가세 포함 월 ${proMonthlyWithVat.toLocaleString("ko-KR")}원`}
+                  </p>
                   {billingPeriod === "yearly" && (
                     <div className="text-xs text-muted-foreground mt-1">
                       {t('pricing.perYear', '년')} {proYearly.toLocaleString("ko-KR")}{t('pricing.won', '원')}
@@ -280,23 +295,31 @@ export default function Pricing() {
                   ))}
                 </div>
                 <div className="mt-auto">
-                  {isPro ? (
-                    <div className="space-y-2">
+                {isPro ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <Button className="w-full" size="sm" disabled data-testid="button-current-pro">
                         <Zap size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
                       </Button>
-                      {subscriptionData?.expiresAt && (
-                        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                          <Calendar size={12} />
-                          {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
-                        </p>
-                      )}
-                      <Button variant="outline" size="sm" className="w-full" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => cancelMutation.mutate()}
+                        disabled={cancelMutation.isPending}
+                      >
                         <XCircle size={14} className="mr-2" />
                         {t('pricing.cancelSubscription', '구독 해지')}
                       </Button>
                     </div>
-                  ) : (
+                    {subscriptionData?.expiresAt && (
+                      <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                        <Calendar size={12} />
+                        {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
+                      </p>
+                    )}
+                  </div>
+                ) : (
                     <div>
                       <Button className="w-full bg-primary" size="sm" onClick={() => handleBankTransferClick("pro")} data-testid="button-bank-subscribe-pro">
                         <Landmark size={14} className="mr-2" />
@@ -319,6 +342,9 @@ export default function Pricing() {
                 <div className="mb-4">
                   <span className="text-3xl font-bold" data-testid="text-premium-price">{premiumMonthly.toLocaleString("ko-KR")}{t('pricing.won', '원')}</span>
                   <span className="text-muted-foreground text-sm">/{t('pricing.perMonth', '월')}</span>
+                  <p className="text-xs text-green-400 mt-1">
+                    {`부가세 포함 월 ${premiumMonthlyWithVat.toLocaleString("ko-KR")}원`}
+                  </p>
                   {billingPeriod === "yearly" && (
                     <div className="text-xs text-muted-foreground mt-1">
                       {t('pricing.perYear', '년')} {premiumYearly.toLocaleString("ko-KR")}{t('pricing.won', '원')}
@@ -334,17 +360,12 @@ export default function Pricing() {
                   ))}
                 </div>
                 <div className="mt-auto">
-                  {isPremium ? (
-                    <div className="space-y-2">
+                {isPremium ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <Button className="w-full" size="sm" disabled data-testid="button-current-premium">
                         <Crown size={14} className="mr-2" /> {t('pricing.currentPlan', '현재 플랜')}
                       </Button>
-                      {subscriptionData?.expiresAt && (
-                        <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
-                          <Calendar size={12} />
-                          {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
-                        </p>
-                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -357,7 +378,14 @@ export default function Pricing() {
                         {t('pricing.cancelSubscription', '구독 해지')}
                       </Button>
                     </div>
-                  ) : (
+                    {subscriptionData?.expiresAt && (
+                      <p className="text-xs text-muted-foreground text-center flex items-center justify-center gap-1">
+                        <Calendar size={12} />
+                        {new Date(subscriptionData.expiresAt).toLocaleDateString("ko-KR")}
+                      </p>
+                    )}
+                  </div>
+                ) : (
                     <div>
                       <Button
                         variant="outline"
