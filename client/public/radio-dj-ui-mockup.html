@@ -1575,8 +1575,20 @@
     }
     preloadNextInQueue();
     var startedAt = new Date().toISOString();
+    // 사이트 음원 큐 중 현재 선택한 곡을 "첫 번째 트랙"으로 회전시켜 스냅샷과 nowPlaying이 항상 일치하도록 한다.
     var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
-    var musicIds = siteOnlyQueue.map(function(q) { return q.id; });
+    var musicIds;
+    if (siteOnlyQueue.length > 0) {
+      var idx = siteOnlyQueue.findIndex(function(q) { return q.id === musicIdNum; });
+      if (idx > 0) {
+        var head = siteOnlyQueue.slice(idx);
+        var tail = siteOnlyQueue.slice(0, idx);
+        siteOnlyQueue = head.concat(tail);
+      }
+      musicIds = siteOnlyQueue.map(function(q) { return q.id; });
+    } else {
+      musicIds = [];
+    }
     var activeEl = getActiveMonitorAudio();
     var firstDur = (activeEl && activeEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(activeEl.duration) && activeEl.duration > 0) ? Math.ceil(activeEl.duration) : 240;
     var durationsSeconds = musicIds.map(function(_, i) { return i === 0 ? firstDur : 240; });
@@ -1586,8 +1598,19 @@
       channel.playlistSnapshot = { musicIds: musicIds, durationsSeconds: durationsSeconds, currentIndex: 0 };
     }
     startMonitorProgressTicker();
-    var audioEl = getInactiveMonitorAudio();
-    if (!audioEl) audioEl = getActiveMonitorAudio();
+    // 모니터 오디오는 곡을 바꿀 때마다 항상 하나의 엘리먼트에서만 재생되도록 단순화한다.
+    var audioEl1 = document.getElementById('djMonitorAudio');
+    var audioEl2 = document.getElementById('djMonitorAudio2');
+    [audioEl1, audioEl2].forEach(function(el) {
+      if (!el) return;
+      try { el.pause(); } catch (e) {}
+      el.removeAttribute('src');
+      el.removeAttribute('data-current-id');
+      el.removeAttribute('data-local-id');
+      el.removeAttribute('data-channel-stream');
+      el.load();
+    });
+    var audioEl = audioEl1 || audioEl2 || getActiveMonitorAudio();
     if (audioEl) {
       audioEl.removeAttribute('data-local-id');
       audioEl.setAttribute('data-current-id', String(musicIdNum));
@@ -1601,10 +1624,11 @@
         });
       };
       audioEl.load();
-    }
-    if (monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio()) {
-      activeMonitorIndex = 1 - activeMonitorIndex;
-      inactivePreloadedId = null;
+      if (monitorAudios && monitorAudios.length >= 2) {
+        var idxEl = monitorAudios.indexOf(audioEl);
+        if (idxEl >= 0) activeMonitorIndex = idxEl;
+        inactivePreloadedId = null;
+      }
     }
     if (waveformSource && getActiveMonitorAudio()) {
       try { waveformSource.disconnect(); } catch (e) {}

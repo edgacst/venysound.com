@@ -1003,14 +1003,16 @@ export default function RadioChannel() {
                       {t("radio.goToStudio", "방송 스튜디오")}
                     </Button>
                   </a>
-                ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl ? (
+                ) : isLive ? (
                   <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
                       <Headphones size={18} />
                       <span>
                         {(useGlobalRadio ? radioIsPlaying : isPlaying)
                           ? t("radio.listeningTo", "지금 재생 중")
-                          : t("radio.listeningPaused", "일시정지")}
+                          : (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl
+                            ? t("radio.listeningPaused", "일시정지")
+                            : t("radio.listenComingSoon", "준비 중입니다. 곡이 등록되면 자동으로 시작됩니다.")}
                         {typeof navigator !== "undefined" &&
                           /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
                           ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}
@@ -1028,6 +1030,7 @@ export default function RadioChannel() {
                         onClick={() => {
                           const el = audioRef.current;
                           if (!el) return;
+                          if (!audioStreamUrl) return;
                           const ctx = analyserRef.current?.ctx;
                           if (ctx?.state === "suspended") {
                             ctx.resume();
@@ -1054,7 +1057,7 @@ export default function RadioChannel() {
                     </div>
                     <audio
                       ref={audioRef}
-                      src={audioStreamUrl}
+                      src={audioStreamUrl || undefined}
                       className="hidden"
                       autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
                       onPlay={() => {

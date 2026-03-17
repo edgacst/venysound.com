@@ -3413,7 +3413,7 @@ export async function registerRoutes(
   app.get("/api/radio/channels/:slug/stream", async (req, res) => {
     const slug = String(req.params.slug || "").trim().toLowerCase();
     if (!slug) return res.status(404).end();
-    const uploadsDirInner = path.resolve(process.cwd(), "local-uploads", "uploads");
+    const uploadsDirInner = path.resolve(process.cwd(), "..", "local-uploads", "uploads");
     const getLocalPathForMusicId = async (musicId: number): Promise<{ path: string; contentType: string } | null> => {
       const music = await storage.getMusicById(musicId);
       if (!music) return null;
