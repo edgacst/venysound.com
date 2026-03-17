@@ -395,7 +395,6 @@ export default function Home() {
             </span>
             </div>
           </div>
-        </div>
 
         <Dialog open={radioUpdateNoticeOpen} onOpenChange={setRadioUpdateNoticeOpen}>
           <DialogContent className="sm:max-w-md">
