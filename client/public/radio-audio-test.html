@@ -507,6 +507,7 @@
       <div class="btn-row" style="margin-top:10px;">
         <button id="btnPlay" disabled>이 페이지에서 재생</button>
         <button id="btnSendNow" disabled>채널에 지금 송출</button>
+        <span id="broadcastChannelLabel" class="pill" style="margin-left:8px;font-size:0.8rem;color:#94a3b8;"></span>
       </div>
 
       <div id="msg" class="msg"></div>
@@ -613,8 +614,9 @@
 
         <h3>7) 송출하는 방법</h3>
         <ul>
-          <li>곡을 선택한 뒤 <span class="kbd">채널에 지금 송출</span>을 누르면 채널 q의 현재 곡(now playing)이 갱신됩니다.</li>
-          <li>청취자는 채널 페이지에서 현재 곡을 바로 들을 수 있습니다.</li>
+          <li>곡을 선택한 뒤 <span class="kbd">채널에 지금 송출</span>을 누르면 <strong>해당 채널</strong>의 현재 곡(now playing)이 갱신됩니다.</li>
+          <li>청취자는 채널 페이지(<code>/radio/채널슬러그</code>)에서 현재 곡을 바로 들을 수 있습니다.</li>
+          <li>스튜디오는 <code>/radio/채널슬러그/studio</code>로 들어오면 해당 채널에 송출됩니다. (로그인한 계정이 방장/스텝이어야 합니다)</li>
         </ul>
       </div>
     </div>
@@ -639,6 +641,14 @@
         var hdr = document.querySelector(".page-header");
         if (hdr && hdr.parentNode) hdr.parentNode.removeChild(hdr);
       }
+    } catch (e) {}
+
+    // URL에서 채널 슬러그 파싱 (예: /radio-audio-test.html?slug=my-channel → 실제 해당 채널에 송출)
+    var urlSlug = '';
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      var s = params.get('slug');
+      if (typeof s === 'string' && s.trim()) urlSlug = s.trim().toLowerCase();
     } catch (e) {}
 
     var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
@@ -697,6 +707,12 @@
     var me = { id: '', role: 'listener' };
     var users = []; // {id, role}
     var ctxTargetUserId = null;
+
+    // 송출 대상 채널 표시
+    var broadcastChannelLabel = document.getElementById('broadcastChannelLabel');
+    if (broadcastChannelLabel) {
+      broadcastChannelLabel.textContent = urlSlug ? '송출 채널: ' + urlSlug : '송출 채널: q (개발용)';
+    }
 
     // 마이크 관련 DOM/상태
     var btnMic = document.getElementById('btnMic');
@@ -853,19 +869,36 @@
     };
     micVol.oninput();
 
-    // 선택한 곡을 채널(q)의 nowPlayingMusicId 로 설정 (개발용, /api/dev 사용)
+    // 선택한 곡을 채널 nowPlaying으로 설정. slug 있으면 실제 운영 API(PATCH /api/radio/channels/:slug), 없으면 개발용 /api/dev/radio/channels/q
     btnSendNow.onclick = function() {
       var id = sel.value;
       if (!id) return;
-      api('/api/dev/radio/channels/q', {
+      var musicId = Number(id);
+      var startedAt = new Date().toISOString();
+      var payload = {
+        nowPlayingMusicId: musicId,
+        nowPlayingStartedAt: startedAt,
+        status: 'live'
+      };
+      // 재생 중인 곡과 같고 duration 있으면 서버에 전달 (자동 다음 곡 진행/싱크용)
+      if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
+        payload.currentTrackDurationSeconds = Math.ceil(audio.duration);
+        payload.queueMusicIds = [musicId];
+        payload.queueDurationsSeconds = [Math.ceil(audio.duration)];
+      }
+      var path = urlSlug
+        ? '/api/radio/channels/' + encodeURIComponent(urlSlug)
+        : '/api/dev/radio/channels/q';
+      api(path, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nowPlayingMusicId: Number(id), nowPlayingStartedAt: new Date().toISOString(), status: 'live' })
+        body: JSON.stringify(payload)
       }).then(function(r){
         if (!r.ok) return r.json().then(function(j){ throw new Error(j && j.message ? j.message : '실패'); });
         return r.json();
       }).then(function(data){
-        show('채널 q 송출 곡으로 설정됨: ID ' + id, false);
+        var chLabel = urlSlug ? '채널 ' + urlSlug : '채널 q(개발용)';
+        show(chLabel + ' 송출 곡으로 설정됨: ID ' + id + '. 청취자 페이지에서 들을 수 있습니다.', false);
         console.log('channel updated', data);
       }).catch(function(e){
         show('채널 설정 실패: ' + e.message, true);
