@@ -92,7 +92,7 @@ export default function RadioChannels() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-8 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4">
                   {channels.map((ch) => {
                     const isOwner = myUserId && ch.ownerId === myUserId;
                     const statusLabel =
@@ -113,7 +113,7 @@ export default function RadioChannels() {
                     return (
                       <div
                         key={ch.id}
-                        className="transform scale-105 origin-top-left cursor-pointer"
+                        className="cursor-pointer"
                         role="button"
                         tabIndex={0}
                         onClick={() => setLocation(`/radio/${ch.slug}`)}
@@ -125,7 +125,7 @@ export default function RadioChannels() {
                         }}
                       >
                         <Card className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_16px_40px_rgba(0,0,0,0.8)]">
-                            <div className="relative w-full aspect-square">
+                            <div className="relative w-full aspect-video">
                             {/* 배경 이미지 (커버 없으면 기본 이미지) */}
                             <img
                               src={coverUrl}
@@ -136,7 +136,7 @@ export default function RadioChannels() {
                               {/* 상단 왼쪽: 방송 중일 때만 빨간 동그라미 */}
                               {ch.status === "live" && (
                                 <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
-                                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                  <span className="w-4 h-4 rounded-full bg-red-500 animate-pulse" />
                                 </div>
                               )}
 
