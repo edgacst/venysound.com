@@ -200,6 +200,26 @@ export default function RadioChannel() {
     isLive && (nowPlayingId != null || nowPlayingObjectPath != null)
       ? `/api/radio/channels/${slug.trim().toLowerCase()}/stream`
       : rawAudioUrl;
+
+  // 같은 stream URL이라도 nowPlaying 이 바뀌면 브라우저가 기존 연결을 계속 유지해
+  // 다음 곡으로 넘어가지 못하는 케이스가 있어 cache-bust 파라미터를 붙여 재연결한다.
+  const listenerAudioSrc = useMemo(() => {
+    if (!audioStreamUrl) return null;
+    if (!isLive) return audioStreamUrl;
+    if (!audioStreamUrl.includes("/api/radio/channels/") || !audioStreamUrl.endsWith("/stream")) return audioStreamUrl;
+    const v = nowPlayingId != null ? `id-${nowPlayingId}` : nowPlayingObjectPath ? `obj-${nowPlayingObjectPath}` : "live";
+    const sep = audioStreamUrl.includes("?") ? "&" : "?";
+    return `${audioStreamUrl}${sep}v=${encodeURIComponent(v)}`;
+  }, [audioStreamUrl, isLive, nowPlayingId, nowPlayingObjectPath]);
+
+  // 곡이 바뀌면 새 스트림으로 즉시 재생 시도 (PC에서만 autoPlay가 동작)
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (!listenerAudioSrc) return;
+    if (userStopped) return;
+    el.play().catch(() => {});
+  }, [listenerAudioSrc, userStopped]);
   // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
   const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
@@ -1125,7 +1145,8 @@ export default function RadioChannel() {
                     </div>
                     <audio
                       ref={audioRef}
-                      src={audioStreamUrl || undefined}
+                      key={`${slug}:${nowPlayingId ?? "local"}:${nowPlayingObjectPath ?? ""}`}
+                      src={listenerAudioSrc || undefined}
                       className="hidden"
                       autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
                       onPlay={() => {
