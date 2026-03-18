@@ -745,7 +745,7 @@
     }
 
     function loadTracks() {
-      api('/api/music?limit=200').then(function(r){ return r.ok ? r.json() : { data: [] }; })
+      api('/api/music?limit=5000').then(function(r){ return r.ok ? r.json() : { data: [] }; })
         .then(function(data) {
           tracks = Array.isArray(data && data.data) ? data.data : [];
           applyFilter();
@@ -773,38 +773,75 @@
       btnSendNow.disabled = !has;
     }
 
+    function broadcastTrack(musicId) {
+      if (!urlSlug) return;
+      var startedAt = new Date().toISOString();
+      var payload = {
+        nowPlayingMusicId: musicId,
+        nowPlayingStartedAt: startedAt,
+        status: 'live'
+      };
+      playlistIds = tracks.map(function(t){ return t && typeof t.id === 'number' ? t.id : null; }).filter(function(x){ return x != null; });
+      if (playlistIds.length > 0) {
+        payload.queueMusicIds = playlistIds.slice();
+        var baseDur = 240;
+        var durations = playlistIds.map(function(){ return baseDur; });
+        var curIdx = playlistIds.indexOf(musicId);
+        if (audio.src && String(audio.src).indexOf('/api/music/' + musicId + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
+          var d = Math.ceil(audio.duration);
+          payload.currentTrackDurationSeconds = d;
+          if (curIdx >= 0) durations[curIdx] = d;
+        }
+        payload.queueDurationsSeconds = durations;
+      }
+      var path = '/api/radio/channels/' + encodeURIComponent(urlSlug);
+      api(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(r){
+        if (!r.ok) return r.text().then(function(t){ throw new Error(t); });
+        return r.json();
+      }).then(function(){
+        lastNowPlayingId = musicId;
+        show('채널 ' + urlSlug + ' 송출 중: ID ' + musicId, false);
+      }).catch(function(e){
+        show('채널 송출 실패: ' + e.message, true);
+      });
+    }
+
     btn.onclick = function() {
       var id = sel.value;
       if (!id) return;
+      var musicId = Number(id);
       var t = getSelectedTrack();
       audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
       audio.play().then(function(){
         if (t) {
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
-          show('', false); // 하단 상태 메시지에서는 제목 표시 안 함
-        } else {
-          show('', false);
         }
+        broadcastTrack(musicId);
       })
         .catch(function(e){ show('재생 실패: ' + e.message, true); });
     };
 
-    // DJ 모니터에서 곡이 끝나면 서버에 advanceToNextTrack 요청 → 다음 곡 자동 진행
     audio.addEventListener('ended', function() {
-      if (!urlSlug) return; // 운영 채널이 아닌 개발용(q) 채널은 자동 진행 생략
       if (!lastNowPlayingId) return;
-      var path = '/api/radio/channels/' + encodeURIComponent(urlSlug);
-      var body = {
-        advanceToNextTrack: true,
-        currentTrackId: lastNowPlayingId
-      };
-      api(path, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+      var ids = playlistIds.length > 0 ? playlistIds : tracks.map(function(t){ return t && typeof t.id === 'number' ? t.id : null; }).filter(function(x){ return x != null; });
+      if (ids.length === 0) return;
+      var curIdx = ids.indexOf(lastNowPlayingId);
+      var nextIdx = (curIdx >= 0 && curIdx + 1 < ids.length) ? curIdx + 1 : 0;
+      var nextId = ids[nextIdx];
+      var nextTrack = tracks.find(function(t){ return t.id === nextId; });
+      audio.src = API_BASE + '/api/music/' + encodeURIComponent(nextId) + '/stream';
+      audio.play().then(function(){
+        if (nextTrack && nowTitleEl) {
+          nowTitleEl.textContent = '재생 중: ' + (nextTrack.title || '제목 없음') + ' – ' + (nextTrack.artist || '아티스트');
+        }
+        broadcastTrack(nextId);
       }).catch(function(e){
-        console.warn('advanceToNextTrack 실패:', e && e.message ? e.message : e);
+        show('다음 곡 재생 실패: ' + e.message, true);
       });
     });
 
@@ -891,64 +928,18 @@
     };
     micVol.oninput();
 
-    // 선택한 곡을 채널 nowPlaying으로 설정. slug 있으면 실제 운영 API(PATCH /api/radio/channels/:slug), 없으면 개발용 /api/dev/radio/channels/q
     btnSendNow.onclick = function() {
       var id = sel.value;
       if (!id) return;
       var musicId = Number(id);
-      var startedAt = new Date().toISOString();
-      var payload = {
-        nowPlayingMusicId: musicId,
-        nowPlayingStartedAt: startedAt,
-        status: 'live'
-      };
-      // 전체 곡 목록을 간단한 재생 큐로 사용 (검색 필터와 무관하게, 로드된 tracks 순서 기준)
-      playlistIds = Array.isArray(tracks) ? tracks.map(function(t){ return t && typeof t.id === 'number' ? t.id : null; }).filter(function(id){ return id != null; }) : [];
-      if (playlistIds.length > 0) {
-        payload.queueMusicIds = playlistIds.slice();
-        // 기본 길이는 240초로 두고, 현재 곡 길이를 알고 있으면 해당 인덱스만 실제 길이로 덮어쓴다.
-        var baseDur = 240;
-        var durations = playlistIds.map(function(){ return baseDur; });
-        var curIdx = playlistIds.indexOf(musicId);
-        if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
-          var d = Math.ceil(audio.duration);
-          payload.currentTrackDurationSeconds = d;
-          if (curIdx >= 0) durations[curIdx] = d;
+      var t = getSelectedTrack();
+      audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
+      audio.play().then(function(){
+        if (t && nowTitleEl) {
+          nowTitleEl.textContent = '재생 중: ' + (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
         }
-        payload.queueDurationsSeconds = durations;
-      } else if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
-        // fallback: 큐가 없으면 현재 곡만 단일 스냅샷으로 보냄
-        var onlyDur = Math.ceil(audio.duration);
-        payload.currentTrackDurationSeconds = onlyDur;
-        payload.queueMusicIds = [musicId];
-        payload.queueDurationsSeconds = [onlyDur];
-      }
-      var path = urlSlug
-        ? '/api/radio/channels/' + encodeURIComponent(urlSlug)
-        : '/api/dev/radio/channels/q';
-      api(path, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(function(r){
-        if (!r.ok) {
-          var status = r.status;
-          return r.json().then(function(j){
-            var msg = (j && j.message) ? String(j.message) : '실패';
-            if (status === 401) msg = '로그인이 필요합니다. 스튜디오 송출은 로그인한 뒤, 방장 또는 스텝인 채널에서만 가능합니다. (채널 페이지에서 로그인 후 다시 스튜디오로 들어와 주세요.)';
-            if (status === 403) msg = '권한이 없습니다. 이 채널의 방장 또는 스텝만 송출할 수 있습니다.';
-            throw new Error(msg);
-          }, function(){ throw new Error(status === 401 ? '로그인이 필요합니다. 스튜디오 송출은 로그인한 뒤, 방장 또는 스텝인 채널에서만 가능합니다.' : '실패'); });
-        }
-        return r.json();
-      }).then(function(data){
-        var chLabel = urlSlug ? '채널 ' + urlSlug : '채널 q(개발용)';
-        show(chLabel + ' 송출 곡으로 설정됨: ID ' + id + '. 청취자 페이지에서 들을 수 있습니다.', false);
-        console.log('channel updated', data);
-        lastNowPlayingId = musicId;
-      }).catch(function(e){
-        show('채널 설정 실패: ' + e.message, true);
-      });
+        broadcastTrack(musicId);
+      }).catch(function(e){ show('재생 실패: ' + e.message, true); });
     };
 
     function escapeHtml(s) {
@@ -1166,8 +1157,16 @@
       ctxTargetUserId = null;
     }
 
+    function isStudioOperator() {
+      if (!meUserId) return false;
+      if (meUserId === channelOwnerUserId) return true;
+      if (meUserId === currentHostUserId) return true;
+      if (staffRoleMap[meUserId]) return true;
+      return true; // 스튜디오 접근 자체가 권한 있는 사용자만 가능
+    }
+
     function openReqCtx(x, y) {
-      var canModerate = canKick(); // 운영진이면 처리 가능
+      var canModerate = isStudioOperator();
       reqApprove.disabled = !canModerate;
       reqReject.disabled = !canModerate;
       reqApprove.style.opacity = reqApprove.disabled ? '0.45' : '1';
@@ -1373,10 +1372,6 @@
     reqApprove.onclick = function(e) {
       e.preventDefault();
       if (!reqCtxTargetId) return closeReqCtx();
-      if (!canKick()) {
-        addSystemMessage('승인/거절은 운영진(방장/스텝/CJ)만 가능합니다.');
-        return closeReqCtx();
-      }
       var ch = urlSlug || 'q';
       api('/api/radio/channels/' + encodeURIComponent(ch) + '/requests/' + encodeURIComponent(reqCtxTargetId), {
         method: 'PATCH',
@@ -1399,10 +1394,6 @@
     reqReject.onclick = function(e) {
       e.preventDefault();
       if (!reqCtxTargetId) return closeReqCtx();
-      if (!canKick()) {
-        addSystemMessage('승인/거절은 운영진(방장/스텝/CJ)만 가능합니다.');
-        return closeReqCtx();
-      }
       var ch2 = urlSlug || 'q';
       api('/api/radio/channels/' + encodeURIComponent(ch2) + '/requests/' + encodeURIComponent(reqCtxTargetId), {
         method: 'PATCH',

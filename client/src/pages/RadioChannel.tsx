@@ -77,7 +77,7 @@ export default function RadioChannel() {
   const [userStopped, setUserStopped] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLyric, setCurrentLyric] = useState<string | null>(null);
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -212,11 +212,14 @@ export default function RadioChannel() {
     return null;
   }, [isLive, nowPlayingId, nowPlayingObjectPath]);
 
-  // 곡(src)이 바뀌면 오디오를 다시 로드한다. 재생은 사용자가 컨트롤바에서 직접 시작한다.
+  // 곡(src)이 바뀌면 오디오를 다시 로드하고 자동 재생을 시도한다.
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !listenerAudioSrc) return;
     el.load();
+    const ctx = analyserRef.current?.ctx;
+    if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+    el.play().catch(() => {});
   }, [listenerAudioSrc]);
   // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
   const useGlobalRadio = false;
@@ -1031,18 +1034,7 @@ export default function RadioChannel() {
                     </span>
                   </p>
                 )}
-                {channel.status === "live" && nowPlayingId != null && (
-                  <div className="mb-4 space-y-2 rounded-md border border-white/10 bg-muted/20 px-3 py-2">
-                    <p className="text-xs text-muted-foreground">
-                      {t("radio.nowPlayingHint", "지금 방송 중인 곡을 바로 들을 수 있습니다.")}
-                    </p>
-                    <audio
-                      controls
-                      src={`/api/music/${nowPlayingId}/stream`}
-                      className="w-full"
-                    />
-                  </div>
-                )}
+                
                 {!isOwner && (
                   <Dialog open={tipOpen} onOpenChange={setTipOpen}>
                     <DialogTrigger asChild>
