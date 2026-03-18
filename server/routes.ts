@@ -3798,8 +3798,47 @@ export async function registerRoutes(
     }
   });
 
+  // 리스너가 곡 종료 시 즉시 다음 곡 진행 요청 (낙관적 락: currentMusicId가 서버와 일치할 때만 진행)
+  app.post("/api/radio/channels/:slug/client-advance", async (req, res) => {
+    try {
+      const slug = String(req.params.slug).trim().toLowerCase();
+      const currentMusicId = req.body?.currentMusicId != null ? Number(req.body.currentMusicId) : null;
+      const channel = await storage.getRadioChannelBySlug(slug);
+      if (!channel || channel.status !== "live") return res.json({ ok: false, reason: "not_live" });
+      const snap = channel.playlistSnapshot as { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null;
+      if (!snap || !Array.isArray(snap.musicIds) || snap.musicIds.length === 0) return res.json({ ok: false, reason: "no_playlist" });
+      // 낙관적 락: 이미 다른 리스너가 진행했으면 무시
+      if (currentMusicId != null && channel.nowPlayingMusicId !== currentMusicId) return res.json({ ok: false, reason: "already_advanced" });
+      const curIdx = currentMusicId != null ? snap.musicIds.indexOf(currentMusicId) : snap.currentIndex;
+      const nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
+      const nextId = snap.musicIds[nextIndex];
+      await storage.updateRadioChannel(channel.id, {
+        nowPlayingMusicId: nextId,
+        nowPlayingStartedAt: new Date(),
+        nowPlayingObjectPath: null,
+        nowPlayingTempDurationSeconds: null,
+        nowPlayingTempNextSnapshotIndex: null,
+        playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
+      });
+      radioLocalTitles.delete(slug);
+      broadcastToRadioChannel(slug, {
+        type: "radio_now_playing",
+        slug,
+        musicId: nextId,
+        nowPlayingObjectPath: null,
+        nowPlayingLocalTitle: null,
+        startedAt: new Date().toISOString(),
+        elapsedSeconds: 0,
+      });
+      return res.json({ ok: true, nextMusicId: nextId });
+    } catch (e) {
+      console.error("[client-advance]", e);
+      return res.status(500).json({ ok: false });
+    }
+  });
+
   // 서버 자동 진행: DJ 송출창을 닫아도 플레이리스트 순서대로 곡이 계속 재생됨
-  const AUTO_ADVANCE_INTERVAL_MS = 5000;
+  const AUTO_ADVANCE_INTERVAL_MS = 3000;
   setInterval(async () => {
     try {
       const channels = await storage.listLiveRadioChannelsForAutoAdvance();
@@ -3820,7 +3859,7 @@ export async function registerRoutes(
           continue;
         }
 
-        if (now - started < durationMs + 3000) continue; // 3초 여유
+        if (now - started < durationMs + 1000) continue; // 1초 여유
 
         // 다음 곡 결정
         let nextIndex: number;

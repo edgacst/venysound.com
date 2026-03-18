@@ -368,6 +368,20 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               el.load();
               setPlaying(false);
               setUserStopped(false);
+              // 곡 종료 시 즉시 서버에 다음 곡 진행 요청
+              const state = useRadioPlayerStore.getState();
+              const currentSlug = state.slug;
+              const currentUrl = state.streamUrl;
+              const match = currentUrl?.match(/\/api\/music\/(\d+)\/stream/);
+              if (currentSlug && match) {
+                const musicId = parseInt(match[1], 10);
+                fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ currentMusicId: musicId }),
+                }).catch(() => {});
+              }
               if (slug) {
                 queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
               }
@@ -407,6 +421,19 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               el.load();
               setPlaying(false);
               setUserStopped(false);
+              const state = useRadioPlayerStore.getState();
+              const currentSlug = state.slug;
+              const currentUrl = state.streamUrl;
+              const match = currentUrl?.match(/\/api\/music\/(\d+)\/stream/);
+              if (currentSlug && match) {
+                const musicId = parseInt(match[1], 10);
+                fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  credentials: "include",
+                  body: JSON.stringify({ currentMusicId: musicId }),
+                }).catch(() => {});
+              }
               if (slug) {
                 queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
               }
