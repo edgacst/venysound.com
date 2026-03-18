@@ -442,11 +442,8 @@
         <label for="track">Song search</label>
         <input id="search" type="text" placeholder="제목 또는 아티스트 검색..." style="width:100%;margin-bottom:6px;padding:6px 10px;border-radius:999px;border:1px solid #374151;background:#020617;color:#e5e7eb;font-size:0.85rem;" />
         <select id="track" size="10" class="track-list"></select>
-        <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
-          <label for="localFile" style="margin:0;padding:6px 12px;border-radius:999px;background:#0ea5e9;color:#fff;font-size:0.8rem;cursor:pointer;white-space:nowrap;">내 PC 음원</label>
-          <input id="localFile" type="file" accept="audio/*" style="display:none;" />
-          <span id="localFileName" style="font-size:0.75rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-        </div>
+        <input id="localFile" type="file" accept="audio/*" style="display:none;" />
+        <span id="localFileName" style="font-size:0.75rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
       </div>
       <div class="req-wrap">
         <div class="req-header">
@@ -469,6 +466,9 @@
             <button id="btnRefreshReq" style="font-size:0.75rem;background:transparent;border:none;color:#a5b4fc;cursor:pointer;padding:0;">
               새로고침
             </button>
+            <label for="localFile" style="margin:0;font-size:0.75rem;background:transparent;border:none;color:#a5b4fc;cursor:pointer;padding:0;">
+              내PC음원
+            </label>
           </div>
         </div>
         <div id="reqList" class="req-list">
