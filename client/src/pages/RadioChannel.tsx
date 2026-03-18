@@ -70,6 +70,7 @@ export default function RadioChannel() {
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hasSeekedForTrackRef = useRef<number | null>(null);
+  const prevTrackKeyRef = useRef<string | null>(null);
   const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
   const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
   const presentUserIdsRef = useRef<Set<string>>(new Set());
@@ -213,16 +214,32 @@ export default function RadioChannel() {
     return `${audioStreamUrl}${sep}v=${encodeURIComponent(v)}`;
   }, [audioStreamUrl, isLive, nowPlayingId, nowPlayingObjectPath]);
 
-  // 곡이 바뀌면 새 스트림으로 즉시 재생 시도 (PC에서만 autoPlay가 동작)
+  // DJ가 곡을 바꾸면 userStopped / autoplayBlocked 를 초기화해 새 곡이 자동 재생되게 한다.
+  useEffect(() => {
+    const trackKey =
+      nowPlayingId != null
+        ? `id:${nowPlayingId}`
+        : nowPlayingObjectPath != null
+          ? `obj:${nowPlayingObjectPath}`
+          : null;
+    if (
+      trackKey !== null &&
+      prevTrackKeyRef.current !== null &&
+      trackKey !== prevTrackKeyRef.current
+    ) {
+      setUserStopped(false);
+      setAutoplayBlocked(false);
+    }
+    prevTrackKeyRef.current = trackKey;
+  }, [nowPlayingId, nowPlayingObjectPath]);
+
+  // 곡(src)이 바뀌면 오디오를 강제로 다시 로드한다.
+  // key 방식 대신 load()를 써서 AudioContext 연결을 끊지 않고 소스만 교체한다.
   useEffect(() => {
     const el = audioRef.current;
-    if (!el) return;
-    if (!listenerAudioSrc) return;
-    if (userStopped) return;
-    el.play()
-      .then(() => setAutoplayBlocked(false))
-      .catch(() => setAutoplayBlocked(true));
-  }, [listenerAudioSrc, userStopped]);
+    if (!el || !listenerAudioSrc) return;
+    el.load();
+  }, [listenerAudioSrc]);
 
   // 자동재생이 막힌 경우: 첫 사용자 상호작용(클릭/키다운) 시 재생 재시도
   useEffect(() => {
@@ -1179,7 +1196,6 @@ export default function RadioChannel() {
                     </div>
                     <audio
                       ref={audioRef}
-                      key={`${slug}:${nowPlayingId ?? "local"}:${nowPlayingObjectPath ?? ""}`}
                       src={listenerAudioSrc || undefined}
                       className="hidden"
                       autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
@@ -1187,6 +1203,7 @@ export default function RadioChannel() {
                         const ctx = analyserRef.current?.ctx;
                         if (ctx?.state === "suspended") ctx.resume().catch(() => {});
                         setIsPlaying(true);
+                        setAutoplayBlocked(false);
                         setUserStopped(false);
                       }}
                       onPause={() => {
@@ -1207,22 +1224,25 @@ export default function RadioChannel() {
                       }}
                       onCanPlay={() => {
                         if (isOwner || !audioRef.current) return;
-                        if (hasSeekedForTrackRef.current === nowPlayingId) return;
+                        // nowPlayingId 가 null 인 경우(objectPath 트랙)에도 진행하도록 조건 수정
+                        if (nowPlayingId !== null && hasSeekedForTrackRef.current === nowPlayingId) return;
                         const last = lastNowPlayingRef.current;
                         let seekSec: number | null = null;
-                        if (last?.musicId === nowPlayingId) {
-                          const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
-                          seekSec = last.elapsedSeconds + delay;
-                        } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
-                          const { elapsed, receivedAt } = channelElapsedRef.current;
-                          seekSec = elapsed + (Date.now() - receivedAt) / 1000;
-                        } else if (channel?.nowPlayingElapsedSeconds != null) {
-                          channelElapsedRef.current = {
-                            musicId: nowPlayingId!,
-                            elapsed: channel.nowPlayingElapsedSeconds,
-                            receivedAt: Date.now(),
-                          };
-                          seekSec = channel.nowPlayingElapsedSeconds;
+                        if (nowPlayingId !== null) {
+                          if (last?.musicId === nowPlayingId) {
+                            const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
+                            seekSec = last.elapsedSeconds + delay;
+                          } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
+                            const { elapsed, receivedAt } = channelElapsedRef.current;
+                            seekSec = elapsed + (Date.now() - receivedAt) / 1000;
+                          } else if (channel?.nowPlayingElapsedSeconds != null) {
+                            channelElapsedRef.current = {
+                              musicId: nowPlayingId,
+                              elapsed: channel.nowPlayingElapsedSeconds,
+                              receivedAt: Date.now(),
+                            };
+                            seekSec = channel.nowPlayingElapsedSeconds;
+                          }
                         }
                         if (seekSec != null && seekSec > 0) {
                           const target = Math.max(0, seekSec);
@@ -1241,7 +1261,9 @@ export default function RadioChannel() {
                         }
                         hasSeekedForTrackRef.current = nowPlayingId;
                         if (!userStopped && audioRef.current) {
-                          audioRef.current.play().catch(() => {});
+                          audioRef.current.play()
+                            .then(() => setAutoplayBlocked(false))
+                            .catch(() => setAutoplayBlocked(true));
                         }
                       }}
                       onError={() => toast({ title: t("radio.playbackError", "재생 오류"), description: t("radio.playbackErrorDesc", "음원을 불러올 수 없습니다."), variant: "destructive" })}
