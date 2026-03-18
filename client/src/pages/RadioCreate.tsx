@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Navigation } from "@/components/Navigation";
@@ -6,10 +6,11 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ArrowLeft, Loader2, Mic2 } from "lucide-react";
+import { ArrowLeft, Loader2, Mic2, ImagePlus } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { resolveStorageUrl } from "@/lib/utils";
 
 function slugFromName(name: string): string {
   return name
@@ -31,8 +32,33 @@ export default function RadioCreate() {
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
   const [coverUrl, setCoverUrl] = useState("");
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const coverFileRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCoverPreview(URL.createObjectURL(file));
+    setCoverUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("desiredFilename", file.name.replace(/\.[^.]+$/, ""));
+      const res = await fetch("/api/uploads/local", { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) throw new Error("업로드 실패");
+      const data = await res.json();
+      setCoverUrl(data.objectPath || data.objectUrl || data.url || "");
+    } catch {
+      toast({ title: "이미지 업로드에 실패했습니다.", variant: "destructive" });
+      setCoverPreview(null);
+      setCoverUrl("");
+    } finally {
+      setCoverUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (name && !slug) setSlug(slugFromName(name));
@@ -154,20 +180,47 @@ export default function RadioCreate() {
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-1 block">
-                    {t("radio.channelCover", "배경 이미지 URL")} ({t("common.optional", "선택")})
+                    {t("radio.channelCover", "배경 이미지")} ({t("common.optional", "선택")})
                   </label>
-                  <Input
-                    value={coverUrl}
-                    onChange={(e) => setCoverUrl(e.target.value)}
-                    placeholder={t("radio.channelCoverPlaceholder", "예: /objects/cover.jpg 또는 https://...")}
-                    className="bg-background border-white/10"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t(
-                      "radio.channelCoverHint",
-                      "이미 업로드된 이미지의 주소를 입력하면 채널 카드와 상세 페이지 배경으로 사용됩니다.",
+                  <div className="flex items-center gap-3 mt-1">
+                    {coverPreview ? (
+                      <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-white/10 shrink-0">
+                        <img src={coverPreview} alt="" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          className="absolute top-0 right-0 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-bl-md hover:bg-red-600 transition-colors"
+                          onClick={() => { setCoverUrl(""); setCoverPreview(null); }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 rounded-lg border border-dashed border-white/20 flex items-center justify-center text-muted-foreground shrink-0">
+                        <ImagePlus size={24} />
+                      </div>
                     )}
-                  </p>
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={coverUploading}
+                        onClick={() => coverFileRef.current?.click()}
+                        className="gap-2"
+                      >
+                        {coverUploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                        {coverUploading ? "업로드 중..." : "이미지 선택"}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">JPG, PNG 권장</p>
+                    </div>
+                    <input
+                      ref={coverFileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCoverFile}
+                    />
+                  </div>
                 </div>
                 {error && (
                   <p className="text-sm text-destructive">{error}</p>

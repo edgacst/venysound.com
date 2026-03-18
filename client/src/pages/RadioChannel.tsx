@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus } from "lucide-react";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -90,6 +90,7 @@ export default function RadioChannel() {
     nowPlayingMusicId: number | null;
     nowPlayingStartedAt: string | null;
     nowPlayingObjectPath?: string | null;
+    nowPlayingLocalTitle?: string | null;
     nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
     ownerDisplayName?: string;
@@ -152,7 +153,7 @@ export default function RadioChannel() {
 
   const lastSyncedIndexRef = useRef<number>(-1);
 
-  const { setStream: setRadioStream, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying, userStopped: radioUserStopped } = useRadioPlayerStore();
+  const { setStream: setRadioStream, setTrackTitle: setRadioTrackTitle, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying, userStopped: radioUserStopped } = useRadioPlayerStore();
 
   // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
   useEffect(() => {
@@ -221,21 +222,34 @@ export default function RadioChannel() {
     if (ctx?.state === "suspended") ctx.resume().catch(() => {});
     el.play().catch(() => {});
   }, [listenerAudioSrc]);
-  // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
-  const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
 
-  // 리스너: 전역 라디오 플레이어에 스트림 동기화 (다른 페이지로 나가도 재생 유지)
-  const prevStreamUrlRef = useRef<string | null>(null);
+  // 채널 페이지가 활성일 때: 전역 플레이어에 스트림을 동기화
+  // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
-    if (!useGlobalRadio || !channel) return;
-    const streamChanged = prevStreamUrlRef.current !== audioStreamUrl;
-    prevStreamUrlRef.current = audioStreamUrl;
-    // 곡이 바뀐 경우에만 initialSeek 전달. 같은 곡인데 elapsed만 바뀐 경우 0으로 덮어쓰면 재생이 처음부터 다시 시작되는 현상 방지
-    const seekSec = streamChanged ? (channel?.nowPlayingElapsedSeconds ?? undefined) : undefined;
-    setRadioStream(slug, channel.name, audioStreamUrl, seekSec);
-    radioRequestPlay(); // 전역 플레이어 재생 시작(채널 떠나도 바 표시·재생 유지)
-  }, [useGlobalRadio, slug, channel?.name, channel?.nowPlayingElapsedSeconds, audioStreamUrl, setRadioStream, radioRequestPlay]);
+    if (!channel || !audioStreamUrl) return;
+    setRadioStream(slug, channel.name, audioStreamUrl, channel?.nowPlayingElapsedSeconds ?? undefined);
+  }, [slug, channel?.name, audioStreamUrl]);
+
+  // 곡 제목을 전역 store에 동기화 (글로벌 플레이바에 표시)
+  useEffect(() => {
+    const title = nowPlayingMusic?.title
+      ?? channel?.nowPlayingLocalTitle
+      ?? null;
+    const artist = nowPlayingMusic?.artist ?? null;
+    const full = title ? (artist ? `${title} – ${artist}` : title) : null;
+    setRadioTrackTitle(full);
+  }, [nowPlayingMusic?.title, nowPlayingMusic?.artist, channel?.nowPlayingLocalTitle, setRadioTrackTitle]);
+
+  // unmount 시 전역 플레이어로 재생을 넘긴다
+  useEffect(() => {
+    return () => {
+      const state = useRadioPlayerStore.getState();
+      if (state.slug && state.streamUrl) {
+        state.requestPlay();
+      }
+    };
+  }, []);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const waveformWrapRef = useRef<HTMLDivElement | null>(null);
@@ -508,6 +522,7 @@ export default function RadioChannel() {
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         const startedAt = (msg as { startedAt?: string }).startedAt ?? null;
         const wsObjectPath = (msg as any).nowPlayingObjectPath ?? null;
+        const wsLocalTitle = (msg as any).nowPlayingLocalTitle ?? null;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         queryClient.setQueryData(
           ["/api/radio/channels", slug],
@@ -519,6 +534,7 @@ export default function RadioChannel() {
               nowPlayingStartedAt: startedAt,
               nowPlayingElapsedSeconds: elapsedSeconds,
               nowPlayingObjectPath: wsObjectPath,
+              nowPlayingLocalTitle: wsLocalTitle,
             };
           }
         );
@@ -566,6 +582,72 @@ export default function RadioChannel() {
   const [tipOpen, setTipOpen] = useState(false);
   const [tipAmount, setTipAmount] = useState(1000);
   const [tipMessage, setTipMessage] = useState("");
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editCover, setEditCover] = useState("");
+  const [editCoverPreview, setEditCoverPreview] = useState<string | null>(null);
+  const [editUploading, setEditUploading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const editFileRef = useRef<HTMLInputElement>(null);
+
+  const openEditDialog = () => {
+    if (!channel) return;
+    setEditName(channel.name);
+    setEditDesc(channel.description ?? "");
+    setEditCover(channel.coverFilename ?? "");
+    setEditCoverPreview(channel.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
+    setEditOpen(true);
+  };
+
+  const handleEditCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditCoverPreview(URL.createObjectURL(file));
+    setEditUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("desiredFilename", file.name.replace(/\.[^.]+$/, ""));
+      const res = await fetch("/api/uploads/local", { method: "POST", credentials: "include", body: fd });
+      if (!res.ok) throw new Error("업로드 실패");
+      const data = await res.json();
+      const objectPath = data.objectPath || data.objectUrl || data.url || "";
+      setEditCover(objectPath);
+    } catch {
+      toast({ title: "이미지 업로드에 실패했습니다.", variant: "destructive" });
+      setEditCoverPreview(channel?.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
+      setEditCover(channel?.coverFilename ?? "");
+    } finally {
+      setEditUploading(false);
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!channel || !editName.trim()) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/radio/channels/${channel.slug}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: editName.trim(),
+          description: editDesc.trim() || null,
+          coverFilename: editCover.trim() || null,
+        }),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || "수정 실패"); }
+      toast({ title: "채널 정보가 수정되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+      setEditOpen(false);
+    } catch (err: any) {
+      toast({ title: err.message ?? "수정 실패", variant: "destructive" });
+    } finally {
+      setEditSaving(false);
+    }
+  };
   const tipMutation = useMutation({
     mutationFn: async (data: { toUserId: string; amount: number; message?: string }) => {
       const res = await fetch("/api/tips", {
@@ -973,7 +1055,9 @@ export default function RadioChannel() {
                   <Music2 size={20} className="text-primary shrink-0" />
                   <div className="min-w-0 flex-1 min-h-[2.5rem] flex flex-col justify-center">
                     <p className="text-sm font-medium text-foreground truncate">
-                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? (() => { const parts = decodeURIComponent(nowPlayingObjectPath).split('/'); const fn = parts[parts.length - 1] || ''; const base = fn.replace(/\.[^.]+$/, ''); return base.replace(/^[a-f0-9-]{36}-/i, '').replace(/_[a-f0-9]{8}$/i, '') || base || t("radio.localTrack", "로컬 곡"); })() : t("radio.nowPlaying", "지금 재생 중"))}
+                      {nowPlayingMusic?.title
+                        ?? channel?.nowPlayingLocalTitle
+                        ?? (nowPlayingObjectPath ? t("radio.localTrack", "로컬 곡") : t("radio.nowPlaying", "지금 재생 중"))}
                       {nowPlayingMusic?.artist != null && nowPlayingMusic.artist !== "" && ` – ${nowPlayingMusic.artist}`}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-0.5 min-h-[1.25rem]">
@@ -1004,6 +1088,11 @@ export default function RadioChannel() {
               <div className="p-4">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h1 className="text-2xl font-bold">{channel.name}</h1>
+                  {isOwner && (
+                    <button onClick={openEditDialog} className="p-1 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-foreground" title="채널 수정">
+                      <Settings size={16} />
+                    </button>
+                  )}
                   {channel.status === "live" && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
                       <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
@@ -1246,6 +1335,86 @@ export default function RadioChannel() {
           </div>
         </div>
       </div>
+      {/* 채널 수정 다이얼로그 */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("radio.editChannel", "채널 수정")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>{t("radio.channelName", "채널 이름")}</Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                maxLength={50}
+                className="mt-1 bg-background border-white/10"
+              />
+            </div>
+            <div>
+              <Label>{t("radio.channelDescription", "한 줄 소개")}</Label>
+              <Input
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                maxLength={200}
+                className="mt-1 bg-background border-white/10"
+                placeholder={t("radio.descriptionPlaceholder", "예: 편하게 들을 수 있는 음악방")}
+              />
+            </div>
+            <div>
+              <Label>{t("radio.channelCover", "배경 이미지")}</Label>
+              <div className="mt-1 flex items-center gap-3">
+                {editCoverPreview ? (
+                  <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-white/10 shrink-0">
+                    <img src={editCoverPreview} alt="" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      className="absolute top-0 right-0 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded-bl-md hover:bg-red-600 transition-colors"
+                      onClick={() => { setEditCover(""); setEditCoverPreview(null); }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border border-dashed border-white/20 flex items-center justify-center text-muted-foreground shrink-0">
+                    <ImagePlus size={24} />
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={editUploading}
+                    onClick={() => editFileRef.current?.click()}
+                    className="gap-2"
+                  >
+                    {editUploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
+                    {editUploading ? "업로드 중..." : "이미지 선택"}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">JPG, PNG 권장</p>
+                </div>
+                <input
+                  ref={editFileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleEditCoverFile}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setEditOpen(false)}>
+                {t("common.cancel", "취소")}
+              </Button>
+              <Button onClick={handleEditSave} disabled={editSaving || !editName.trim()} className="gap-2">
+                {editSaving && <Loader2 size={14} className="animate-spin" />}
+                {editSaving ? "저장 중..." : t("common.save", "저장")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

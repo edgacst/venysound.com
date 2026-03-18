@@ -28,6 +28,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   const {
     slug,
     channelName,
+    trackTitle,
     streamUrl,
     isPlaying,
     userStopped,
@@ -307,14 +308,21 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
         <div className="container flex items-center gap-3 px-3 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Radio className="h-5 w-5 shrink-0 text-primary" />
-            <span className="truncate text-sm font-medium">{channelName}</span>
-            <span className="text-xs text-muted-foreground">
-              {playError
-                ? t("radio.listenError", "재생 오류 – 잠시 후 다시 시도해 주세요")
-                : isPlaying
-                  ? t("radio.listeningTo", "지금 재생 중")
-                  : t("radio.listeningPaused", "일시정지")}
-            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-medium">{channelName}</span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {playError
+                    ? t("radio.listenError", "재생 오류")
+                    : isPlaying
+                      ? t("radio.listeningTo", "재생 중")
+                      : t("radio.listeningPaused", "일시정지")}
+                </span>
+              </div>
+              {trackTitle && (
+                <p className="truncate text-xs text-muted-foreground">{trackTitle}</p>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {isPlaying ? (

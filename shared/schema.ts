@@ -102,6 +102,7 @@ export const radioChannels = pgTable("radio_channels", {
   nowPlayingMusicId: integer("now_playing_music_id").references(() => music.id, { onDelete: "set null" }),
   nowPlayingStartedAt: timestamp("now_playing_started_at"),
   nowPlayingObjectPath: text("now_playing_object_path"), // 로컬 파일 송출 시에만 사용. 음원 미등록, 임시 스트림
+  nowPlayingLocalTitle: text("now_playing_local_title"), // 로컬 파일 송출 시 곡 제목
   nowPlayingTempDurationSeconds: integer("now_playing_temp_duration_seconds"),
   nowPlayingTempNextSnapshotIndex: integer("now_playing_temp_next_snapshot_index"),
   currentHostId: text("current_host_id").references(() => users.id, { onDelete: "set null" }),

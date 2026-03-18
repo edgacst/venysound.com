@@ -3,18 +3,16 @@ import { create } from "zustand";
 type RadioPlayerState = {
   slug: string | null;
   channelName: string | null;
+  trackTitle: string | null;
   streamUrl: string | null;
   isPlaying: boolean;
   userStopped: boolean;
-  /** Seek to this position (seconds) when audio canplay fires. Cleared after use. */
   initialSeekSeconds: number | null;
-  /** Increment to request play from GlobalRadioPlayer (e.g. from RadioChannel page). */
   playTrigger: number;
-  /** Increment to request pause from GlobalRadioPlayer. */
   pauseTrigger: number;
-  /** 모바일: 사용자 제스처 직후 동기적으로 play() 호출용. GlobalRadioPlayer가 설정. */
   playNowRef: { current: (() => void) | null } | null;
   setStream: (slug: string, channelName: string, streamUrl: string, initialSeekSeconds?: number) => void;
+  setTrackTitle: (title: string | null) => void;
   setPlaying: (playing: boolean) => void;
   setUserStopped: (stopped: boolean) => void;
   setPlayNowRef: (ref: { current: (() => void) | null } | null) => void;
@@ -26,6 +24,7 @@ type RadioPlayerState = {
 export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   slug: null,
   channelName: null,
+  trackTitle: null,
   streamUrl: null,
   isPlaying: false,
   userStopped: false,
@@ -40,6 +39,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       streamUrl,
       initialSeekSeconds: initialSeekSeconds ?? null,
     }),
+  setTrackTitle: (trackTitle) => set({ trackTitle }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setUserStopped: (userStopped) => set({ userStopped }),
   setPlayNowRef: (playNowRef) => set({ playNowRef }),
@@ -52,6 +52,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
     set({
       slug: null,
       channelName: null,
+      trackTitle: null,
       streamUrl: null,
       isPlaying: false,
       userStopped: false,

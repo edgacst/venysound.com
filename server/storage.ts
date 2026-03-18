@@ -141,7 +141,7 @@ export interface IStorage {
     ownerUsername: string | null;
     updatedAt: Date | null;
   }[]>;
-  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
+  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingLocalTitle?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
@@ -2206,6 +2206,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       nowPlayingMusicId: radioChannels.nowPlayingMusicId,
       nowPlayingStartedAt: radioChannels.nowPlayingStartedAt,
       nowPlayingObjectPath: radioChannels.nowPlayingObjectPath,
+      nowPlayingLocalTitle: radioChannels.nowPlayingLocalTitle,
       nowPlayingTempDurationSeconds: radioChannels.nowPlayingTempDurationSeconds,
       nowPlayingTempNextSnapshotIndex: radioChannels.nowPlayingTempNextSnapshotIndex,
       currentHostId: radioChannels.currentHostId,
@@ -2232,6 +2233,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       nowPlayingMusicId: row.nowPlayingMusicId,
       nowPlayingStartedAt: row.nowPlayingStartedAt,
       nowPlayingObjectPath: row.nowPlayingObjectPath ?? null,
+      nowPlayingLocalTitle: row.nowPlayingLocalTitle ?? null,
       nowPlayingTempDurationSeconds: row.nowPlayingTempDurationSeconds ?? null,
       nowPlayingTempNextSnapshotIndex: row.nowPlayingTempNextSnapshotIndex ?? null,
       currentHostId: row.currentHostId ?? null,
@@ -2339,7 +2341,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
     }));
   }
 
-  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
+  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingLocalTitle?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
     if (data.slug !== undefined) set.slug = data.slug;
@@ -2350,6 +2352,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
     if (data.nowPlayingMusicId !== undefined) set.nowPlayingMusicId = data.nowPlayingMusicId;
     if (data.nowPlayingStartedAt !== undefined) set.nowPlayingStartedAt = data.nowPlayingStartedAt;
     if (data.nowPlayingObjectPath !== undefined) set.nowPlayingObjectPath = data.nowPlayingObjectPath;
+    if (data.nowPlayingLocalTitle !== undefined) set.nowPlayingLocalTitle = data.nowPlayingLocalTitle;
     if (data.nowPlayingTempDurationSeconds !== undefined) set.nowPlayingTempDurationSeconds = data.nowPlayingTempDurationSeconds;
     if (data.nowPlayingTempNextSnapshotIndex !== undefined) set.nowPlayingTempNextSnapshotIndex = data.nowPlayingTempNextSnapshotIndex;
     if (data.currentHostId !== undefined) set.currentHostId = data.currentHostId;
