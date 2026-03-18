@@ -507,6 +507,7 @@ export default function RadioChannel() {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const elapsedSeconds = typeof msg.elapsedSeconds === "number" && msg.elapsedSeconds >= 0 ? msg.elapsedSeconds : 0;
         const startedAt = (msg as { startedAt?: string }).startedAt ?? null;
+        const wsObjectPath = (msg as any).nowPlayingObjectPath ?? null;
         lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         queryClient.setQueryData(
           ["/api/radio/channels", slug],
@@ -517,6 +518,7 @@ export default function RadioChannel() {
               nowPlayingMusicId: musicId,
               nowPlayingStartedAt: startedAt,
               nowPlayingElapsedSeconds: elapsedSeconds,
+              nowPlayingObjectPath: wsObjectPath,
             };
           }
         );
@@ -971,7 +973,7 @@ export default function RadioChannel() {
                   <Music2 size={20} className="text-primary shrink-0" />
                   <div className="min-w-0 flex-1 min-h-[2.5rem] flex flex-col justify-center">
                     <p className="text-sm font-medium text-foreground truncate">
-                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? (() => { const parts = decodeURIComponent(nowPlayingObjectPath).split('/'); const fn = parts[parts.length - 1] || ''; return fn.replace(/\.[^.]+$/, '').replace(/^[a-f0-9-]{36}-/i, '') || t("radio.localTrack", "로컬 곡"); })() : t("radio.nowPlaying", "지금 재생 중"))}
+                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? (() => { const parts = decodeURIComponent(nowPlayingObjectPath).split('/'); const fn = parts[parts.length - 1] || ''; const base = fn.replace(/\.[^.]+$/, ''); return base.replace(/^[a-f0-9-]{36}-/i, '').replace(/_[a-f0-9]{8}$/i, '') || base || t("radio.localTrack", "로컬 곡"); })() : t("radio.nowPlaying", "지금 재생 중"))}
                       {nowPlayingMusic?.artist != null && nowPlayingMusic.artist !== "" && ` – ${nowPlayingMusic.artist}`}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-0.5 min-h-[1.25rem]">
