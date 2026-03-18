@@ -526,6 +526,16 @@
         <input id="micVol" type="range" min="0" max="1" step="0.01" value="0" />
         <span id="micVolTxt" class="pill">0%</span>
       </div>
+
+      <div class="sep"></div>
+
+      <h1 style="margin-top:0;">방송 녹음</h1>
+      <p style="margin-bottom:8px;">마이크와 음원을 동시에 녹음합니다. 종료 시 MP3로 다운로드됩니다.</p>
+      <div class="row" style="margin-bottom:8px;">
+        <button id="btnRec" style="background:#dc2626;">녹음 시작</button>
+        <span id="recState" class="pill">OFF</span>
+        <span id="recTimer" class="pill" style="display:none;">00:00</span>
+      </div>
     </div>
 
     <div class="card card-chat">
@@ -749,6 +759,11 @@
         var opt = document.createElement('option');
         opt.value = t.id;
         opt.textContent = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
+        if (lastNowPlayingId != null && t.id === lastNowPlayingId) {
+          opt.style.color = '#a78bfa';
+          opt.style.fontWeight = '700';
+          opt.textContent = '▶ ' + opt.textContent;
+        }
         sel.appendChild(opt);
       });
       var has = list.length > 0;
@@ -787,6 +802,7 @@
       }).then(function(){
         lastNowPlayingId = musicId;
         show('채널 ' + urlSlug + ' 송출 중: ID ' + musicId, false);
+        applyFilter();
       }).catch(function(e){
         show('채널 송출 실패: ' + e.message, true);
       });
@@ -1450,6 +1466,138 @@
     setInterval(function() { loadRequests(); }, 30000);
 
     loadTracks();
+
+    // ── 방송 녹음 (마이크 + 음원 동시) ──
+    var btnRec = document.getElementById('btnRec');
+    var recState = document.getElementById('recState');
+    var recTimer = document.getElementById('recTimer');
+    var recMediaRecorder = null;
+    var recChunks = [];
+    var recStartTime = 0;
+    var recTimerInterval = 0;
+    var recDestination = null;
+    var recAudioCtx = null;
+    var recMicSource = null;
+    var recAudioSource = null;
+
+    function fmtRecTime(ms) {
+      var sec = Math.floor(ms / 1000);
+      var m = Math.floor(sec / 60);
+      var s = sec % 60;
+      return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function stopRecording() {
+      if (recMediaRecorder && recMediaRecorder.state !== 'inactive') {
+        recMediaRecorder.stop();
+      }
+      clearInterval(recTimerInterval);
+      recTimerInterval = 0;
+      recState.textContent = 'OFF';
+      recState.style.borderColor = 'rgba(148,163,184,0.25)';
+      recState.style.color = '#cbd5e1';
+      recTimer.style.display = 'none';
+      btnRec.textContent = '녹음 시작';
+      btnRec.style.background = '#dc2626';
+      try { if (recMicSource) recMicSource.disconnect(); } catch(_){}
+      try { if (recAudioSource) recAudioSource.disconnect(); } catch(_){}
+      recMicSource = null;
+      recAudioSource = null;
+    }
+
+    function startRecording() {
+      recChunks = [];
+      recAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      recDestination = recAudioCtx.createMediaStreamDestination();
+
+      var audioEl = document.getElementById('audio');
+      if (audioEl && audioEl.src) {
+        try {
+          recAudioSource = recAudioCtx.createMediaElementSource(audioEl);
+          recAudioSource.connect(recDestination);
+          recAudioSource.connect(recAudioCtx.destination);
+        } catch(_) {
+          // 이미 다른 AudioContext에 연결된 경우 — 오디오 캡처 없이 마이크만 녹음
+          recAudioSource = null;
+        }
+      }
+
+      var micPromise;
+      if (micStream) {
+        micPromise = Promise.resolve(micStream);
+      } else {
+        micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).catch(function() { return null; });
+      }
+
+      micPromise.then(function(mStream) {
+        if (mStream) {
+          recMicSource = recAudioCtx.createMediaStreamSource(mStream);
+          recMicSource.connect(recDestination);
+        }
+
+        var combinedStream = recDestination.stream;
+        if (combinedStream.getAudioTracks().length === 0) {
+          addSystemMessage('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생해 주세요.');
+          return;
+        }
+
+        var mimeType = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'audio/webm';
+        }
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = '';
+        }
+
+        recMediaRecorder = new MediaRecorder(combinedStream, mimeType ? { mimeType: mimeType } : undefined);
+        recMediaRecorder.ondataavailable = function(e) {
+          if (e.data && e.data.size > 0) recChunks.push(e.data);
+        };
+        recMediaRecorder.onstop = function() {
+          if (recChunks.length === 0) return;
+          var blob = new Blob(recChunks, { type: recMediaRecorder.mimeType || 'audio/webm' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          var now = new Date();
+          var fname = 'broadcast-' + now.getFullYear() +
+            ('0' + (now.getMonth() + 1)).slice(-2) +
+            ('0' + now.getDate()).slice(-2) + '-' +
+            ('0' + now.getHours()).slice(-2) +
+            ('0' + now.getMinutes()).slice(-2) +
+            ('0' + now.getSeconds()).slice(-2) + '.webm';
+          a.href = url;
+          a.download = fname;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+          addSystemMessage('녹음 파일이 다운로드됩니다: ' + fname);
+          recChunks = [];
+        };
+        recMediaRecorder.start(1000);
+
+        recStartTime = Date.now();
+        recState.textContent = 'REC';
+        recState.style.borderColor = 'rgba(220,38,38,0.5)';
+        recState.style.color = '#fca5a5';
+        recTimer.style.display = '';
+        recTimer.textContent = '00:00';
+        btnRec.textContent = '녹음 종료';
+        btnRec.style.background = '#7f1d1d';
+        recTimerInterval = setInterval(function() {
+          recTimer.textContent = fmtRecTime(Date.now() - recStartTime);
+        }, 500);
+
+        addSystemMessage('방송 녹음이 시작되었습니다.');
+      });
+    }
+
+    btnRec.onclick = function() {
+      if (recMediaRecorder && recMediaRecorder.state === 'recording') {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    };
   })();
   </script>
 </body>
