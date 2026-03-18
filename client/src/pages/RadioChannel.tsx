@@ -971,7 +971,7 @@ export default function RadioChannel() {
                   <Music2 size={20} className="text-primary shrink-0" />
                   <div className="min-w-0 flex-1 min-h-[2.5rem] flex flex-col justify-center">
                     <p className="text-sm font-medium text-foreground truncate">
-                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? t("radio.localTrack", "로컬 곡") : t("radio.nowPlaying", "지금 재생 중"))}
+                      {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? (() => { const parts = decodeURIComponent(nowPlayingObjectPath).split('/'); const fn = parts[parts.length - 1] || ''; return fn.replace(/\.[^.]+$/, '').replace(/^[a-f0-9-]{36}-/i, '') || t("radio.localTrack", "로컬 곡"); })() : t("radio.nowPlaying", "지금 재생 중"))}
                       {nowPlayingMusic?.artist != null && nowPlayingMusic.artist !== "" && ` – ${nowPlayingMusic.artist}`}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-0.5 min-h-[1.25rem]">

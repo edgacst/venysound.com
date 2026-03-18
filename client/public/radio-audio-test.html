@@ -171,7 +171,7 @@
       overflow:hidden;
     }
     .req-header { display:flex; align-items:flex-end; justify-content:flex-start; gap:6px; margin-top: 0; margin-bottom:8px; }
-    .req-title { display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:700; color:#c7d2fe; }
+    .req-title { display:flex; align-items:center; gap:6px 10px; font-size:0.85rem; font-weight:700; color:#c7d2fe; flex-wrap:wrap; }
     .req-list { flex:1; min-height:0; overflow:auto; border-radius: 12px; border: 1px solid #1f2937; background: rgba(2,6,23,0.9); padding: 8px; }
     .req-item {
       padding: 6px 8px;            /* 세로 패딩만 살짝 줄임 */
@@ -708,31 +708,18 @@
     var playlistIds = [];
     var lastNowPlayingId = null;
 
-    // 로컬 파일 불러오기
+    // 로컬 파일 불러오기 — 업로드 후 곡 목록 맨 하단에 추가 (바로 재생 안 함)
     var localFileInput = document.getElementById('localFile');
     var localFileNameEl = document.getElementById('localFileName');
-    var localBlobUrl = null;
+    var localNextId = -1;
 
     localFileInput.onchange = function() {
       var file = localFileInput.files && localFileInput.files[0];
       if (!file) return;
-      localFileNameEl.textContent = file.name;
-      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
-      localBlobUrl = URL.createObjectURL(file);
-      audio.src = localBlobUrl;
-      audio.play().then(function() {
-        var nameNoExt = file.name.replace(/\.[^.]+$/, '');
-        if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + nameNoExt + ' (로컬)';
-        if (nowLyricsEl) nowLyricsEl.textContent = '로컬 파일 재생 중';
-        syncedLines = [];
-        lastSyncIdx = -1;
-        addSystemMessage('로컬 파일 재생 시작: ' + file.name + ' — 서버 업로드 중...');
-      }).catch(function(e) {
-        show('로컬 파일 재생 실패: ' + e.message, true);
-        return;
-      });
+      var nameNoExt = file.name.replace(/\.[^.]+$/, '');
+      localFileNameEl.textContent = '업로드 중: ' + file.name;
+      addSystemMessage('로컬 파일 업로드 중: ' + file.name);
 
-      // 서버에 업로드 → objectPath 획득 → 채널에 송출
       var formData = new FormData();
       formData.append('file', file);
       fetch(API_BASE + '/api/uploads/local', {
@@ -745,29 +732,26 @@
       }).then(function(data) {
         var objectPath = data.objectUrl || data.url || data.objectPath || null;
         if (!objectPath) throw new Error('업로드 응답에 URL이 없습니다');
-        addSystemMessage('업로드 완료. 리스너에게 송출합니다.');
-        if (!urlSlug) return;
-        var payload = {
-          nowPlayingObjectPath: objectPath,
-          nowPlayingStartedAt: new Date().toISOString(),
-          status: 'live',
-          nowPlayingMusicId: null
+        var localId = localNextId--;
+        var localTrack = {
+          id: localId,
+          title: nameNoExt,
+          artist: '로컬 파일',
+          _localObjectPath: objectPath
         };
-        if (audio.duration && isFinite(audio.duration)) {
-          payload.currentTrackDurationSeconds = Math.ceil(audio.duration);
-        }
-        return api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }).then(function(r) {
-        if (r && !r.ok) throw new Error('채널 업데이트 실패');
-        show('로컬 파일이 채널에 송출되었습니다.', false);
+        tracks.push(localTrack);
+        applyFilter();
+        // 목록에서 해당 항목 선택
+        sel.value = String(localId);
+        localFileNameEl.textContent = nameNoExt + ' (추가됨)';
+        addSystemMessage('업로드 완료: ' + nameNoExt + ' — 곡 목록에 추가되었습니다. 송출전송 버튼으로 재생하세요.');
+        show(nameNoExt + ' 목록에 추가됨', false);
       }).catch(function(e) {
-        addSystemMessage('로컬 파일 업로드/송출 실패: ' + e.message);
-        show('로컬 파일 송출 실패: ' + e.message, true);
+        localFileNameEl.textContent = '';
+        addSystemMessage('업로드 실패: ' + e.message);
+        show('업로드 실패: ' + e.message, true);
       });
+      localFileInput.value = '';
     };
 
 
@@ -928,6 +912,19 @@
       if (!id) return;
       var musicId = Number(id);
       var t = getSelectedTrack();
+
+      // 로컬 업로드 트랙인 경우
+      if (t && t._localObjectPath) {
+        audio.src = API_BASE + t._localObjectPath;
+        audio.play().then(function(){
+          var label = (t.title || '제목 없음') + ' – ' + (t.artist || '');
+          if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
+          if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
+          broadcastLocalTrack(t);
+        }).catch(function(e){ show('재생 실패: ' + e.message, true); });
+        return;
+      }
+
       audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
       audio.play().then(function(){
         if (t) {
@@ -939,6 +936,32 @@
       })
         .catch(function(e){ show('재생 실패: ' + e.message, true); });
     };
+
+    function broadcastLocalTrack(t) {
+      if (!urlSlug || !t._localObjectPath) return;
+      var payload = {
+        nowPlayingObjectPath: t._localObjectPath,
+        nowPlayingStartedAt: new Date().toISOString(),
+        status: 'live',
+        nowPlayingMusicId: null
+      };
+      if (audio.duration && isFinite(audio.duration)) {
+        payload.currentTrackDurationSeconds = Math.ceil(audio.duration);
+      }
+      api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(r){
+        if (!r.ok) return r.text().then(function(txt){ throw new Error(txt); });
+        return r.json();
+      }).then(function(){
+        lastNowPlayingId = null;
+        show('로컬 곡 송출 중: ' + (t.title || ''), false);
+      }).catch(function(e){
+        show('송출 실패: ' + e.message, true);
+      });
+    }
 
     audio.addEventListener('ended', function() {
       if (!lastNowPlayingId) return;
