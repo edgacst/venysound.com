@@ -972,12 +972,105 @@
       chatBody.scrollTop = chatBody.scrollHeight;
     }
 
+    // 채널 역할 관련 상태
+    var channelOwnerUserId = null;
+    var currentHostUserId = null;
+    var staffRoleMap = {}; // userId → 'staff' | 'sub_host'
+    var meUserId = null;
+
+    function getActualRole(userId) {
+      if (!userId) return 'listener';
+      if (userId === channelOwnerUserId) return 'owner';
+      if (userId === currentHostUserId) return 'dj';
+      var sr = staffRoleMap[userId];
+      if (sr === 'sub_host') return 'sub_host';
+      if (sr) return 'staff';
+      return 'listener';
+    }
+
+    function roleBadgeHtml(role) {
+      var map = {
+        owner:    { label: '국장',   color: '#a78bfa', bg: 'rgba(109,40,217,0.28)', border: 'rgba(167,139,250,0.45)' },
+        dj:       { label: 'DJ',     color: '#c4b5fd', bg: 'rgba(109,40,217,0.18)', border: 'rgba(196,181,253,0.35)' },
+        sub_host: { label: '부국장', color: '#fcd34d', bg: 'rgba(180,83,9,0.22)',   border: 'rgba(252,211,77,0.35)' },
+        staff:    { label: '스텝',   color: '#94a3b8', bg: 'rgba(30,41,59,0.7)',    border: 'rgba(148,163,184,0.28)' },
+        listener: { label: '청취자', color: '#64748b', bg: 'rgba(15,23,42,0.45)',   border: 'rgba(100,116,139,0.18)' },
+      };
+      var s = map[role] || map['listener'];
+      return '<span style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;font-size:0.68rem;font-weight:700;color:' + s.color + ';background:' + s.bg + ';border:1px solid ' + s.border + ';flex-shrink:0;">' + escapeHtml(s.label) + '</span>';
+    }
+
+    function loadChannelAndStaff() {
+      if (!urlSlug) return;
+      api('/api/radio/channels/' + encodeURIComponent(urlSlug)).then(function(r){ return r.ok ? r.json() : null; }).then(function(ch) {
+        if (!ch) return;
+        channelOwnerUserId = ch.ownerId || null;
+        currentHostUserId = ch.currentHostId || null;
+        renderUsers();
+      }).catch(function() {});
+      api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff').then(function(r){ return r.ok ? r.json() : []; }).then(function(list) {
+        staffRoleMap = {};
+        if (Array.isArray(list)) list.forEach(function(s) { if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
+        renderUsers();
+      }).catch(function() {});
+    }
+
+    // WS 연결 — 실제 리스너 입/퇴장, 채팅, now_playing 수신
+    var wsConn = null;
+    function connectWs() {
+      try { if (wsConn) wsConn.close(); } catch(_) {}
+      var host = (window.location.port === '5173' || window.location.port === '3000')
+        ? window.location.hostname + ':5000'
+        : window.location.host;
+      var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsConn = new WebSocket(proto + '//' + host + '/ws');
+      wsConn.onopen = function() {
+        if (meUserId) wsConn.send(JSON.stringify({ type: 'auth', userId: meUserId }));
+        if (urlSlug) wsConn.send(JSON.stringify({ type: 'radio_join', slug: urlSlug }));
+      };
+      wsConn.onmessage = function(e) {
+        var msg; try { msg = JSON.parse(e.data); } catch(_) { return; }
+        if (!msg) return;
+        if (msg.type === 'radio_user_joined' && msg.userId) {
+          upsertUser({ id: String(msg.userId), username: msg.username || null });
+          renderUsers();
+        }
+        if (msg.type === 'radio_user_left' && msg.userId) {
+          removeUserById(String(msg.userId));
+          renderUsers();
+          addSystemMessage((msg.username || String(msg.userId).slice(0, 8)) + ' 님이 퇴장했습니다.');
+        }
+        if (msg.type === 'radio_listeners') {
+          userCountEl.textContent = String(msg.count != null ? msg.count : users.length);
+        }
+        if (msg.type === 'radio_chat' && msg.message) {
+          var m = msg.message;
+          addChatMessage(m.username || String(m.userId || '?').slice(0, 8), m.content || '');
+        }
+        if (msg.type === 'radio_now_playing') {
+          loadChannelAndStaff(); // 호스트가 바뀔 수 있으므로 재조회
+          loadRequests();       // 곡 바뀌면 신청곡도 갱신
+        }
+      };
+      wsConn.onclose = function() {
+        setTimeout(function() { if (urlSlug) connectWs(); }, 3000);
+      };
+    }
+
+    // 현재 로그인한 사용자 ID 로드 → WS auth
+    api('/api/auth/user').then(function(r){ return r.ok ? r.json() : null; }).then(function(u) {
+      if (u && u.id) {
+        meUserId = String(u.id);
+        if (wsConn && wsConn.readyState === 1) wsConn.send(JSON.stringify({ type: 'auth', userId: meUserId }));
+      }
+    }).catch(function() {});
+
     function upsertUser(u) {
       var existing = users.find(function(x){ return x.id === u.id; });
       if (existing) {
-        existing.role = u.role;
+        if (u.username != null) existing.username = u.username;
       } else {
-        users.push({ id: u.id, role: u.role });
+        users.push({ id: u.id, username: u.username || null });
       }
     }
 
@@ -987,15 +1080,22 @@
 
     function renderUsers() {
       usersListEl.innerHTML = '';
+      var rolePriority = { owner: 0, dj: 1, sub_host: 2, staff: 3, listener: 4 };
       users
         .slice()
-        .sort(function(a,b){ return a.id.localeCompare(b.id); })
+        .sort(function(a, b) {
+          var ra = getActualRole(a.id), rb = getActualRole(b.id);
+          var pa = rolePriority[ra] != null ? rolePriority[ra] : 4;
+          var pb = rolePriority[rb] != null ? rolePriority[rb] : 4;
+          return pa !== pb ? pa - pb : (a.username || a.id).localeCompare(b.username || b.id);
+        })
         .forEach(function(u) {
+          var role = getActualRole(u.id);
+          var displayName = u.username || u.id.slice(0, 14);
           var row = document.createElement('div');
           row.className = 'user-row';
           row.dataset.userId = u.id;
-          row.innerHTML = '<span class="user-name">' + escapeHtml(u.id) + '</span>' +
-                          '<span class="user-role">' + escapeHtml(u.role) + '</span>';
+          row.innerHTML = '<span class="user-name">' + escapeHtml(displayName) + '</span>' + roleBadgeHtml(role);
           row.oncontextmenu = function(e) {
             e.preventDefault();
             ctxTargetUserId = u.id;
@@ -1249,7 +1349,8 @@
     }
 
     function loadRequests() {
-      api('/api/radio/channels/q/requests?status=pending').then(function(r){
+      var ch = urlSlug || 'q';
+      api('/api/radio/channels/' + encodeURIComponent(ch) + '/requests?status=pending').then(function(r){
         return r.ok ? r.json() : r.json().then(function(j){ throw new Error(j && j.message ? j.message : '신청곡 로드 실패'); });
       }).then(function(list){
         reqs = Array.isArray(list) ? list : [];
@@ -1271,7 +1372,8 @@
         addSystemMessage('승인/거절은 운영진(방장/스텝/CJ)만 가능합니다.');
         return closeReqCtx();
       }
-      api('/api/radio/channels/q/requests/' + encodeURIComponent(reqCtxTargetId), {
+      var ch = urlSlug || 'q';
+      api('/api/radio/channels/' + encodeURIComponent(ch) + '/requests/' + encodeURIComponent(reqCtxTargetId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'playing' })
@@ -1296,7 +1398,8 @@
         addSystemMessage('승인/거절은 운영진(방장/스텝/CJ)만 가능합니다.');
         return closeReqCtx();
       }
-      api('/api/radio/channels/q/requests/' + encodeURIComponent(reqCtxTargetId), {
+      var ch2 = urlSlug || 'q';
+      api('/api/radio/channels/' + encodeURIComponent(ch2) + '/requests/' + encodeURIComponent(reqCtxTargetId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled' })
@@ -1318,13 +1421,14 @@
       applyFilter();
     };
 
-    // 초기 샘플 유저
-    upsertUser({ id: 'guest-001', role: 'listener' });
-    upsertUser({ id: 'staff-01', role: 'staff' });
-    upsertUser({ id: 'cj-01', role: 'cj' });
     renderUsers();
     updateMyBadge();
+    loadChannelAndStaff();
     loadRequests();
+    if (urlSlug) connectWs();
+
+    // 신청곡 30초마다 자동 갱신
+    setInterval(function() { loadRequests(); }, 30000);
 
     loadTracks();
   })();

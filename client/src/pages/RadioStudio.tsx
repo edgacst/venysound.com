@@ -8,7 +8,13 @@ import { useTranslation } from "react-i18next";
 export default function RadioStudio() {
   const { t } = useTranslation();
   const [, params] = useRoute("/radio/:slug/studio");
-  const slug = params?.slug ?? "";
+  // useRoute 가 일시적으로 params 를 반환 못할 때(새로고침 직후 등) pathname 에서 직접 추출
+  const slug = params?.slug ?? (() => {
+    try {
+      const m = window.location.pathname.match(/^\/radio\/([^/]+)\/studio/);
+      return m ? decodeURIComponent(m[1]) : "";
+    } catch { return ""; }
+  })();
 
   if (!slug) {
     return (
