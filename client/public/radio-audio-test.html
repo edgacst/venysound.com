@@ -442,6 +442,11 @@
         <label for="track">Song search</label>
         <input id="search" type="text" placeholder="제목 또는 아티스트 검색..." style="width:100%;margin-bottom:6px;padding:6px 10px;border-radius:999px;border:1px solid #374151;background:#020617;color:#e5e7eb;font-size:0.85rem;" />
         <select id="track" size="10" class="track-list"></select>
+        <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+          <label for="localFile" style="margin:0;padding:6px 12px;border-radius:999px;background:#0ea5e9;color:#fff;font-size:0.8rem;cursor:pointer;white-space:nowrap;">내 PC 음원</label>
+          <input id="localFile" type="file" accept="audio/*" style="display:none;" />
+          <span id="localFileName" style="font-size:0.75rem;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+        </div>
       </div>
       <div class="req-wrap">
         <div class="req-header">
@@ -702,6 +707,68 @@
     // 재생 큐/현재 송출 곡 (연속 재생용)
     var playlistIds = [];
     var lastNowPlayingId = null;
+
+    // 로컬 파일 불러오기
+    var localFileInput = document.getElementById('localFile');
+    var localFileNameEl = document.getElementById('localFileName');
+    var localBlobUrl = null;
+
+    localFileInput.onchange = function() {
+      var file = localFileInput.files && localFileInput.files[0];
+      if (!file) return;
+      localFileNameEl.textContent = file.name;
+      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
+      localBlobUrl = URL.createObjectURL(file);
+      audio.src = localBlobUrl;
+      audio.play().then(function() {
+        var nameNoExt = file.name.replace(/\.[^.]+$/, '');
+        if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + nameNoExt + ' (로컬)';
+        if (nowLyricsEl) nowLyricsEl.textContent = '로컬 파일 재생 중';
+        syncedLines = [];
+        lastSyncIdx = -1;
+        addSystemMessage('로컬 파일 재생 시작: ' + file.name + ' — 서버 업로드 중...');
+      }).catch(function(e) {
+        show('로컬 파일 재생 실패: ' + e.message, true);
+        return;
+      });
+
+      // 서버에 업로드 → objectPath 획득 → 채널에 송출
+      var formData = new FormData();
+      formData.append('file', file);
+      fetch(API_BASE + '/api/uploads/local', {
+        method: 'POST',
+        credentials: 'include',
+        body: formData
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(j){ throw new Error(j && j.message ? j.message : '업로드 실패'); });
+        return r.json();
+      }).then(function(data) {
+        var objectPath = data.objectUrl || data.url || data.objectPath || null;
+        if (!objectPath) throw new Error('업로드 응답에 URL이 없습니다');
+        addSystemMessage('업로드 완료. 리스너에게 송출합니다.');
+        if (!urlSlug) return;
+        var payload = {
+          nowPlayingObjectPath: objectPath,
+          nowPlayingStartedAt: new Date().toISOString(),
+          status: 'live',
+          nowPlayingMusicId: null
+        };
+        if (audio.duration && isFinite(audio.duration)) {
+          payload.currentTrackDurationSeconds = Math.ceil(audio.duration);
+        }
+        return api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }).then(function(r) {
+        if (r && !r.ok) throw new Error('채널 업데이트 실패');
+        show('로컬 파일이 채널에 송출되었습니다.', false);
+      }).catch(function(e) {
+        addSystemMessage('로컬 파일 업로드/송출 실패: ' + e.message);
+        show('로컬 파일 송출 실패: ' + e.message, true);
+      });
+    };
 
 
     function show(text, err) {
