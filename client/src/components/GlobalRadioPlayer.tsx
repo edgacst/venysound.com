@@ -359,6 +359,11 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
             onPause={(e) => {
               if (e.target === getActiveAudio()) setPlaying(false);
             }}
+            onTimeUpdate={(e) => {
+              if (e.target === getActiveAudio()) {
+                useRadioPlayerStore.getState().currentTimeRef.current = (e.target as HTMLAudioElement).currentTime;
+              }
+            }}
             onError={() => {
               setPlayError(true);
               setPlaying(false);
@@ -392,6 +397,11 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
             }}
             onPause={(e) => {
               if (e.target === getActiveAudio()) setPlaying(false);
+            }}
+            onTimeUpdate={(e) => {
+              if (e.target === getActiveAudio()) {
+                useRadioPlayerStore.getState().currentTimeRef.current = (e.target as HTMLAudioElement).currentTime;
+              }
             }}
             onError={() => {
               setPlayError(true);

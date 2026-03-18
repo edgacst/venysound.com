@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2 } from "lucide-react";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
 import { useRadioPlayerStore } from "@/stores/radio-player";
+import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
 
 type SyncedLyricLine = { time: number; text: string };
 
@@ -67,14 +68,7 @@ export default function RadioChannel() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const hasSeekedForTrackRef = useRef<number | null>(null);
-  const prevTrackKeyRef = useRef<string | null>(null);
-  const lastNowPlayingRef = useRef<{ musicId: number | null; elapsedSeconds: number; receivedAt: number }>({ musicId: null, elapsedSeconds: 0, receivedAt: 0 });
-  const channelElapsedRef = useRef<{ musicId: number; elapsed: number; receivedAt: number } | null>(null);
   const presentUserIdsRef = useRef<Set<string>>(new Set());
-  const [userStopped, setUserStopped] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentLyric, setCurrentLyric] = useState<string | null>(null);
   
 
@@ -152,31 +146,8 @@ export default function RadioChannel() {
 
   const lastSyncedIndexRef = useRef<number>(-1);
 
-  const { setStream: setRadioStream, setTrackTitle: setRadioTrackTitle, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying, userStopped: radioUserStopped } = useRadioPlayerStore();
+  const { setStream: setRadioStream, setTrackTitle: setRadioTrackTitle, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying } = useRadioPlayerStore();
 
-  // 방송이 끝나거나 곡이 완전히 끊기면 사용자 수동 정지 상태·재생 상태 초기화
-  useEffect(() => {
-    if (!isLive || (nowPlayingId == null && !nowPlayingObjectPath)) {
-      setUserStopped(false);
-      setIsPlaying(false);
-    }
-  }, [isLive, nowPlayingId, nowPlayingObjectPath]);
-
-  // 채널/곡 정보가 바뀔 때마다 동기화 기준 초기화
-  useEffect(() => {
-    if ((nowPlayingId == null && !nowPlayingObjectPath) || channel?.nowPlayingElapsedSeconds == null) return;
-    channelElapsedRef.current = {
-      musicId: nowPlayingId ?? 0,
-      elapsed: channel!.nowPlayingElapsedSeconds,
-      receivedAt: Date.now(),
-    };
-  }, [slug, nowPlayingId, nowPlayingObjectPath, channel?.nowPlayingElapsedSeconds]);
-
-  // 슬러그나 곡이 바뀌면 seek 플래그와 마지막 nowPlaying 상태를 초기화
-  useEffect(() => {
-    hasSeekedForTrackRef.current = null;
-    lastNowPlayingRef.current = { musicId: null, elapsedSeconds: 0, receivedAt: 0 };
-  }, [slug, nowPlayingId, nowPlayingObjectPath]);
 
   function formatScheduleTime(iso: string | null | undefined): string {
     if (!iso) return "";
@@ -188,23 +159,6 @@ export default function RadioChannel() {
     return `${h}${t("radio.hour", "시")} ${m}${t("radio.minute", "분")}`;
   }
 
-  const rawAudioUrl =
-    nowPlayingObjectPath != null
-      ? nowPlayingObjectPath
-      : nowPlayingId == null
-        ? null
-        : nowPlayingMusic?.filename?.startsWith("/objects/")
-          ? nowPlayingMusic.filename
-          : `/api/music/${nowPlayingId}/stream`;
-
-  // 라이브 방송일 때는 채널 연속 스트림을 사용해 곡 사이 자동 이어듣기
-  const audioStreamUrl =
-    isLive && (nowPlayingId != null || nowPlayingObjectPath != null)
-      ? `/api/radio/channels/${slug.trim().toLowerCase()}/stream`
-      : rawAudioUrl;
-
-  // 리스너용 오디오: 채널 연속 스트림은 Content-Length 가 없어 진행바가 동작 안 함.
-  // 개별 트랙 URL(/api/music/:id/stream)을 사용하면 파일 크기를 알 수 있어 진행바·탐색이 정상 동작한다.
   const listenerAudioSrc = useMemo(() => {
     if (!isLive) return null;
     if (nowPlayingId != null) return `/api/music/${nowPlayingId}/stream`;
@@ -212,21 +166,12 @@ export default function RadioChannel() {
     return null;
   }, [isLive, nowPlayingId, nowPlayingObjectPath]);
 
-  // 곡(src)이 바뀌면 오디오를 다시 로드하고 자동 재생을 시도한다.
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el || !listenerAudioSrc) return;
-    el.load();
-    const ctx = analyserRef.current?.ctx;
-    if (ctx?.state === "suspended") ctx.resume().catch(() => {});
-    el.play().catch(() => {});
-  }, [listenerAudioSrc]);
   // 채널 페이지가 활성일 때: 전역 플레이어에 스트림을 동기화
   // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
-    if (!channel || !audioStreamUrl) return;
-    setRadioStream(slug, channel.name, audioStreamUrl, channel?.nowPlayingElapsedSeconds ?? undefined);
-  }, [slug, channel?.name, audioStreamUrl]);
+    if (!channel || !listenerAudioSrc) return;
+    setRadioStream(slug, channel.name, listenerAudioSrc, channel?.nowPlayingElapsedSeconds ?? undefined);
+  }, [slug, channel?.name, listenerAudioSrc]);
 
   // 곡 제목을 전역 store에 동기화 (글로벌 플레이바에 표시)
   useEffect(() => {
@@ -250,62 +195,30 @@ export default function RadioChannel() {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const waveformWrapRef = useRef<HTMLDivElement | null>(null);
-  const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
-  const audioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const radioWaveformRef = useRadioWaveformRef();
+
   useEffect(() => {
-    const audio = audioRef.current;
     const canvas = canvasRef.current;
     const wrap = waveformWrapRef.current;
-    if (!audio || !canvas || !wrap || !audioStreamUrl) return;
-    // 이전에 같은 audio에 연결된 소스가 있으면 해제
-    if (audioSourceRef.current) {
-      try {
-        audioSourceRef.current.disconnect();
-      } catch {
-        // ignore
-      }
-      audioSourceRef.current = null;
-    }
-
-    // 같은 HTMLMediaElement에 대해 AudioContext 하나당 한 번만
-    // createMediaElementSource 를 호출할 수 있어서, 예외가 나면 파형만 비활성화한다.
-    let ctx: AudioContext | null = null;
-    let source: MediaElementAudioSourceNode | null = null;
-    try {
-      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      source = ctx.createMediaElementSource(audio);
-    } catch (e) {
-      console.error("radio waveform init failed:", e);
-      return;
-    }
-
-    audioSourceRef.current = source;
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-    analyserRef.current = { ctx, analyser };
+    if (!canvas || !wrap || !isLive || !listenerAudioSrc) return;
     let rafId = 0;
-    const data = new Uint8Array(analyser.frequencyBinCount);
     function draw() {
       rafId = requestAnimationFrame(draw);
-      if (!analyserRef.current) return;
-      // 매 프레임 wrap 크기에 맞춰 캔버스 리사이즈 (레이아웃 타이밍 이슈 방지)
-      const cw = wrap.clientWidth;
-      const ch = wrap.clientHeight;
-      if (cw > 0 && ch > 0 && (canvas.width !== cw || canvas.height !== ch)) {
-        canvas.width = cw;
-        canvas.height = ch;
+      const cw = wrap!.clientWidth;
+      const ch = wrap!.clientHeight;
+      if (cw > 0 && ch > 0 && (canvas!.width !== cw || canvas!.height !== ch)) {
+        canvas!.width = cw;
+        canvas!.height = ch;
       }
-      const w = canvas.width;
-      const h = canvas.height;
+      const w = canvas!.width;
+      const h = canvas!.height;
       if (w <= 0 || h <= 0) return;
-      analyser.getByteTimeDomainData(data);
-      const g = canvas.getContext("2d");
+      const data = radioWaveformRef?.current;
+      const g = canvas!.getContext("2d");
       if (!g) return;
       g.fillStyle = "rgba(15,15,18,0.4)";
       g.fillRect(0, 0, w, h);
+      if (!data) return;
       g.strokeStyle = "#7c3aed";
       g.lineWidth = 2;
       g.beginPath();
@@ -319,64 +232,24 @@ export default function RadioChannel() {
       g.stroke();
     }
     draw();
-    return () => {
-      cancelAnimationFrame(rafId);
-      analyserRef.current = null;
-      try {
-        source.disconnect();
-      } catch (_) {}
-      audioSourceRef.current = null;
-      ctx.close();
-    };
-  }, [audioStreamUrl]);
-
-  // 리스너: 파형 캔버스를 카드 너비에 맞춰 리사이즈 (로컬/전역 모두)
-  useEffect(() => {
-    const wrap = waveformWrapRef.current;
-    const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
-    const setSize = () => {
-      const cw = wrap.clientWidth;
-      const ch = wrap.clientHeight;
-      if (cw > 0 && ch > 0 && (canvas.width !== cw || canvas.height !== ch)) {
-        canvas.width = cw;
-        canvas.height = ch;
-      }
-    };
-    setSize();
-    const ro = new ResizeObserver(setSize);
-    ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [isLive, audioStreamUrl]);
+    return () => cancelAnimationFrame(rafId);
+  }, [isLive, listenerAudioSrc, radioWaveformRef]);
 
 
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
 
-  // PC 브라우저: AudioContext가 suspended 상태면 소리가 안 남. 첫 사용자 동작 시 한 번 resume (곡 바뀌면 새 context라 다시 한 번 필요)
-  const didResumeContextRef = useRef(false);
   useEffect(() => {
-    if (isOwner || !slug) return;
-    didResumeContextRef.current = false;
-    const onFirstInteraction = () => {
-      if (didResumeContextRef.current) return;
-      const ctx = analyserRef.current?.ctx;
-      if (ctx?.state === "suspended") {
-        didResumeContextRef.current = true;
-        ctx.resume().then(() => {
-          const el = audioRef.current;
-          if (el && audioStreamUrl && !userStopped) el.play().catch(() => {});
-        }).catch(() => {});
-      }
-    };
-    const opts = { capture: true, once: true };
+    if (isOwner || !slug || !listenerAudioSrc) return;
+    const onFirstInteraction = () => { radioRequestPlay(); };
+    const opts: AddEventListenerOptions = { capture: true, once: true };
     document.addEventListener("click", onFirstInteraction, opts);
     document.addEventListener("keydown", onFirstInteraction, opts);
     return () => {
       document.removeEventListener("click", onFirstInteraction, opts);
       document.removeEventListener("keydown", onFirstInteraction, opts);
     };
-  }, [isOwner, slug, audioStreamUrl]);
+  }, [isOwner, slug, listenerAudioSrc, radioRequestPlay]);
 
   type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" | "system_leave" };
   const { data: chatList } = useQuery<ChatMsg[]>({
@@ -394,22 +267,16 @@ export default function RadioChannel() {
     setBroadcastEndedMessage(null);
   }, [slug]);
 
-  // 싱크 가사: 리스너 audio 시간에 맞춰 현재 줄 갱신
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !syncedLyrics.length || !isLive || nowPlayingId == null) {
+    if (!syncedLyrics.length || !isLive || nowPlayingId == null) {
       setCurrentLyric(null);
       lastSyncedIndexRef.current = -1;
       return;
     }
-    const handleTimeUpdate = () => {
-      const t = audio.currentTime || 0;
+    const interval = setInterval(() => {
+      const t = useRadioPlayerStore.getState().currentTimeRef.current;
       let idx = lastSyncedIndexRef.current;
-      if (
-        idx < 0 ||
-        idx >= syncedLyrics.length ||
-        syncedLyrics[idx].time > t
-      ) {
+      if (idx < 0 || idx >= syncedLyrics.length || syncedLyrics[idx].time > t) {
         idx = 0;
       }
       while (idx + 1 < syncedLyrics.length && syncedLyrics[idx + 1].time <= t) {
@@ -419,13 +286,8 @@ export default function RadioChannel() {
         lastSyncedIndexRef.current = idx;
         setCurrentLyric(syncedLyrics[idx].text);
       }
-    };
-    audio.addEventListener("timeupdate", handleTimeUpdate);
-    // 초기 호출
-    handleTimeUpdate();
-    return () => {
-      audio.removeEventListener("timeupdate", handleTimeUpdate);
-    };
+    }, 200);
+    return () => clearInterval(interval);
   }, [syncedLyrics, isLive, nowPlayingId]);
   useEffect(() => {
     if (channel?.status === "live") setBroadcastEndedMessage(null);
@@ -486,7 +348,6 @@ export default function RadioChannel() {
         const startedAt = (msg as { startedAt?: string }).startedAt ?? null;
         const wsObjectPath = (msg as any).nowPlayingObjectPath ?? null;
         const wsLocalTitle = (msg as any).nowPlayingLocalTitle ?? null;
-        lastNowPlayingRef.current = { musicId, elapsedSeconds, receivedAt: Date.now() };
         queryClient.setQueryData(
           ["/api/radio/channels", slug],
           (old: Record<string, unknown> | undefined) => {
@@ -506,12 +367,6 @@ export default function RadioChannel() {
         setTimeout(() => refetchChannel(), 1500);
         if (musicId === null && !(msg as any).nowPlayingObjectPath) {
           clearRadioPlayer();
-          const audio = audioRef.current;
-          if (audio) {
-            audio.pause();
-            audio.removeAttribute("src");
-            audio.load();
-          }
         }
       }
       if (msg.type === "radio_broadcast_ended" && msg.hostDisplayName && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
@@ -521,12 +376,6 @@ export default function RadioChannel() {
         queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug, "chat"] });
         refetchChannel();
         clearRadioPlayer();
-        const audio = audioRef.current;
-        if (audio) {
-          audio.pause();
-          audio.removeAttribute("src");
-          audio.load();
-        }
         return;
       }
       if (msg.type !== "radio_chat" || !msg.message) return;
@@ -1030,7 +879,7 @@ export default function RadioChannel() {
                 </div>
               )}
               <div ref={waveformWrapRef} className="h-12 sm:h-14 md:h-16 bg-muted/30 flex items-center justify-center relative overflow-hidden">
-                {isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && !isOwner ? (
+                {isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && !isOwner ? (
                   <canvas
                     ref={canvasRef}
                     className="absolute inset-0 w-full h-full"
@@ -1038,7 +887,7 @@ export default function RadioChannel() {
                     height={1}
                     style={{ width: "100%", height: "100%", display: "block" }}
                   />
-                ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && isOwner ? (
+                ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && isOwner ? (
                   <p className="text-xs text-muted-foreground text-center px-3">
                     {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
                   </p>
@@ -1140,7 +989,7 @@ export default function RadioChannel() {
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <Headphones size={18} />
                       <span>
-                        {isPlaying
+                        {radioIsPlaying
                           ? t("radio.listeningTo", "지금 재생 중")
                           : listenerAudioSrc
                             ? t("radio.tapToPlay", "▶ 재생 버튼을 눌러 청취를 시작하세요.")
@@ -1148,70 +997,16 @@ export default function RadioChannel() {
                       </span>
                     </p>
                     {listenerAudioSrc && (
-                      <audio
-                        ref={audioRef}
-                        src={listenerAudioSrc}
-                        controls
-                        className="w-full"
-                        onPlay={() => {
-                          const ctx = analyserRef.current?.ctx;
-                          if (ctx?.state === "suspended") ctx.resume().catch(() => {});
-                          setIsPlaying(true);
-                        }}
-                        onPause={() => setIsPlaying(false)}
-                        onEnded={() => {
-                          setIsPlaying(false);
-                          refetchChannel();
-                          const endedAt = Date.now();
-                          [1500, 3000, 4500, 6000].forEach((ms) => {
-                            setTimeout(() => {
-                              if (Date.now() - endedAt > 8000) return;
-                              refetchChannel();
-                            }, ms);
-                          });
-                        }}
-                        onCanPlay={() => {
-                          if (isOwner || !audioRef.current) return;
-                          if (nowPlayingId !== null && hasSeekedForTrackRef.current === nowPlayingId) return;
-                          const last = lastNowPlayingRef.current;
-                          let seekSec: number | null = null;
-                          if (nowPlayingId !== null) {
-                            if (last?.musicId === nowPlayingId) {
-                              const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
-                              seekSec = last.elapsedSeconds + delay;
-                            } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
-                              const { elapsed, receivedAt } = channelElapsedRef.current;
-                              seekSec = elapsed + (Date.now() - receivedAt) / 1000;
-                            } else if (channel?.nowPlayingElapsedSeconds != null) {
-                              channelElapsedRef.current = {
-                                musicId: nowPlayingId,
-                                elapsed: channel.nowPlayingElapsedSeconds,
-                                receivedAt: Date.now(),
-                              };
-                              seekSec = channel.nowPlayingElapsedSeconds;
-                            }
-                          }
-                          if (seekSec != null && seekSec > 0) {
-                            const target = Math.max(0, seekSec);
-                            const cur = audioRef.current.currentTime;
-                            if (target > cur - 0.5) {
-                              audioRef.current.currentTime = target;
-                            }
-                          }
-                          hasSeekedForTrackRef.current = nowPlayingId;
-                        }}
-                        onError={() => {
-                          if (!audioRef.current?.src) return;
-                          toast({ title: t("radio.playbackError", "재생 오류"), description: t("radio.playbackErrorDesc", "음원을 불러올 수 없습니다."), variant: "destructive" });
-                        }}
-                      />
-                    )}
-                    {nowPlayingMusic?.lyrics?.trim() && isOwner && (
-                      <div className="mt-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>
-                        <div className="max-h-40 overflow-y-auto rounded-md bg-background/50 p-3 text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                          {nowPlayingMusic.lyrics}
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => radioIsPlaying ? radioRequestPause() : radioRequestPlay()}
+                          className="gap-2"
+                        >
+                          {radioIsPlaying ? <Pause size={16} /> : <Play size={16} />}
+                          {radioIsPlaying ? t("radio.pause", "일시정지") : t("radio.play", "재생")}
+                        </Button>
                       </div>
                     )}
                   </div>
