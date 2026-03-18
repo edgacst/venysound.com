@@ -1135,13 +1135,8 @@ export default function RadioChannel() {
                         setUserStopped(false);
                       }}
                       onPause={() => {
+                        // 일시적인 버퍼링/곡 전환으로 인한 pause 에서는 userStopped 를 건드리지 않는다.
                         setIsPlaying(false);
-                        const audio = audioRef.current;
-                        if (!audio) return;
-                        if (audio.ended) return;
-                        if (audio.currentTime > 0) {
-                          setUserStopped(true);
-                        }
                       }}
                       onEnded={() => {
                         setIsPlaying(false);
