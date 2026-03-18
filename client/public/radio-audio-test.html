@@ -262,22 +262,7 @@
       0% { transform: translateX(-60%); }
       100% { transform: translateX(40%); }
     }
-    .studio-banner {
-      margin-top: 10px;
-      margin-bottom: 8px;
-      height: 120px;
-      border-radius: 14px;
-      border: 1px solid rgba(148,163,184,0.25);
-      background-image:
-        linear-gradient(90deg, rgba(2,6,23,0.35) 0%, rgba(2,6,23,0.00) 50%, rgba(2,6,23,0.25) 100%),
-        url('/dj-studio-banner.jpg');
-      background-size: cover;
-      background-repeat: no-repeat;
-      background-position: center;
-      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
-      overflow: hidden;
-      filter: saturate(1.05) contrast(1.06) brightness(1.08);
-    }
+    
     .chat-header { font-size:0.85rem; font-weight:600; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .chat-header-left { display:flex; align-items:center; gap:8px; min-width: 0; }
     .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; border:1px solid #1f2937; background: rgba(2,6,23,0.8); color:#cbd5e1; font-size:0.75rem; white-space:nowrap; }
@@ -494,8 +479,6 @@
         <div id="nowLyrics" class="now-lyrics">이 영역에는 나중에 가사가 표시될 예정입니다.</div>
       </div>
 
-      <div class="studio-banner" aria-hidden="true"></div>
-
       <div class="wave" aria-hidden="true">
         <div class="wave-inner"></div>
       </div>
@@ -521,17 +504,12 @@
           <span class="meter" aria-hidden="true"><div id="micLevelBar"></div></span>
         </span>
       </div>
-      <div class="row">
+      <div class="row" style="margin-bottom:8px;">
         <label for="micVol" style="margin:0;color:#9ca3af;">모니터 볼륨</label>
         <input id="micVol" type="range" min="0" max="1" step="0.01" value="0" />
         <span id="micVolTxt" class="pill">0%</span>
       </div>
-
-      <div class="sep"></div>
-
-      <h1 style="margin-top:0;">방송 녹음</h1>
-      <p style="margin-bottom:8px;">마이크와 음원을 동시에 녹음합니다. 종료 시 MP3로 다운로드됩니다.</p>
-      <div class="row" style="margin-bottom:8px;">
+      <div class="row">
         <button id="btnRec" style="background:#dc2626;">녹음 시작</button>
         <span id="recState" class="pill">OFF</span>
         <span id="recTimer" class="pill" style="display:none;">00:00</span>
@@ -808,18 +786,68 @@
       });
     }
 
+    var syncedLines = [];
+    var lastSyncIdx = -1;
+
+    function parseLrc(raw) {
+      if (!raw) return [];
+      var lines = raw.split(/\r?\n/);
+      var result = [];
+      var timeRe = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line) continue;
+        var m, times = [], lastIdx = 0;
+        timeRe.lastIndex = 0;
+        while ((m = timeRe.exec(line))) {
+          var mm = parseInt(m[1], 10) || 0;
+          var ss = parseInt(m[2], 10) || 0;
+          var frac = m[3] != null ? parseInt((m[3] + '00').slice(0, 3), 10) / 1000 : 0;
+          times.push(mm * 60 + ss + frac);
+          lastIdx = timeRe.lastIndex;
+        }
+        var text = line.slice(lastIdx).trim();
+        if (!text || !times.length) continue;
+        for (var j = 0; j < times.length; j++) {
+          result.push({ time: times[j], text: text });
+        }
+      }
+      result.sort(function(a, b) { return a.time - b.time; });
+      return result;
+    }
+
+    function onAudioTimeUpdate() {
+      if (!syncedLines.length || !nowLyricsEl) return;
+      var t = audio.currentTime || 0;
+      var idx = lastSyncIdx;
+      if (idx < 0 || idx >= syncedLines.length || syncedLines[idx].time > t) idx = 0;
+      while (idx + 1 < syncedLines.length && syncedLines[idx + 1].time <= t) idx++;
+      if (idx !== lastSyncIdx) {
+        lastSyncIdx = idx;
+        nowLyricsEl.textContent = syncedLines[idx].text;
+      }
+    }
+    audio.addEventListener('timeupdate', onAudioTimeUpdate);
+
     function loadLyrics(musicId) {
       if (!nowLyricsEl) return;
+      syncedLines = [];
+      lastSyncIdx = -1;
       nowLyricsEl.textContent = '가사 로딩 중...';
       api('/api/music/' + encodeURIComponent(musicId)).then(function(r){
         return r.ok ? r.json() : null;
       }).then(function(track) {
         if (track && track.lyrics && track.lyrics.trim()) {
-          var plain = track.lyrics.replace(/\[[^\]]*\]/g, '').trim();
-          nowLyricsEl.textContent = plain || '가사 없음';
-          nowLyricsEl.style.whiteSpace = 'pre-wrap';
-          nowLyricsEl.style.maxHeight = '200px';
-          nowLyricsEl.style.overflowY = 'auto';
+          var parsed = parseLrc(track.lyrics);
+          if (parsed.length > 0) {
+            syncedLines = parsed;
+            lastSyncIdx = -1;
+            nowLyricsEl.textContent = syncedLines[0].text;
+          } else {
+            var plain = track.lyrics.replace(/\[[^\]]*\]/g, '').trim();
+            var firstLine = plain.split(/\r?\n/).find(function(l){ return l.trim(); }) || '';
+            nowLyricsEl.textContent = firstLine || '가사 없음';
+          }
         } else {
           nowLyricsEl.textContent = '가사 없음';
         }
