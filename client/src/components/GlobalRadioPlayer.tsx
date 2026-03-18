@@ -206,11 +206,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
           inactive.volume = 1;
-          inactive.play().catch(() => {});
+          inactive.play().then(() => { setNeedsTap(false); }).catch(() => { setNeedsTap(true); });
           return;
         }
         inactive.volume = 0;
-        inactive.play().catch(() => {});
+        inactive.play().then(() => { setNeedsTap(false); }).catch(() => { setNeedsTap(true); });
         const start = performance.now();
         const run = () => {
           const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
@@ -282,11 +282,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 safe-area-pb">
         {needsTap && !isPlaying && (
           <button
-            className="w-full flex items-center justify-center gap-2 py-2 bg-primary/90 text-primary-foreground text-sm font-medium animate-pulse"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground text-sm font-semibold"
             onClick={handlePlay}
           >
-            <Play className="h-4 w-4" />
-            {t("radio.tapToContinue", "탭하여 계속 듣기")}
+            <Play className="h-4 w-4 fill-current" />
+            {t("radio.tapToPlay", "▶ 탭하여 라디오 듣기")}
           </button>
         )}
         <div className="container flex items-center gap-3 px-3 py-2">

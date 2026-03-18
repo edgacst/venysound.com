@@ -166,11 +166,15 @@ export default function RadioChannel() {
     return null;
   }, [isLive, nowPlayingId, nowPlayingObjectPath]);
 
-  // 채널 페이지가 활성일 때: 전역 플레이어에 스트림을 동기화
+  // 채널 페이지가 활성일 때: 전역 플레이어에 스트림을 동기화 후 즉시 재생 시도
   // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
     if (!channel || !listenerAudioSrc) return;
     setRadioStream(slug, channel.name, listenerAudioSrc, channel?.nowPlayingElapsedSeconds ?? undefined);
+    // 스트림이 설정되자마자 재생 요청 (사용자 제스처 컨텍스트가 유효할 때 빠르게 시도)
+    if (!isOwner) {
+      radioRequestPlay();
+    }
   }, [slug, channel?.name, listenerAudioSrc]);
 
   // 곡 제목을 전역 store에 동기화 (글로벌 플레이바에 표시)
