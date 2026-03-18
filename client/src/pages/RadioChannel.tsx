@@ -76,6 +76,7 @@ export default function RadioChannel() {
   const [userStopped, setUserStopped] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentLyric, setCurrentLyric] = useState<string | null>(null);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   const { data: channel, isLoading, error, refetch: refetchChannel } = useQuery<{
     id: number;
@@ -218,8 +219,34 @@ export default function RadioChannel() {
     if (!el) return;
     if (!listenerAudioSrc) return;
     if (userStopped) return;
-    el.play().catch(() => {});
+    el.play()
+      .then(() => setAutoplayBlocked(false))
+      .catch(() => setAutoplayBlocked(true));
   }, [listenerAudioSrc, userStopped]);
+
+  // 자동재생이 막힌 경우: 첫 사용자 상호작용(클릭/키다운) 시 재생 재시도
+  useEffect(() => {
+    if (isOwner || !slug) return;
+    if (!autoplayBlocked) return;
+    if (!listenerAudioSrc) return;
+    if (userStopped) return;
+    const retry = () => {
+      const el = audioRef.current;
+      if (!el) return;
+      const ctx = analyserRef.current?.ctx;
+      if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+      el.play()
+        .then(() => setAutoplayBlocked(false))
+        .catch(() => setAutoplayBlocked(true));
+    };
+    const opts = { capture: true, once: true } as const;
+    document.addEventListener("click", retry, opts);
+    document.addEventListener("keydown", retry, opts);
+    return () => {
+      document.removeEventListener("click", retry, opts);
+      document.removeEventListener("keydown", retry, opts);
+    };
+  }, [autoplayBlocked, isOwner, slug, listenerAudioSrc, userStopped]);
   // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
   const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
@@ -1110,6 +1137,11 @@ export default function RadioChannel() {
                           ` · ${t("radio.pcClickHint", "소리가 안 나면 화면을 한 번 클릭해 보세요.")}`}
                       </span>
                     </p>
+                    {autoplayBlocked && !userStopped && (
+                      <p className="text-xs text-amber-300/90">
+                        {t("radio.autoplayBlockedHint", "브라우저 정책으로 자동 재생이 차단되었습니다. 화면을 한 번 클릭하면 재생이 시작됩니다.")}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
@@ -1123,7 +1155,9 @@ export default function RadioChannel() {
                           if (ctx?.state === "suspended") {
                             ctx.resume();
                           }
-                          el.play().catch(() => {});
+                          el.play()
+                            .then(() => setAutoplayBlocked(false))
+                            .catch(() => setAutoplayBlocked(true));
                           setUserStopped(false);
                         }}
                       >
