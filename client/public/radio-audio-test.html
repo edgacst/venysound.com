@@ -157,7 +157,7 @@
       white-space: nowrap;
     }
     button:disabled { opacity: .5; cursor: not-allowed; }
-    #btnSendNow { background:#f97316; }
+    
     .track-wrap { flex:1; min-height:0; margin-bottom: 8px; }
     .track-list { height: 200px; }
     .req-wrap {
@@ -484,9 +484,7 @@
         <div id="reqList" class="req-list">
           <p style="color:#6b7280;margin:0;">아직 신청곡이 없습니다.</p>
         </div>
-        <p style="margin:6px 0 0;font-size:0.72rem;color:#64748b;">
-          우클릭: 운영진 승인/거절
-        </p>
+        
       </div>
     </div>
 
@@ -505,8 +503,7 @@
       <audio id="audio" controls></audio>
 
       <div class="btn-row" style="margin-top:10px;">
-        <button id="btnPlay" disabled>이 페이지에서 재생</button>
-        <button id="btnSendNow" disabled>채널에 지금 송출</button>
+        <button id="btnPlay" disabled>송출전송</button>
         <span id="broadcastChannelLabel" class="pill" style="margin-left:8px;font-size:0.8rem;color:#94a3b8;"></span>
       </div>
 
@@ -535,22 +532,11 @@
       <div class="chat-header">
         <div class="chat-header-left">
           <span>채팅</span>
-          <span id="myBadge" class="pill" title="현재 입장한 아이디/권한">아이디 없음</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:6px;">
-          <input id="myId" class="mini-input" placeholder="입장 아이디" />
-          <select id="myRole" class="mini-select" title="개발용 권한">
-            <option value="listener">청취자</option>
-            <option value="staff">스텝</option>
-            <option value="cj">CJ</option>
-            <option value="host">방장</option>
-          </select>
-          <button id="btnJoin" class="mini-btn">입장</button>
+          <span id="myBadge" class="pill" title="현재 입장한 아이디/권한">연결 중...</span>
         </div>
       </div>
       <div class="chat-split">
         <div class="chat-body" id="chatBody">
-          <p style="color:#6b7280;">(개발용) 우측 목록에서 아이디를 우클릭하면 방장/스텝만 강퇴할 수 있습니다.</p>
         </div>
         <div class="chat-users">
           <div class="chat-users-title">
@@ -561,7 +547,7 @@
         </div>
       </div>
       <div class="chat-footer">
-        <input id="chatInput" class="chat-input" placeholder="채팅 입력 (개발용 UI)" />
+        <input id="chatInput" class="chat-input" placeholder="메시지를 입력하세요..." />
         <button id="chatSendBtn" style="padding:6px 10px;font-size:0.8rem;">보내기</button>
       </div>
     </div>
@@ -658,11 +644,11 @@
     var sel = document.getElementById('track');
     var search = document.getElementById('search');
     var btn = document.getElementById('btnPlay');
-    var btnSendNow = document.getElementById('btnSendNow');
     var btnRefreshReq = document.getElementById('btnRefreshReq');
     var audio = document.getElementById('audio');
     var msg = document.getElementById('msg');
     var nowTitleEl = document.getElementById('nowTitle');
+    var nowLyricsEl = document.getElementById('nowLyrics');
     var tracks = [];
 
     // 도움말 모달
@@ -681,9 +667,6 @@
     });
 
     // 채팅/입장 관련 DOM
-    var myIdEl = document.getElementById('myId');
-    var myRoleEl = document.getElementById('myRole');
-    var btnJoin = document.getElementById('btnJoin');
     var myBadge = document.getElementById('myBadge');
     var usersListEl = document.getElementById('usersList');
     var userCountEl = document.getElementById('userCount');
@@ -770,7 +753,6 @@
       });
       var has = list.length > 0;
       btn.disabled = !has;
-      btnSendNow.disabled = !has;
     }
 
     function broadcastTrack(musicId) {
@@ -810,6 +792,26 @@
       });
     }
 
+    function loadLyrics(musicId) {
+      if (!nowLyricsEl) return;
+      nowLyricsEl.textContent = '가사 로딩 중...';
+      api('/api/music/' + encodeURIComponent(musicId)).then(function(r){
+        return r.ok ? r.json() : null;
+      }).then(function(track) {
+        if (track && track.lyrics && track.lyrics.trim()) {
+          var plain = track.lyrics.replace(/\[[^\]]*\]/g, '').trim();
+          nowLyricsEl.textContent = plain || '가사 없음';
+          nowLyricsEl.style.whiteSpace = 'pre-wrap';
+          nowLyricsEl.style.maxHeight = '200px';
+          nowLyricsEl.style.overflowY = 'auto';
+        } else {
+          nowLyricsEl.textContent = '가사 없음';
+        }
+      }).catch(function() {
+        nowLyricsEl.textContent = '가사를 불러올 수 없습니다.';
+      });
+    }
+
     btn.onclick = function() {
       var id = sel.value;
       if (!id) return;
@@ -821,6 +823,7 @@
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
         }
+        loadLyrics(musicId);
         broadcastTrack(musicId);
       })
         .catch(function(e){ show('재생 실패: ' + e.message, true); });
@@ -839,6 +842,7 @@
         if (nextTrack && nowTitleEl) {
           nowTitleEl.textContent = '재생 중: ' + (nextTrack.title || '제목 없음') + ' – ' + (nextTrack.artist || '아티스트');
         }
+        loadLyrics(nextId);
         broadcastTrack(nextId);
       }).catch(function(e){
         show('다음 곡 재생 실패: ' + e.message, true);
@@ -928,19 +932,7 @@
     };
     micVol.oninput();
 
-    btnSendNow.onclick = function() {
-      var id = sel.value;
-      if (!id) return;
-      var musicId = Number(id);
-      var t = getSelectedTrack();
-      audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
-      audio.play().then(function(){
-        if (t && nowTitleEl) {
-          nowTitleEl.textContent = '재생 중: ' + (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
-        }
-        broadcastTrack(musicId);
-      }).catch(function(e){ show('재생 실패: ' + e.message, true); });
-    };
+    
 
     function escapeHtml(s) {
       return String(s || '').replace(/[&<>"']/g, function(c) {
@@ -998,11 +990,13 @@
         channelOwnerUserId = ch.ownerId || null;
         currentHostUserId = ch.currentHostId || null;
         renderUsers();
+        updateMyBadge();
       }).catch(function() {});
       api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff').then(function(r){ return r.ok ? r.json() : []; }).then(function(list) {
         staffRoleMap = {};
         if (Array.isArray(list)) list.forEach(function(s) { if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
         renderUsers();
+        updateMyBadge();
       }).catch(function() {});
     }
 
@@ -1053,10 +1047,17 @@
       };
     }
 
-    // 현재 로그인한 사용자 ID 로드 → WS auth
+    // 현재 로그인한 사용자 ID 로드 → 자동 입장 + WS auth
+    var meUsername = null;
     api('/api/auth/user').then(function(r){ return r.ok ? r.json() : null; }).then(function(u) {
       if (u && u.id) {
         meUserId = String(u.id);
+        meUsername = u.username || u.firstName || String(u.id).slice(0, 8);
+        me.id = meUserId;
+        me.role = 'host';
+        upsertUser({ id: meUserId, username: meUsername });
+        renderUsers();
+        updateMyBadge();
         if (wsConn && wsConn.readyState === 1) wsConn.send(JSON.stringify({ type: 'auth', userId: meUserId }));
       }
     }).catch(function() {});
@@ -1103,11 +1104,13 @@
     }
 
     function updateMyBadge() {
-      if (!me.id) {
-        myBadge.textContent = '미입장';
+      if (!meUserId) {
+        myBadge.textContent = '연결 중...';
         return;
       }
-      myBadge.innerHTML = '<strong>' + escapeHtml(me.id) + '</strong>' + ' · ' + escapeHtml(me.role);
+      var displayName = meUsername || String(meUserId).slice(0, 8);
+      var role = getActualRole(meUserId);
+      myBadge.innerHTML = '<strong>' + escapeHtml(displayName) + '</strong> ' + roleBadgeHtml(role);
     }
 
     function canKick() {
@@ -1183,28 +1186,19 @@
       reqCtxTargetId = null;
     }
 
-    btnJoin.onclick = function() {
-      var newId = String(myIdEl.value || '').trim();
-      if (!newId) {
-        addSystemMessage('아이디를 입력하세요.');
-        return;
-      }
-      me.id = newId;
-      me.role = String(myRoleEl.value || 'listener');
-      upsertUser({ id: me.id, role: me.role });
-      updateMyBadge();
-      renderUsers();
-      addSystemMessage(me.id + ' 님이 입장했습니다. (' + me.role + ')');
-    };
+    
 
     chatSendBtn.onclick = function() {
-      if (!me.id) {
-        addSystemMessage('먼저 입장하세요.');
+      if (!meUserId) {
+        addSystemMessage('로그인 정보를 확인 중입니다. 잠시 후 다시 시도해 주세요.');
         return;
       }
       var text = String(chatInput.value || '').trim();
       if (!text) return;
-      addChatMessage(me.id, text);
+      if (wsConn && wsConn.readyState === 1 && urlSlug) {
+        wsConn.send(JSON.stringify({ type: 'radio_chat', slug: urlSlug, content: text }));
+      }
+      addChatMessage(meUsername || String(meUserId).slice(0, 8), text);
       chatInput.value = '';
     };
 
@@ -1323,7 +1317,6 @@
         var artist = r.musicArtist || r.artist || '아티스트';
         var statusText = statusLabel(r.status);
         var requester = r.userId ? String(r.userId).slice(0, 8) : '익명';
-        // message는 카드 높이를 늘리기 쉬워서 리스트에서는 숨김(필요하면 우클릭/상세로)
         item.innerHTML =
           '<div class="req-top">' +
             '<div class="req-main">' +
@@ -1334,13 +1327,24 @@
                 '<span class="tag tag-plain">' + escapeHtml(formatTime(r.createdAt)) + '</span>' +
               '</div>' +
             '</div>' +
+            '<div style="display:flex;gap:4px;flex-shrink:0;align-items:center;">' +
+              '<button class="req-approve-btn" data-id="' + r.id + '" style="padding:3px 8px;font-size:0.7rem;background:#22c55e;border-radius:999px;border:none;color:#fff;cursor:pointer;">승인</button>' +
+              '<button class="req-reject-btn" data-id="' + r.id + '" style="padding:3px 8px;font-size:0.7rem;background:#ef4444;border-radius:999px;border:none;color:#fff;cursor:pointer;">거절</button>' +
+            '</div>' +
           '</div>';
-        item.oncontextmenu = function(e) {
-          e.preventDefault();
-          reqCtxTargetId = String(r.id);
-          openReqCtx(e.clientX, e.clientY);
-        };
         reqListEl.appendChild(item);
+      });
+      reqListEl.querySelectorAll('.req-approve-btn').forEach(function(b) {
+        b.onclick = function(e) {
+          e.stopPropagation();
+          handleReqAction(b.dataset.id, 'playing');
+        };
+      });
+      reqListEl.querySelectorAll('.req-reject-btn').forEach(function(b) {
+        b.onclick = function(e) {
+          e.stopPropagation();
+          handleReqAction(b.dataset.id, 'cancelled');
+        };
       });
     }
 
@@ -1350,6 +1354,25 @@
       var t = tracks.find(function(x){ return String(x.id) === String(id); });
       if (!t) return null;
       return t;
+    }
+
+    function handleReqAction(reqId, newStatus) {
+      var ch = urlSlug || 'q';
+      var label = newStatus === 'playing' ? '승인' : '거절';
+      api('/api/radio/channels/' + encodeURIComponent(ch) + '/requests/' + encodeURIComponent(reqId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      }).then(function(r){
+        if (!r.ok) return r.json().then(function(j){ throw new Error(j && j.message ? j.message : label + ' 실패'); });
+        return r.json();
+      }).then(function(list){
+        reqs = Array.isArray(list) ? list.filter(function(x){ return x && x.status === 'pending'; }) : [];
+        renderReqs();
+        addSystemMessage('신청곡이 ' + label + '되었습니다.');
+      }).catch(function(e){
+        addSystemMessage(label + ' 실패: ' + e.message);
+      });
     }
 
     function loadRequests() {
