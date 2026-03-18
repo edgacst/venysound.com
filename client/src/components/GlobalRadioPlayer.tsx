@@ -1,4 +1,6 @@
 import { useRef, useEffect, useCallback, useState, type RefObject } from "react";
+// Note: waveformBufferRef prop kept for API compatibility but waveform AudioContext removed
+// to avoid browser autoplay policy blocking audio output via suspended AudioContext.
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Radio, Pause, Play, X } from "lucide-react";
@@ -9,10 +11,9 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
 const REFETCH_INTERVAL_MS = 8000;
-const WAVEFORM_BUFFER_LENGTH = 128;
 const CROSSFADE_DURATION_MS = 1500;
 
-export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
+export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { subscribe } = useWs();
@@ -23,7 +24,6 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   const activeIndexRef = useRef(0);
   const pendingSeekRef = useRef<number | null>(null);
   const crossfadeRafRef = useRef<number | null>(null);
-  const analyserRef = useRef<{ ctx: AudioContext; analyser: AnalyserNode } | null>(null);
   const [playError, setPlayError] = useState(false);
   const {
     slug,
@@ -86,8 +86,6 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     playNowRef.current = () => {
-      const ctx = analyserRef.current?.ctx;
-      if (ctx && ctx.state === "suspended") ctx.resume().then(() => {}).catch(() => {});
       getActiveAudio()?.play().catch(() => {});
     };
     setPlayNowRef(playNowRef);
@@ -150,44 +148,6 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
     setUserStopped(true);
   }, [setUserStopped, getActiveAudio]);
 
-  // 전역 라디오 오디오(활성 채널) → Analyser → 파형 버퍼 (리스너 캔버스에서 사용)
-  const activeAudio = activeIndex === 0 ? audioARef.current : audioBRef.current;
-  useEffect(() => {
-    if (!streamUrl || !waveformBufferRef || !activeAudio || typeof (activeAudio as HTMLMediaElement).play !== "function") return;
-    let ctx: AudioContext;
-    let source: MediaElementAudioSourceNode;
-    try {
-      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      source = ctx.createMediaElementSource(activeAudio as HTMLMediaElement);
-    } catch {
-      return;
-    }
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
-    source.connect(analyser);
-    analyser.connect(ctx.destination);
-    analyserRef.current = { ctx, analyser };
-    if (ctx.state !== "running") ctx.resume().catch(() => {});
-    const buffer = new Uint8Array(WAVEFORM_BUFFER_LENGTH);
-    waveformBufferRef.current = buffer;
-    let rafId = 0;
-    function tick() {
-      rafId = requestAnimationFrame(tick);
-      if (!analyserRef.current || !waveformBufferRef?.current) return;
-      analyserRef.current.analyser.getByteTimeDomainData(waveformBufferRef.current);
-    }
-    tick();
-    return () => {
-      cancelAnimationFrame(rafId);
-      waveformBufferRef.current = null;
-      analyserRef.current = null;
-      try {
-        source.disconnect();
-      } catch (_) {}
-      ctx.close();
-    };
-  }, [streamUrl, waveformBufferRef, activeIndex, activeAudio]);
 
   // streamUrl 변경 시: 비활성(다음) 플레이어에 로드, 재생/크로스페이드는 onCanPlayThrough에서 (다음 틱에 실행해 ref 보장)
   useEffect(() => {
@@ -232,8 +192,6 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
           }
           return;
         }
-        const actx = analyserRef.current?.ctx;
-        if (actx && actx.state === "suspended") actx.resume().catch(() => {});
         // 첫 트랙이면 바로 재생, 아니면 크로스페이드
         if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;
