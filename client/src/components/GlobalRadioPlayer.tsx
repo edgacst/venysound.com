@@ -25,6 +25,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const pendingSeekRef = useRef<number | null>(null);
   const crossfadeRafRef = useRef<number | null>(null);
   const [playError, setPlayError] = useState(false);
+  const [needsTap, setNeedsTap] = useState(false);
   const {
     slug,
     channelName,
@@ -137,6 +138,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const handlePlay = useCallback(() => {
     setPlayError(false);
+    setNeedsTap(false);
     setUserStopped(false);
     const el = getActiveAudio();
     if (el) el.play().catch(() => {});
@@ -181,8 +183,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const userStoppedNow = useRadioPlayerStore.getState().userStopped;
         if (userStoppedNow) return;
         const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        // 모바일: 자동 재생 금지. 활성만 바꿔두고 사용자가 재생 버튼 탭 시에만 play()
         if (isMobile) {
+          // 모바일: 이전 오디오 정지 후 교체, play() 시도 → 차단되면 needsTap 표시
           const oldActive = getActiveAudio();
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
@@ -190,9 +192,16 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             oldActive.pause();
             oldActive.currentTime = 0;
           }
+          inactive.volume = 1;
+          inactive.play().then(() => {
+            setNeedsTap(false);
+          }).catch(() => {
+            // 자동재생 차단 → 사용자에게 탭 유도
+            setNeedsTap(true);
+          });
           return;
         }
-        // 첫 트랙이면 바로 재생, 아니면 크로스페이드
+        // 첫 트랙이면 바로 재생, 아니면 크로스페이드 (PC)
         if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
@@ -253,6 +262,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const handleStop = useCallback(() => {
     setPlayError(false);
+    setNeedsTap(false);
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) {
         el.pause();
@@ -270,6 +280,15 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 safe-area-pb">
+        {needsTap && !isPlaying && (
+          <button
+            className="w-full flex items-center justify-center gap-2 py-2 bg-primary/90 text-primary-foreground text-sm font-medium animate-pulse"
+            onClick={handlePlay}
+          >
+            <Play className="h-4 w-4" />
+            {t("radio.tapToContinue", "탭하여 계속 듣기")}
+          </button>
+        )}
         <div className="container flex items-center gap-3 px-3 py-2">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Radio className="h-5 w-5 shrink-0 text-primary" />
@@ -281,7 +300,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
                     ? t("radio.listenError", "재생 오류")
                     : isPlaying
                       ? t("radio.listeningTo", "재생 중")
-                      : t("radio.listeningPaused", "일시정지")}
+                      : needsTap
+                        ? t("radio.tapToContinue", "탭하여 계속 듣기")
+                        : t("radio.listeningPaused", "일시정지")}
                 </span>
               </div>
               {trackTitle && (
