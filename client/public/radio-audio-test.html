@@ -974,23 +974,23 @@
       var t = getSelectedTrack();
 
       if (t && t._localObjectPath) {
+        lastPlayedTrackId = t.id; // play() 전 즉시 설정
+        lastNowPlayingId = null;
         audio.src = API_BASE + t._localObjectPath;
         audio.play().then(function(){
-          lastPlayedTrackId = t.id;
-          lastNowPlayingId = null;
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
           if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
           broadcastLocalTrack(t);
           applyFilter();
-        }).catch(function(e){ show('재생 실패: ' + e.message, true); });
+        }).catch(function(e){ lastPlayedTrackId = null; show('재생 실패: ' + e.message, true); });
         return;
       }
 
+      lastPlayedTrackId = musicId; // play() 전 즉시 설정
+      lastNowPlayingId = musicId;
       audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
       audio.play().then(function(){
-        lastPlayedTrackId = musicId;
-        lastNowPlayingId = musicId;
         if (t) {
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
@@ -998,7 +998,7 @@
         loadLyrics(musicId);
         broadcastTrack(musicId);
       })
-        .catch(function(e){ show('재생 실패: ' + e.message, true); });
+        .catch(function(e){ lastPlayedTrackId = null; show('재생 실패: ' + e.message, true); });
     };
 
     function broadcastLocalTrack(t) {
@@ -1030,8 +1030,29 @@
     }
 
     var lastPlayedTrackId = null; // 서버곡 id 또는 로컬곡 음수 id
+    var endedFallbackFired = false;
+
+    // timeupdate 기반 폴백: ended 이벤트가 발화 안 할 경우(createMediaElementSource 충돌 등) 대비
+    audio.addEventListener('timeupdate', function() {
+      if (endedFallbackFired) return;
+      if (!audio.duration || !isFinite(audio.duration) || audio.duration < 1) return;
+      if (audio.paused || audio.ended) return;
+      if (audio.currentTime >= audio.duration - 0.5) {
+        endedFallbackFired = true;
+        setTimeout(function() {
+          // ended 이벤트가 이미 정상 발화됐으면 lastPlayedTrackId가 이미 바뀌어 있음
+          // 아직 그대로면 ended가 안 온 것 → 수동으로 발화
+          audio.dispatchEvent(new Event('ended'));
+          endedFallbackFired = false;
+        }, 800);
+      }
+    });
+
+    // ended 발화 시 폴백 플래그 초기화
+    audio.addEventListener('play', function() { endedFallbackFired = false; });
 
     audio.addEventListener('ended', function() {
+      endedFallbackFired = false; // 정상 ended 발화 시 폴백 플래그 초기화
       if (lastPlayedTrackId == null) return;
       var allIds = tracks.map(function(t){ return t.id; });
       if (allIds.length === 0) return;
@@ -1041,20 +1062,20 @@
       if (!next) return;
 
       if (next._localObjectPath) {
+        lastPlayedTrackId = next.id; // play() 전 즉시 설정
+        lastNowPlayingId = null;
         audio.src = API_BASE + next._localObjectPath;
         audio.play().then(function(){
-          lastPlayedTrackId = next.id;
-          lastNowPlayingId = null;
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (next.title || '') + ' – ' + (next.artist || '');
           if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
           broadcastLocalTrack(next);
           applyFilter();
         }).catch(function(e){ show('다음 곡 재생 실패: ' + e.message, true); });
       } else {
+        lastPlayedTrackId = next.id; // play() 전 즉시 설정
+        lastNowPlayingId = next.id;
         audio.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
         audio.play().then(function(){
-          lastPlayedTrackId = next.id;
-          lastNowPlayingId = next.id;
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (next.title || '제목 없음') + ' – ' + (next.artist || '아티스트');
           loadLyrics(next.id);
           broadcastTrack(next.id);
@@ -1711,11 +1732,22 @@
       var audioEl = document.getElementById('audio');
       if (audioEl && audioEl.src) {
         try {
-          recAudioSource = recAudioCtx.createMediaElementSource(audioEl);
-          recAudioSource.connect(recDestination);
-          recAudioSource.connect(recAudioCtx.destination);
+          // captureStream()을 우선 사용: audio 요소의 ended/timeupdate 이벤트를 그대로 보존
+          if (typeof audioEl.captureStream === 'function') {
+            var capturedStream = audioEl.captureStream();
+            recAudioSource = recAudioCtx.createMediaStreamSource(capturedStream);
+            recAudioSource.connect(recDestination);
+          } else if (typeof audioEl.mozCaptureStream === 'function') {
+            var capturedStream = audioEl.mozCaptureStream();
+            recAudioSource = recAudioCtx.createMediaStreamSource(capturedStream);
+            recAudioSource.connect(recDestination);
+          } else {
+            // 최후 수단: createMediaElementSource (audio ended 이벤트 불안정해질 수 있음)
+            recAudioSource = recAudioCtx.createMediaElementSource(audioEl);
+            recAudioSource.connect(recDestination);
+            recAudioSource.connect(recAudioCtx.destination);
+          }
         } catch(_) {
-          // 이미 다른 AudioContext에 연결된 경우 — 오디오 캡처 없이 마이크만 녹음
           recAudioSource = null;
         }
       }
