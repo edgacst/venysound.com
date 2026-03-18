@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
-import { Trans, useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from "react-i18next";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -38,8 +38,6 @@ export default function Home() {
       return res.json();
     },
   });
-
-  const [radioUpdateNoticeOpen, setRadioUpdateNoticeOpen] = useState(false);
 
   const { data: liveChannels } = useQuery<Array<{
     id: number;
@@ -352,11 +350,8 @@ export default function Home() {
 
       {/* 베니방송국 배너 — 배경 + 중앙 파형 애니메이션 */}
       <section className="container px-4 py-4" data-testid="section-radio-banner">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => setRadioUpdateNoticeOpen(true)}
-          onKeyDown={(e) => e.key === "Enter" && setRadioUpdateNoticeOpen(true)}
+        <Link
+          href="/radio/channels"
           className="rounded-xl overflow-hidden h-[120px] md:h-[140px] flex flex-col border border-white/10 cursor-pointer hover:opacity-95 transition-opacity group relative bg-cover bg-center"
           style={{
             backgroundImage: "linear-gradient(to right, rgba(30,0,60,0.88) 0%, rgba(60,20,80,0.6) 50%, rgba(80,40,100,0.5) 100%), url('/radio-studio-bg.png'), linear-gradient(to right, rgb(88,28,135), rgb(126,34,206))",
@@ -394,19 +389,7 @@ export default function Home() {
               {t("home.radioBannerButton", "방송국 가기")} →
             </span>
             </div>
-          </div>
-
-        <Dialog open={radioUpdateNoticeOpen} onOpenChange={setRadioUpdateNoticeOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>공지</DialogTitle>
-            </DialogHeader>
-            <p className="text-foreground py-2">방송국을 업데이트 중입니다.</p>
-            <Button onClick={() => setRadioUpdateNoticeOpen(false)} className="mt-2">
-              확인
-            </Button>
-          </DialogContent>
-        </Dialog>
+          </Link>
       </section>
 
       <section className="container px-4 py-8" data-testid="section-banner">

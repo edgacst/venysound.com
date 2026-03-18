@@ -40,22 +40,18 @@ export default function Pricing() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
   const FREE_FEATURES = [
-    { icon: Music, text: t('pricing.freeFeature1', '기본 음원 스트리밍') },
-    { icon: Headphones, text: t('pricing.freeFeature2', '일일 100곡 스트리밍') },
-    { icon: Music, text: t('pricing.freeFeature3', '음원 업로드 (월 10곡)') },
-    { icon: Sparkles, text: t('pricing.freeFeatureAiMusic', 'AI 음악 생성 (무료 2곡/월)') },
+    { icon: Music, text: t('pricing.freeFeature1', '무제한 음원 스트리밍') },
+    { icon: Music, text: t('pricing.freeFeature2', '무제한 음원 업로드') },
+    { icon: Radio, text: t('pricing.freeFeature3', '내 방송 채널 운영') },
     { icon: Shield, text: t('pricing.freeFeature4', '커뮤니티 참여') },
-    { icon: Radio, text: t('pricing.freeFeature5', 'V방송 참여') },
+    { icon: Headphones, text: t('pricing.freeFeature5', '고음질 스트리밍') },
+    { icon: Sparkles, text: t('pricing.freeFeatureAiMusic', 'AI 음원 생성 (월 2곡)') },
   ];
 
   const PRO_FEATURES = [
-    { icon: Headphones, text: t('pricing.proFeature1', '무제한 스트리밍') },
-    { icon: Music, text: t('pricing.proFeature2', '무제한 음원 업로드') },
-    { icon: Sparkles, text: t('pricing.proFeatureAiMusic', 'AI 음악 생성 2,000 크레딧/월') },
-    { icon: Sparkles, text: t('pricing.premiumFeature3', 'AI 커버 이미지 생성') },
-    { icon: Zap, text: t('pricing.premiumFeature4', '고음질 스트리밍') },
-    { icon: Shield, text: t('pricing.premiumFeature5', '광고 없음') },
-    { icon: Radio, text: t('pricing.premiumFeature7', 'V방송 채널 운영') },
+    { icon: Crown, text: t('pricing.proFeatureAllFree', 'Free 모든 기능') },
+    { icon: Sparkles, text: t('pricing.proFeatureAiMusic', 'AI 음원 생성 2,000 크레딧/월') },
+    { icon: Shield, text: t('pricing.proFeatureNoAds', '광고 없음') },
   ];
 
   const PREMIUM_FEATURES = [
@@ -155,7 +151,7 @@ export default function Pricing() {
   const isPro = tier === "pro";
   const isPremium = tier === "premium";
   const isPaid = isPro || isPremium;
-  const proMonthly = 14000;
+  const proMonthly = 15000;
   const proYearly = 151200;
   const premiumMonthly = 30000;
   const premiumYearly = 324000;
@@ -217,7 +213,7 @@ export default function Pricing() {
               <Card className="p-6 relative" data-testid="card-free-plan">
                 <div className="mb-4">
                   <h3 className="text-lg font-bold mb-1">{t('pricing.freePlanName', 'Free')}</h3>
-                  <p className="text-muted-foreground text-xs">{t('pricing.freeDescription', '기본적인 음악 스트리밍')}</p>
+                  <p className="text-muted-foreground text-xs">{t('pricing.freeDescription', '무제한 음원 스트리밍과 업로드')}</p>
                 </div>
                 <div className="mb-4">
                   <span className="text-3xl font-bold">0{t('pricing.won', '원')}</span>

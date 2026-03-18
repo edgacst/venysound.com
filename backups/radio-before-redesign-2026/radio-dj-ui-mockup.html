@@ -1,0 +1,2694 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>베니방송국 · DJ 송출실</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f12;
+      color: #e4e4e7;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 380px 1fr 520px;
+      grid-template-rows: auto 1fr auto;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      grid-column: 1 / -1;
+      background: #18181b;
+      border-bottom: 1px solid #27272a;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    header h1 { margin: 0; font-size: 1.1rem; color: #a78bfa; }
+    header .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .live-badge {
+      background: #ef4444;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .live-badge.hidden { display: none; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+    .btn-primary { background: #7c3aed; color: #fff; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-secondary { background: #3f3f46; color: #e4e4e7; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-secondary:hover { background: #52525b; }
+    .request-badge {
+      display: inline-block;
+      min-width: 1.1em;
+      padding: 2px 6px;
+      margin-left: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1;
+      color: #fff;
+      background: #ef4444;
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+    .btn-set-now.playing { background: #16a34a; cursor: default; }
+    .btn-set-now.playing:hover { background: #16a34a; }
+    .panel {
+      border-right: 1px solid #27272a;
+      padding: 16px;
+      overflow-y: auto;
+    }
+    .panel:last-of-type { border-right: none; border-left: 1px solid #27272a; }
+    .panel.chat-aside { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .panel.chat-aside #chat-panel { flex: 1; min-height: 0; }
+    .panel-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #71717a;
+      margin-bottom: 8px;
+    }
+    .queue-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 12px 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .queue-list li {
+      padding: 5px 8px;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+      background: transparent;
+      border-radius: 0;
+      margin-bottom: 0;
+    }
+    .queue-list li .num { color: #71717a; font-size: 0.7rem; width: 16px; flex-shrink: 0; }
+    .queue-list li .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .queue-list li.playing { border-left: 2px solid #a78bfa; background: rgba(167, 139, 250, 0.08); }
+    .queue-list li .actions { display: flex; gap: 2px; flex-shrink: 0; }
+    .queue-list li .actions .btn {
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      border-radius: 999px;
+    }
+    .main {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+    }
+    .now-playing { text-align: center; width: 100%; max-width: 100%; }
+    .now-playing .artwork {
+      width: 100%;
+      max-width: 640px;
+      height: 220px;
+      margin: 0 auto 16px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      color: #52525b;
+      position: relative;
+      overflow: hidden;
+      background-color: #18181b;
+    }
+    .now-playing .artwork img.artwork-bg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .now-playing .artwork canvas.waveform {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border-radius: 12px;
+      opacity: 0.3;
+      pointer-events: none;
+    }
+    .now-playing .artwork .artwork-placeholder {
+      position: relative;
+      z-index: 0;
+    }
+    .now-playing-header {
+      display: inline-flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 8px;
+      max-width: 100%;
+      flex-wrap: wrap;
+    }
+    .now-playing .title {
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .now-playing .artist {
+      color: #a1a1aa;
+      font-size: 0.95rem;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .controls button {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      border: none;
+      background: #3f3f46;
+      color: #e4e4e7;
+      cursor: pointer;
+      font-size: 1.25rem;
+    }
+    .controls button:hover { background: #52525b; }
+    .controls button.play { width: 56px; height: 56px; background: #7c3aed; font-size: 1.5rem; }
+    .source-tabs { display: flex; gap: 8px; margin-top: 24px; }
+    .source-tabs button {
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: transparent;
+      color: #a1a1aa;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+    .source-tabs button.active { background: #3f3f46; color: #fff; border-color: #52525b; }
+    .search-wrap { margin-top: 8px; }
+    .search-wrap input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+      font-size: 0.875rem;
+      margin-bottom: 8px;
+    }
+    .search-results {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+    }
+    .search-results div {
+      padding: 10px 12px;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-results div:hover { background: #27272a; }
+    .search-results div:last-child { border-bottom: none; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+    .tabs button {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: #71717a;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .tabs button.active { background: #3f3f46; color: #fff; }
+    .chat-panel { display: flex; flex-direction: column; min-height: 0; }
+    .participants-wrap {
+      margin: 4px 0 6px 0;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: #18181b;
+      overflow-x: auto;
+      overflow-y: hidden;
+      white-space: nowrap;
+    }
+    .participants-title {
+      font-size: 0.7rem;
+      color: #a1a1aa;
+      margin: 0 0 4px 0;
+    }
+    .participants-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.8rem;
+      color: #e4e4e7;
+      display: inline-flex;
+      gap: 6px;
+    }
+    .participants-list li {
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #27272a;
+      flex-shrink: 0;
+    }
+    .participants-list li.empty {
+      color: #71717a;
+    }
+    .chat-list-wrap { flex: 1; min-height: 0; overflow-y: auto; }
+    .chat-list, .request-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: none;
+      overflow-y: visible;
+    }
+    .chat-panel .chat-list { max-height: none; }
+    .chat-input-wrap { flex-shrink: 0; margin-top: 8px; padding-top: 8px; border-top: 1px solid #27272a; background: #18181b; }
+    .chat-list li, .request-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid #27272a;
+      font-size: 0.85rem;
+    }
+    .chat-list .name { color: #a78bfa; margin-right: 6px; }
+    .chat-list li.chat-join { color: #71717a; font-size: 0.8rem; }
+    .chat-input-wrap { display: flex; gap: 8px; margin-top: 12px; }
+    .chat-input-wrap input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #3f3f46;
+      background: #18181b;
+      color: #e4e4e7;
+      font-size: 0.875rem;
+    }
+    .mic-setup { width: 100%; max-width: 480px; margin: 0 auto; text-align: left; }
+    .mic-hint { font-size: 0.75rem; color: #71717a; margin-bottom: 10px; }
+    .mic-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+    .mic-select {
+      flex: 1; min-width: 140px; padding: 8px 10px; border-radius: 8px; border: 1px solid #3f3f46;
+      background: #18181b; color: #e4e4e7; font-size: 0.875rem;
+    }
+    .mic-status { font-size: 0.8rem; color: #71717a; margin: 0 0 8px 0; }
+    .mic-level-wrap { margin-top: 8px; }
+    .mic-level-label { font-size: 0.75rem; color: #71717a; display: block; margin-bottom: 4px; }
+    .mic-level-bar { height: 6px; background: #27272a; border-radius: 3px; overflow: hidden; }
+    .mic-level-fill { height: 100%; width: 0%; background: #7c3aed; border-radius: 3px; transition: width 0.05s; }
+    .foot-note {
+      grid-column: 1 / -1;
+      padding: 8px 20px;
+      background: #18181b;
+      border-top: 1px solid #27272a;
+      font-size: 0.8rem;
+      color: #22c55e; /* 녹색 텍스트 */
+      text-align: center;
+    }
+    .init-message {
+      grid-column: 1 / -1;
+      padding: 40px 20px;
+      text-align: center;
+      color: #a1a1aa;
+    }
+    .init-message a { color: #a78bfa; }
+    .init-message.hidden { display: none; }
+
+    /* 작은 화면(높이 800px 이하)에서는 세로 스크롤 허용 */
+    @media (max-height: 800px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+      }
+      .layout {
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+    }
+
+    /* 좁은 화면: 3단 → 세로 배치 (밑으로 정렬) */
+    @media (max-width: 1024px) {
+      body {
+        height: auto;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
+      }
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto minmax(280px, auto) minmax(240px, 1fr);
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+      }
+      .layout header { grid-column: 1; }
+      .layout .panel {
+        grid-column: 1;
+        border-right: none;
+        border-bottom: 1px solid #27272a;
+        min-height: 0;
+      }
+      .layout .panel.chat-aside {
+        border-left: none;
+        border-bottom: none;
+        min-height: 260px;
+      }
+      .layout .main {
+        grid-column: 1;
+        min-height: 320px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="initMessage" class="init-message">
+    로딩 중...
+  </div>
+  <div id="layout" class="layout" style="display: none;">
+    <header>
+      <div>
+        <h1 id="headerTitle">🎙️ 베니방송국 · DJ 송출실</h1>
+        <a href="/radio" style="font-size: 0.8rem; color: #71717a; text-decoration: none;">← 방송국으로</a>
+        <p id="apiHint" style="margin: 4px 0 0 0; font-size: 0.7rem; color: #71717a; display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap;">
+          <span>API 주소: <span id="apiOrigin">-</span></span>
+          <button type="button" id="btnTestApi" class="btn btn-secondary btn-sm" style="padding: 2px 8px;">연결 테스트</button>
+        </p>
+      </div>
+      <div class="header-actions" style="display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
+        <span id="listenerCountLabel" style="font-size: 0.8rem; color: #71717a;"></span>
+        <span id="liveBadge" class="live-badge hidden">● LIVE</span>
+        <span id="currentHostLabel" style="font-size: 0.8rem; color: #71717a;"></span>
+        <button type="button" id="btnHandoff" class="btn btn-secondary btn-sm" style="display: none;">인수인계</button>
+        <button type="button" id="btnStartBroadcast" class="btn btn-danger">방송 시작</button>
+        <button type="button" id="btnEndBroadcast" class="btn btn-secondary" style="display: none;">방송 종료</button>
+      </div>
+    </header>
+
+    <aside class="panel">
+      <div class="panel-title">재생 큐</div>
+      <ul class="queue-list" id="queue"></ul>
+      <div class="panel-title">곡 추가</div>
+      <button type="button" id="btnToggleSearch" class="btn btn-primary" style="width: 100%; margin-bottom: 8px;">📂 사이트 음원에서 선택</button>
+      <div id="searchWrap" class="search-wrap" style="display: none;">
+        <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+          <select id="searchGenre" class="mic-select" style="min-width: 100px; flex: 1;">
+            <option value="">전체</option>
+            <option value="팝뮤직">팝뮤직</option>
+            <option value="국내가요">국내가요</option>
+            <option value="발라드">발라드</option>
+            <option value="케이팝">케이팝</option>
+            <option value="트로트">트로트</option>
+            <option value="월드뮤직">월드뮤직</option>
+            <option value="경음악">경음악</option>
+            <option value="재즈">재즈</option>
+            <option value="클래식">클래식</option>
+            <option value="인디팝">인디팝</option>
+            <option value="댄스팝">댄스팝</option>
+          </select>
+          <button type="button" id="btnLoadByGenre" class="btn btn-secondary btn-sm">장르로 불러오기</button>
+        </div>
+        <input type="text" id="searchInput" placeholder="곡 검색 또는 장르 선택 후 불러오기..." />
+        <div id="searchResults" class="search-results"></div>
+      </div>
+      <input type="file" id="localFileInput" accept=".mp3,.wav,.ogg,audio/mpeg,audio/wav,audio/ogg" style="display: none;" />
+      <button type="button" id="btnLocalFile" class="btn btn-secondary" style="width: 100%;">💾 로컬 파일 불러오기</button>
+      <p style="font-size: 0.75rem; color: #71717a; margin-top: 12px;">
+        · 사이트 음원: 검색 후 큐에 추가 → 지금 재생으로 송출<br />
+        · 로컬 파일: 큐에 추가 후 지금 재생 시 모니터에서만 재생 (청취자에게는 송출되지 않음)
+      </p>
+    </aside>
+
+    <main class="main">
+      <div class="now-playing">
+        <div class="artwork">
+          <img src="/dj-studio-banner.jpg" alt="Veny Radio Studio" class="artwork-bg" />
+          <canvas id="waveformCanvas" class="waveform" width="200" height="200" style="display: none;"></canvas>
+          <span class="artwork-placeholder">🎵</span>
+        </div>
+        <div class="now-playing-header">
+          <span class="title" id="nowTitle">재생 중인 곡 없음</span>
+          <span class="artist" id="nowArtist">큐에서 곡을 선택하고 「지금 재생」을 누르세요</span>
+        </div>
+        <div id="nowLyricsWrap" style="display: none; margin-top: 8px; text-align: center; max-width: 640px; margin-left: auto; margin-right: auto; width: 100%;">
+          <p class="panel-title" style="margin-bottom: 4px;">가사</p>
+          <div
+            id="nowLyrics"
+            class="lyrics-box"
+            style="font-size: 0.85rem; line-height: 1.6; color: #a1a1aa; padding: 6px 10px; background: rgba(0,0,0,0.2); border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+          ></div>
+        </div>
+        <div class="monitor-player" style="margin-top: 16px; margin-left: auto; margin-right: auto; width: 100%; max-width: 480px;">
+          <p style="font-size: 0.75rem; color: #71717a; margin-bottom: 8px;">모니터 (지금 송출 중인 곡) · 아래 버튼으로 재생/정지할 수 있습니다.</p>
+          <div class="progress-wrap" style="margin-bottom: 8px;">
+            <div class="progress-bar" style="height: 6px; background: #27272a; border-radius: 999px; overflow: hidden;">
+              <div id="monitorProgressFill" class="progress-fill" style="height: 100%; width: 0%; background: #7c3aed; border-radius: 999px; transition: width 0.2s ease;"></div>
+            </div>
+            <div id="monitorProgressTime" style="font-size: 0.75rem; color: #71717a; margin-top: 4px;">0:00 / 0:00</div>
+          </div>
+          <audio id="djMonitorAudio" preload="auto" style="display: none;"></audio>
+          <audio id="djMonitorAudio2" preload="auto" style="display: none;"></audio>
+          <audio id="djWaveformAudio" style="display: none;" preload="metadata" muted></audio>
+          <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button type="button" id="btnMonitorPlay" class="btn btn-primary btn-sm" style="min-height: 44px; -webkit-tap-highlight-color: transparent;">▶ 모니터 재생</button>
+            <button type="button" id="btnStopNowPlaying" class="btn btn-secondary btn-sm">곡 정지</button>
+            <span id="monitorPlayHint" style="display: none; font-size: 0.75rem; color: #f59e0b; max-width: 320px;">소리를 들으려면 [모니터 재생] 버튼을 눌러주세요. (모바일에서는 필수)</span>
+            <button type="button" id="btnShowGuide" class="btn btn-secondary btn-sm">방송송출 방법 및 방송약관</button>
+          </div>
+        </div>
+        <div class="mic-setup" style="margin-top: 16px;">
+          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 선택한 마이크는 저장됩니다.</p>
+          <div class="mic-controls">
+            <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
+            <button type="button" id="btnMicConnect" class="btn btn-secondary btn-sm">마이크 연결</button>
+          </div>
+          <p id="micStatus" class="mic-status">연결되지 않음</p>
+          <div id="micLevelWrap" class="mic-level-wrap" style="display: none;">
+            <span class="mic-level-label">입력 레벨</span>
+            <div class="mic-level-bar"><div id="micLevelBar" class="mic-level-fill"></div></div>
+            <div class="mic-controls" style="margin-top: 8px;">
+              <label class="mic-level-label" style="display: inline-flex; align-items: center; gap: 6px;">
+                <input type="range" id="micGainSlider" min="0" max="200" value="100" style="width: 80px;" />
+                볼륨
+              </label>
+              <button type="button" id="btnMicMute" class="btn btn-secondary btn-sm">멘트</button>
+            </div>
+          </div>
+        </div>
+        <div class="schedule-setup" style="margin-top: 12px; text-align: center;">
+          <p class="mic-hint">청취자에게 보여줄 한 줄 안내를 적어주세요. (예: "오늘은 11시부터 24시까지 진행합니다")</p>
+          <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+            <input
+              type="text"
+              id="scheduleNotice"
+              maxlength="200"
+              placeholder="예: 오늘은 21시~23시까지 라이브로 진행합니다"
+              style="width: 100%; max-width: 480px; padding: 8px 10px; border-radius: 8px; border: 1px solid #3f3f46; background: #18181b; color: #e4e4e7; font-size: 0.875rem;"
+            />
+          </div>
+          <button type="button" id="btnSaveSchedule" class="btn btn-secondary btn-sm">안내 문구 저장</button>
+        </div>
+        <div class="recording-setup" style="margin-top: 16px;">
+          <p class="mic-hint">지금 송출 중인 곡 + 마이크를 함께 녹음합니다. 중지 시 파일이 다운로드됩니다.</p>
+          <button type="button" id="btnRecordStart" class="btn btn-secondary btn-sm">● 녹음 시작</button>
+          <button type="button" id="btnRecordStop" class="btn btn-secondary btn-sm" style="display: none;">■ 녹음 중지</button>
+          <span id="recordStatus" class="mic-status" style="margin-left: 8px;"></span>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel chat-aside">
+      <div class="tabs" style="flex-shrink: 0;">
+        <button type="button" class="active" data-tab="chat">채팅 (단체)</button>
+        <button type="button" data-tab="requests">신청곡 <span class="request-badge" id="requestBadge" style="display:none;">0</span></button>
+      </div>
+      <div id="chat-panel" class="chat-panel">
+        <p class="panel-title" style="margin-top:0; flex-shrink:0;">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+        <div class="participants-wrap">
+          <p class="participants-title">현재 접속자</p>
+          <ul id="chatParticipantsList" class="participants-list">
+            <li class="empty">접속자가 없습니다.</li>
+          </ul>
+        </div>
+        <div class="chat-list-wrap">
+          <ul class="chat-list" id="chatList">
+            <li style="color:#71717a;">로딩 중...</li>
+          </ul>
+        </div>
+        <div class="chat-input-wrap">
+          <input type="text" placeholder="메시지 입력..." id="chatInput" disabled />
+          <button type="button" class="btn btn-secondary" id="chatSend" disabled>전송</button>
+        </div>
+      </div>
+      <div id="requests-panel" style="display: none;">
+        <p class="panel-title" style="margin-top:0;">청취자가 채널 페이지에서 신청한 곡 목록입니다. 「큐에 추가」로 재생 큐에 넣을 수 있습니다.</p>
+        <ul class="request-list" id="requestList">
+          <li style="color:#71717a;">로딩 중...</li>
+        </ul>
+      </div>
+    </aside>
+
+    <div id="handoffModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center;">
+      <div style="background: #27272a; padding: 20px; border-radius: 12px; max-width: 320px; width: 90%;">
+        <p style="margin: 0 0 12px 0; font-weight: 600;">송출 인수인계</p>
+        <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 12px;">송출 권한을 넘길 사람을 선택하세요.</p>
+        <ul id="handoffList" style="list-style: none; padding: 0; margin: 0 0 12px 0; max-height: 200px; overflow-y: auto;"></ul>
+        <button type="button" id="handoffCancel" class="btn btn-secondary" style="width: 100%;">취소</button>
+      </div>
+    </div>
+
+    <div id="guideModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center;">
+      <div style="background: #18181b; padding: 20px 22px; border-radius: 12px; max-width: 460px; width: 90%; color:#e4e4e7; font-size:0.85rem; line-height:1.6;">
+        <p style="margin: 0 0 10px 0; font-weight: 600; font-size: 0.95rem;">베니방송국 방송송출 방법</p>
+        <ol style="padding-left: 18px; margin: 0 0 12px 0;">
+          <li style="margin-bottom:4px;">상단 우측에서 <strong>방송 시작</strong> 버튼을 눌러 채널 상태를 라이브로 전환합니다.</li>
+          <li style="margin-bottom:4px;">좌측에서 <strong>사이트 음원에서 선택</strong> 또는 <strong>장르로 불러오기</strong>로 곡을 큐에 추가합니다.</li>
+          <li style="margin-bottom:4px;">재생 큐에서 원하는 곡의 <strong>지금 재생</strong> 버튼을 눌러 청취자에게 송출합니다.</li>
+          <li style="margin-bottom:4px;">필요하면 <strong>마이크 연결</strong> 및 멘트 버튼으로 음성을 섞어 송출합니다.</li>
+          <li style="margin-bottom:4px;">방을 다른 DJ에게 넘기려면 상단의 <strong>인수인계</strong> 버튼을 눌러 부국장/스텝을 선택합니다. 선택된 사람이 송출 권한을 이어받습니다.</li>
+          <li style="margin-bottom:4px;">방송을 모두 마친 뒤에는 마지막으로 송출 중인 DJ가 상단의 <strong>방송 종료</strong> 버튼을 눌러 방송을 종료합니다.</li>
+        </ol>
+
+        <div style="margin: 0 0 12px 0; padding: 8px 10px; background: rgba(39,39,42,0.9); border-radius: 8px; max-height: 220px; overflow-y: auto;">
+          <p style="margin: 0 0 6px 0; font-weight: 600; font-size:0.85rem;">방송 관련 약관 (요약)</p>
+          <ul style="margin: 0 0 6px 0; padding-left: 18px;">
+            <li style="margin-bottom:3px;">모든 방송 내용(음성·음악·채팅 등)에 대한 책임은 해당 채널을 운영하는 DJ에게 있습니다.</li>
+            <li style="margin-bottom:3px;">저작권·초상권·인격권 등 타인의 권리를 침해하는 음원·콘텐츠는 송출할 수 없습니다.</li>
+            <li style="margin-bottom:3px;">욕설, 혐오, 차별, 음란, 불법 정보 등 커뮤니티 가이드라인과 법령을 위반하는 방송은 제한되며, 필요 시 방송 중단·채널 일시정지·폐쇄 및 계정 제재가 이루어질 수 있습니다.</li>
+            <li style="margin-bottom:3px;">상업 광고·홍보성 방송은 회사와 사전 협의된 범위에서만 허용되며, 무단 광고 송출 시 제재 대상이 될 수 있습니다.</li>
+            <li style="margin-bottom:0;">기타 사항은 사이트 하단의 <strong>이용약관</strong> 및 <strong>환불 정책</strong>, 방송 관련 공지사항을 따릅니다.</li>
+          </ul>
+          <p style="margin: 0; font-size: 0.78rem; color:#a1a1aa;">※ 방송 이용 중 위 조항을 반복적으로 위반하는 경우, 사전 경고 없이 채널 이용이 제한될 수 있습니다.</p>
+        </div>
+
+        <p style="margin:0 0 14px 0; color:#a1a1aa;">※ 방송 중 문제가 생기면 하단 안내 문구의 연락처로 문의해 주세요.</p>
+        <button type="button" id="guideClose" class="btn btn-secondary" style="width:100%;">닫기</button>
+      </div>
+    </div>
+
+    <footer class="foot-note">
+      베니방송국 DJ 송출실 · 큐에 곡을 넣고 「지금 재생」을 누르면 청취자에게 송출됩니다. (방송 중단시 반드시 「방송 종료」를 누르고 마치시기 바랍니다)
+    </footer>
+  </div>
+
+  <script src="/lame.min.js"></script>
+  <script>
+(function() {
+  var channel = null;
+  var queue = [];
+  var currentLocalItem = null;
+  var currentLocalObjectUrl = null;
+  var pollTimer = null;
+  var searchDebounce = null;
+  var chatMessages = [];
+  var songRequests = [];
+  var presentUserIds = new Set();
+  var presentUsers = {};
+  var lastJoinByUserKey = {};
+  var syncedLyrics = [];
+  var currentLyricIndex = -1;
+  var ws = null;
+  var wsAuthenticated = false;
+  var micStream = null;
+  var micAudioContext = null;
+  var micLevelAnimationId = null;
+  var micGainNode = null;
+  var micMuted = false;
+  var recordContext = null;
+  var mediaRecorder = null;
+  var recordChunks = [];
+  var recordStartTime = null;
+  var waveformCtx = null;
+  var waveformSource = null;
+  var waveformAnalyser = null;
+  var hasUserGestureForAudio = false;
+  function markUserGestureForAudio() {
+    hasUserGestureForAudio = true;
+    try {
+      if (waveformCtx && waveformCtx.state === 'suspended') {
+        waveformCtx.resume().then(function() {}).catch(function() {});
+      }
+    } catch (e) {}
+  }
+  function isMobileOrNoGesture() {
+    return !hasUserGestureForAudio || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+  var monitorAudios = null;
+  var activeMonitorIndex = 0;
+  var inactivePreloadedId = null;
+  var musicGainNode = null;
+  var waveformAnimationId = null;
+  var mentMode = false;
+  var listenerCount = 0;
+  var scheduleInputsApplied = false;
+  var lastLoadedLyricsMusicId = null;
+  var lastSyncedStartMusicId = null;
+  var lastEndedTrackIdForAdvance = null;
+  var lastEndedTrackTime = 0;
+  var lastAdvancedMusicId = null;
+  var lastAdvancedTime = 0;
+  var weJustSentAdvance = false;
+  var isAdvancing = false;
+  var lastNowTitle = '';
+  var lastNowArtist = '';
+  var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+  (function initMonitorAudios() {
+    var el1 = document.getElementById('djMonitorAudio');
+    var el2 = document.getElementById('djMonitorAudio2');
+    monitorAudios = el1 && el2 ? [el1, el2] : (el1 ? [el1, el1] : []);
+  })();
+  function getActiveMonitorAudio() {
+    if (!monitorAudios || !monitorAudios.length) return document.getElementById('djMonitorAudio');
+    return monitorAudios[activeMonitorIndex] || monitorAudios[0];
+  }
+  function getInactiveMonitorAudio() {
+    if (!monitorAudios || monitorAudios.length < 2) return monitorAudios ? monitorAudios[0] : document.getElementById('djMonitorAudio');
+    return monitorAudios[1 - activeMonitorIndex];
+  }
+  var CROSSFADE_DURATION_MS = 1500;
+  var crossfadeRafId = null;
+  function runCrossfadeToInactive() {
+    if (!monitorAudios || monitorAudios.length < 2) return;
+    var active = getActiveMonitorAudio();
+    var inactive = getInactiveMonitorAudio();
+    if (!inactive || !inactive.src || inactive === active) return;
+    inactive.volume = 0;
+    inactive.play().catch(function() {});
+    var start = performance.now();
+    function step() {
+      crossfadeRafId = null;
+      var t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
+      var ease = t * (2 - t);
+      active.volume = 1 - ease;
+      inactive.volume = ease;
+      if (t < 1) {
+        crossfadeRafId = requestAnimationFrame(step);
+      } else {
+        active.pause();
+        active.currentTime = 0;
+        active.removeAttribute('src');
+        active.load();
+        activeMonitorIndex = 1 - activeMonitorIndex;
+        inactivePreloadedId = null;
+      }
+    }
+    crossfadeRafId = requestAnimationFrame(step);
+  }
+  if (window.location.port === '5173' || window.location.port === '3000') {
+    API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
+  }
+  var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
+
+  function api(path, options) {
+    options = options || {};
+    options.credentials = 'include';
+    options.headers = options.headers || {};
+    if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+      options.headers['Content-Type'] = 'application/json';
+      options.body = JSON.stringify(options.body);
+    }
+    var url = (path.indexOf('http') === 0) ? path : (API_BASE + path);
+    return fetch(url, options);
+  }
+
+  function networkErrorMsg(e) {
+    var msg = (e && e.message) ? String(e.message) : '';
+    if (msg.indexOf('fetch') !== -1 || msg === 'Failed to fetch' || msg.indexOf('NetworkError') !== -1) {
+      return '서버에 연결할 수 없습니다. 터미널에서 npm run dev 로 서버를 실행했는지 확인하고, 이 페이지를 http://localhost:5000/radio-dj-ui-mockup.html 에서 열어주세요.';
+    }
+    return msg;
+  }
+
+  function showInit(msg, isError) {
+    var el = document.getElementById('initMessage');
+    var layout = document.getElementById('layout');
+    el.className = 'init-message' + (isError ? '' : '');
+    el.innerHTML = msg;
+    el.style.display = 'block';
+    layout.style.display = isError ? 'none' : 'grid';
+  }
+
+  function showLayout() {
+    document.getElementById('initMessage').style.display = 'none';
+    document.getElementById('layout').style.display = 'grid';
+    var el = document.getElementById('apiOrigin');
+    if (el) el.textContent = API_BASE || '(상대경로)';
+  }
+
+  var currentUser = null;
+
+  function loadSession() {
+    var slugParam = (typeof URLSearchParams !== 'undefined') ? new URLSearchParams(window.location.search).get('slug') : null;
+    var slug = slugParam ? String(slugParam).trim().toLowerCase() : null;
+    return api('/api/auth/me').then(function(r) {
+      if (r.status === 401) {
+        showInit('로그인이 필요합니다. <a href="/login">로그인</a> 후 이용해 주세요.', true);
+        return Promise.reject(new Error('not logged in'));
+      }
+      if (!r.ok) throw new Error('auth failed');
+      return r.json();
+    }).then(function(user) {
+      currentUser = user;
+      if (slug) return api('/api/radio/channels/' + encodeURIComponent(slug));
+      return api('/api/radio/channels/me');
+    }).then(function(r) {
+      if (!r.ok) throw new Error('channel fetch failed');
+      return r.json();
+    }).then(function(data) {
+      if (!data || !data.slug) {
+        showInit('채널이 없습니다. <a href="/radio">방송국</a>에서 먼저 채널을 만들거나, 방송 페이지에서 「방송 스튜디오」로 들어오세요.', true);
+        return Promise.reject(new Error('no channel'));
+      }
+      if (data.canControlBroadcast === false) {
+        // 송출 권한이 없는 경우: 에러로 넘기고 catch 블록에서 안내 메시지 처리
+        return Promise.reject(new Error('NO_BROADCAST_PERMISSION'));
+      }
+      channel = data;
+      showLayout();
+      renderHeader();
+      renderQueue();
+      fetchChannelAndUpdate();
+      if (channel.status === 'live') startPolling();
+      connectWs();
+      loadChat();
+      loadRequests();
+      bindEvents();
+    }).catch(function(err) {
+      if (!err || !err.message) return;
+      if (err.message === 'not logged in' || err.message === 'no channel') return;
+      if (err.message === 'NO_BROADCAST_PERMISSION') {
+        showInit('이 채널은 권한이 있는 사람만 접근이 가능합니다.<br><br><a href="/radio">방송국 가기</a>', true);
+        return;
+      }
+      var msg = err.message || '알 수 없음';
+      if (msg.indexOf('fetch') !== -1 || msg === 'Failed to fetch' || msg.indexOf('NetworkError') !== -1) {
+        showInit('서버에 연결할 수 없습니다. 이 페이지를 <strong>서버 주소</strong>에서 열어주세요.<br><br>예: <a href="http://localhost:5000/radio-dj-ui-mockup.html">http://localhost:5000/radio-dj-ui-mockup.html</a><br><br>터미널에서 <code>npm run dev</code> 로 서버를 실행한 뒤, 위 주소로 접속하세요.<br><br><a href="/radio">방송국으로</a>', true);
+      } else {
+        showInit('오류: ' + msg + ' <a href="/radio">방송국으로</a>', true);
+      }
+    });
+  }
+
+  function renderHeader() {
+    document.getElementById('headerTitle').textContent = '🎙️ ' + (channel.name || 'DJ 송출실');
+    var liveBadge = document.getElementById('liveBadge');
+    var btnStart = document.getElementById('btnStartBroadcast');
+    var btnEnd = document.getElementById('btnEndBroadcast');
+    var canControl = channel.canControlBroadcast !== false;
+    if (canControl) {
+      if (channel.status === 'live') {
+        liveBadge.classList.remove('hidden');
+        btnStart.style.display = 'none';
+        btnEnd.style.display = 'inline-flex';
+      } else {
+        liveBadge.classList.add('hidden');
+        btnStart.style.display = 'inline-flex';
+        btnEnd.style.display = 'none';
+      }
+    } else {
+      liveBadge.classList.add('hidden');
+      btnStart.style.display = 'none';
+      btnEnd.style.display = 'none';
+    }
+    var listenerEl = document.getElementById('listenerCountLabel');
+    if (listenerEl) listenerEl.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
+    var hostLabel = document.getElementById('currentHostLabel');
+    if (channel.currentHostUsername) {
+      hostLabel.textContent = '현재 송출: ' + channel.currentHostUsername;
+    } else if (channel.currentHostId) {
+      hostLabel.textContent = '현재 송출: (호스트)';
+    } else {
+      hostLabel.textContent = '';
+    }
+    var btnHandoff = document.getElementById('btnHandoff');
+    if (btnHandoff) btnHandoff.style.display = (currentUser && channel.ownerId === currentUser.id) ? 'inline-flex' : 'none';
+  }
+
+  function renderQueue() {
+    var ul = document.getElementById('queue');
+    var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
+    if (queue.length === 0) {
+      ul.innerHTML = '<li class="queue-empty" style="color:#71717a; font-size:0.85rem;">큐가 비어 있습니다. 사이트 음원 또는 로컬 파일을 추가하세요.</li>';
+      return;
+    }
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    ul.innerHTML = queue.map(function(item, i) {
+      var isLocal = !!item.localId;
+      var isPlaying = isLocal ? (currentLocalItem && currentLocalItem.localId === item.localId) : (item.id === nowId);
+      var num = i + 1;
+      var title = item.title || (isLocal ? '로컬 파일' : '제목 없음');
+      var artist = item.artist || '';
+      var label = title + (artist ? ' – ' + artist : '');
+      var dataAttr = isLocal ? ' data-local-id="' + esc(item.localId) + '"' : ' data-id="' + item.id + '"';
+      return '<li class="queue-item' + (isPlaying ? ' playing' : '') + '"' + dataAttr + '>' +
+        '<span class="num">' + num + '</span>' +
+        '<span class="label" title="' + esc(label) + '">' + (isLocal ? '💾 ' : '') + esc(label) + '</span>' +
+        '<span class="actions">' +
+          (isLocal
+            ? '<button type="button" class="btn btn-primary btn-sm btn-set-now-local' + (isPlaying ? ' playing' : '') + '" data-queue-index="' + i + '"' + (isPlaying ? ' disabled' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>'
+            : '<button type="button" class="btn btn-primary btn-sm btn-set-now' + (isPlaying ? ' playing' : '') + '" data-id="' + item.id + '"' + (isPlaying ? ' disabled' : '') + (channel && channel.canControlBroadcast === false ? ' disabled title="송출 권한이 없습니다"' : '') + '>' + (isPlaying ? '재생 중' : '지금 재생') + '</button>') +
+          '<button type="button" class="btn btn-secondary btn-sm btn-remove" data-queue-index="' + i + '">삭제</button>' +
+        '</span></li>';
+    }).join('');
+    ul.querySelectorAll('.btn-set-now').forEach(function(btn) {
+      btn.addEventListener('click', function() { setNowPlaying(parseInt(btn.getAttribute('data-id'), 10)); });
+    });
+    ul.querySelectorAll('.btn-set-now-local').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var idx = parseInt(btn.getAttribute('data-queue-index'), 10);
+        if (!queue[idx] || !queue[idx].localId) return;
+        uploadLocalAndSetNowPlaying(queue[idx], idx);
+      });
+    });
+    ul.querySelectorAll('.btn-remove').forEach(function(btn) {
+      var idx = parseInt(btn.getAttribute('data-queue-index'), 10);
+      btn.addEventListener('click', function() {
+        var item = queue[idx];
+        if (item) removeFromQueue(item.localId != null ? item.localId : item.id);
+      });
+    });
+  }
+
+  function stopWaveform() {
+    if (waveformAnimationId) {
+      cancelAnimationFrame(waveformAnimationId);
+      waveformAnimationId = null;
+    }
+    if (waveformSource) {
+      try { waveformSource.disconnect(); } catch (e) {}
+      waveformSource = null;
+    }
+    waveformAnalyser = null;
+    musicGainNode = null;
+    mentMode = false;
+    if (waveformCtx && waveformCtx.state !== 'closed') waveformCtx.close();
+    waveformCtx = null;
+    var canvas = document.getElementById('waveformCanvas');
+    if (canvas) { canvas.style.display = 'none'; }
+    var wfAudio = document.getElementById('djWaveformAudio');
+    if (wfAudio) { wfAudio.pause(); wfAudio.removeAttribute('src'); wfAudio.load(); }
+  }
+
+  function drawWaveform() {
+    if (!waveformAnalyser) return;
+    var canvas = document.getElementById('waveformCanvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    var w = canvas.width;
+    var h = canvas.height;
+    var bufferLength = waveformAnalyser.frequencyBinCount;
+    var dataArray = new Uint8Array(bufferLength);
+    waveformAnalyser.getByteTimeDomainData(dataArray);
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#a78bfa';
+    ctx.beginPath();
+    var sliceWidth = w / bufferLength;
+    var x = 0;
+    for (var i = 0; i < bufferLength; i++) {
+      var v = dataArray[i] / 128.0;
+      var y = (v * h) / 2 + h / 2;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+      x += sliceWidth;
+    }
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+    waveformAnimationId = requestAnimationFrame(drawWaveform);
+  }
+
+  function startWaveform(audioEl) {
+    // 파형 분석은 djWaveformAudio(뮤트된 요소)만 사용해서 모니터 소리에 영향을 주지 않게 한다.
+    var wfEl = document.getElementById('djWaveformAudio');
+    if (wfEl) audioEl = wfEl;
+    if (!audioEl || !audioEl.src) return;
+    try {
+      waveformAnalyser = null;
+      musicGainNode = null;
+      if (!waveformCtx || waveformCtx.state === 'closed') {
+        waveformCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (waveformSource) {
+        try { waveformSource.disconnect(); } catch (e) {}
+      }
+      // 매번 새 media element source를 만든다 (element 재사용 시 InvalidStateError 방지)
+      waveformSource = waveformCtx.createMediaElementSource(audioEl);
+      musicGainNode = waveformCtx.createGain();
+      musicGainNode.gain.value = mentMode ? 0.3 : 1;
+      waveformAnalyser = waveformCtx.createAnalyser();
+      waveformAnalyser.fftSize = 2048;
+      waveformSource.connect(musicGainNode);
+      musicGainNode.connect(waveformAnalyser);
+      // 분석용 오디오이므로 destination 연결은 하지 않는다(음소거된 요소를 사용).
+      var canvas = document.getElementById('waveformCanvas');
+      if (canvas) canvas.style.display = 'block';
+      waveformCtx.resume().then(function() {
+        drawWaveform();
+        if (hasUserGestureForAudio) audioEl.play().catch(function() {});
+      }).catch(function() {
+        drawWaveform();
+        if (hasUserGestureForAudio) audioEl.play().catch(function() {});
+      });
+    } catch (e) {}
+  }
+
+  function loadNowPlayingLyrics(musicId) {
+    var wrap = document.getElementById('nowLyricsWrap');
+    var box = document.getElementById('nowLyrics');
+    if (!wrap || !box) return;
+    if (!musicId) {
+      lastLoadedLyricsMusicId = null;
+      syncedLyrics = [];
+      currentLyricIndex = -1;
+      wrap.style.display = 'none';
+      box.textContent = '';
+      return;
+    }
+    if (musicId === lastLoadedLyricsMusicId) return;
+    lastLoadedLyricsMusicId = musicId;
+    syncedLyrics = [];
+    currentLyricIndex = -1;
+    wrap.style.display = 'none';
+    box.textContent = '';
+    api('/api/music/' + encodeURIComponent(musicId)).then(function(r) {
+      if (!r.ok) return r.json().then(function() {});
+      return r.json();
+    }).then(function(m) {
+      if (lastLoadedLyricsMusicId !== musicId) return;
+      var raw = (m && m.lyrics) ? String(m.lyrics).trim() : '';
+      if (!raw) return;
+      // LRC 형식(타임스탬프 포함) 우선 파싱
+      var parsed = [];
+      var rows = raw.split(/\r?\n/);
+      var timeRe = /\[(\d{1,2}):(\d{2})(?:\.(\d{2,3}))?\]/g;
+      for (var i = 0; i < rows.length; i++) {
+        var line = rows[i].trim();
+        if (!line) continue;
+        var match;
+        var lastIdx = 0;
+        var times = [];
+        timeRe.lastIndex = 0;
+        while ((match = timeRe.exec(line))) {
+          var mm = parseInt(match[1], 10) || 0;
+          var ss = parseInt(match[2], 10) || 0;
+          var frac = match[3] ? parseInt((match[3] + "00").slice(0, 3), 10) / 1000 : 0;
+          times.push(mm * 60 + ss + frac);
+          lastIdx = timeRe.lastIndex;
+        }
+        var content = line.slice(lastIdx).trim();
+        if (!content) continue;
+        if (!times.length) continue;
+        times.forEach(function(t) {
+          parsed.push({ time: t, text: content });
+        });
+      }
+      parsed.sort(function(a, b) { return a.time - b.time; });
+      if (parsed.length) {
+        syncedLyrics = parsed;
+        currentLyricIndex = -1;
+        box.textContent = parsed[0].text;
+        wrap.style.display = 'block';
+        return;
+      }
+      // 타임스탬프가 없는 경우: 첫 줄만 한 줄 가사로 사용
+      var firstLine = raw
+        .split(/\r?\n/)
+        .map(function(line) { return line.trim(); })
+        .find(function(line) { return line.length > 0; }) || raw;
+      syncedLyrics = [];
+      currentLyricIndex = -1;
+      box.textContent = firstLine;
+      wrap.style.display = 'block';
+    }).catch(function() {});
+  }
+
+  function renderChatParticipants() {
+    var list = document.getElementById('chatParticipantsList');
+    if (!list) return;
+    list.innerHTML = '';
+    var ids = Object.keys(presentUsers || {});
+    if (!ids.length) {
+      var liEmpty = document.createElement('li');
+      liEmpty.className = 'empty';
+      liEmpty.textContent = '접속자가 없습니다.';
+      list.appendChild(liEmpty);
+      return;
+    }
+    var names = ids
+      .map(function(id) { return presentUsers[id] || id; })
+      .filter(function(name, idx, arr) { return name && arr.indexOf(name) === idx; });
+    if (!names.length) {
+      var liEmpty2 = document.createElement('li');
+      liEmpty2.className = 'empty';
+      liEmpty2.textContent = '접속자가 없습니다.';
+      list.appendChild(liEmpty2);
+      return;
+    }
+    names.sort();
+    names.forEach(function(name) {
+      var li = document.createElement('li');
+      li.textContent = name;
+      list.appendChild(li);
+    });
+  }
+
+  function updateSyncedLyric() {
+    var wrap = document.getElementById('nowLyricsWrap');
+    var box = document.getElementById('nowLyrics');
+    var audio = getActiveMonitorAudio();
+    if (!wrap || !box || !audio || !syncedLyrics.length) return;
+    var t = audio.currentTime || 0;
+    var idx = currentLyricIndex;
+    if (idx < 0 || idx >= syncedLyrics.length || syncedLyrics[idx].time > t) {
+      idx = 0;
+    }
+    while (idx + 1 < syncedLyrics.length && syncedLyrics[idx + 1].time <= t) {
+      idx++;
+    }
+    if (idx !== currentLyricIndex) {
+      currentLyricIndex = idx;
+      box.textContent = syncedLyrics[idx].text;
+      wrap.style.display = 'block';
+    }
+  }
+  var lastAutoStartedNextForMusicId = null;
+  function autoStartNextBeforeEnded(e) {
+    try {
+      if (!e || !e.target) return;
+      if (e.target !== getActiveMonitorAudio()) return;
+      if (!channel || !channel.slug) return;
+      if (currentLocalItem) return;
+      var curId = e.target.getAttribute('data-current-id');
+      if (!curId) return;
+      var curNum = parseInt(curId, 10);
+      if (Number.isNaN(curNum)) return;
+      if (channel.nowPlayingMusicId == null || channel.nowPlayingMusicId !== curNum) return;
+      var dur = e.target.duration;
+      var cur = e.target.currentTime;
+      if (!isFinite(dur) || !isFinite(cur) || dur <= 0) return;
+      var remaining = dur - cur;
+      // 끝나기 직전에 다음 곡을 미리 재생 시작(브라우저 자동재생 정책 회피)
+      if (remaining > 1.0) return;
+      if (lastAutoStartedNextForMusicId === curNum) return;
+      var next = getNextInQueue();
+      if (!next || next.localId || typeof next.id !== 'number') return;
+      lastAutoStartedNextForMusicId = curNum;
+      preloadNextInQueue();
+      var inactive = getInactiveMonitorAudio();
+      if (!inactive || inactive === getActiveMonitorAudio()) return;
+      // preloaded가 준비 안 됐으면 src를 직접 세팅
+      if (inactivePreloadedId !== next.id) {
+        inactive.setAttribute('data-current-id', String(next.id));
+        inactive.removeAttribute('data-local-id');
+        inactive.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+        inactive.load();
+        inactivePreloadedId = next.id;
+      }
+      // 2개 플레이어면 크로스페이드, 아니면 스왑 후 재생
+      if (monitorAudios && monitorAudios.length >= 2) {
+        var inactive = getInactiveMonitorAudio();
+        if (inactive && inactive.src && inactive !== getActiveMonitorAudio()) {
+          if (inactive.readyState >= 3) {
+            runCrossfadeToInactive();
+          } else {
+            inactive.oncanplaythrough = function onReady() {
+              inactive.oncanplaythrough = null;
+              runCrossfadeToInactive();
+            };
+          }
+          return;
+        }
+      }
+      if (monitorAudios && monitorAudios.length >= 2) {
+        activeMonitorIndex = 1 - activeMonitorIndex;
+      }
+      var newActive = getActiveMonitorAudio();
+      if (newActive) {
+        newActive.play().catch(function() {
+          var hint = document.getElementById('monitorPlayHint');
+          if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+        });
+      }
+    } catch (_) {}
+  }
+
+  function formatTime(sec) {
+    if (isNaN(sec) || !isFinite(sec) || sec < 0) return '0:00';
+    var m = Math.floor(sec / 60);
+    var s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  var currentLocalDurationSec = null;
+  var monitorProgressIntervalId = null;
+  function startMonitorProgressTicker() {
+    if (monitorProgressIntervalId != null) return;
+    monitorProgressIntervalId = setInterval(function() {
+      if (!channel || (channel.nowPlayingMusicId == null && !currentLocalItem)) {
+        clearInterval(monitorProgressIntervalId);
+        monitorProgressIntervalId = null;
+        return;
+      }
+      updateMonitorProgress();
+    }, 400);
+  }
+  function stopMonitorProgressTicker() {
+    if (monitorProgressIntervalId != null) {
+      clearInterval(monitorProgressIntervalId);
+      monitorProgressIntervalId = null;
+    }
+  }
+  function updateMonitorProgress() {
+    var audio = getActiveMonitorAudio();
+    var fill = document.getElementById('monitorProgressFill');
+    var timeEl = document.getElementById('monitorProgressTime');
+    if (!audio || !fill || !timeEl) return;
+    var cur = audio.currentTime;
+    var dur = audio.duration;
+    // 현재 곡이 정해져 있으면 진행률은 항상 서버 시작 시각 기준 (처음~끝까지 끊김 없이, 다음 곡으로 이어짐)
+    var useServerTime = channel && channel.nowPlayingMusicId != null && channel.nowPlayingStartedAt;
+    if (useServerTime) {
+      try {
+        var startedAtMs = new Date(channel.nowPlayingStartedAt).getTime();
+        if (isFinite(startedAtMs)) {
+          var elapsed = (Date.now() - startedAtMs) / 1000;
+          if (elapsed < 0) elapsed = 0;
+          cur = elapsed;
+          var snap = channel.playlistSnapshot;
+          var idx = -1;
+          if (snap && Array.isArray(snap.musicIds)) {
+            idx = snap.musicIds.indexOf(channel.nowPlayingMusicId);
+          }
+          if (idx < 0 && snap && typeof snap.currentIndex === 'number') idx = snap.currentIndex;
+          if (idx < 0) idx = 0;
+          var snapDur = snap && Array.isArray(snap.durationsSeconds) && typeof snap.durationsSeconds[idx] === 'number' && snap.durationsSeconds[idx] > 0
+            ? snap.durationsSeconds[idx] : 240;
+          dur = snapDur;
+        }
+      } catch (e) {}
+    }
+    if (currentLocalDurationSec != null && (!isFinite(dur) || dur <= 0 || dur === Infinity)) {
+      dur = currentLocalDurationSec;
+    }
+    if (isNaN(dur) || !isFinite(dur) || dur <= 0) {
+      fill.style.width = '0%';
+      timeEl.textContent = formatTime(cur) + ' / --:--';
+      return;
+    }
+    var pct = Math.min(100, (cur / dur) * 100);
+    fill.style.width = pct + '%';
+    timeEl.textContent = formatTime(cur) + ' / ' + formatTime(dur);
+  }
+
+  function updateNowPlayingDisplay() {
+    var titleEl = document.getElementById('nowTitle');
+    var artistEl = document.getElementById('nowArtist');
+    var audioEl = getActiveMonitorAudio();
+    if (currentLocalItem) {
+      if (titleEl) titleEl.textContent = currentLocalItem.title || '로컬 파일';
+      if (artistEl) artistEl.textContent = currentLocalItem.artist || '';
+      loadNowPlayingLyrics(null);
+      var waveformEl = document.getElementById('djWaveformAudio');
+      if (audioEl && audioEl.src && waveformEl && !waveformSource) startWaveform(waveformEl);
+      return;
+    }
+    var nowId = channel && channel.nowPlayingMusicId ? channel.nowPlayingMusicId : null;
+    if (!nowId) {
+      lastSyncedStartMusicId = null;
+      titleEl.textContent = '재생 중인 곡 없음';
+      artistEl.textContent = '큐에서 곡을 선택하고 「지금 재생」을 누르세요';
+      loadNowPlayingLyrics(null);
+      stopWaveform();
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.removeAttribute('src');
+        audioEl.removeAttribute('data-current-id');
+        audioEl.load();
+      }
+      var waveformEl = document.getElementById('djWaveformAudio');
+      if (waveformEl) {
+        waveformEl.pause();
+        waveformEl.removeAttribute('src');
+        waveformEl.load();
+      }
+      updateMonitorProgress();
+      return;
+    }
+    if (titleEl) titleEl.setAttribute('data-now-id', String(nowId));
+    var item = queue.filter(function(q) { return q.id === nowId; })[0];
+    var nextTitle;
+    var nextArtist;
+    if (item) {
+      nextTitle = item.title || '제목 없음';
+      nextArtist = item.artist || '';
+    } else {
+      nextTitle = '곡 #' + nowId;
+      nextArtist = '로딩 중...';
+      api('/api/music/' + encodeURIComponent(nowId)).then(function(r) {
+        if (!r.ok) return;
+        return r.json();
+      }).then(function(m) {
+        if (!m || !titleEl || titleEl.getAttribute('data-now-id') !== String(nowId)) return;
+        var t = (m.title && m.title.trim()) ? m.title.trim() : '제목 없음';
+        var a = (m.artist && String(m.artist).trim()) ? String(m.artist).trim() : '';
+        if (t !== lastNowTitle) {
+          titleEl.textContent = t;
+          lastNowTitle = t;
+        }
+        if (a !== lastNowArtist) {
+          artistEl.textContent = a;
+          lastNowArtist = a;
+        }
+      }).catch(function() {});
+    }
+    if (nextTitle && nextTitle !== lastNowTitle) {
+      titleEl.textContent = nextTitle;
+      lastNowTitle = nextTitle;
+    }
+    if (nextArtist !== undefined && nextArtist !== lastNowArtist) {
+      artistEl.textContent = nextArtist;
+      lastNowArtist = nextArtist;
+    }
+    var waveformEl = document.getElementById('djWaveformAudio');
+    var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(nowId) + '/stream';
+    if (audioEl) {
+      var currentId = audioEl.getAttribute('data-current-id');
+      if (currentId !== String(nowId)) {
+        audioEl.setAttribute('data-current-id', String(nowId));
+        audioEl.src = streamUrl;
+        audioEl.load();
+        audioEl.play().catch(function() {});
+        if (waveformEl) {
+          waveformEl.setAttribute('data-current-id', String(nowId));
+          waveformEl.src = streamUrl;
+          waveformEl.load();
+          function onCanPlay() {
+            waveformEl.removeEventListener('canplay', onCanPlay);
+            waveformEl.removeEventListener('error', onError);
+            loadNowPlayingLyrics(nowId);
+            if (!waveformSource || waveformCtx.state === 'closed') startWaveform(waveformEl);
+            else waveformEl.play().catch(function() {});
+          }
+          function onError() {
+            waveformEl.removeEventListener('canplay', onCanPlay);
+            stopWaveform();
+          }
+          waveformEl.addEventListener('canplay', onCanPlay, { once: true });
+          waveformEl.addEventListener('error', onError, { once: true });
+        } else {
+          loadNowPlayingLyrics(nowId);
+        }
+      } else {
+        loadNowPlayingLyrics(nowId);
+        audioEl.play().catch(function() {});
+        if (waveformEl && !waveformSource && waveformEl.src) {
+          waveformEl.src = streamUrl;
+          waveformEl.load();
+          waveformEl.addEventListener('canplay', function onWf() {
+            waveformEl.removeEventListener('canplay', onWf);
+            startWaveform(waveformEl);
+          }, { once: true });
+        } else if (waveformEl && waveformEl.src) {
+          waveformEl.play().catch(function() {});
+        }
+      }
+    }
+    var btnStop = document.getElementById('btnStopNowPlaying');
+    var btnMonitorPlay = document.getElementById('btnMonitorPlay');
+    if (btnStop) {
+      var hasNowPlaying = nowId || currentLocalItem || (channel && channel.nowPlayingObjectPath);
+      if (hasNowPlaying && channel.canControlBroadcast !== false) {
+        btnStop.style.display = 'inline-block';
+      } else {
+        btnStop.style.display = 'none';
+      }
+    }
+    if (btnMonitorPlay) {
+      if ((nowId || currentLocalItem) && audioEl && audioEl.src) {
+        btnMonitorPlay.style.display = 'inline-flex';
+      } else {
+        btnMonitorPlay.style.display = 'none';
+      }
+    }
+  }
+
+  function applyScheduleToInputs() {
+    var noticeEl = document.getElementById('scheduleNotice');
+    if (!noticeEl) return;
+    noticeEl.value = (channel && channel.notice) ? String(channel.notice) : '';
+  }
+
+  function saveSchedule() {
+    if (!channel || !channel.slug) return;
+    var noticeEl = document.getElementById('scheduleNotice');
+    var text = noticeEl && noticeEl.value ? String(noticeEl.value).trim() : '';
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), {
+      method: 'PATCH',
+      body: { notice: text || null }
+    }).then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '저장 실패'); });
+      return r.json();
+    }).then(function(data) {
+      if (data) {
+        channel = data;
+        applyScheduleToInputs();
+      }
+      alert('방송 안내 문구가 저장되었습니다.');
+    }).catch(function(e) { alert(e.message || '저장 실패'); });
+  }
+
+  function fetchChannelAndUpdate() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug)).then(function(r) {
+      if (!r.ok) return;
+      return r.json();
+    }).then(function(data) {
+      if (data) {
+        channel = data;
+        if (channel.status === 'ended') stopPolling();
+        renderHeader();
+        renderQueue();
+        updateNowPlayingDisplay();
+        if (channel.nowPlayingMusicId != null) {
+          startMonitorProgressTicker();
+          updateMonitorProgress();
+          var active = getActiveMonitorAudio();
+          var currentId = active ? active.getAttribute('data-current-id') : null;
+          if (currentId !== String(channel.nowPlayingMusicId)) {
+            loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+          }
+        }
+        if (!scheduleInputsApplied) {
+          applyScheduleToInputs();
+          scheduleInputsApplied = true;
+        }
+      }
+    });
+  }
+
+  function startPolling() {
+    if (pollTimer) return;
+    pollTimer = setInterval(function() {
+      if (channel && channel.status === 'live') {
+        fetchChannelAndUpdate();
+        loadRequests();
+      }
+    }, 1000);
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function stopNowPlaying() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var canControl = channel.canControlBroadcast !== false;
+    if (!canControl) return;
+    currentLocalItem = null;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+    api('/api/radio/channels/' + encodeURIComponent(slug), {
+      method: 'PATCH',
+      body: { nowPlayingMusicId: null, nowPlayingStartedAt: null, nowPlayingObjectPath: null }
+    }).then(function(r) {
+      if (r.ok) return r.json();
+      return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+    }).then(function(data) {
+      if (data) channel = data;
+      stopMonitorProgressTicker();
+      inactivePreloadedId = null;
+      if (monitorAudios) {
+        monitorAudios.forEach(function(el) { if (el) { el.pause(); el.removeAttribute('src'); el.load(); } });
+      } else {
+        var audioEl = document.getElementById('djMonitorAudio');
+        if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+        var audioEl2 = document.getElementById('djMonitorAudio2');
+        if (audioEl2) { audioEl2.pause(); audioEl2.removeAttribute('src'); audioEl2.load(); }
+      }
+      var waveformEl = document.getElementById('djWaveformAudio');
+      if (waveformEl) { waveformEl.pause(); waveformEl.removeAttribute('src'); waveformEl.load(); }
+      renderQueue();
+      updateNowPlayingDisplay();
+    }).catch(function(e) { alert(networkErrorMsg(e) || '곡 정지 실패'); });
+  }
+
+  function getNextInQueue() {
+    if (!queue.length) return null;
+    var idx = -1;
+    if (currentLocalItem) {
+      idx = queue.findIndex(function(q) { return q.localId && q.localId === currentLocalItem.localId; });
+    } else if (channel && channel.nowPlayingMusicId != null) {
+      idx = queue.findIndex(function(q) { return q.id === channel.nowPlayingMusicId; });
+    }
+    if (idx < 0) return null;
+    var nextIdx = idx >= queue.length - 1 ? 0 : idx + 1;
+    return queue[nextIdx] || null;
+  }
+
+  function preloadNextInQueue() {
+    var next = getNextInQueue();
+    if (!next || next.localId) return;
+    var inactive = getInactiveMonitorAudio();
+    if (!inactive || inactive === getActiveMonitorAudio()) return;
+    inactive.setAttribute('data-current-id', String(next.id));
+    inactive.removeAttribute('data-local-id');
+    inactive.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
+    try { inactive.removeAttribute('data-preloaded-ready'); } catch (e) {}
+    inactive.addEventListener('canplay', function onCanPlay() {
+      inactive.removeEventListener('canplay', onCanPlay);
+      try { inactive.setAttribute('data-preloaded-ready', '1'); } catch (e2) {}
+    });
+    inactive.load();
+    inactivePreloadedId = next.id;
+  }
+
+  function getChannelStreamUrl() {
+    return channel && channel.slug ? (API_BASE + '/api/radio/channels/' + encodeURIComponent(String(channel.slug).trim().toLowerCase()) + '/stream') : '';
+  }
+  /** 모니터를 채널 연속 스트림으로 맞춘다. 한 URL로 1곡→2곡→… 이어지므로 play() 한 번이면 계속 재생된다. */
+  function loadMonitorAudioForTrackId(musicId) {
+    var playHint = document.getElementById('monitorPlayHint');
+    if (playHint) { playHint.style.display = 'none'; playHint.setAttribute('aria-hidden', 'true'); }
+    var musicIdNum = musicId != null ? (typeof musicId === 'number' ? musicId : parseInt(musicId, 10)) : null;
+    if (musicIdNum == null || Number.isNaN(musicIdNum)) {
+      currentLocalItem = null;
+      stopMonitorProgressTicker();
+      if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+      var list = monitorAudios && monitorAudios.length ? monitorAudios : (function() { var e = document.getElementById('djMonitorAudio'); return e ? [e] : []; })();
+      list.forEach(function(el) {
+        if (el) { try { el.pause(); } catch (e) {} el.removeAttribute('src'); el.removeAttribute('data-current-id'); el.removeAttribute('data-local-id'); el.removeAttribute('data-channel-stream'); el.load(); }
+      });
+      var wf = document.getElementById('djWaveformAudio');
+      if (wf) { wf.pause(); wf.removeAttribute('src'); wf.load(); }
+      if (waveformSource) { try { waveformSource.disconnect(); } catch (e) {} waveformSource = null; }
+      updateNowPlayingDisplay();
+      return;
+    }
+    currentLocalItem = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+    // WS/자동 전환에서는 AudioContext를 시작하지 않는다(브라우저 제약). 사용자 클릭 후에만 waveform을 켠다.
+    if (hasUserGestureForAudio && (!waveformCtx || waveformCtx.state === 'closed')) {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+    var audioEl = getInactiveMonitorAudio();
+    if (!audioEl) audioEl = getActiveMonitorAudio();
+    if (isMobileOrNoGesture()) { audioEl = getActiveMonitorAudio(); }
+    if (audioEl) {
+      audioEl.removeAttribute('data-local-id');
+      audioEl.setAttribute('data-current-id', String(musicIdNum));
+      audioEl.removeAttribute('data-channel-stream');
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      var isInactive = !isMobileOrNoGesture() && monitorAudios && monitorAudios.length >= 2 && audioEl === getInactiveMonitorAudio() && getInactiveMonitorAudio() !== getActiveMonitorAudio();
+      if (isMobileOrNoGesture()) {
+        var hint = document.getElementById('monitorPlayHint');
+        if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+      }
+      audioEl.oncanplaythrough = function onReady() {
+        audioEl.oncanplaythrough = null;
+        if (isInactive) {
+          runCrossfadeToInactive();
+        } else {
+          audioEl.play().catch(function() {
+            var hint = document.getElementById('monitorPlayHint');
+            if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+          });
+        }
+      };
+      audioEl.load();
+    }
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (waveformEl) {
+      waveformEl.setAttribute('data-current-id', String(musicIdNum));
+      waveformEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      waveformEl.load();
+    }
+    if (waveformSource && getActiveMonitorAudio()) {
+      try { waveformSource.disconnect(); } catch (e) {} waveformSource = null;
+    }
+    var wf = document.getElementById('djWaveformAudio');
+    if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
+    preloadNextInQueue();
+    updateNowPlayingDisplay();
+    updateMonitorProgress();
+    startMonitorProgressTicker();
+  }
+
+  function setNowPlaying(musicId) {
+    if (!channel || !channel.slug) return;
+    if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다. 방장이 인수인계해 주세요.'); return; }
+    markUserGestureForAudio();
+    currentLocalItem = null;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+    var slug = String(channel.slug).trim().toLowerCase();
+    var musicIdNum = typeof musicId === 'number' ? musicId : parseInt(musicId, 10);
+    if (Number.isNaN(musicIdNum)) { alert('잘못된 곡 ID입니다.'); return; }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (waveformEl) {
+      waveformEl.setAttribute('data-current-id', String(musicIdNum));
+      waveformEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      waveformEl.load();
+    }
+    if (waveformSource && getActiveMonitorAudio()) {
+      try { waveformSource.disconnect(); } catch (e) {}
+      waveformSource = null;
+      var wf = document.getElementById('djWaveformAudio');
+      if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
+    }
+    preloadNextInQueue();
+    var startedAt = new Date().toISOString();
+    // 사이트 음원 큐 중 현재 선택한 곡을 "첫 번째 트랙"으로 회전시켜 스냅샷과 nowPlaying이 항상 일치하도록 한다.
+    var siteOnlyQueue = queue.filter(function(q) { return typeof q.id === 'number'; });
+    var musicIds;
+    if (siteOnlyQueue.length > 0) {
+      var idx = siteOnlyQueue.findIndex(function(q) { return q.id === musicIdNum; });
+      if (idx > 0) {
+        var head = siteOnlyQueue.slice(idx);
+        var tail = siteOnlyQueue.slice(0, idx);
+        siteOnlyQueue = head.concat(tail);
+      }
+      musicIds = siteOnlyQueue.map(function(q) { return q.id; });
+    } else {
+      musicIds = [];
+    }
+    var activeEl = getActiveMonitorAudio();
+    var firstDur = (activeEl && activeEl.getAttribute('data-current-id') === String(musicIdNum) && isFinite(activeEl.duration) && activeEl.duration > 0) ? Math.ceil(activeEl.duration) : 240;
+    var durationsSeconds = musicIds.map(function(_, i) { return i === 0 ? firstDur : 240; });
+    if (channel) {
+      channel.nowPlayingMusicId = musicIdNum;
+      channel.nowPlayingStartedAt = startedAt;
+      channel.playlistSnapshot = { musicIds: musicIds, durationsSeconds: durationsSeconds, currentIndex: 0 };
+    }
+    startMonitorProgressTicker();
+    // 모니터 오디오는 곡을 바꿀 때마다 항상 하나의 엘리먼트에서만 재생되도록 단순화한다.
+    var audioEl1 = document.getElementById('djMonitorAudio');
+    var audioEl2 = document.getElementById('djMonitorAudio2');
+    [audioEl1, audioEl2].forEach(function(el) {
+      if (!el) return;
+      try { el.pause(); } catch (e) {}
+      el.removeAttribute('src');
+      el.removeAttribute('data-current-id');
+      el.removeAttribute('data-local-id');
+      el.removeAttribute('data-channel-stream');
+      el.load();
+    });
+    var audioEl = audioEl1 || audioEl2 || getActiveMonitorAudio();
+    if (audioEl) {
+      audioEl.removeAttribute('data-local-id');
+      audioEl.setAttribute('data-current-id', String(musicIdNum));
+      audioEl.removeAttribute('data-channel-stream');
+      audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
+      audioEl.oncanplaythrough = function onReady() {
+        audioEl.oncanplaythrough = null;
+        audioEl.play().catch(function() {
+          var hint = document.getElementById('monitorPlayHint');
+          if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
+        });
+      };
+      audioEl.load();
+      if (monitorAudios && monitorAudios.length >= 2) {
+        var idxEl = monitorAudios.indexOf(audioEl);
+        if (idxEl >= 0) activeMonitorIndex = idxEl;
+        inactivePreloadedId = null;
+      }
+    }
+    if (waveformSource && getActiveMonitorAudio()) {
+      try { waveformSource.disconnect(); } catch (e) {}
+      waveformSource = null;
+    }
+    var wf = document.getElementById('djWaveformAudio');
+    if (hasUserGestureForAudio && wf && wf.src) startWaveform(wf);
+    var body = { nowPlayingMusicId: musicIdNum, nowPlayingStartedAt: startedAt };
+    if (siteOnlyQueue.length > 0) {
+      body.queueMusicIds = siteOnlyQueue.map(function(q) { return q.id; });
+      body.currentTrackDurationSeconds = firstDur;
+    }
+    api('/api/radio/channels/' + encodeURIComponent(slug), {
+      method: 'PATCH',
+      body: body
+    }).then(function(r) {
+      if (r.ok) return r.json();
+      return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+    }).then(function(data) {
+      if (data) channel = data;
+      renderQueue();
+      updateNowPlayingDisplay();
+    }).catch(function(e) { alert(networkErrorMsg(e) || '지금 재생 설정 실패'); });
+  }
+
+  function removeFromQueue(idOrLocalId) {
+    if (typeof idOrLocalId === 'string') {
+      queue = queue.filter(function(q) { return q.localId !== idOrLocalId; });
+      if (currentLocalItem && currentLocalItem.localId === idOrLocalId) {
+        currentLocalItem = null;
+        var audioEl = getActiveMonitorAudio();
+        if (audioEl) { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); }
+        if (currentLocalObjectUrl) { URL.revokeObjectURL(currentLocalObjectUrl); currentLocalObjectUrl = null; }
+        updateNowPlayingDisplay();
+      }
+    } else {
+      queue = queue.filter(function(q) { return q.id !== idOrLocalId; });
+    }
+    renderQueue();
+  }
+
+  function setNowPlayingLocal(item) {
+    if (!item || !item.file || !item.localId) return;
+    currentLocalItem = item;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
+    currentLocalObjectUrl = URL.createObjectURL(item.file);
+    var audioEl = getActiveMonitorAudio();
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (audioEl) {
+      audioEl.setAttribute('data-current-id', '');
+      audioEl.setAttribute('data-local-id', item.localId);
+      audioEl.src = currentLocalObjectUrl;
+      audioEl.load();
+      audioEl.play().catch(function() {});
+    }
+    if (waveformEl) {
+      waveformEl.setAttribute('data-current-id', '');
+      waveformEl.setAttribute('data-local-id', item.localId);
+      waveformEl.src = currentLocalObjectUrl;
+      waveformEl.load();
+    }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+    preloadNextInQueue();
+    updateNowPlayingDisplay();
+    renderQueue();
+  }
+
+  function uploadLocalAndSetNowPlaying(item, queueIndex) {
+    if (!channel || !channel.slug || !item || !item.file || !item.localId) return;
+    if (channel.canControlBroadcast === false) { alert('송출 권한이 없습니다.'); return; }
+    var slug = String(channel.slug).trim().toLowerCase();
+    var btn = document.querySelector('.btn-set-now-local[data-queue-index="' + queueIndex + '"]');
+    if (btn) { btn.disabled = true; btn.textContent = '업로드 중...'; }
+    currentLocalItem = item;
+    currentLocalDurationSec = null;
+    if (currentLocalObjectUrl) URL.revokeObjectURL(currentLocalObjectUrl);
+    currentLocalObjectUrl = URL.createObjectURL(item.file);
+    var audioEl = getActiveMonitorAudio();
+    var waveformEl = document.getElementById('djWaveformAudio');
+    if (audioEl) {
+      audioEl.pause();
+      audioEl.removeAttribute('src');
+      audioEl.load();
+      audioEl.setAttribute('data-current-id', '');
+      audioEl.setAttribute('data-local-id', item.localId);
+      audioEl.src = currentLocalObjectUrl;
+      audioEl.load();
+      audioEl.play().catch(function() {});
+    }
+    if (waveformEl) {
+      waveformEl.pause();
+      waveformEl.removeAttribute('src');
+      waveformEl.load();
+      waveformEl.setAttribute('data-current-id', '');
+      waveformEl.setAttribute('data-local-id', item.localId);
+      waveformEl.src = currentLocalObjectUrl;
+      waveformEl.load();
+    }
+    if (!waveformCtx || waveformCtx.state === 'closed') {
+      try { waveformCtx = new (window.AudioContext || window.webkitAudioContext)(); waveformCtx.resume().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+    preloadNextInQueue();
+    updateNowPlayingDisplay();
+    renderQueue();
+    api(API_BASE + '/api/uploads/request-url', {
+      method: 'POST',
+      body: { name: item.file.name, size: item.file.size, contentType: item.file.type || 'audio/mpeg' }
+    }).then(function(r) { return r.json(); }).then(function(uploadResp) {
+      if (uploadResp.localMode && uploadResp.uploadEndpoint) {
+        var fd = new FormData();
+        fd.append('file', item.file);
+        return fetch(API_BASE + (uploadResp.uploadEndpoint || '/api/uploads/local'), {
+          method: 'POST',
+          body: fd,
+          credentials: 'include'
+        }).then(function(res) {
+          if (!res.ok) return res.json().then(function(d) { throw new Error(d.error || '업로드 실패'); });
+          return res.json();
+        }).then(function(data) { return data.objectPath; });
+      }
+      if (uploadResp.uploadURL) {
+        return fetch(uploadResp.uploadURL, {
+          method: 'PUT',
+          body: item.file,
+          headers: { 'Content-Type': item.file.type || 'audio/mpeg' }
+        }).then(function(res) {
+          if (!res.ok) throw new Error('업로드 실패');
+          return uploadResp.objectPath;
+        });
+      }
+      throw new Error('업로드 URL을 받지 못했습니다.');
+    }).then(function(objectPath) {
+      return new Promise(function(resolve) {
+        var a = new Audio();
+        a.onloadedmetadata = function() {
+          var d = a.duration;
+          if (a.src) URL.revokeObjectURL(a.src);
+          resolve({ objectPath: objectPath, durationSec: (isFinite(d) && d > 0) ? Math.ceil(d) : 240 });
+        };
+        a.onerror = function() {
+          if (a.src) URL.revokeObjectURL(a.src);
+          resolve({ objectPath: objectPath, durationSec: 240 });
+        };
+        a.src = URL.createObjectURL(item.file);
+      });
+    }).then(function(opts) {
+      var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+      var afterIdx = 0;
+      for (var i = queueIndex + 1; i < queue.length; i++) {
+        if (queue[i].id) {
+          var found = siteOnly.findIndex(function(s) { return s.id === queue[i].id; });
+          if (found >= 0) { afterIdx = found; break; }
+        }
+      }
+      return api('/api/radio/channels/' + encodeURIComponent(slug), {
+        method: 'PATCH',
+        body: {
+          nowPlayingObjectPath: opts.objectPath,
+          currentTrackDurationSeconds: opts.durationSec,
+          afterTempNextSnapshotIndex: siteOnly.length > 0 ? afterIdx : 0
+        }
+      }).then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { throw new Error(d.message || '송출 설정 실패'); });
+        return r.json();
+      }).then(function(data) {
+        channel = data;
+        currentLocalDurationSec = opts.durationSec;
+        updateNowPlayingDisplay();
+        renderQueue();
+      });
+    }).catch(function(e) {
+      alert(e.message || '로컬 파일 송출 실패');
+    }).finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = '지금 재생'; }
+    });
+  }
+
+  function startBroadcast() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { status: 'live' } })
+      .then(function(r) {
+        if (r.ok) return r.json();
+        return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+      })
+      .then(function(data) {
+        channel = data;
+        renderHeader();
+        startPolling();
+      })
+      .catch(function(e) { alert(networkErrorMsg(e) || '방송 시작 실패'); });
+  }
+
+  function endBroadcast() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { status: 'ended' } })
+      .then(function(r) {
+        if (r.ok) return r.json();
+        return r.json().then(function(d) { throw new Error(d.message || '실패'); });
+      })
+      .then(function(data) {
+        channel = data;
+        if (channel.status === 'ended') {
+          channel.nowPlayingMusicId = null;
+          channel.nowPlayingStartedAt = null;
+          updateNowPlayingDisplay();
+        }
+        renderHeader();
+        stopPolling();
+      })
+      .catch(function(e) { alert(networkErrorMsg(e) || '방송 종료 실패'); });
+  }
+
+  function loadByGenreIntoQueue() {
+    var genreEl = document.getElementById('searchGenre');
+    var genre = (genreEl && genreEl.value) ? String(genreEl.value).trim() : '';
+    if (!genre) {
+      alert('장르를 선택한 뒤 「장르로 불러오기」를 눌러 주세요.');
+      return;
+    }
+    var url = '/api/music?page=1&limit=500&genre=' + encodeURIComponent(genre);
+    document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#71717a;">장르 "' + genre + '" 음원 불러오는 중...</div>';
+    api(url).then(function(r) {
+      if (!r.ok) return r.json().then(function() { return { data: [] }; }).catch(function() { return { data: [] }; });
+      return r.json();
+    }).then(function(data) {
+      var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+      var added = 0;
+      list.forEach(function(m) {
+        if (queue.some(function(item) { return item.id === m.id; })) return;
+        queue.push({ id: m.id, title: (m.title || '').trim(), artist: (m.artist || '').trim() });
+        added++;
+      });
+      renderQueue();
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#16a34a;">' + genre + ' 장르 ' + added + '곡이 큐에 추가되었습니다.</div>';
+      doSearch(document.getElementById('searchInput').value || '', genre);
+    }).catch(function() {
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#b91c1c;">목록을 불러올 수 없습니다. 서버 연결을 확인하세요.</div>';
+    });
+  }
+
+  function doSearch(q, genreParam) {
+    var query = (q && typeof q === 'string') ? q.trim() : '';
+    var genreEl = document.getElementById('searchGenre');
+    var genre = (genreParam != null && genreParam !== '') ? String(genreParam) : (genreEl && genreEl.value ? String(genreEl.value).trim() : '');
+    var url = '/api/music?page=1&limit=50';
+    if (genre) url += '&genre=' + encodeURIComponent(genre);
+    if (query.length > 0) url += '&search=' + encodeURIComponent(query);
+    document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#71717a;">로딩 중...</div>';
+    api(url).then(function(r) {
+      if (!r.ok) return r.json().then(function() { return { data: [] }; }).catch(function() { return { data: [] }; });
+      return r.json();
+    }).then(function(data) {
+      var list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+      var html;
+      if (list.length === 0) {
+        html = '<div style="padding:12px; color:#71717a;">' +
+          (query ? '검색 결과 없음. 다른 검색어를 입력해 보세요.' : '등록된 음원이 없습니다. 사이트에서 음원을 업로드한 뒤 다시 시도하세요.') +
+          '</div>';
+      } else {
+        html = list.map(function(m) {
+          var label = (m.title || '') + ' – ' + (m.artist || '');
+          var title = (m.title || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          var artist = (m.artist || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          return '<div class="search-hit" data-id="' + m.id + '" data-title="' + title + '" data-artist="' + artist + '">' + label + ' <span style="color:#71717a;">+ 추가</span></div>';
+        }).join('');
+      }
+      document.getElementById('searchResults').innerHTML = html;
+      document.getElementById('searchResults').querySelectorAll('.search-hit').forEach(function(div) {
+        div.addEventListener('click', function() {
+          var id = parseInt(div.getAttribute('data-id'), 10);
+          var title = div.getAttribute('data-title') || '';
+          var artist = div.getAttribute('data-artist') || '';
+          if (queue.some(function(item) { return item.id === id; })) return;
+          queue.push({ id: id, title: title, artist: artist });
+          renderQueue();
+        });
+      });
+    }).catch(function() {
+      var hint = (window.location.protocol === 'file:' || !window.location.origin)
+        ? ' 이 페이지는 반드시 사이트와 같은 주소에서 열어야 합니다. (예: http://localhost:5000/radio-dj-ui-mockup.html)'
+        : ' 서버가 켜져 있는지, 같은 주소에서 열었는지 확인하세요.';
+      document.getElementById('searchResults').innerHTML = '<div style="padding:12px; color:#b91c1c;">목록을 불러올 수 없습니다.' + hint + '</div>';
+    });
+  }
+
+  var wsReconnectTimeout = null;
+  var wsAuthRetryCount = 0;
+  var wsAuthRetryTimer = null;
+
+  function connectWs() {
+    if (!channel || !channel.slug || !currentUser || !currentUser.id) return;
+    // 새로 연결할 때 현재 접속자 목록 및 최근 입장 기록 초기화
+    presentUserIds.clear();
+    presentUsers = {};
+    lastJoinByUserKey = {};
+    renderChatParticipants();
+    if (wsReconnectTimeout) { clearTimeout(wsReconnectTimeout); wsReconnectTimeout = null; }
+    if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+    var slug = String(channel.slug).trim().toLowerCase();
+    var wsHost = API_BASE ? API_BASE.replace(/^https?:\/\//, '').replace(/\/$/, '') : window.location.host;
+    var protocol = (API_BASE && API_BASE.indexOf('https:') === 0) ? 'wss:' : 'ws:';
+    ws = new WebSocket(protocol + '//' + wsHost + '/ws');
+    try { window.ws = ws; } catch (_) {}
+    ws.onopen = function() {
+      wsAuthenticated = false;
+      ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
+      ws.send(JSON.stringify({ type: 'radio_join', slug: slug }));
+      wsAuthRetryCount = 0;
+      wsAuthRetryTimer = setInterval(function() {
+        if (!ws || ws.readyState !== WebSocket.OPEN || wsAuthenticated) {
+          if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+          return;
+        }
+        wsAuthRetryCount++;
+        if (wsAuthRetryCount <= 5) ws.send(JSON.stringify({ type: 'auth', userId: currentUser.id }));
+        else if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+      }, 2000);
+    };
+    ws.onmessage = function(ev) {
+      try {
+        var msg = JSON.parse(ev.data);
+        if (msg.type === 'auth_ack') {
+          wsAuthenticated = true;
+          if (wsAuthRetryTimer) { clearInterval(wsAuthRetryTimer); wsAuthRetryTimer = null; }
+          var inp = document.getElementById('chatInput');
+          var btn = document.getElementById('chatSend');
+          if (inp) { inp.disabled = false; inp.placeholder = '메시지 입력...'; }
+          if (btn) btn.disabled = false;
+        }
+        if (msg.type === 'radio_listeners' && (msg.slug == null || String(msg.slug).toLowerCase() === slug) && typeof msg.count === 'number') {
+          listenerCount = msg.count;
+          var el = document.getElementById('listenerCountLabel');
+          if (el) el.textContent = listenerCount > 0 ? '👂 ' + listenerCount + '명 청취 중' : '';
+        }
+        if (msg.type === 'radio_now_playing' && (msg.slug == null || String(msg.slug).toLowerCase() === slug)) {
+          if (channel) {
+            channel.nowPlayingMusicId = msg.musicId != null ? Number(msg.musicId) : null;
+            channel.nowPlayingStartedAt = msg.startedAt || null;
+            if (msg.musicId != null) {
+              var siteIds = queue.filter(function(q) { return typeof q.id === 'number'; }).map(function(q) { return q.id; });
+              if (channel.playlistSnapshot && Array.isArray(channel.playlistSnapshot.musicIds)) {
+                var newIdx = channel.playlistSnapshot.musicIds.indexOf(Number(msg.musicId));
+                if (newIdx >= 0) channel.playlistSnapshot.currentIndex = newIdx;
+              } else if (siteIds.length > 0) {
+                var newIdx = siteIds.indexOf(Number(msg.musicId));
+                if (newIdx >= 0) {
+                  channel.playlistSnapshot = { musicIds: siteIds, durationsSeconds: siteIds.map(function() { return 240; }), currentIndex: newIdx };
+                }
+              }
+            }
+            renderQueue();
+            if (weJustSentAdvance) {
+              weJustSentAdvance = false;
+              return;
+            }
+            var musicIdNum = typeof msg.musicId === 'number' ? msg.musicId : (msg.musicId != null && !isNaN(Number(msg.musicId)) ? Number(msg.musicId) : null);
+            if (musicIdNum != null && lastAdvancedMusicId === musicIdNum && (Date.now() - lastAdvancedTime) < 5000) {
+              return;
+            }
+            if (typeof msg.musicId === 'number' || (msg.musicId != null && !isNaN(Number(msg.musicId)))) {
+              loadMonitorAudioForTrackId(msg.musicId);
+            } else {
+              loadMonitorAudioForTrackId(null);
+            }
+          }
+        }
+        if (msg.type === 'radio_broadcast_ended' && (msg.slug == null || String(msg.slug).toLowerCase() === slug)) {
+          fetchChannelAndUpdate();
+        }
+        if (msg.type === 'radio_user_joined' && msg.userId) {
+          var uid = String(msg.userId);
+          var uname = msg.username != null ? String(msg.username) : '';
+          presentUserIds.add(uid);
+          presentUsers[uid] = uname || uid;
+          renderChatParticipants();
+        }
+        if (msg.type === 'radio_user_left' && msg.userId) {
+          var uid = String(msg.userId);
+          if (presentUserIds.has(uid)) {
+            presentUserIds.delete(uid);
+            delete presentUsers[uid];
+            renderChatParticipants();
+          }
+        }
+        if (msg.type === 'radio_chat' && msg.message) {
+          var m = msg.message;
+          var same = chatMessages.find(function(x) { return x.id === m.id || (String(x.id).indexOf('temp-') === 0 && x.userId === m.userId && x.content === m.content); });
+          if (same) {
+            if (String(same.id).indexOf('temp-') === 0) { same.id = m.id; same.createdAt = m.createdAt || same.createdAt; }
+          } else {
+            chatMessages.push(m);
+          }
+          renderChat();
+          renderChatParticipants();
+        }
+      } catch (e) {}
+    };
+    ws.onclose = function() {
+      wsAuthenticated = false;
+      ws = null;
+      try { window.ws = null; } catch (_) {}
+      var inp = document.getElementById('chatInput');
+      var btn = document.getElementById('chatSend');
+      if (inp) { inp.disabled = true; inp.placeholder = '재연결 중...'; }
+      if (btn) btn.disabled = true;
+      if (wsReconnectTimeout) return;
+      wsReconnectTimeout = setTimeout(function() {
+        wsReconnectTimeout = null;
+        connectWs();
+      }, 2000);
+    };
+  }
+
+  function loadChat() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/chat').then(function(r) {
+      if (!r.ok) throw new Error('채팅 목록을 불러올 수 없습니다.');
+      return r.json();
+    }).then(function(list) {
+      if (Array.isArray(list)) chatMessages = list.map(function(m) {
+        return { id: m.id, userId: m.userId, username: m.username || null, content: m.content, createdAt: typeof m.createdAt === 'string' ? m.createdAt : (m.createdAt && m.createdAt.toISOString ? m.createdAt.toISOString() : '') };
+      });
+      renderChat();
+      renderChatParticipants();
+    }).catch(function() {
+      chatMessages = [];
+      renderChat();
+      renderChatParticipants();
+      var ul = document.getElementById('chatList');
+      if (ul) ul.innerHTML = '<li style="color:#b91c1c;">채팅 목록을 불러올 수 없습니다. 새로고침해 보세요.</li>';
+    });
+  }
+
+  function renderChat() {
+    var ul = document.getElementById('chatList');
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    if (chatMessages.length === 0) {
+      ul.innerHTML = '<li style="color:#71717a;">아직 메시지가 없습니다.</li>';
+    } else {
+      ul.innerHTML = chatMessages.map(function(m) {
+        var name = m.username || (m.userId ? String(m.userId).slice(0, 8) : '?');
+        if (m.type === 'system_join') {
+          return '<li class="chat-join"><span class="name">' + esc(name) + '</span>님이 입장했습니다.</li>';
+        }
+        if (m.type === 'system_leave') {
+          return '<li class="chat-join chat-leave"><span class="name">' + esc(name) + '</span>님이 퇴장했습니다.</li>';
+        }
+        return '<li><span class="name">' + esc(name) + '</span>' + esc(m.content) + '</li>';
+      }).join('');
+      var wrap = ul.closest('.chat-list-wrap');
+      if (wrap) wrap.scrollTop = wrap.scrollHeight;
+    }
+  }
+
+  function loadRequests() {
+    if (!channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/requests').then(function(r) {
+      if (!r.ok) return;
+      return r.json();
+    }).then(function(list) {
+      songRequests = Array.isArray(list) ? list : [];
+      updateRequestBadge();
+      renderRequests();
+    });
+  }
+
+  function updateRequestBadge() {
+    var badge = document.getElementById('requestBadge');
+    if (!badge) return;
+    var count = songRequests.filter(function(r) { return (r.status || 'pending') === 'pending'; }).length;
+    if (count <= 0) {
+      badge.style.display = 'none';
+    } else {
+      badge.style.display = 'inline-block';
+      badge.textContent = count > 99 ? '99+' : String(count);
+    }
+  }
+
+  function renderRequests() {
+    var ul = document.getElementById('requestList');
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+    if (songRequests.length === 0) {
+      ul.innerHTML = '<li style="color:#71717a;">아직 신청곡이 없습니다.</li>';
+    } else {
+      function attrEsc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+    ul.innerHTML = songRequests.map(function(r) {
+        var label = (r.musicTitle || r.title || '') + (r.musicArtist || r.artist ? ' – ' + (r.musicArtist || r.artist) : '');
+        var status = r.status || 'pending';
+        var musicId = r.musicId ? Number(r.musicId) : null;
+        var titleRaw = (r.musicTitle || r.title || '').slice(0, 200);
+        var artistRaw = (r.musicArtist || r.artist || '').slice(0, 200);
+        var addBtn = musicId ? ' <button type="button" class="btn btn-primary btn-sm btn-add-request" data-music-id="' + musicId + '" data-title="' + attrEsc(titleRaw) + '" data-artist="' + attrEsc(artistRaw) + '">큐에 추가</button>' : '';
+        return '<li data-id="' + r.id + '"><span class="song">' + (label ? esc(label) : '제목 없음') + '</span> <span style="color:#71717a; font-size:0.75rem;">(' + status + ')</span>' + addBtn + '</li>';
+      }).join('');
+    ul.querySelectorAll('.btn-add-request').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var li = btn.closest('li');
+        var requestId = li ? parseInt(li.getAttribute('data-id'), 10) : NaN;
+        var id = parseInt(btn.getAttribute('data-music-id'), 10);
+        var title = btn.getAttribute('data-title') || '';
+        var artist = btn.getAttribute('data-artist') || '';
+        if (Number.isNaN(id)) return;
+        if (queue.some(function(q) { return q.id === id; })) return;
+        queue.push({ id: id, title: title, artist: artist });
+        renderQueue();
+        if (!Number.isNaN(requestId) && channel && channel.slug) {
+          var slug = String(channel.slug).trim().toLowerCase();
+          api('/api/radio/channels/' + encodeURIComponent(slug) + '/requests/' + requestId, { method: 'PATCH', body: { status: 'played' } }).then(function() {
+            loadRequests();
+          }).catch(function() {});
+        }
+      });
+    });
+    }
+  }
+
+  function sendChat() {
+    var input = document.getElementById('chatInput');
+    var text = (input && input.value) ? input.value.trim() : '';
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN || !wsAuthenticated || !channel || !channel.slug) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var optimistic = { id: 'temp-' + Date.now(), userId: currentUser.id, username: (currentUser.username || currentUser.firstName || null), content: text.slice(0, 500), createdAt: new Date().toISOString() };
+    chatMessages.push(optimistic);
+    renderChat();
+    input.value = '';
+    ws.send(JSON.stringify({ type: 'radio_chat', slug: slug, content: text.slice(0, 500) }));
+  }
+
+  function loadMicDevices() {
+    var select = document.getElementById('micSelect');
+    if (!select) return;
+    select.innerHTML = '<option value="">마이크 불러오는 중...</option>';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      select.innerHTML = '<option value="">지원하지 않는 브라우저</option>';
+      return;
+    }
+    navigator.mediaDevices.enumerateDevices().then(function(devices) {
+      var inputs = devices.filter(function(d) { return d.kind === 'audioinput'; });
+      select.innerHTML = '<option value="">마이크 선택...</option>';
+      inputs.forEach(function(d) {
+        var opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ('마이크 ' + (select.options.length));
+        select.appendChild(opt);
+      });
+      var saved = localStorage.getItem(MIC_STORAGE_KEY);
+      if (saved && Array.prototype.some.call(select.options, function(o) { return o.value === saved; })) {
+        select.value = saved;
+      }
+    }).catch(function() {
+      select.innerHTML = '<option value="">목록 조회 실패</option>';
+    });
+  }
+
+  function disconnectMic() {
+    if (micLevelAnimationId) {
+      cancelAnimationFrame(micLevelAnimationId);
+      micLevelAnimationId = null;
+    }
+    micGainNode = null;
+    if (micAudioContext && micAudioContext.state !== 'closed') micAudioContext.close();
+    micAudioContext = null;
+    if (micStream) {
+      micStream.getTracks().forEach(function(t) { t.stop(); });
+      micStream = null;
+    }
+    document.getElementById('micStatus').textContent = '연결되지 않음';
+    document.getElementById('micLevelWrap').style.display = 'none';
+    var btn = document.getElementById('btnMicConnect');
+    if (btn) { btn.textContent = '마이크 연결'; btn.classList.remove('btn-primary'); btn.classList.add('btn-secondary'); }
+  }
+
+  function updateMicLevel(analyser) {
+    var bar = document.getElementById('micLevelBar');
+    if (!bar) return;
+    var data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    var sum = 0;
+    for (var i = 0; i < data.length; i++) sum += data[i];
+    var avg = data.length ? sum / data.length : 0;
+    var pct = Math.min(100, Math.round((avg / 255) * 100));
+    bar.style.width = pct + '%';
+  }
+
+  function connectMic() {
+    if (micStream) { disconnectMic(); return; }
+    var select = document.getElementById('micSelect');
+    var deviceId = select && select.value ? select.value : null;
+    var constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('이 브라우저는 마이크 사용을 지원하지 않습니다.');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+      micStream = stream;
+      var deviceId = select && select.value ? select.value : null;
+      if (deviceId) try { localStorage.setItem(MIC_STORAGE_KEY, deviceId); } catch (e) {}
+      var statusEl = document.getElementById('micStatus');
+      var label = (select && select.options[select.selectedIndex]) ? select.options[select.selectedIndex].textContent : '기본 마이크';
+      statusEl.textContent = '연결됨: ' + label;
+      document.getElementById('micLevelWrap').style.display = 'block';
+      var btn = document.getElementById('btnMicConnect');
+      if (btn) { btn.textContent = '마이크 연결 해제'; btn.classList.remove('btn-secondary'); btn.classList.add('btn-primary'); }
+      var muteBtn = document.getElementById('btnMicMute');
+      if (muteBtn) { muteBtn.textContent = '멘트'; }
+      micMuted = true;
+      var gainSlider = document.getElementById('micGainSlider');
+      var muteBtn = document.getElementById('btnMicMute');
+      try {
+        micAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        var source = micAudioContext.createMediaStreamSource(stream);
+        micGainNode = micAudioContext.createGain();
+        micGainNode.gain.value = gainSlider ? parseInt(gainSlider.value, 10) / 100 : 1;
+        source.connect(micGainNode);
+        var analyser = micAudioContext.createAnalyser();
+        analyser.fftSize = 256;
+        micGainNode.connect(analyser);
+        function tick() {
+          if (!micStream) return;
+          updateMicLevel(analyser);
+          micLevelAnimationId = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch (e) {}
+    }).catch(function(err) {
+      alert('마이크 접근이 거부되었거나 장치를 사용할 수 없습니다.\n' + (err.message || ''));
+    });
+  }
+
+  function testConnection() {
+    var url = (API_BASE || '') + '/api/music?page=1&limit=1';
+    fetch(url, { credentials: 'include' }).then(function(r) {
+      return r.json().then(function(data) {
+        var total = (data && typeof data.total === 'number') ? data.total : (data && data.data ? data.data.length : '?');
+        alert('연결 성공!\n요청: ' + url + '\n음원 수: ' + total);
+      }).catch(function() { alert('연결 실패 (응답이 JSON이 아님)\n요청: ' + url + '\n상태: ' + r.status); });
+    }).catch(function(e) {
+      alert('연결 실패 (네트워크 오류)\n요청: ' + url + '\n\n이 페이지를 반드시 서버 주소에서 열어주세요.\n예: http://localhost:5000/radio-dj-ui-mockup.html\n\n서버 실행: npm run dev');
+    });
+  }
+
+  function bindEvents() {
+    var btnTest = document.getElementById('btnTestApi');
+    if (btnTest) btnTest.addEventListener('click', testConnection);
+    document.getElementById('btnStartBroadcast').addEventListener('click', startBroadcast);
+    document.getElementById('btnEndBroadcast').addEventListener('click', endBroadcast);
+    var btnStopNow = document.getElementById('btnStopNowPlaying');
+    if (btnStopNow) btnStopNow.addEventListener('click', stopNowPlaying);
+    var btnMonitorPlay = document.getElementById('btnMonitorPlay');
+    if (btnMonitorPlay) btnMonitorPlay.addEventListener('click', function() {
+      markUserGestureForAudio();
+      if (waveformCtx && waveformCtx.state === 'suspended') {
+        waveformCtx.resume().then(function() {}).catch(function() {});
+      }
+      var audio = getActiveMonitorAudio();
+      if (!audio || !audio.src) return;
+      audio.play().catch(function() {});
+      var hint = document.getElementById('monitorPlayHint');
+      if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
+    });
+    function onMonitorEnded(e) {
+      if (isAdvancing) return;
+      var el = e && e.target ? e.target : null;
+      if (!el) return;
+      var endedTrackId = el.getAttribute('data-current-id');
+      if (endedTrackId && endedTrackId === lastEndedTrackIdForAdvance && (Date.now() - lastEndedTrackTime) < 3000) return;
+      lastEndedTrackIdForAdvance = endedTrackId;
+      lastEndedTrackTime = Date.now();
+      isAdvancing = true;
+      try {
+        try { el.pause(); } catch (err) {}
+        el.currentTime = 0;
+        el.src = '';
+        el.load();
+        if (!channel || !channel.slug) { isAdvancing = false; return; }
+        var slug = String(channel.slug).trim().toLowerCase();
+        var currentTrackIdNum = endedTrackId ? parseInt(endedTrackId, 10) : null;
+        if (currentTrackIdNum != null && isNaN(currentTrackIdNum)) currentTrackIdNum = null;
+        weJustSentAdvance = true;
+        var body = { advanceToNextTrack: true };
+        if (currentTrackIdNum != null) body.currentTrackId = currentTrackIdNum;
+        api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
+          .then(function(r) {
+            if (r.status === 409) return r.json().then(function(data) {
+              if (data && data._alreadyAdvanced) {
+                channel = data;
+                if (channel.nowPlayingMusicId != null) {
+                  lastAdvancedMusicId = channel.nowPlayingMusicId;
+                  lastAdvancedTime = Date.now();
+                  loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+                } else { fetchChannelAndUpdate(); }
+              }
+              return data;
+            });
+            return r.ok ? r.json() : null;
+          })
+          .then(function(data) {
+            weJustSentAdvance = false;
+            if (data && !data._alreadyAdvanced) {
+              channel = data;
+              if (channel.nowPlayingMusicId != null) {
+                lastAdvancedMusicId = channel.nowPlayingMusicId;
+                lastAdvancedTime = Date.now();
+                loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+              } else {
+                fetchChannelAndUpdate();
+              }
+            } else if (!data) {
+              fetchChannelAndUpdate();
+              setTimeout(function() {
+                if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+              }, 500);
+            }
+          })
+          .catch(function() {
+            weJustSentAdvance = false;
+            fetchChannelAndUpdate();
+            setTimeout(function() {
+              if (channel && channel.nowPlayingMusicId != null) loadMonitorAudioForTrackId(channel.nowPlayingMusicId);
+            }, 500);
+          })
+          .finally(function() { isAdvancing = false; });
+        setTimeout(function() { weJustSentAdvance = false; }, 5000);
+      } catch (err) {
+        isAdvancing = false;
+      }
+    }
+    function onMonitorPlaying(e) {
+      if (e.target !== getActiveMonitorAudio()) return;
+      var h = document.getElementById('monitorPlayHint');
+      if (h) { h.style.display = 'none'; h.setAttribute('aria-hidden', 'true'); }
+      var curId = e.target.getAttribute('data-current-id');
+      if (!channel || !channel.slug || !curId) return;
+      if (lastSyncedStartMusicId === curId) return;
+      var numId = parseInt(curId, 10);
+      if (Number.isNaN(numId) || channel.nowPlayingMusicId !== numId) return;
+      lastSyncedStartMusicId = curId;
+      var slug = String(channel.slug).trim().toLowerCase();
+      var body = { nowPlayingMusicId: numId, nowPlayingStartedAt: new Date().toISOString() };
+      var siteOnly = queue.filter(function(q) { return typeof q.id === 'number'; });
+      if (siteOnly.length > 0) {
+        body.queueMusicIds = siteOnly.map(function(q) { return q.id; });
+        body.currentTrackDurationSeconds = (e.target.duration && isFinite(e.target.duration) && e.target.duration > 0) ? Math.ceil(e.target.duration) : 240;
+      }
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+    }
+    function onMonitorLoadedMetadata(e) {
+      if (e.target !== getActiveMonitorAudio()) return;
+      if (!channel || !channel.slug || !channel.playlistSnapshot) return;
+      var curId = e.target.getAttribute('data-current-id');
+      if (!curId || channel.nowPlayingMusicId !== parseInt(curId, 10)) return;
+      if (!isFinite(e.target.duration) || e.target.duration <= 0) return;
+      var slug = String(channel.slug).trim().toLowerCase();
+      api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: { currentTrackDurationSeconds: Math.ceil(e.target.duration) } }).then(function(r) { if (r.ok) return r.json(); return null; }).then(function(data) { if (data) channel = data; }).catch(function() {});
+    }
+    function onMonitorEndedAndProgress(ev) {
+      onMonitorEnded(ev);
+      setTimeout(updateMonitorProgress, 0);
+    }
+    if (monitorAudios && monitorAudios.length >= 2) {
+      monitorAudios.forEach(function(monEl) {
+        monEl.addEventListener('ended', onMonitorEndedAndProgress);
+        monEl.addEventListener('playing', onMonitorPlaying);
+        monEl.addEventListener('timeupdate', updateMonitorProgress);
+        monEl.addEventListener('timeupdate', updateSyncedLyric);
+        monEl.addEventListener('timeupdate', autoStartNextBeforeEnded);
+        monEl.addEventListener('loadedmetadata', updateMonitorProgress);
+        monEl.addEventListener('durationchange', updateMonitorProgress);
+        monEl.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
+      });
+    } else {
+      var monAudio = document.getElementById('djMonitorAudio');
+      if (monAudio) {
+        monAudio.addEventListener('ended', onMonitorEndedAndProgress);
+        monAudio.addEventListener('playing', onMonitorPlaying);
+        monAudio.addEventListener('timeupdate', updateMonitorProgress);
+        monAudio.addEventListener('timeupdate', updateSyncedLyric);
+        monAudio.addEventListener('timeupdate', autoStartNextBeforeEnded);
+        monAudio.addEventListener('loadedmetadata', updateMonitorProgress);
+        monAudio.addEventListener('durationchange', updateMonitorProgress);
+        monAudio.addEventListener('loadedmetadata', onMonitorLoadedMetadata);
+      }
+    }
+    var btnShowGuide = document.getElementById('btnShowGuide');
+    var guideModal = document.getElementById('guideModal');
+    var guideClose = document.getElementById('guideClose');
+    if (btnShowGuide && guideModal && guideClose) {
+      btnShowGuide.addEventListener('click', function() {
+        guideModal.style.display = 'flex';
+      });
+      guideClose.addEventListener('click', function() {
+        guideModal.style.display = 'none';
+      });
+      guideModal.addEventListener('click', function(e) {
+        if (e.target === guideModal) guideModal.style.display = 'none';
+      });
+    }
+    document.getElementById('btnToggleSearch').addEventListener('click', function() {
+      var wrap = document.getElementById('searchWrap');
+      wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+      if (wrap.style.display === 'block') {
+        document.getElementById('searchInput').focus();
+        doSearch(document.getElementById('searchInput').value || '');
+      }
+    });
+    document.getElementById('searchInput').addEventListener('input', function() {
+      var q = this.value.trim();
+      if (searchDebounce) clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(function() { doSearch(q); }, 300);
+    });
+    var btnLoadByGenre = document.getElementById('btnLoadByGenre');
+    if (btnLoadByGenre) btnLoadByGenre.addEventListener('click', loadByGenreIntoQueue);
+    var localFileInput = document.getElementById('localFileInput');
+    var btnLocalFile = document.getElementById('btnLocalFile');
+    if (btnLocalFile && localFileInput) {
+      btnLocalFile.addEventListener('click', function() { localFileInput.click(); });
+      localFileInput.addEventListener('change', function() {
+        var files = this.files;
+        if (!files || files.length === 0) return;
+        for (var i = 0; i < files.length; i++) {
+          var file = files[i];
+          if (!file.type || !file.type.startsWith('audio/')) continue;
+          var baseName = file.name.replace(/\.[^/.]+$/, '') || '로컬 파일';
+          var localId = 'local-' + Date.now() + '-' + i;
+          queue.push({ localId: localId, file: file, title: baseName, artist: '로컬' });
+        }
+        renderQueue();
+        updateNowPlayingDisplay();
+        this.value = '';
+      });
+    }
+    document.querySelectorAll('.tabs button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('.tabs button').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        var tab = this.getAttribute('data-tab');
+        document.getElementById('chat-panel').style.display = tab === 'chat' ? 'block' : 'none';
+        document.getElementById('requests-panel').style.display = tab === 'requests' ? 'block' : 'none';
+        if (tab === 'requests') loadRequests();
+      });
+    });
+    var chatInputEl = document.getElementById('chatInput');
+    var chatSendEl = document.getElementById('chatSend');
+    if (chatInputEl) {
+      chatInputEl.placeholder = '채팅 연결 중...';
+      chatInputEl.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+      });
+    }
+    if (chatSendEl) chatSendEl.addEventListener('click', sendChat);
+    loadMicDevices();
+    var btnMic = document.getElementById('btnMicConnect');
+    if (btnMic) btnMic.addEventListener('click', connectMic);
+    var gainSlider = document.getElementById('micGainSlider');
+    if (gainSlider) gainSlider.addEventListener('input', function() {
+      if (micMuted) return;
+      var v = parseInt(this.value, 10) / 100;
+      if (micGainNode) micGainNode.gain.value = mentMode ? Math.min(2, v * 1.5) : v;
+    });
+    var muteBtn = document.getElementById('btnMicMute');
+    if (muteBtn) muteBtn.addEventListener('click', function() {
+      var gainVal = gainSlider ? parseInt(gainSlider.value, 10) / 100 : 1;
+      if (micMuted) {
+        mentMode = true;
+        micMuted = false;
+        if (micGainNode) micGainNode.gain.value = Math.min(2, gainVal * 1.5);
+        if (musicGainNode) musicGainNode.gain.value = 0.3;
+        this.textContent = '멘트중단';
+      } else {
+        mentMode = false;
+        micMuted = true;
+        if (micGainNode) micGainNode.gain.value = 0;
+        if (musicGainNode) musicGainNode.gain.value = 1;
+        this.textContent = '멘트';
+      }
+    });
+    document.getElementById('btnRecordStart').addEventListener('click', startRecording);
+    document.getElementById('btnRecordStop').addEventListener('click', stopRecording);
+    document.getElementById('btnHandoff').addEventListener('click', openHandoffModal);
+    document.getElementById('handoffCancel').addEventListener('click', closeHandoffModal);
+    document.getElementById('btnSaveSchedule').addEventListener('click', saveSchedule);
+  }
+
+  function startRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') return;
+    var audioEl = getActiveMonitorAudio();
+    var hasTrack = false;
+    var dest = null;
+    if (waveformCtx && waveformSource && audioEl && audioEl.src) {
+      dest = waveformCtx.createMediaStreamDestination();
+      waveformSource.connect(dest);
+      hasTrack = true;
+      recordContext = waveformCtx;
+    } else if (audioEl && audioEl.src) {
+      recordContext = new (window.AudioContext || window.webkitAudioContext)();
+      dest = recordContext.createMediaStreamDestination();
+      var musicSource = recordContext.createMediaElementSource(audioEl);
+      musicSource.connect(dest);
+      musicSource.connect(recordContext.destination);
+      hasTrack = true;
+    }
+    if (micStream && dest) {
+      var micSource = recordContext.createMediaStreamSource(micStream);
+      micSource.connect(dest);
+      hasTrack = true;
+    } else if (micStream) {
+      if (!recordContext) recordContext = new (window.AudioContext || window.webkitAudioContext)();
+      dest = recordContext.createMediaStreamDestination();
+      var micSource = recordContext.createMediaStreamSource(micStream);
+      micSource.connect(dest);
+      hasTrack = true;
+    }
+    if (!hasTrack || !dest) {
+      if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
+      recordContext = null;
+      alert('녹음할 소스가 없습니다. 곡을 재생 중이거나 마이크를 연결해 주세요.');
+      return;
+    }
+    var streamToRecord = dest.stream;
+    recordChunks = [];
+    var mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+    try { mediaRecorder = new MediaRecorder(streamToRecord, { mimeType: mime, audioBitsPerSecond: 128000 }); } catch (e) { mediaRecorder = new MediaRecorder(streamToRecord); }
+    mediaRecorder.ondataavailable = function(e) { if (e.data && e.data.size) recordChunks.push(e.data); };
+    mediaRecorder.onstop = function() {
+      var blob = new Blob(recordChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+      var filenameBase = 'radio-recording-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      function finishUi() {
+        document.getElementById('recordStatus').textContent = '';
+        document.getElementById('btnRecordStart').style.display = 'inline-flex';
+        document.getElementById('btnRecordStop').style.display = 'none';
+        if (recordContext && recordContext !== waveformCtx && recordContext.state !== 'closed') recordContext.close();
+        recordContext = null;
+        mediaRecorder = null;
+      }
+      function downloadWebm() {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filenameBase + '.webm';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        finishUi();
+      }
+      if (typeof lamejs === 'undefined' || !lamejs.Mp3Encoder) {
+        downloadWebm();
+        return;
+      }
+      document.getElementById('recordStatus').textContent = 'MP3 변환 중...';
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var url = URL.createObjectURL(blob);
+      fetch(url).then(function(r) { return r.arrayBuffer(); }).then(function(buf) {
+        return ctx.decodeAudioData(buf);
+      }).then(function(decoded) {
+        URL.revokeObjectURL(url);
+        var sr = decoded.sampleRate;
+        var ch0 = decoded.getChannelData(0);
+        var ch1 = decoded.numberOfChannels > 1 ? decoded.getChannelData(1) : ch0;
+        var len = ch0.length;
+        var left = new Int16Array(len);
+        var right = new Int16Array(len);
+        for (var i = 0; i < len; i++) {
+          var l = Math.max(-1, Math.min(1, ch0[i]));
+          left[i] = (l < 0 ? l * 0x8000 : l * 0x7FFF) | 0;
+          var r = Math.max(-1, Math.min(1, ch1[i]));
+          right[i] = (r < 0 ? r * 0x8000 : r * 0x7FFF) | 0;
+        }
+        var encoder = new lamejs.Mp3Encoder(decoded.numberOfChannels, sr, 128);
+        var mp3Chunks = [];
+        var block = 1152;
+        for (var j = 0; j < len; j += block) {
+          var sliceL = left.subarray(j, Math.min(j + block, len));
+          var sliceR = right.subarray(j, Math.min(j + block, len));
+          var mp3buf = encoder.encodeBuffer(sliceL, sliceR);
+          if (mp3buf.length) mp3Chunks.push(mp3buf);
+        }
+        var mp3buf = encoder.flush();
+        if (mp3buf.length) mp3Chunks.push(mp3buf);
+        var mp3Blob = new Blob(mp3Chunks, { type: 'audio/mpeg' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(mp3Blob);
+        a.download = filenameBase + '.mp3';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        ctx.close();
+        finishUi();
+      }).catch(function() {
+        URL.revokeObjectURL(url);
+        if (ctx.close) ctx.close();
+        downloadWebm();
+      });
+    };
+    mediaRecorder.start(1000);
+    recordStartTime = Date.now();
+    document.getElementById('recordStatus').textContent = '녹음 중...';
+    document.getElementById('btnRecordStart').style.display = 'none';
+    document.getElementById('btnRecordStop').style.display = 'inline-flex';
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') mediaRecorder.stop();
+  }
+
+  function openHandoffModal() {
+    if (!channel || !channel.slug || !currentUser || channel.ownerId !== currentUser.id) return;
+    var slug = String(channel.slug).trim().toLowerCase();
+    var modal = document.getElementById('handoffModal');
+    var list = document.getElementById('handoffList');
+    list.innerHTML = '<li style="padding:8px; color:#71717a;">로딩 중...</li>';
+    modal.style.display = 'flex';
+    api('/api/radio/channels/' + encodeURIComponent(slug) + '/staff').then(function(r) {
+      if (!r.ok) return r.json().then(function() { throw new Error('스텝 목록 실패'); });
+      return r.json();
+    }).then(function(staffList) {
+      list.innerHTML = '';
+      function addItem(userId, label, isClear) {
+        var li = document.createElement('li');
+        li.style.cssText = 'padding: 10px 12px; border-bottom: 1px solid #3f3f46; cursor: pointer; font-size: 0.9rem;';
+        li.textContent = label;
+        li.addEventListener('click', function() {
+          var body = isClear ? { currentHostId: null } : { currentHostId: userId };
+          api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body }).then(function(res) {
+            if (!res.ok) return res.json().then(function(d) { throw new Error(d.message || '실패'); });
+            return res.json();
+          }).then(function(data) {
+            if (data) channel = data;
+            closeHandoffModal();
+            fetchChannelAndUpdate();
+            renderHeader();
+          }).catch(function(e) { alert(e.message || '인수인계 실패'); });
+        });
+        list.appendChild(li);
+      }
+      addItem(channel.ownerId, '👑 방장 (본인)', false);
+      staffList.forEach(function(s) {
+        addItem(s.userId, (s.username || s.userId) + ' (스텝)', false);
+      });
+      addItem(null, '— 송출 해제 (방장이 직접 제어)', true);
+    }).catch(function(e) {
+      list.innerHTML = '<li style="padding:8px; color: #ef4444;">목록을 불러올 수 없습니다.</li>';
+    });
+  }
+
+  function closeHandoffModal() {
+    document.getElementById('handoffModal').style.display = 'none';
+  }
+
+  loadSession();
+})();
+  </script>
+</body>
+</html>

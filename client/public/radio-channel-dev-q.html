@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>라디오 DEV 채널 뷰 (q)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1d2333 0, #020617 55%);
+      color: #e5e7eb;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 720px;
+      background: rgba(15,23,42,0.96);
+      border-radius: 18px;
+      padding: 20px 22px;
+      border: 1px solid rgba(148,163,184,0.3);
+      box-shadow: 0 22px 60px rgba(15,23,42,0.95);
+    }
+    h1 { margin: 0 0 4px; font-size: 1.1rem; color: #a5b4fc; }
+    p { margin: 2px 0; font-size: 0.85rem; color: #9ca3af; }
+    code { font-size:0.8rem; background:#020617; padding:2px 4px; border-radius:4px; }
+    .now { margin-top: 10px; font-size: 0.9rem; }
+    audio { width: 100%; margin-top: 10px; }
+    .msg { margin-top: 8px; font-size: 0.8rem; }
+    .msg-ok { color: #bbf7d0; }
+    .msg-err { color: #fecaca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>라디오 DEV 채널 뷰 · slug=q</h1>
+    <p>테스트용 채널 페이지입니다. <code>radio-audio-test.html</code> 에서 [채널에 지금 송출] 버튼으로 설정한 곡을 여기서 재생합니다.</p>
+    <div class="now" id="now">채널 정보 불러오는 중...</div>
+    <audio id="audio" controls></audio>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <script>
+  (function() {
+    var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+    if (window.location.port === '5173' || window.location.port === '3000') {
+      API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
+    }
+    var slug = 'q'; // 이 페이지는 q 전용 DEV 뷰
+    var nowEl = document.getElementById('now');
+    var audio = document.getElementById('audio');
+    var msg = document.getElementById('msg');
+
+    function show(text, err) {
+      msg.textContent = text || '';
+      msg.className = 'msg ' + (err ? 'msg-err' : 'msg-ok');
+    }
+
+    function api(path) {
+      return fetch((path.indexOf('http') === 0 ? path : API_BASE + path), { credentials: 'include' });
+    }
+
+    function load() {
+      api('/api/radio/channels/' + encodeURIComponent(slug))
+        .then(function(r){
+          if (!r.ok) throw new Error('채널 로드 실패');
+          return r.json();
+        })
+        .then(function(ch){
+          if (!ch || !ch.slug) { nowEl.textContent = '채널 q 를 찾을 수 없습니다.'; return; }
+          if (ch.nowPlayingMusicId == null) {
+            nowEl.textContent = '지금 송출 중인 곡이 없습니다. radio-audio-test.html 에서 [채널에 지금 송출]을 눌러 주세요.';
+            audio.removeAttribute('src');
+            return;
+          }
+          nowEl.textContent = '지금 송출 설정된 곡 ID: ' + ch.nowPlayingMusicId + ' (상태: ' + ch.status + ')';
+          audio.src = API_BASE + '/api/music/' + encodeURIComponent(ch.nowPlayingMusicId) + '/stream';
+          show('플레이어가 준비되었습니다. ▶ 버튼을 눌러 재생해 보세요.', false);
+        })
+        .catch(function(e){
+          show(e && e.message ? e.message : '로드 실패', true);
+        });
+    }
+
+    load();
+  })();
+  </script>
+</body>
+</html>
+

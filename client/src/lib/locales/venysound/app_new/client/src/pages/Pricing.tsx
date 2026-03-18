@@ -38,9 +38,9 @@ export default function Pricing() {
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
   const FREE_FEATURES = [
-    { icon: Music, text: t('pricing.freeFeature1', '기본 음원 스트리밍') },
-    { icon: Headphones, text: t('pricing.freeFeature2', '일일 100곡 스트리밍') },
-    { icon: Music, text: t('pricing.freeFeature3', '음원 업로드 (월 10곡)') },
+    { icon: Music, text: t('pricing.freeFeature1', '무제한 음원 스트리밍') },
+    { icon: Music, text: t('pricing.freeFeature2', '무제한 음원 업로드') },
+    { icon: Shield, text: t('pricing.freeFeature3', '내 방송 채널 운영') },
     { icon: Shield, text: t('pricing.freeFeature4', '커뮤니티 참여') },
   ];
 
@@ -190,7 +190,7 @@ export default function Pricing() {
               <Card className="p-8 relative" data-testid="card-free-plan">
                 <div className="mb-6">
                   <h3 className="text-xl font-bold mb-2">Free</h3>
-                  <p className="text-muted-foreground text-sm">{t('pricing.freeDescription', '기본적인 음악 스트리밍')}</p>
+                  <p className="text-muted-foreground text-sm">{t('pricing.freeDescription', '무제한 음원 스트리밍과 업로드')}</p>
                 </div>
                 <div className="mb-6">
                   <span className="text-4xl font-bold">0{t('pricing.won', '원')}</span>

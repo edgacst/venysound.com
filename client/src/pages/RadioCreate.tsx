@@ -30,6 +30,7 @@ export default function RadioCreate() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -64,6 +65,9 @@ export default function RadioCreate() {
           name: name.trim(),
           slug: finalSlug,
           description: description.trim() || null,
+          // coverFilename는 서버에서 S3/스토리지에 저장된 파일 경로를 기대하지만,
+          // 우선은 사용자가 입력한 이미지 URL/경로를 그대로 전달한다.
+          coverFilename: coverUrl.trim() || null,
         }),
       });
       const data = await res.json();
@@ -137,7 +141,9 @@ export default function RadioCreate() {
                   </p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1 block">{t("radio.channelDescription", "한 줄 소개")} (선택)</label>
+                  <label className="text-sm font-medium mb-1 block">
+                    {t("radio.channelDescription", "한 줄 소개")} ({t("common.optional", "선택")})
+                  </label>
                   <Input
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -145,6 +151,23 @@ export default function RadioCreate() {
                     className="bg-background border-white/10"
                     maxLength={200}
                   />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">
+                    {t("radio.channelCover", "배경 이미지 URL")} ({t("common.optional", "선택")})
+                  </label>
+                  <Input
+                    value={coverUrl}
+                    onChange={(e) => setCoverUrl(e.target.value)}
+                    placeholder={t("radio.channelCoverPlaceholder", "예: /objects/cover.jpg 또는 https://...")}
+                    className="bg-background border-white/10"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t(
+                      "radio.channelCoverHint",
+                      "이미 업로드된 이미지의 주소를 입력하면 채널 카드와 상세 페이지 배경으로 사용됩니다.",
+                    )}
+                  </p>
                 </div>
                 {error && (
                   <p className="text-sm text-destructive">{error}</p>
@@ -157,7 +180,7 @@ export default function RadioCreate() {
             </CardContent>
           </Card>
         </div>
-        <Footer />
+        {/* 이 페이지에서는 푸터를 숨김 */}
       </div>
     </PageTransition>
   );

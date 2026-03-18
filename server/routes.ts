@@ -3302,6 +3302,7 @@ export async function registerRoutes(
   });
 
   // === Radio (베니방송국) Routes ===
+  // 1) 라이브 중인 채널만
   app.get("/api/radio/channels/live", async (_req, res) => {
     try {
       const list = await storage.listLiveRadioChannels();
@@ -3309,6 +3310,17 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[radio/channels/live]", e);
       res.status(500).json({ message: "라이브 채널 목록을 불러올 수 없습니다" });
+    }
+  });
+
+  // 2) 생성된 모든 방송 채널 목록 (상태와 상관없이)
+  app.get("/api/radio/channels", async (_req, res) => {
+    try {
+      const list = await storage.listAllRadioChannels();
+      res.json(list);
+    } catch (e) {
+      console.error("[radio/channels GET]", e);
+      res.status(500).json({ message: "방송 채널 목록을 불러올 수 없습니다" });
     }
   });
 
@@ -3523,6 +3535,34 @@ export async function registerRoutes(
       res.status(500).json({ message: "채널 생성에 실패했습니다" });
     }
   });
+
+  // 개발용 단순 송출 테스트 엔드포인트 (radio-audio-test.html 전용)
+  if (process.env.NODE_ENV === "development") {
+    app.patch("/api/dev/radio/channels/:slug", async (req, res) => {
+      try {
+        const slug = String(req.params.slug || "").trim().toLowerCase();
+        if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+        const channel = await storage.getRadioChannelBySlug(slug);
+        if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다." });
+        const { status, nowPlayingMusicId, nowPlayingStartedAt } = req.body || {};
+        const updates: any = {};
+        if (status) updates.status = String(status);
+        if (nowPlayingMusicId !== undefined) {
+          const idNum = nowPlayingMusicId == null ? null : Number(nowPlayingMusicId);
+          updates.nowPlayingMusicId = idNum;
+          updates.nowPlayingStartedAt = idNum != null
+            ? (nowPlayingStartedAt ? new Date(nowPlayingStartedAt) : new Date())
+            : null;
+        }
+        await storage.updateRadioChannel(channel.id, updates);
+        const updated = await storage.getRadioChannelBySlug(slug);
+        return res.json(updated);
+      } catch (e) {
+        console.error("[dev/radio/channels patch]", e);
+        return res.status(500).json({ message: "채널 업데이트 실패 (dev)" });
+      }
+    });
+  }
 
   app.patch("/api/radio/channels/:slug", isAuthenticated, async (req, res) => {
     try {
@@ -3825,7 +3865,13 @@ export async function registerRoutes(
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       // @ts-ignore
       const userId = req.user.claims.sub;
-      if (channel.ownerId !== userId) return res.status(403).json({ message: "채널 소유자만 수정할 수 있습니다" });
+      const role = await storage.getUserRole(userId);
+      const isOwner = channel.ownerId === userId;
+      const isCurrentHost = (channel as any).currentHostId === userId;
+      const isAdminUser = role === "admin";
+      const isStaff = await storage.isRadioChannelStaff(channel.id, userId);
+      const canManageRequests = isOwner || isCurrentHost || isAdminUser || isStaff;
+      if (!canManageRequests) return res.status(403).json({ message: "운영진(방장/스텝/CJ)만 수정할 수 있습니다" });
       const requestId = parseInt(id, 10);
       if (Number.isNaN(requestId)) return res.status(400).json({ message: "잘못된 요청입니다" });
       const { status, sortOrder } = req.body || {};

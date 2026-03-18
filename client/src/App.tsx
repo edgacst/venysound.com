@@ -125,12 +125,16 @@ import CuratedPlaylist from "@/pages/CuratedPlaylist";
 import Radio from "@/pages/Radio";
 import RadioCreate from "@/pages/RadioCreate";
 import RadioChannel from "@/pages/RadioChannel";
+import RadioStudio from "@/pages/RadioStudio";
+import RadioChannels from "@/pages/RadioChannels";
 
 function Routes() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/radio/create" component={RadioCreate} />
+      <Route path="/radio/channels" component={RadioChannels} />
+      <Route path="/radio/:slug/studio" component={RadioStudio} />
       <Route path="/radio/:slug" component={RadioChannel} />
       <Route path="/radio" component={Radio} />
       <Route path="/music/:id" component={MusicDetail} />

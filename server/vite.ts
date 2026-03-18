@@ -41,6 +41,14 @@ export async function setupVite(server: Server, app: Express) {
     });
   });
 
+  // 재설계된 단순 송출실 (docs/RADIO_REDESIGN_2026.md)
+  app.get("/radio-studio.html", (_req, res, next) => {
+    const filePath = path.resolve(import.meta.dirname, "..", "client", "public", "radio-studio.html");
+    res.sendFile(filePath, (err) => {
+      if (err) next(err);
+    });
+  });
+
   app.use(vite.middlewares);
 
   const serveSpa = async (req: express.Request, res: express.Response, next: express.NextFunction) => {

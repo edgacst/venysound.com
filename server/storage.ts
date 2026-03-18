@@ -130,7 +130,17 @@ export interface IStorage {
   getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } | undefined>;
   listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
   listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
-  listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]>;
+  listAllRadioChannels(): Promise<{
+    id: number;
+    ownerId: string;
+    name: string;
+    slug: string;
+    status: string;
+    description: string | null;
+    coverFilename: string | null;
+    ownerUsername: string | null;
+    updatedAt: Date | null;
+  }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
@@ -2294,13 +2304,25 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
     return out;
   }
 
-  async listAllRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; status: string; ownerUsername: string | null; updatedAt: Date | null }[]> {
+  async listAllRadioChannels(): Promise<{
+    id: number;
+    ownerId: string;
+    name: string;
+    slug: string;
+    status: string;
+    description: string | null;
+    coverFilename: string | null;
+    ownerUsername: string | null;
+    updatedAt: Date | null;
+  }[]> {
     const rows = await db.select({
       id: radioChannels.id,
       ownerId: radioChannels.ownerId,
       name: radioChannels.name,
       slug: radioChannels.slug,
       status: radioChannels.status,
+      description: radioChannels.description,
+      coverFilename: radioChannels.coverFilename,
       ownerUsername: users.username,
       updatedAt: radioChannels.updatedAt,
     }).from(radioChannels).leftJoin(users, eq(radioChannels.ownerId, users.id)).orderBy(desc(radioChannels.updatedAt));
@@ -2310,6 +2332,8 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       name: r.name,
       slug: r.slug,
       status: r.status,
+      description: r.description ?? null,
+      coverFilename: r.coverFilename ?? null,
       ownerUsername: r.ownerUsername ?? null,
       updatedAt: r.updatedAt ?? null,
     }));

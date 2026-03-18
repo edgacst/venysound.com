@@ -219,16 +219,30 @@ export default function RadioChannel() {
   useEffect(() => {
     const audio = audioRef.current;
     const canvas = canvasRef.current;
-    if (!audio || !canvas || !audioStreamUrl) return;
-    // 이전에 같은 audio에 연결된 소스가 있으면 해제 (재연결 시 InvalidStateError 방지)
+    const wrap = waveformWrapRef.current;
+    if (!audio || !canvas || !wrap || !audioStreamUrl) return;
+    // 이전에 같은 audio에 연결된 소스가 있으면 해제
     if (audioSourceRef.current) {
       try {
         audioSourceRef.current.disconnect();
-      } catch (_) {}
+      } catch {
+        // ignore
+      }
       audioSourceRef.current = null;
     }
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const source = ctx.createMediaElementSource(audio);
+
+    // 같은 HTMLMediaElement에 대해 AudioContext 하나당 한 번만
+    // createMediaElementSource 를 호출할 수 있어서, 예외가 나면 파형만 비활성화한다.
+    let ctx: AudioContext | null = null;
+    let source: MediaElementAudioSourceNode | null = null;
+    try {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      source = ctx.createMediaElementSource(audio);
+    } catch (e) {
+      console.error("radio waveform init failed:", e);
+      return;
+    }
+
     audioSourceRef.current = source;
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
@@ -241,9 +255,17 @@ export default function RadioChannel() {
     function draw() {
       rafId = requestAnimationFrame(draw);
       if (!analyserRef.current) return;
-      analyser.getByteTimeDomainData(data);
+      // 매 프레임 wrap 크기에 맞춰 캔버스 리사이즈 (레이아웃 타이밍 이슈 방지)
+      const cw = wrap.clientWidth;
+      const ch = wrap.clientHeight;
+      if (cw > 0 && ch > 0 && (canvas.width !== cw || canvas.height !== ch)) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
       const w = canvas.width;
       const h = canvas.height;
+      if (w <= 0 || h <= 0) return;
+      analyser.getByteTimeDomainData(data);
       const g = canvas.getContext("2d");
       if (!g) return;
       g.fillStyle = "rgba(15,15,18,0.4)";
@@ -272,11 +294,11 @@ export default function RadioChannel() {
     };
   }, [audioStreamUrl]);
 
-  // 리스너: 파형 캔버스를 카드 너비에 맞춰 리사이즈
+  // 리스너: 파형 캔버스를 카드 너비에 맞춰 리사이즈 (로컬/전역 모두)
   useEffect(() => {
-    if (!useGlobalRadio || !waveformWrapRef.current || !canvasRef.current) return;
     const wrap = waveformWrapRef.current;
     const canvas = canvasRef.current;
+    if (!wrap || !canvas) return;
     const setSize = () => {
       const cw = wrap.clientWidth;
       const ch = wrap.clientHeight;
@@ -289,7 +311,7 @@ export default function RadioChannel() {
     const ro = new ResizeObserver(setSize);
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [useGlobalRadio]);
+  }, [isLive, audioStreamUrl]);
 
   // 리스너: 전역 라디오 파형 버퍼를 캔버스에 그리기 (웨이브)
   useEffect(() => {
@@ -612,7 +634,7 @@ export default function RadioChannel() {
         credentials: "include",
       });
       if (!res.ok) {
-        let message = "신청 실패";
+        let message = t("radio.requestFailed", "신청 실패");
         try {
           const err = await res.json();
           if (err && typeof err.message === "string") message = err.message;
@@ -651,7 +673,12 @@ export default function RadioChannel() {
     return null;
   }
   function RoleBadge({ role }: { role: "owner" | "dj" | "sub_host" | "staff" }) {
-    const labels = { owner: "국장", dj: "DJ", sub_host: "부국장", staff: "스텝" };
+    const labels = {
+      owner: t("radio.roleOwner", "국장"),
+      dj: t("radio.roleDj", "DJ"),
+      sub_host: t("radio.roleSubHost", "부국장"),
+      staff: t("radio.roleStaff", "스텝"),
+    };
     const styles = {
       owner: "bg-primary/20 text-primary border border-primary/30",
       dj: "bg-violet-500/20 text-violet-300 border border-violet-500/30",
@@ -675,7 +702,7 @@ export default function RadioChannel() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "추가 실패");
+        throw new Error(err.message || t("radio.addFailed", "추가 실패"));
       }
       return res.json();
     },
@@ -684,7 +711,7 @@ export default function RadioChannel() {
       setStaffUsername("");
       refetchStaff();
     },
-    onError: (e: Error) => toast({ title: "스텝 추가 실패", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("radio.staffAddFailed", "스텝 추가 실패"), description: e.message, variant: "destructive" }),
   });
   const removeStaffMutation = useMutation({
     mutationFn: async (userId: string) => {
@@ -694,7 +721,7 @@ export default function RadioChannel() {
       });
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.message || "제거 실패");
+        throw new Error(err.message || t("radio.removeFailed", "제거 실패"));
       }
       return res.json();
     },
@@ -702,7 +729,7 @@ export default function RadioChannel() {
       toast({ title: "스텝이 제거되었습니다." });
       refetchStaff();
     },
-    onError: (e: Error) => toast({ title: "스텝 제거 실패", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("radio.staffRemoveFailed", "스텝 제거 실패"), description: e.message, variant: "destructive" }),
   });
 
   if (!slug) {
@@ -716,7 +743,6 @@ export default function RadioChannel() {
               <Button variant="outline" className="mt-4">?????</Button>
             </Link>
           </div>
-          <Footer />
         </div>
       </PageTransition>
     );
@@ -730,7 +756,6 @@ export default function RadioChannel() {
           <div className="container px-4 py-20 text-center text-muted-foreground">
             {t("radio.loading", "???? ?...")}
           </div>
-          <Footer />
         </div>
       </PageTransition>
     );
@@ -747,7 +772,6 @@ export default function RadioChannel() {
               <Button variant="outline" className="mt-4">?????</Button>
             </Link>
           </div>
-          <Footer />
         </div>
       </PageTransition>
     );
@@ -755,29 +779,56 @@ export default function RadioChannel() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex flex-col pb-24">
+      <div
+        className="min-h-screen flex flex-col pb-24 lg:h-screen lg:overflow-hidden"
+        style={{
+          background: "radial-gradient(circle at top, #1d2333 0, #020617 55%)",
+        }}
+      >
         <Navigation />
-        <div className="container px-4 py-10 max-w-6xl mx-auto">
-          <Link href="/radio" className="block mb-4">
+        <div className="container px-4 py-6 max-w-6xl mx-auto">
+          <Link href="/radio" className="block mb-3">
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
               <ArrowLeft size={16} />
               {t("radio.backToRadio", "방송국으로")}
             </Button>
           </Link>
 
+          {/* Hero (studio-style) */}
+          <div
+            className="mb-6 overflow-hidden rounded-2xl border border-white/10 bg-muted/10 shadow-[0_28px_70px_rgba(0,0,0,0.45)]"
+            style={{
+              backgroundImage: "url('/studio-hero.png')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          >
+            <div className="relative h-[150px] sm:h-[190px]">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+                <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-violet-200 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
+                  {t("radio.heroTitle", "Veny Radio Studio")}
+                </div>
+                <div className="text-xs sm:text-sm text-white/80 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
+                  {channel.name}
+                  {channel.status === "live" ? " · LIVE" : ""}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr_280px] gap-4 lg:gap-6">
             {/* 1번: 채팅 (왼쪽) - 입력창 하단 고정, 메시지만 스크롤 */}
             <aside className="order-2 lg:order-1 flex flex-col min-h-0 max-h-[85vh] lg:max-h-[75vh]">
-              <Card className="border-white/5 bg-card/50 overflow-hidden flex flex-col flex-1 min-h-0">
+              <Card className="overflow-hidden flex flex-col flex-1 min-h-0 border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
                 <CardContent className="p-0 flex flex-col flex-1 min-h-0 min-w-0">
                   <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 shrink-0">
                     <MessageCircle size={18} className="text-muted-foreground" />
-                    <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} (단체)</span>
+                    <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} {t("radio.chatGroupSuffix", "(단체)")}</span>
                     {typeof listenerCount === "number" && (
                       <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
                     )}
                   </div>
-                  <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">같은 채널 시청자가 모두 보는 단체 채팅입니다.</p>
+                  <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">{t("radio.chatGroupHint", "같은 채널 시청자가 모두 보는 단체 채팅입니다.")}</p>
                   <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     {filteredMessages.length === 0 ? (
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
@@ -802,7 +853,7 @@ export default function RadioChannel() {
                             <p key={"left-" + m.userId + "-" + (m as { createdAt: string }).createdAt} className="text-xs text-muted-foreground text-center py-1 flex items-center justify-center gap-1.5 flex-wrap">
                               <span>{displayName}</span>
                               {role && <RoleBadge role={role} />}
-                              <span>님이 퇴장했습니다.</span>
+                              <span>{t("radio.leftChat", "님이 퇴장했습니다.")}</span>
                             </p>
                           );
                         }
@@ -887,27 +938,24 @@ export default function RadioChannel() {
 
             {/* 가운데: 메인 (방송 정보 + 재생) */}
             <main className="order-1 lg:order-2 min-w-0">
-          <Card className="border-white/5 bg-card/50 overflow-hidden">
+          <Card className="overflow-hidden border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
             <CardContent className="p-0">
               {/* 1번: 현재 송출 중인 음원 정보 */}
               {(isLive && ((nowPlayingId != null && nowPlayingMusic) || nowPlayingObjectPath)) && (
                 <div className="px-4 py-3 bg-muted/20 border-b border-white/10 flex items-center gap-3">
                   <Music2 size={20} className="text-primary shrink-0" />
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 min-h-[2.5rem] flex flex-col justify-center">
                     <p className="text-sm font-medium text-foreground truncate">
                       {nowPlayingMusic?.title ?? (nowPlayingObjectPath ? t("radio.localTrack", "로컬 곡") : t("radio.nowPlaying", "지금 재생 중"))}
+                      {nowPlayingMusic?.artist != null && nowPlayingMusic.artist !== "" && ` – ${nowPlayingMusic.artist}`}
                     </p>
-                    {(nowPlayingMusic?.artist || firstLyricLine || currentLyric) && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {nowPlayingMusic?.artist}
-                        {nowPlayingMusic?.artist && (currentLyric || firstLyricLine) && " · "}
-                        {currentLyric || firstLyricLine}
-                      </p>
-                    )}
+                    <p className="text-xs text-muted-foreground truncate mt-0.5 min-h-[1.25rem]">
+                      {currentLyric || firstLyricLine || "\u00A0"}
+                    </p>
                   </div>
                 </div>
               )}
-              <div ref={waveformWrapRef} className="h-24 sm:h-32 md:h-40 bg-muted/30 flex items-center justify-center relative overflow-hidden">
+              <div ref={waveformWrapRef} className="h-12 sm:h-14 md:h-16 bg-muted/30 flex items-center justify-center relative overflow-hidden">
                 {isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && !isOwner ? (
                   <canvas
                     ref={canvasRef}
@@ -916,13 +964,17 @@ export default function RadioChannel() {
                     height={1}
                     style={{ width: "100%", height: "100%", display: "block" }}
                   />
+                ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl && isOwner ? (
+                  <p className="text-xs text-muted-foreground text-center px-3">
+                    {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
+                  </p>
                 ) : channel.coverFilename ? (
                   <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />
                 ) : (
                   <RadioIcon size={64} className="text-muted-foreground" />
                 )}
               </div>
-              <div className="p-6">
+              <div className="p-4">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h1 className="text-2xl font-bold">{channel.name}</h1>
                   {channel.status === "live" && (
@@ -943,7 +995,7 @@ export default function RadioChannel() {
                 )}
                 {broadcastEndedMessage && channel.status === "ended" && (
                   <p className="text-sm text-amber-600 dark:text-amber-400 mb-4 rounded-md bg-amber-500/10 px-3 py-2 border border-amber-500/20">
-                    <strong>{broadcastEndedMessage}</strong>님이 방송을 종료했습니다.
+                    <strong>{broadcastEndedMessage}</strong>{t("radio.broadcastEndedBy", "님이 방송을 종료했습니다.")}
                   </p>
                 )}
                 {channel.notice && !broadcastEndedMessage && (
@@ -956,6 +1008,18 @@ export default function RadioChannel() {
                       {channel.notice}
                     </span>
                   </p>
+                )}
+                {channel.status === "live" && nowPlayingId != null && (
+                  <div className="mb-4 space-y-2 rounded-md border border-white/10 bg-muted/20 px-3 py-2">
+                    <p className="text-xs text-muted-foreground">
+                      {t("radio.nowPlayingHint", "지금 방송 중인 곡을 바로 들을 수 있습니다.")}
+                    </p>
+                    <audio
+                      controls
+                      src={`/api/music/${nowPlayingId}/stream`}
+                      className="w-full"
+                    />
+                  </div>
                 )}
                 {!isOwner && (
                   <Dialog open={tipOpen} onOpenChange={setTipOpen}>
@@ -997,12 +1061,12 @@ export default function RadioChannel() {
                   </Dialog>
                 )}
                 {canManage ? (
-                  <a href={`/radio-dj-ui-mockup.html?slug=${encodeURIComponent(channel.slug)}`}>
-                    <Button className="gap-2 w-full sm:w-auto">
-                      <Mic2 size={18} />
+                  <Link href={`/radio/${encodeURIComponent(channel.slug)}/studio`}>
+                    <Button size="sm" className="gap-1.5 w-full sm:w-auto h-8 px-3 text-xs">
+                      <Mic2 size={16} />
                       {t("radio.goToStudio", "방송 스튜디오")}
                     </Button>
-                  </a>
+                  </Link>
                 ) : isLive ? (
                   <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
                     <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
@@ -1126,7 +1190,7 @@ export default function RadioChannel() {
                           audioRef.current.play().catch(() => {});
                         }
                       }}
-                      onError={() => toast({ title: "재생 오류", description: "음원을 불러올 수 없습니다.", variant: "destructive" })}
+                      onError={() => toast({ title: t("radio.playbackError", "재생 오류"), description: t("radio.playbackErrorDesc", "음원을 불러올 수 없습니다."), variant: "destructive" })}
                     />
                     {nowPlayingMusic?.lyrics?.trim() && isOwner && (
                       <div className="mt-3">
@@ -1151,70 +1215,11 @@ export default function RadioChannel() {
             </CardContent>
           </Card>
 
-          {canManage && isOwner && (
-            <Card className="border-white/5 bg-card/50 mt-4 overflow-hidden">
-              <CardContent className="p-0">
-                <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
-                  <UserPlus size={18} className="text-muted-foreground" />
-                  <span className="font-medium text-sm">스텝 관리 (부방장·스텝)</span>
-                </div>
-                <p className="text-muted-foreground text-xs px-4 pt-2">스텝은 방송 스튜디오 접속이 가능합니다. 로그인 아이디 또는 이메일로 추가하세요.</p>
-                <div className="p-4 space-y-3">
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <Input
-                      placeholder="사용자 아이디 (username)"
-                      value={staffUsername}
-                      onChange={(e) => setStaffUsername(e.target.value)}
-                      className="flex-1 min-w-[120px]"
-                    />
-                    <select
-                      value={staffRole}
-                      onChange={(e) => setStaffRole(e.target.value as "staff" | "sub_host")}
-                      className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="staff">스텝</option>
-                      <option value="sub_host">부방장</option>
-                    </select>
-                    <Button
-                      size="sm"
-                      onClick={() => addStaffMutation.mutate()}
-                      disabled={!staffUsername.trim() || addStaffMutation.isPending}
-                    >
-                      {addStaffMutation.isPending ? "추가 중..." : "추가"}
-                    </Button>
-                  </div>
-                  {staffList.length > 0 ? (
-                    <ul className="space-y-1.5 text-sm">
-                      {staffList.map((s) => (
-                        <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/5 last:border-0">
-                          <span className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium">{s.username || s.userId.slice(0, 8)}</span>
-                            <RoleBadge role={s.role === "sub_host" ? "sub_host" : "staff"} />
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive h-8"
-                            onClick={() => removeStaffMutation.mutate(s.userId)}
-                            disabled={removeStaffMutation.isPending}
-                          >
-                            <UserMinus size={14} />
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-muted-foreground text-sm">등록된 스텝이 없습니다.</p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
             </main>
 
             {/* 2번: 신청곡 (오른쪽) */}
             <aside className="order-3">
-              <Card className="border-white/5 bg-card/50 overflow-hidden h-full">
+              <Card className="overflow-hidden h-full border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
                 <CardContent className="p-0">
                   <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2">
                     <Music2 size={18} className="text-muted-foreground" />
@@ -1238,11 +1243,17 @@ export default function RadioChannel() {
                               <button
                                 key={m.id}
                                 type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 flex justify-between items-center gap-2"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-white/5 flex justify-between items-start gap-2"
                                 onClick={() => setSelectedRequest({ id: m.id, title: m.title, artist: m.artist })}
                               >
-                                <span className="truncate">{m.title} – {m.artist}</span>
-                                {selectedRequest?.id === m.id && <span className="text-primary text-xs">{t("radio.selected", "선택됨")}</span>}
+                                <span className="leading-snug break-words">
+                                  {m.title} – {m.artist}
+                                </span>
+                                {selectedRequest?.id === m.id && (
+                                  <span className="text-primary text-xs shrink-0">
+                                    {t("radio.selected", "선택됨")}
+                                  </span>
+                                )}
                               </button>
                             ))}
                           </div>
@@ -1272,7 +1283,6 @@ export default function RadioChannel() {
             </aside>
           </div>
         </div>
-        <Footer />
       </div>
     </PageTransition>
   );

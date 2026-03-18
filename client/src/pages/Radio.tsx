@@ -4,7 +4,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, useLocation } from "wouter";
-import { Radio as RadioIcon, Mic2, PlusCircle, Headphones, Megaphone, ChevronRight, Pause, Play, Trash2 } from "lucide-react";
+import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, Play, Trash2 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,15 +12,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resolveStorageUrl } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-
-type LiveChannel = {
-  id: number;
-  ownerId: string;
-  name: string;
-  slug: string;
-  description: string | null;
-  coverFilename: string | null;
-};
 
 type SiteAnnouncement = {
   id: number;
@@ -129,17 +120,6 @@ export default function Radio() {
     },
     onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
-  const { data: liveChannels = [] } = useQuery<LiveChannel[]>({
-    queryKey: ["/api/radio/channels/live"],
-    queryFn: async () => {
-      const res = await fetch("/api/radio/channels/live");
-      if (!res.ok) return [];
-      return res.json();
-    },
-    refetchInterval: 10_000,
-    refetchOnWindowFocus: true,
-  });
-
   const { data: siteNotices = [] } = useQuery<SiteAnnouncement[]>({
     queryKey: ["/api/announcements/site"],
     queryFn: async () => {
@@ -152,12 +132,18 @@ export default function Radio() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex flex-col pb-24">
+      <div
+        className="min-h-screen flex flex-col lg:fixed lg:inset-0 lg:overflow-hidden"
+        style={{
+          background: "radial-gradient(circle at top, #1d2333 0, #020617 55%)",
+        }}
+      >
         <Navigation />
 
-        <div className="container max-w-4xl px-4 py-8 md:py-12">
+        <div className="flex-1 min-h-0 lg:overflow-hidden">
+          <div className="container max-w-6xl px-3 md:px-6 py-8 md:py-12 h-full flex flex-col min-h-0 pb-24 lg:pb-12">
           {/* Hero */}
-          <header className="text-center mb-10 md:mb-12">
+          <header className="text-center mb-8 md:mb-10 shrink-0">
             <div className="inline-flex items-center justify-center w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-primary/10 text-primary mb-4 shadow-sm">
               <RadioIcon size={28} className="md:w-8 md:h-8" />
             </div>
@@ -169,258 +155,201 @@ export default function Radio() {
             </p>
           </header>
 
-          {/* 차별화 포인트 */}
-          <Card className="mb-8 border-primary/15 bg-gradient-to-br from-primary/5 to-transparent overflow-hidden">
-            <CardContent className="p-5 md:p-6">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/15 text-primary">
-                  <RadioIcon size={18} />
-                </span>
-                <h2 className="text-base md:text-lg font-semibold">
-                  {t("radio.differentTitle", "Veny만의 실시간 DJ")}
-                </h2>
-              </div>
-              <p className="text-xs md:text-sm text-muted-foreground mb-4">
-                {t("radio.differentSubtitle", "단순 재생이 아닌, 차별화된 라이브 방송을 경험하세요.")}
-              </p>
-              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                <li className="flex items-start gap-2">
-                  <span className="text-primary mt-0.5">·</span>
-                  <span>{t("radio.different1", "업로드한 곡으로 바로 송출 — 사이트 음원을 큐에 넣고 즉시 라이브 송출")}</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-primary mt-0.5">·</span>
-                  <span>{t("radio.different2", "실시간 채팅·신청곡 — 청취자와 대화하고, 신청곡을 받아 바로 틀어줄 수 있어요")}</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-primary mt-0.5">·</span>
-                  <span>{t("radio.different3", "브라우저만 있으면 DJ — 별도 프로그램 없이 웹에서 송출·청취 모두 가능")}</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-primary mt-0.5">·</span>
-                  <span>{t("radio.different4", "무료로 시작 — 채널 개설부터 방송까지 비용 없이 시작")}</span>
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-            {/* 지금 라이브 + CTA (왼쪽, 1열) */}
-            <div className="lg:col-span-1 order-1 space-y-6">
-              <section>
-                <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <span className="inline-flex w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  {t("radio.liveNow", "지금 라이브")}
-                </h2>
-                <p className="text-xs text-muted-foreground mb-4">
-                  {t("radio.liveNowHint", "방송 시작한 채널만 표시됩니다. 새 채널은 DJ가 「방송 시작」을 누른 뒤 보입니다.")}
+          {/* 상단 3열: 차별화 포인트 / 방송 공지 / 내 방송 채널 만들기 */}
+          <div className="grid gap-4 lg:gap-6 mb-6 md:grid-cols-2 xl:grid-cols-3 shrink-0">
+            <Card className="overflow-hidden border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
+              <CardContent className="p-5 md:p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary/15 text-primary">
+                    <RadioIcon size={18} />
+                  </span>
+                  <h2 className="text-base md:text-lg font-semibold">
+                    {t("radio.differentTitle", "Veny만의 실시간 DJ")}
+                  </h2>
+                </div>
+                <p className="text-xs md:text-sm text-muted-foreground mb-4">
+                  {t("radio.differentSubtitle", "단순 재생이 아닌, 차별화된 라이브 방송을 경험하세요.")}
                 </p>
-                {liveChannels.length === 0 ? (
-                  <Card className="border-border/60 bg-card/40 overflow-hidden">
-                    <CardContent className="py-10 text-center">
-                      <Headphones className="mx-auto text-muted-foreground/70 mb-3" size={36} />
-                      <p className="text-muted-foreground text-sm mb-1">
-                        {t("radio.noLiveChannels", "현재 라이브 방송 중인 채널이 없습니다.")}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t("radio.beFirst", "첫 방송을 시작해 보세요!")}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid gap-3 grid-cols-1">
-                    {liveChannels.map((ch) => (
-                      <Link key={ch.id} href={`/radio/${ch.slug}`}>
-                        <Card className="border-border/60 bg-card/40 overflow-hidden hover:bg-card/70 hover:border-primary/20 transition-all duration-200">
-                          <CardContent className="p-0 flex">
-                            <div className="w-16 h-16 sm:w-20 sm:h-20 flex-shrink-0 bg-muted/40 flex items-center justify-center">
-                              {ch.coverFilename ? (
-                                <img
-                                  src={resolveStorageUrl(ch.coverFilename)}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <RadioIcon size={26} className="text-muted-foreground" />
-                              )}
-                            </div>
-                            <div className="p-3 flex-1 min-w-0 flex flex-col justify-center">
-                              <p className="font-medium text-sm truncate">{ch.name}</p>
-                              {ch.description && (
-                                <p className="text-xs text-muted-foreground truncate mt-0.5">{ch.description}</p>
-                              )}
-                              <span className="inline-flex items-center gap-1 mt-1.5 text-xs text-red-400 font-medium">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                                LIVE
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">·</span>
+                    <span>{t("radio.different1", "업로드한 곡으로 바로 송출 — 사이트 음원을 큐에 넣고 즉시 라이브 송출")}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">·</span>
+                    <span>{t("radio.different2", "실시간 채팅·신청곡 — 청취자와 대화하고, 신청곡을 받아 바로 틀어줄 수 있어요")}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">·</span>
+                    <span>{t("radio.different3", "브라우저만 있으면 DJ — 별도 프로그램 없이 웹에서 송출·청취 모두 가능")}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-primary mt-0.5">·</span>
+                    <span>{t("radio.different4", "무료로 시작 — 채널 개설부터 방송까지 비용 없이 시작")}</span>
+                  </li>
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
+              <CardContent className="p-0">
+                <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
+                  <Megaphone className="w-4 h-4 text-primary shrink-0" />
+                  <h2 className="text-sm font-semibold">
+                    {t("radio.noticesTitle", "방송 관련 공지")}
+                  </h2>
+                </div>
+                <div className="max-h-[40vh] overflow-y-auto">
+                  {noticesOnRadio.length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-muted-foreground text-center">
+                      {t("radio.noNotices", "등록된 공지가 없습니다.")}
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-white/10">
+                      {noticesOnRadio.map((a) => {
+                        const isExpanded = announcementExpandedId === a.id;
+                        const { title, body } = parseAnnouncementContent(a.content);
+                        return (
+                          <li key={a.id}>
+                            <button
+                              type="button"
+                              className="w-full text-left px-4 py-3 hover:bg-white/5 transition-colors"
+                              onClick={() => setAnnouncementExpandedId(isExpanded ? null : a.id)}
+                            >
+                              <span className="text-xs text-muted-foreground mr-2">
+                                {formatNoticeDate(a.createdAt)}
                               </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    ))}
+                              <div className="text-sm text-foreground">
+                                <span className="font-medium">{title || excerpt(a.content)}</span>
+                                {isExpanded && body ? (
+                                  <p className="mt-1.5 text-muted-foreground font-normal whitespace-pre-wrap">
+                                    {body}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                {siteNotices.length > 0 && (
+                  <div className="px-4 py-2 border-t border-white/10">
+                    <Link href="/notices">
+                      <Button variant="ghost" size="sm" className="w-full justify-between text-muted-foreground hover:text-foreground">
+                        {t("radio.viewAllNotices", "전체 공지 보기")}
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                    </Link>
                   </div>
                 )}
-              </section>
+              </CardContent>
+            </Card>
 
-              {/* 내 채널 CTA */}
-              <Card className="border-primary/20 bg-primary/5 overflow-hidden">
-                <CardContent className="p-5 flex flex-col items-center gap-4 text-center">
-                  <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Mic2 className="text-primary" size={24} />
-                  </div>
-                  <div className="w-full">
-                    <h3 className="font-semibold text-base mb-0.5">
-                      {t("radio.createYourChannel", "내 방송 채널 만들기")}
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      {t("radio.createChannelDesc", "사이트 음원 또는 로컬 음악을 송출하고, 청취자와 채팅·신청곡을 즐기세요.")}
-                    </p>
-                  </div>
-                  {user ? (
-                    myChannel ? (
-                      <div className="flex flex-col items-center gap-3 w-full">
-                        <div className="flex flex-wrap items-center justify-center gap-2 w-full">
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                            {myChannel.status === "live" && t("radio.statusLive")}
-                            {myChannel.status === "paused" && t("radio.statusPaused")}
-                            {myChannel.status === "draft" && t("radio.statusDraft")}
-                            {myChannel.status === "ended" && t("radio.statusEnded")}
-                            {!["live", "paused", "draft", "ended"].includes(myChannel.status) && myChannel.status}
-                          </span>
-                          {myChannel.status !== "paused" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1 border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
-                              disabled={updateChannelStatus.isPending}
-                              onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "paused" })}
-                            >
-                              <Pause size={14} />
-                              {t("radio.channelPause")}
+            <Card className="overflow-hidden border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
+              <CardContent className="p-5 flex flex-col items-center gap-4 text-center">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Mic2 className="text-primary" size={24} />
+                </div>
+                <div className="w-full">
+                  <h3 className="font-semibold text-base mb-0.5">
+                    {t("radio.createYourChannel", "내 방송 채널 만들기")}
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {t("radio.createChannelDesc", "사이트 음원 또는 로컬 음악을 송출하고, 청취자와 채팅·신청곡을 즐기세요.")}
+                  </p>
+                </div>
+                {user ? (
+                  myChannel ? (
+                    <div className="flex flex-col items-center gap-3 w-full">
+                      <div className="flex flex-wrap items-center justify-center gap-2 w-full">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                          {myChannel.status === "live" && t("radio.statusLive")}
+                          {myChannel.status === "paused" && t("radio.statusPaused")}
+                          {myChannel.status === "draft" && t("radio.statusDraft")}
+                          {myChannel.status === "ended" && t("radio.statusEnded")}
+                          {!["live", "paused", "draft", "ended"].includes(myChannel.status) && myChannel.status}
+                        </span>
+                        {myChannel.status !== "paused" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 border-amber-500/50 text-amber-600 hover:bg-amber-500/10"
+                            disabled={updateChannelStatus.isPending}
+                            onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "paused" })}
+                          >
+                            <Pause size={14} />
+                            {t("radio.channelPause")}
+                          </Button>
+                        )}
+                        {myChannel.status === "paused" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 border-primary/50"
+                            disabled={updateChannelStatus.isPending}
+                            onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "live" })}
+                          >
+                            <Play size={14} />
+                            {t("radio.channelResume")}
+                          </Button>
+                        )}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="gap-1 border-destructive/50 text-destructive hover:bg-destructive/10">
+                              <Trash2 size={14} />
+                              {t("radio.channelDelete")}
                             </Button>
-                          )}
-                          {myChannel.status === "paused" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1 border-primary/50"
-                              disabled={updateChannelStatus.isPending}
-                              onClick={() => updateChannelStatus.mutate({ slug: myChannel.slug, status: "live" })}
-                            >
-                              <Play size={14} />
-                              {t("radio.channelResume")}
-                            </Button>
-                          )}
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm" className="gap-1 border-destructive/50 text-destructive hover:bg-destructive/10">
-                                <Trash2 size={14} />
-                                {t("radio.channelDelete")}
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>{t("radio.channelDelete")}</AlertDialogTitle>
-                                <AlertDialogDescription>{t("radio.deleteChannelConfirm")}</AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>{t("profile.cancel", "취소")}</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => deleteChannel.mutate(myChannel.slug)}
-                                >
-                                  {deleteChannel.isPending ? "..." : t("radio.channelDelete")}
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                        <Button asChild variant="outline" className="gap-2 w-full" size="default">
-                          <Link href={`/radio/${myChannel.slug}`}>
-                            <Mic2 size={16} />
-                            {t("radio.goToMyChannel", "내 채널 들어가기")}
-                          </Link>
-                        </Button>
-                        <span className="text-xs text-muted-foreground">/radio/{myChannel.slug}</span>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>{t("radio.channelDelete")}</AlertDialogTitle>
+                              <AlertDialogDescription>{t("radio.deleteChannelConfirm")}</AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>{t("profile.cancel", "취소")}</AlertDialogCancel>
+                              <AlertDialogAction
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                onClick={() => deleteChannel.mutate(myChannel.slug)}
+                              >
+                                {deleteChannel.isPending ? "..." : t("radio.channelDelete")}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
-                    ) : (
-                      <Button asChild className="gap-2 w-full" size="default">
-                        <Link href="/radio/create">
-                          <PlusCircle size={16} />
-                          {t("radio.createChannel", "채널 만들기")}
+                      <Button asChild variant="outline" className="gap-2 w-full" size="default">
+                        <Link href={`/radio/${myChannel.slug}`}>
+                          <Mic2 size={16} />
+                          {t("radio.goToMyChannel", "내 채널 들어가기")}
                         </Link>
                       </Button>
-                    )
+                      <span className="text-xs text-muted-foreground">/radio/{myChannel.slug}</span>
+                    </div>
                   ) : (
-                    <Button asChild variant="outline" className="gap-2 w-full" size="default">
-                      <Link href="/login">
-                        {t("radio.loginToCreate", "로그인 후 만들기")}
+                    <Button asChild className="gap-2 w-full" size="default">
+                      <Link href="/radio/create">
+                        <PlusCircle size={16} />
+                        {t("radio.createChannel", "채널 만들기")}
                       </Link>
                     </Button>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                  )
+                ) : (
+                  <Button asChild variant="outline" className="gap-2 w-full" size="default">
+                    <Link href="/login">
+                      {t("radio.loginToCreate", "로그인 후 만들기")}
+                    </Link>
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* 방송 관련 공지 + 규정 (오른쪽, 2열 넓게) */}
-            <aside className="lg:col-span-2 order-2 space-y-4">
-              <Card className="border-border/60 bg-card/40 overflow-hidden">
-                <CardContent className="p-0">
-                  <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
-                    <Megaphone className="w-4 h-4 text-primary shrink-0" />
-                    <h2 className="text-sm font-semibold">
-                      {t("radio.noticesTitle", "방송 관련 공지")}
-                    </h2>
-                  </div>
-                  <div className="max-h-[360px] overflow-y-auto">
-                    {noticesOnRadio.length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-muted-foreground text-center">
-                        {t("radio.noNotices", "등록된 공지가 없습니다.")}
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-border/40">
-                        {noticesOnRadio.map((a) => {
-                          const isExpanded = announcementExpandedId === a.id;
-                          const { title, body } = parseAnnouncementContent(a.content);
-                          return (
-                            <li key={a.id}>
-                              <button
-                                type="button"
-                                className="w-full text-left px-4 py-3 hover:bg-muted/30 transition-colors"
-                                onClick={() => setAnnouncementExpandedId(isExpanded ? null : a.id)}
-                              >
-                                <span className="text-xs text-muted-foreground mr-2">
-                                  {formatNoticeDate(a.createdAt)}
-                                </span>
-                                <div className="text-sm text-foreground">
-                                  <span className="font-medium">{title || excerpt(a.content)}</span>
-                                  {isExpanded && body ? (
-                                    <p className="mt-1.5 text-muted-foreground font-normal whitespace-pre-wrap">
-                                      {body}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                  {siteNotices.length > 0 && (
-                    <div className="px-4 py-2 border-t border-border/50">
-                      <Link href="/notices">
-                        <Button variant="ghost" size="sm" className="w-full justify-between text-muted-foreground hover:text-foreground">
-                          {t("radio.viewAllNotices", "전체 공지 보기")}
-                          <ChevronRight className="w-4 h-4" />
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="border-border/60 bg-muted/30">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {/* 방송 관련 규정 */}
+            <aside className="min-h-0 overflow-hidden">
+              <Card className="border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
                 <CardContent className="p-4 space-y-2">
                   <h3 className="text-sm font-semibold">
                     {t("radio.rulesTitle", "방송 관련 규정")}
@@ -435,15 +364,22 @@ export default function Radio() {
                     <li>{t("radio.rulesItem4", "운영 정책 위반 시 방송 중단, 채널 제한, 계정 제재가 이루어질 수 있습니다.")}</li>
                   </ul>
                   <p className="text-[11px] text-muted-foreground/80">
-                    {t("radio.rulesMore", "자세한 내용은 향후 공지되는 이용약관·가이드라인을 참고해 주세요.")}
+                    {t("radio.rulesMorePrefix", "자세한 내용은 향후 공지되는 ")}
+                    <Link href="/legal" className="underline underline-offset-2 hover:text-foreground">
+                      {t("login.terms", "이용약관")}
+                    </Link>
+                    {t("radio.rulesMoreSuffix", "·가이드라인을 참고해 주세요.")}
                   </p>
                 </CardContent>
               </Card>
             </aside>
           </div>
-        </div>
+          </div>
 
-        <Footer />
+          <div className="shrink-0">
+            <Footer />
+          </div>
+        </div>
       </div>
     </PageTransition>
   );

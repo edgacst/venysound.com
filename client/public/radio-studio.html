@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>베니방송국 · 송출실</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #0f0f12; color: #e4e4e7; min-height: 100vh; padding: 20px; }
+    .card { max-width: 640px; margin: 0 auto; background: #18181b; border-radius: 12px; padding: 24px; border: 1px solid #27272a; }
+    h1 { margin: 0 0 8px; font-size: 1.1rem; color: #a78bfa; }
+    .sub { margin-bottom: 20px; font-size: 0.9rem; color: #71717a; }
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+    .badge { padding: 6px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+    .badge-live { background: #dc2626; color: #fff; }
+    .badge-ended { background: #3f3f46; color: #a1a1aa; }
+    .btn { padding: 8px 16px; border-radius: 8px; border: none; font-size: 0.9rem; cursor: pointer; background: #3f3f46; color: #fff; }
+    .btn:hover { background: #52525b; }
+    .btn-primary { background: #7c3aed; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .section { margin-top: 24px; padding-top: 16px; border-top: 1px solid #27272a; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #71717a; margin-bottom: 8px; }
+    .now { font-size: 1rem; color: #a78bfa; margin-bottom: 12px; }
+    audio { width: 100%; max-width: 400px; margin-bottom: 8px; }
+    .hint { font-size: 0.8rem; color: #71717a; margin-top: 8px; }
+    select, input[type="text"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #3f3f46; background: #27272a; color: #fff; font-size: 0.9rem; margin-bottom: 8px; }
+    .track-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+    .msg { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.85rem; }
+    .msg-ok { background: #166534; color: #bbf7d0; }
+    .msg-err { background: #991b1b; color: #fecaca; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>베니방송국 · 송출실</h1>
+    <div class="sub" id="sub">채널 불러오는 중...</div>
+    <div class="row">
+      <span id="badge" class="badge badge-ended">방송 준비</span>
+      <button id="btnStart" class="btn btn-primary">방송 시작</button>
+      <button id="btnEnd" class="btn btn-danger" disabled>방송 종료</button>
+    </div>
+
+    <div class="section">
+      <div class="label">지금 송출 중</div>
+      <div class="now" id="nowText">곡 없음</div>
+      <audio id="monitor" controls></audio>
+      <button id="btnMonitor" class="btn">모니터 재생</button>
+      <div class="hint">채널 스트림 한 개만 재생합니다. 소리가 안 나면 모니터 재생을 한 번 눌러 주세요.</div>
+    </div>
+
+    <div class="section">
+      <div class="label">곡 선택 후 지금 재생 (송출)</div>
+      <input id="search" type="text" placeholder="곡 검색..." />
+      <select id="trackList" size="6"></select>
+      <div class="track-row">
+        <span id="selectedInfo" style="flex:1;">곡 선택</span>
+        <button id="btnSetNow" class="btn btn-primary" disabled>지금 재생</button>
+      </div>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <script>
+(function() {
+  var API_BASE = (window.location.origin && String(window.location.origin) !== 'null') ? window.location.origin : '';
+  if (window.location.port === '5173' || window.location.port === '3000')
+    API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
+
+  var params = new URLSearchParams(window.location.search);
+  var slug = (params.get('slug') || '').trim().toLowerCase();
+  var channel = null;
+  var tracks = [];
+
+  var el = {
+    sub: document.getElementById('sub'),
+    badge: document.getElementById('badge'),
+    nowText: document.getElementById('nowText'),
+    monitor: document.getElementById('monitor'),
+    btnMonitor: document.getElementById('btnMonitor'),
+    btnStart: document.getElementById('btnStart'),
+    btnEnd: document.getElementById('btnEnd'),
+    search: document.getElementById('search'),
+    trackList: document.getElementById('trackList'),
+    selectedInfo: document.getElementById('selectedInfo'),
+    btnSetNow: document.getElementById('btnSetNow'),
+    msg: document.getElementById('msg')
+  };
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.credentials = 'include';
+    opts.headers = opts.headers || {};
+    if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    return fetch((path.indexOf('http') === 0) ? path : API_BASE + path, opts);
+  }
+
+  function showMsg(text, isErr) {
+    el.msg.innerHTML = '<div class="msg ' + (isErr ? 'msg-err' : 'msg-ok') + '">' + text + '</div>';
+  }
+
+  function updateUI() {
+    if (!channel) return;
+    var live = channel.status === 'live';
+    el.badge.textContent = live ? '방송 중' : '방송 준비';
+    el.badge.className = 'badge ' + (live ? 'badge-live' : 'badge-ended');
+    el.btnStart.disabled = live;
+    el.btnEnd.disabled = !live;
+    el.sub.textContent = '채널: ' + (channel.name || slug);
+
+    var np = channel.nowPlayingMusicId;
+    el.nowText.textContent = np != null ? ('ID ' + np + '번 곡') : '곡 없음';
+
+    if (slug) el.monitor.src = API_BASE + '/api/radio/channels/' + encodeURIComponent(slug) + '/stream';
+  }
+
+  function loadChannel() {
+    if (!slug) { showMsg('URL에 slug가 없습니다. 예: ?slug=내채널', true); return Promise.reject(); }
+    return api('/api/radio/channels/' + encodeURIComponent(slug))
+      .then(function(r) {
+        if (r.status === 401) throw new Error('로그인이 필요합니다.');
+        if (!r.ok) throw new Error('채널을 불러올 수 없습니다.');
+        return r.json();
+      })
+      .then(function(data) {
+        channel = data;
+        updateUI();
+      })
+      .catch(function(e) {
+        showMsg(e && e.message ? e.message : '채널 로드 실패', true);
+        throw e;
+      });
+  }
+
+  function loadTracks(q) {
+    var url = '/api/music?limit=50';
+    if (q && q.trim()) url = '/api/music?search=' + encodeURIComponent(q.trim()) + '&limit=50';
+    return api(url).then(function(r) { return r.ok ? r.json() : { data: [] }; })
+      .then(function(res) {
+        tracks = Array.isArray(res && res.data) ? res.data : [];
+        el.trackList.innerHTML = '';
+        tracks.forEach(function(t) {
+          var opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = (t.title || '') + ' – ' + (t.artist || '');
+          el.trackList.appendChild(opt);
+        });
+        onSelectTrack();
+      });
+  }
+
+  function onSelectTrack() {
+    var id = el.trackList.value;
+    var t = tracks.find(function(x) { return String(x.id) === String(id); });
+    el.selectedInfo.textContent = t ? (t.title + ' – ' + (t.artist || '')) : '곡 선택';
+    el.btnSetNow.disabled = !t;
+  }
+
+  function patch(body, successText) {
+    if (!slug) return;
+    api('/api/radio/channels/' + encodeURIComponent(slug), { method: 'PATCH', body: body })
+      .then(function(r) {
+        if (!r.ok) return r.json().then(function(j) { throw new Error(j && j.message ? j.message : '실패'); });
+        return r.json();
+      })
+      .then(function(data) {
+        channel = data;
+        updateUI();
+        if (successText) showMsg(successText, false);
+      })
+      .catch(function(e) { showMsg(e && e.message ? e.message : '요청 실패', true); });
+  }
+
+  el.btnStart.onclick = function() { patch({ status: 'live' }, '방송을 시작했습니다.'); };
+  el.btnEnd.onclick = function() { patch({ status: 'ended', nowPlayingMusicId: null }, '방송을 종료했습니다.'); };
+  el.btnSetNow.onclick = function() {
+    var t = tracks.find(function(x) { return String(x.id) === String(el.trackList.value); });
+    if (!t) return;
+    patch({ nowPlayingMusicId: t.id, nowPlayingStartedAt: new Date().toISOString() }, '지금 재생으로 설정했습니다: ' + (t.title || ''));
+  };
+  el.btnMonitor.onclick = function() {
+    if (!el.monitor.src && slug) el.monitor.src = API_BASE + '/api/radio/channels/' + encodeURIComponent(slug) + '/stream';
+    el.monitor.play().catch(function() { showMsg('재생을 허용해 주세요. (브라우저 정책)', true); });
+  };
+  el.trackList.onchange = onSelectTrack;
+  el.search.oninput = (function() {
+    var t;
+    return function() {
+      clearTimeout(t);
+      t = setTimeout(function() { loadTracks(el.search.value); }, 300);
+    };
+  })();
+
+  loadChannel().then(function() { loadTracks(''); }).catch(function() {});
+})();
+  </script>
+</body>
+</html>
