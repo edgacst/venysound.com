@@ -3805,6 +3805,8 @@ export async function registerRoutes(
       const currentMusicId = req.body?.currentMusicId != null ? Number(req.body.currentMusicId) : null;
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel || channel.status !== "live") return res.json({ ok: false, reason: "not_live" });
+      // 송출실(DJ)이 활성화된 경우 리스너가 임의로 곡을 넘기지 않도록 차단
+      if ((channel as any).currentHostId) return res.json({ ok: false, reason: "studio_active" });
       const snap = channel.playlistSnapshot as { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null;
       if (!snap || !Array.isArray(snap.musicIds) || snap.musicIds.length === 0) return res.json({ ok: false, reason: "no_playlist" });
       // 낙관적 락: 이미 다른 리스너가 진행했으면 무시
@@ -3844,6 +3846,8 @@ export async function registerRoutes(
       const channels = await storage.listLiveRadioChannelsForAutoAdvance();
       const now = Date.now();
       for (const ch of channels) {
+        // 송출실(DJ)이 활성화된 경우 서버 자동 진행 건너뜀 (DJ가 직접 제어)
+        if ((ch as any).currentHostId) continue;
         const started = (ch.nowPlayingStartedAt as Date).getTime();
         const snap = ch.playlistSnapshot;
         if (!snap || snap.musicIds.length === 0) continue;
