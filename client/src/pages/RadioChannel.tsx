@@ -1060,7 +1060,7 @@ export default function RadioChannel() {
                     </DialogContent>
                   </Dialog>
                 )}
-                {canManage ? (
+                {canManage && user ? (
                   <Link href={`/radio/${encodeURIComponent(channel.slug)}/studio`}>
                     <Button size="sm" className="gap-1.5 w-full sm:w-auto h-8 px-3 text-xs">
                       <Mic2 size={16} />

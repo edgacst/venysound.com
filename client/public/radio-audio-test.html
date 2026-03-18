@@ -728,6 +728,10 @@
     var micAnalyser = null;
     var micLevelRaf = 0;
 
+    // 재생 큐/현재 송출 곡 (연속 재생용)
+    var playlistIds = [];
+    var lastNowPlayingId = null;
+
 
     function show(text, err) {
       msg.textContent = text || '';
@@ -785,6 +789,24 @@
       })
         .catch(function(e){ show('재생 실패: ' + e.message, true); });
     };
+
+    // DJ 모니터에서 곡이 끝나면 서버에 advanceToNextTrack 요청 → 다음 곡 자동 진행
+    audio.addEventListener('ended', function() {
+      if (!urlSlug) return; // 운영 채널이 아닌 개발용(q) 채널은 자동 진행 생략
+      if (!lastNowPlayingId) return;
+      var path = '/api/radio/channels/' + encodeURIComponent(urlSlug);
+      var body = {
+        advanceToNextTrack: true,
+        currentTrackId: lastNowPlayingId
+      };
+      api(path, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).catch(function(e){
+        console.warn('advanceToNextTrack 실패:', e && e.message ? e.message : e);
+      });
+    });
 
     function setMicUi(on) {
       micState.textContent = on ? 'ON' : 'OFF';
@@ -880,11 +902,26 @@
         nowPlayingStartedAt: startedAt,
         status: 'live'
       };
-      // 재생 중인 곡과 같고 duration 있으면 서버에 전달 (자동 다음 곡 진행/싱크용)
-      if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
-        payload.currentTrackDurationSeconds = Math.ceil(audio.duration);
+      // 전체 곡 목록을 간단한 재생 큐로 사용 (검색 필터와 무관하게, 로드된 tracks 순서 기준)
+      playlistIds = Array.isArray(tracks) ? tracks.map(function(t){ return t && typeof t.id === 'number' ? t.id : null; }).filter(function(id){ return id != null; }) : [];
+      if (playlistIds.length > 0) {
+        payload.queueMusicIds = playlistIds.slice();
+        // 기본 길이는 240초로 두고, 현재 곡 길이를 알고 있으면 해당 인덱스만 실제 길이로 덮어쓴다.
+        var baseDur = 240;
+        var durations = playlistIds.map(function(){ return baseDur; });
+        var curIdx = playlistIds.indexOf(musicId);
+        if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
+          var d = Math.ceil(audio.duration);
+          payload.currentTrackDurationSeconds = d;
+          if (curIdx >= 0) durations[curIdx] = d;
+        }
+        payload.queueDurationsSeconds = durations;
+      } else if (audio.src && String(audio.src).indexOf('/api/music/' + id + '/') !== -1 && isFinite(audio.duration) && audio.duration > 0) {
+        // fallback: 큐가 없으면 현재 곡만 단일 스냅샷으로 보냄
+        var onlyDur = Math.ceil(audio.duration);
+        payload.currentTrackDurationSeconds = onlyDur;
         payload.queueMusicIds = [musicId];
-        payload.queueDurationsSeconds = [Math.ceil(audio.duration)];
+        payload.queueDurationsSeconds = [onlyDur];
       }
       var path = urlSlug
         ? '/api/radio/channels/' + encodeURIComponent(urlSlug)
@@ -894,12 +931,21 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       }).then(function(r){
-        if (!r.ok) return r.json().then(function(j){ throw new Error(j && j.message ? j.message : '실패'); });
+        if (!r.ok) {
+          var status = r.status;
+          return r.json().then(function(j){
+            var msg = (j && j.message) ? String(j.message) : '실패';
+            if (status === 401) msg = '로그인이 필요합니다. 스튜디오 송출은 로그인한 뒤, 방장 또는 스텝인 채널에서만 가능합니다. (채널 페이지에서 로그인 후 다시 스튜디오로 들어와 주세요.)';
+            if (status === 403) msg = '권한이 없습니다. 이 채널의 방장 또는 스텝만 송출할 수 있습니다.';
+            throw new Error(msg);
+          }, function(){ throw new Error(status === 401 ? '로그인이 필요합니다. 스튜디오 송출은 로그인한 뒤, 방장 또는 스텝인 채널에서만 가능합니다.' : '실패'); });
+        }
         return r.json();
       }).then(function(data){
         var chLabel = urlSlug ? '채널 ' + urlSlug : '채널 q(개발용)';
         show(chLabel + ' 송출 곡으로 설정됨: ID ' + id + '. 청취자 페이지에서 들을 수 있습니다.', false);
         console.log('channel updated', data);
+        lastNowPlayingId = musicId;
       }).catch(function(e){
         show('채널 설정 실패: ' + e.message, true);
       });

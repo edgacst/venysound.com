@@ -57,6 +57,7 @@ export function getSession() {
       httpOnly: true,
       secure: isProd,
       maxAge: sessionTtl,
+      sameSite: "lax",
     },
   });
 }
