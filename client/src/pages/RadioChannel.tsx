@@ -194,8 +194,12 @@ export default function RadioChannel() {
         : nowPlayingMusic?.filename?.startsWith("/objects/")
           ? nowPlayingMusic.filename
           : `/api/music/${nowPlayingId}/stream`;
-  // 스트림 URL로 바로 재생(버퍼만 채우면 시작). 전체 파일 다운로드 후 재생하면 30초 이상 지연됨
-  const audioStreamUrl = rawAudioUrl;
+
+  // 라이브 방송일 때는 채널 연속 스트림을 사용해 곡 사이 자동 이어듣기
+  const audioStreamUrl =
+    isLive && (nowPlayingId != null || nowPlayingObjectPath != null)
+      ? `/api/radio/channels/${slug.trim().toLowerCase()}/stream`
+      : rawAudioUrl;
   // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
   const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
