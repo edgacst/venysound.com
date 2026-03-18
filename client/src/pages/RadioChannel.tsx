@@ -203,67 +203,21 @@ export default function RadioChannel() {
       ? `/api/radio/channels/${slug.trim().toLowerCase()}/stream`
       : rawAudioUrl;
 
-  // 같은 stream URL이라도 nowPlaying 이 바뀌면 브라우저가 기존 연결을 계속 유지해
-  // 다음 곡으로 넘어가지 못하는 케이스가 있어 cache-bust 파라미터를 붙여 재연결한다.
+  // 리스너용 오디오: 채널 연속 스트림은 Content-Length 가 없어 진행바가 동작 안 함.
+  // 개별 트랙 URL(/api/music/:id/stream)을 사용하면 파일 크기를 알 수 있어 진행바·탐색이 정상 동작한다.
   const listenerAudioSrc = useMemo(() => {
-    if (!audioStreamUrl) return null;
-    if (!isLive) return audioStreamUrl;
-    if (!audioStreamUrl.includes("/api/radio/channels/") || !audioStreamUrl.endsWith("/stream")) return audioStreamUrl;
-    const v = nowPlayingId != null ? `id-${nowPlayingId}` : nowPlayingObjectPath ? `obj-${nowPlayingObjectPath}` : "live";
-    const sep = audioStreamUrl.includes("?") ? "&" : "?";
-    return `${audioStreamUrl}${sep}v=${encodeURIComponent(v)}`;
-  }, [audioStreamUrl, isLive, nowPlayingId, nowPlayingObjectPath]);
+    if (!isLive) return null;
+    if (nowPlayingId != null) return `/api/music/${nowPlayingId}/stream`;
+    if (nowPlayingObjectPath != null) return nowPlayingObjectPath;
+    return null;
+  }, [isLive, nowPlayingId, nowPlayingObjectPath]);
 
-  // DJ가 곡을 바꾸면 userStopped / autoplayBlocked 를 초기화해 새 곡이 자동 재생되게 한다.
-  useEffect(() => {
-    const trackKey =
-      nowPlayingId != null
-        ? `id:${nowPlayingId}`
-        : nowPlayingObjectPath != null
-          ? `obj:${nowPlayingObjectPath}`
-          : null;
-    if (
-      trackKey !== null &&
-      prevTrackKeyRef.current !== null &&
-      trackKey !== prevTrackKeyRef.current
-    ) {
-      setUserStopped(false);
-      setAutoplayBlocked(false);
-    }
-    prevTrackKeyRef.current = trackKey;
-  }, [nowPlayingId, nowPlayingObjectPath]);
-
-  // 곡(src)이 바뀌면 오디오를 강제로 다시 로드한다.
-  // key 방식 대신 load()를 써서 AudioContext 연결을 끊지 않고 소스만 교체한다.
+  // 곡(src)이 바뀌면 오디오를 다시 로드한다. 재생은 사용자가 컨트롤바에서 직접 시작한다.
   useEffect(() => {
     const el = audioRef.current;
     if (!el || !listenerAudioSrc) return;
     el.load();
   }, [listenerAudioSrc]);
-
-  // 자동재생이 막힌 경우: 첫 사용자 상호작용(클릭/키다운) 시 재생 재시도
-  useEffect(() => {
-    if (isOwner || !slug) return;
-    if (!autoplayBlocked) return;
-    if (!listenerAudioSrc) return;
-    if (userStopped) return;
-    const retry = () => {
-      const el = audioRef.current;
-      if (!el) return;
-      const ctx = analyserRef.current?.ctx;
-      if (ctx?.state === "suspended") ctx.resume().catch(() => {});
-      el.play()
-        .then(() => setAutoplayBlocked(false))
-        .catch(() => setAutoplayBlocked(true));
-    };
-    const opts = { capture: true, once: true } as const;
-    document.addEventListener("click", retry, opts);
-    document.addEventListener("keydown", retry, opts);
-    return () => {
-      document.removeEventListener("click", retry, opts);
-      document.removeEventListener("keydown", retry, opts);
-    };
-  }, [autoplayBlocked, isOwner, slug, listenerAudioSrc, userStopped]);
   // 전역 라디오 바 대신, 우선 채널 페이지 내부 오디오를 항상 사용 (리스너도 동일)
   const useGlobalRadio = false;
   const waveformBufferRef = useRadioWaveformRef();
@@ -1136,138 +1090,76 @@ export default function RadioChannel() {
                     </Button>
                   </Link>
                 ) : isLive ? (
-                  <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-2">
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2 flex-wrap">
+                  <div className="rounded-lg border border-white/10 bg-muted/20 p-4 space-y-3">
+                    <p className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-2">
                       <Headphones size={18} />
                       <span>
-                        {(useGlobalRadio ? radioIsPlaying : isPlaying)
+                        {isPlaying
                           ? t("radio.listeningTo", "지금 재생 중")
-                          : (nowPlayingId != null || nowPlayingObjectPath) && audioStreamUrl
-                            ? t("radio.listeningPaused", "일시정지")
+                          : listenerAudioSrc
+                            ? t("radio.tapToPlay", "▶ 재생 버튼을 눌러 청취를 시작하세요.")
                             : t("radio.listenComingSoon", "준비 중입니다. 곡이 등록되면 자동으로 시작됩니다.")}
-                        {typeof navigator !== "undefined" &&
-                          /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
-                          ` · ${t("radio.tapToPlayHint", "모바일에서는 재생 버튼을 눌러 들으세요.")}`}
-                        {typeof navigator !== "undefined" &&
-                          !/Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) &&
-                          !(useGlobalRadio ? radioIsPlaying : isPlaying) &&
-                          ` · ${t("radio.pcClickHint", "소리가 안 나면 화면을 한 번 클릭해 보세요.")}`}
                       </span>
                     </p>
-                    {autoplayBlocked && !userStopped && (
-                      <p className="text-xs text-amber-300/90">
-                        {t("radio.autoplayBlockedHint", "브라우저 정책으로 자동 재생이 차단되었습니다. 화면을 한 번 클릭하면 재생이 시작됩니다.")}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "outline" : "default"}
-                        type="button"
-                        onClick={() => {
-                          const el = audioRef.current;
-                          if (!el) return;
-                          if (!audioStreamUrl) return;
+                    {listenerAudioSrc && (
+                      <audio
+                        ref={audioRef}
+                        src={listenerAudioSrc}
+                        controls
+                        className="w-full"
+                        onPlay={() => {
                           const ctx = analyserRef.current?.ctx;
-                          if (ctx?.state === "suspended") {
-                            ctx.resume();
-                          }
-                          el.play()
-                            .then(() => setAutoplayBlocked(false))
-                            .catch(() => setAutoplayBlocked(true));
-                          setUserStopped(false);
+                          if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+                          setIsPlaying(true);
                         }}
-                      >
-                        {t("radio.listenPlay", "재생")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={(useGlobalRadio ? radioIsPlaying : isPlaying) ? "secondary" : "outline"}
-                        type="button"
-                        onClick={() => {
-                          const el = audioRef.current;
-                          if (!el) return;
-                          el.pause();
-                          setUserStopped(true);
+                        onPause={() => setIsPlaying(false)}
+                        onEnded={() => {
+                          setIsPlaying(false);
+                          refetchChannel();
+                          const endedAt = Date.now();
+                          [1500, 3000, 4500, 6000].forEach((ms) => {
+                            setTimeout(() => {
+                              if (Date.now() - endedAt > 8000) return;
+                              refetchChannel();
+                            }, ms);
+                          });
                         }}
-                      >
-                        {t("radio.listenPause", "일시정지")}
-                      </Button>
-                    </div>
-                    <audio
-                      ref={audioRef}
-                      src={listenerAudioSrc || undefined}
-                      className="hidden"
-                      autoPlay={typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|webOS|Mobile/i.test(navigator.userAgent) ? false : !userStopped}
-                      onPlay={() => {
-                        const ctx = analyserRef.current?.ctx;
-                        if (ctx?.state === "suspended") ctx.resume().catch(() => {});
-                        setIsPlaying(true);
-                        setAutoplayBlocked(false);
-                        setUserStopped(false);
-                      }}
-                      onPause={() => {
-                        // 일시적인 버퍼링/곡 전환으로 인한 pause 에서는 userStopped 를 건드리지 않는다.
-                        setIsPlaying(false);
-                      }}
-                      onEnded={() => {
-                        setIsPlaying(false);
-                        setUserStopped(false);
-                        refetchChannel();
-                        const endedAt = Date.now();
-                        [1500, 3000, 4500, 6000].forEach((ms) => {
-                          setTimeout(() => {
-                            if (Date.now() - endedAt > 8000) return;
-                            refetchChannel();
-                          }, ms);
-                        });
-                      }}
-                      onCanPlay={() => {
-                        if (isOwner || !audioRef.current) return;
-                        // nowPlayingId 가 null 인 경우(objectPath 트랙)에도 진행하도록 조건 수정
-                        if (nowPlayingId !== null && hasSeekedForTrackRef.current === nowPlayingId) return;
-                        const last = lastNowPlayingRef.current;
-                        let seekSec: number | null = null;
-                        if (nowPlayingId !== null) {
-                          if (last?.musicId === nowPlayingId) {
-                            const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
-                            seekSec = last.elapsedSeconds + delay;
-                          } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
-                            const { elapsed, receivedAt } = channelElapsedRef.current;
-                            seekSec = elapsed + (Date.now() - receivedAt) / 1000;
-                          } else if (channel?.nowPlayingElapsedSeconds != null) {
-                            channelElapsedRef.current = {
-                              musicId: nowPlayingId,
-                              elapsed: channel.nowPlayingElapsedSeconds,
-                              receivedAt: Date.now(),
-                            };
-                            seekSec = channel.nowPlayingElapsedSeconds;
-                          }
-                        }
-                        if (seekSec != null && seekSec > 0) {
-                          const target = Math.max(0, seekSec);
-                          const cur = audioRef.current.currentTime;
-                          if (target > cur - 0.5) {
-                            audioRef.current.currentTime = target;
-                          }
-                          setTimeout(() => {
-                            if (audioRef.current && hasSeekedForTrackRef.current === nowPlayingId) {
-                              const c = audioRef.current.currentTime;
-                              if (c < target - 1.5 && target > c) {
-                                audioRef.current.currentTime = target;
-                              }
+                        onCanPlay={() => {
+                          if (isOwner || !audioRef.current) return;
+                          if (nowPlayingId !== null && hasSeekedForTrackRef.current === nowPlayingId) return;
+                          const last = lastNowPlayingRef.current;
+                          let seekSec: number | null = null;
+                          if (nowPlayingId !== null) {
+                            if (last?.musicId === nowPlayingId) {
+                              const delay = last.receivedAt ? (Date.now() - last.receivedAt) / 1000 : 0;
+                              seekSec = last.elapsedSeconds + delay;
+                            } else if (channelElapsedRef.current?.musicId === nowPlayingId) {
+                              const { elapsed, receivedAt } = channelElapsedRef.current;
+                              seekSec = elapsed + (Date.now() - receivedAt) / 1000;
+                            } else if (channel?.nowPlayingElapsedSeconds != null) {
+                              channelElapsedRef.current = {
+                                musicId: nowPlayingId,
+                                elapsed: channel.nowPlayingElapsedSeconds,
+                                receivedAt: Date.now(),
+                              };
+                              seekSec = channel.nowPlayingElapsedSeconds;
                             }
-                          }, 300);
-                        }
-                        hasSeekedForTrackRef.current = nowPlayingId;
-                        if (!userStopped && audioRef.current) {
-                          audioRef.current.play()
-                            .then(() => setAutoplayBlocked(false))
-                            .catch(() => setAutoplayBlocked(true));
-                        }
-                      }}
-                      onError={() => toast({ title: t("radio.playbackError", "재생 오류"), description: t("radio.playbackErrorDesc", "음원을 불러올 수 없습니다."), variant: "destructive" })}
-                    />
+                          }
+                          if (seekSec != null && seekSec > 0) {
+                            const target = Math.max(0, seekSec);
+                            const cur = audioRef.current.currentTime;
+                            if (target > cur - 0.5) {
+                              audioRef.current.currentTime = target;
+                            }
+                          }
+                          hasSeekedForTrackRef.current = nowPlayingId;
+                        }}
+                        onError={() => {
+                          if (!audioRef.current?.src) return;
+                          toast({ title: t("radio.playbackError", "재생 오류"), description: t("radio.playbackErrorDesc", "음원을 불러올 수 없습니다."), variant: "destructive" });
+                        }}
+                      />
+                    )}
                     {nowPlayingMusic?.lyrics?.trim() && isOwner && (
                       <div className="mt-3">
                         <p className="text-xs font-medium text-muted-foreground mb-1">{t("radio.lyrics", "가사")}</p>

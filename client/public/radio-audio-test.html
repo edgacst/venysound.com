@@ -1047,6 +1047,11 @@
           var m = msg.message;
           addChatMessage(m.username || String(m.userId || '?').slice(0, 8), m.content || '');
         }
+        if (msg.type === 'radio_new_request') {
+          // 새 신청곡이 들어오면 즉시 목록 갱신
+          loadRequests();
+          addSystemMessage('새 신청곡이 접수되었습니다: ' + escapeHtml((msg.request && (msg.request.title || ('ID ' + msg.request.musicId))) || ''));
+        }
         if (msg.type === 'radio_now_playing') {
           loadChannelAndStaff(); // 호스트가 바뀔 수 있으므로 재조회
           loadRequests();       // 곡 바뀌면 신청곡도 갱신

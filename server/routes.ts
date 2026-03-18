@@ -3869,6 +3869,19 @@ export async function registerRoutes(
         artist: artist != null ? String(artist).trim().slice(0, 200) : null,
         message: message != null ? String(message).trim().slice(0, 300) : null,
       });
+      // 송출실(스튜디오)에 실시간으로 신청곡 알림
+      broadcastToRadioChannel(slug, {
+        type: "radio_new_request",
+        slug,
+        request: {
+          id: row.id,
+          musicId: row.musicId,
+          title: row.title,
+          artist: row.artist,
+          status: row.status,
+          createdAt: row.createdAt,
+        },
+      });
       res.status(201).json(row);
     } catch (e: any) {
       console.error("[radio/channels/:slug/requests POST]", e);
