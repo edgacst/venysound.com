@@ -117,6 +117,7 @@ export async function registerRoutes(
   const wsToUserId = new Map<WebSocket, string>();
   const lastJoinBroadcastAt = new Map<string, number>();
   const JOIN_BROADCAST_COOLDOWN_MS = 60000;
+  const radioLocalTitles = new Map<string, string | null>();
 
   function broadcastToRadioChannel(slug: string, data: object) {
     const room = radioChannelRooms.get(slug);
@@ -3395,7 +3396,7 @@ export async function registerRoutes(
       if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
-      const out: any = { ...channel };
+      const out: any = { ...channel, nowPlayingLocalTitle: radioLocalTitles.get(slug) ?? null };
       if (channel.nowPlayingStartedAt) {
         const started = (channel.nowPlayingStartedAt as Date).getTime();
         out.nowPlayingElapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
@@ -3604,7 +3605,7 @@ export async function registerRoutes(
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
       const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
-      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingLocalTitle?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
+      const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -3651,11 +3652,11 @@ export async function registerRoutes(
             nowPlayingMusicId: nextId,
             nowPlayingStartedAt: new Date(),
             nowPlayingObjectPath: null,
-            nowPlayingLocalTitle: null,
             nowPlayingTempDurationSeconds: null,
             nowPlayingTempNextSnapshotIndex: null,
             playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
           });
+          radioLocalTitles.delete(slug);
           const updated = await storage.getRadioChannelBySlug(slug);
           broadcastToRadioChannel(slug, {
             type: "radio_now_playing",
@@ -3675,7 +3676,7 @@ export async function registerRoutes(
             updates.nowPlayingMusicId = null;
             updates.nowPlayingStartedAt = null;
             updates.nowPlayingObjectPath = null;
-            updates.nowPlayingLocalTitle = null;
+            radioLocalTitles.delete(slug);
             updates.nowPlayingTempDurationSeconds = null;
             updates.nowPlayingTempNextSnapshotIndex = null;
             updates.playlistSnapshot = null;
@@ -3685,7 +3686,7 @@ export async function registerRoutes(
           updates.nowPlayingMusicId = nowPlayingMusicId === null || nowPlayingMusicId === "" ? null : Number(nowPlayingMusicId);
           if (updates.nowPlayingMusicId != null) {
             updates.nowPlayingObjectPath = null;
-            updates.nowPlayingLocalTitle = null;
+            radioLocalTitles.delete(slug);
             updates.nowPlayingTempDurationSeconds = null;
             updates.nowPlayingTempNextSnapshotIndex = null;
           }
@@ -3695,13 +3696,13 @@ export async function registerRoutes(
           if (updates.nowPlayingObjectPath) {
             updates.nowPlayingMusicId = null;
             updates.nowPlayingStartedAt = new Date();
-            updates.nowPlayingLocalTitle = typeof bodyNowPlayingLocalTitle === "string" && bodyNowPlayingLocalTitle.trim() ? bodyNowPlayingLocalTitle.trim().slice(0, 200) : null;
+            radioLocalTitles.set(slug, typeof bodyNowPlayingLocalTitle === "string" && bodyNowPlayingLocalTitle.trim() ? bodyNowPlayingLocalTitle.trim().slice(0, 200) : null);
             const dur = typeof bodyCurrentTrackDurationSeconds === "number" && bodyCurrentTrackDurationSeconds > 0 ? bodyCurrentTrackDurationSeconds : 240;
             updates.nowPlayingTempDurationSeconds = Math.ceil(dur);
             const nextIdx = typeof bodyAfterTempNextSnapshotIndex === "number" && Number.isInteger(bodyAfterTempNextSnapshotIndex) ? bodyAfterTempNextSnapshotIndex : 0;
             updates.nowPlayingTempNextSnapshotIndex = nextIdx;
           } else {
-            updates.nowPlayingLocalTitle = null;
+            radioLocalTitles.delete(slug);
             updates.nowPlayingTempDurationSeconds = null;
             updates.nowPlayingTempNextSnapshotIndex = null;
           }
@@ -3769,7 +3770,7 @@ export async function registerRoutes(
           slug,
           musicId: updated!.nowPlayingMusicId ?? null,
           nowPlayingObjectPath: (updated as any).nowPlayingObjectPath ?? null,
-          nowPlayingLocalTitle: (updated as any).nowPlayingLocalTitle ?? null,
+          nowPlayingLocalTitle: radioLocalTitles.get(slug) ?? null,
           startedAt: updated!.nowPlayingStartedAt ? (updated!.nowPlayingStartedAt as Date).toISOString() : null,
           elapsedSeconds,
         });
