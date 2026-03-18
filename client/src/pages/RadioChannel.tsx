@@ -25,7 +25,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
 import { useRadioPlayerStore } from "@/stores/radio-player";
-import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
 
 type SyncedLyricLine = { time: number; text: string };
 
@@ -222,8 +221,6 @@ export default function RadioChannel() {
     if (ctx?.state === "suspended") ctx.resume().catch(() => {});
     el.play().catch(() => {});
   }, [listenerAudioSrc]);
-  const waveformBufferRef = useRadioWaveformRef();
-
   // 채널 페이지가 활성일 때: 전역 플레이어에 스트림을 동기화
   // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
@@ -352,40 +349,6 @@ export default function RadioChannel() {
     return () => ro.disconnect();
   }, [isLive, audioStreamUrl]);
 
-  // 리스너: 전역 라디오 파형 버퍼를 캔버스에 그리기 (웨이브)
-  useEffect(() => {
-    if (!useGlobalRadio || !waveformBufferRef || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const w = canvas.width;
-    const h = canvas.height;
-    const g = canvas.getContext("2d");
-    if (!g) return;
-    let rafId = 0;
-    function draw() {
-      rafId = requestAnimationFrame(draw);
-      const data = waveformBufferRef!.current;
-      if (!data || data.length === 0) {
-        g.fillStyle = "rgba(15,15,18,0.4)";
-        g.fillRect(0, 0, w, h);
-        return;
-      }
-      g.fillStyle = "rgba(15,15,18,0.4)";
-      g.fillRect(0, 0, w, h);
-      g.strokeStyle = "#7c3aed";
-      g.lineWidth = 2;
-      g.beginPath();
-      const step = w / data.length;
-      for (let i = 0; i < data.length; i++) {
-        const x = i * step;
-        const y = (data[i] / 128) * (h / 2) + h / 2;
-        if (i === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
-      }
-      g.stroke();
-    }
-    draw();
-    return () => cancelAnimationFrame(rafId);
-  }, [useGlobalRadio, waveformBufferRef]);
 
   const { toast } = useToast();
   const { send: wsSend, subscribe, ready: wsReady, authenticated: wsAuthenticated } = useWs();
