@@ -168,6 +168,7 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
     source.connect(analyser);
     analyser.connect(ctx.destination);
     analyserRef.current = { ctx, analyser };
+    if (ctx.state !== "running") ctx.resume().catch(() => {});
     const buffer = new Uint8Array(WAVEFORM_BUFFER_LENGTH);
     waveformBufferRef.current = buffer;
     let rafId = 0;
@@ -196,7 +197,11 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
       if (cancelled) return;
       const active = getActiveAudio();
       const inactive = getInactiveAudio();
-      if ((active?.src === streamUrl || inactive?.src === streamUrl)) return;
+      const matchSrc = (el: HTMLAudioElement | null) => {
+        if (!el?.src) return false;
+        try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
+      };
+      if (matchSrc(active) || matchSrc(inactive)) return;
       if (!inactive || typeof inactive.pause !== "function") return;
       inactive.pause();
       inactive.currentTime = 0;
@@ -227,6 +232,8 @@ export function GlobalRadioPlayer({ waveformBufferRef }: { waveformBufferRef?: R
           }
           return;
         }
+        const actx = analyserRef.current?.ctx;
+        if (actx && actx.state === "suspended") actx.resume().catch(() => {});
         // 첫 트랙이면 바로 재생, 아니면 크로스페이드
         if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;
