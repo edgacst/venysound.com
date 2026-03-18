@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>라디오 오디오 테스트</title>
+  <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -1673,23 +1674,72 @@
         };
         recMediaRecorder.onstop = function() {
           if (recChunks.length === 0) return;
-          var blob = new Blob(recChunks, { type: recMediaRecorder.mimeType || 'audio/webm' });
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
+          addSystemMessage('녹음 종료. MP3로 변환 중...');
+          var webmBlob = new Blob(recChunks, { type: recMediaRecorder.mimeType || 'audio/webm' });
+          recChunks = [];
+
           var now = new Date();
           var fname = 'broadcast-' + now.getFullYear() +
             ('0' + (now.getMonth() + 1)).slice(-2) +
             ('0' + now.getDate()).slice(-2) + '-' +
             ('0' + now.getHours()).slice(-2) +
             ('0' + now.getMinutes()).slice(-2) +
-            ('0' + now.getSeconds()).slice(-2) + '.webm';
-          a.href = url;
-          a.download = fname;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-          addSystemMessage('녹음 파일이 다운로드됩니다: ' + fname);
-          recChunks = [];
+            ('0' + now.getSeconds()).slice(-2) + '.mp3';
+
+          var reader = new FileReader();
+          reader.onload = function() {
+            var decCtx = new (window.AudioContext || window.webkitAudioContext)();
+            decCtx.decodeAudioData(reader.result).then(function(audioBuffer) {
+              var numCh = audioBuffer.numberOfChannels;
+              var sampleRate = audioBuffer.sampleRate;
+              var left = audioBuffer.getChannelData(0);
+              var right = numCh > 1 ? audioBuffer.getChannelData(1) : left;
+              var samples = left.length;
+              var mp3enc = new lamejs.Mp3Encoder(numCh > 1 ? 2 : 1, sampleRate, 128);
+              var mp3Buf = [];
+              var blockSize = 1152;
+              for (var i = 0; i < samples; i += blockSize) {
+                var end = Math.min(i + blockSize, samples);
+                var leftChunk = new Int16Array(end - i);
+                var rightChunk = new Int16Array(end - i);
+                for (var j = i; j < end; j++) {
+                  var s = Math.max(-1, Math.min(1, left[j]));
+                  leftChunk[j - i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                  var r = Math.max(-1, Math.min(1, right[j]));
+                  rightChunk[j - i] = r < 0 ? r * 0x8000 : r * 0x7FFF;
+                }
+                var mp3buf;
+                if (numCh > 1) {
+                  mp3buf = mp3enc.encodeBuffer(leftChunk, rightChunk);
+                } else {
+                  mp3buf = mp3enc.encodeBuffer(leftChunk);
+                }
+                if (mp3buf.length > 0) mp3Buf.push(mp3buf);
+              }
+              var flush = mp3enc.flush();
+              if (flush.length > 0) mp3Buf.push(flush);
+              var mp3Blob = new Blob(mp3Buf, { type: 'audio/mp3' });
+              var url = URL.createObjectURL(mp3Blob);
+              var a = document.createElement('a');
+              a.href = url;
+              a.download = fname;
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+              addSystemMessage('MP3 녹음 파일 다운로드: ' + fname);
+              decCtx.close();
+            }).catch(function(e) {
+              addSystemMessage('MP3 변환 실패, WebM으로 다운로드합니다: ' + e.message);
+              var url = URL.createObjectURL(webmBlob);
+              var a = document.createElement('a');
+              a.href = url;
+              a.download = fname.replace('.mp3', '.webm');
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+            });
+          };
+          reader.readAsArrayBuffer(webmBlob);
         };
         recMediaRecorder.start(1000);
 
