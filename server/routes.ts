@@ -3425,8 +3425,12 @@ export async function registerRoutes(
   app.get("/api/radio/channels/:slug/stream", async (req, res) => {
     const slug = String(req.params.slug || "").trim().toLowerCase();
     if (!slug) return res.status(404).end();
-    const uploadsDirInner = path.resolve(process.cwd(), "..", "local-uploads", "uploads");
-    const getLocalPathForMusicId = async (musicId: number): Promise<{ path: string; contentType: string } | null> => {
+    // NOTE: /api/music/:id/stream 와 동일한 경로 규칙을 사용해야 한다.
+    // 이전엔 ".."로 상위 폴더를 보고 있어 실제 파일이 있어도 못 찾아 504(프록시 타임아웃)를 유발할 수 있었다.
+    const uploadsDirInner = path.resolve(process.cwd(), "local-uploads", "uploads");
+    const getLocalPathForMusicId = async (
+      musicId: number
+    ): Promise<{ path: string; contentType: string } | { objectUrl: string } | null> => {
       const music = await storage.getMusicById(musicId);
       if (!music) return null;
       const fn = music.filename || "";
@@ -3447,7 +3451,14 @@ export async function registerRoutes(
         path.join(uploadsDirInner, `${baseId}.ogg`),
       ];
       const localPath = candidates.find((p) => existsSync(p));
-      if (!localPath) return null;
+      if (!localPath) {
+        // 객체 스토리지에만 있는 음원인 경우: 연속 스트림으로 "이어붙이기"는 못하지만,
+        // 적어도 504로 죽지 않게 해당 파일로 리다이렉트한다.
+        if (typeof fn === "string" && fn.startsWith("/objects/")) {
+          return { objectUrl: fn };
+        }
+        return null;
+      }
       const ext = path.extname(localPath).toLowerCase();
       const mime: Record<string, string> = { ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg" };
       return { path: localPath, contentType: mime[ext] || "audio/mpeg" };
@@ -3467,8 +3478,23 @@ export async function registerRoutes(
           }
           const info = await getLocalPathForMusicId(musicId);
           if (!info) {
-            await new Promise((r) => setTimeout(r, 1500));
-            continue;
+            // 파일을 못 찾으면 무한 대기하지 말고 응답을 종료해 프록시 504를 피한다.
+            // 클라이언트는 nowPlaying 변경 시 재요청(또는 재시도)한다.
+            if (!res.headersSent) {
+              res.status(404).end();
+              return;
+            }
+            try { res.end(); } catch (_) {}
+            return;
+          }
+          if ("objectUrl" in info) {
+            if (!res.headersSent) {
+              res.set("Cache-Control", "no-store");
+              res.redirect(302, info.objectUrl);
+              return;
+            }
+            try { res.end(); } catch (_) {}
+            return;
           }
           if (lastStreamedId === musicId) {
             await new Promise((r) => setTimeout(r, 1000));
