@@ -3798,8 +3798,66 @@ export async function registerRoutes(
     }
   });
 
-  // 옵션 A: 다음 곡 진행은 DJ의 advanceToNextTrack PATCH만 사용. 서버 setInterval 자동 진행 비활성화.
-  // (DJ 송출창을 닫으면 해당 채널은 다음 곡으로 넘어가지 않음)
+  // 서버 자동 진행: DJ 송출창을 닫아도 플레이리스트 순서대로 곡이 계속 재생됨
+  const AUTO_ADVANCE_INTERVAL_MS = 5000;
+  setInterval(async () => {
+    try {
+      const channels = await storage.listLiveRadioChannelsForAutoAdvance();
+      const now = Date.now();
+      for (const ch of channels) {
+        const started = (ch.nowPlayingStartedAt as Date).getTime();
+        const snap = ch.playlistSnapshot;
+        if (!snap || snap.musicIds.length === 0) continue;
+
+        let durationMs: number;
+        if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempDurationSeconds != null) {
+          durationMs = ch.nowPlayingTempDurationSeconds * 1000;
+        } else if (ch.nowPlayingMusicId != null) {
+          const idx = snap.musicIds.indexOf(ch.nowPlayingMusicId);
+          const dur = idx >= 0 && snap.durationsSeconds[idx] ? snap.durationsSeconds[idx] : 240;
+          durationMs = dur * 1000;
+        } else {
+          continue;
+        }
+
+        if (now - started < durationMs + 3000) continue; // 3초 여유
+
+        // 다음 곡 결정
+        let nextIndex: number;
+        if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempNextSnapshotIndex != null) {
+          nextIndex = ch.nowPlayingTempNextSnapshotIndex;
+        } else if (ch.nowPlayingMusicId != null) {
+          const curIdx = snap.musicIds.indexOf(ch.nowPlayingMusicId);
+          nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
+        } else {
+          nextIndex = 0;
+        }
+        if (nextIndex >= snap.musicIds.length) nextIndex = 0;
+        const nextId = snap.musicIds[nextIndex];
+
+        await storage.updateRadioChannel(ch.id, {
+          nowPlayingMusicId: nextId,
+          nowPlayingStartedAt: new Date(),
+          nowPlayingObjectPath: null,
+          nowPlayingTempDurationSeconds: null,
+          nowPlayingTempNextSnapshotIndex: null,
+          playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
+        });
+        radioLocalTitles.delete(ch.slug);
+        broadcastToRadioChannel(ch.slug, {
+          type: "radio_now_playing",
+          slug: ch.slug,
+          musicId: nextId,
+          nowPlayingObjectPath: null,
+          nowPlayingLocalTitle: null,
+          startedAt: new Date().toISOString(),
+          elapsedSeconds: 0,
+        });
+      }
+    } catch (e) {
+      console.error("[radio auto-advance]", e);
+    }
+  }, AUTO_ADVANCE_INTERVAL_MS);
 
   // 라디오 채팅 보관 기간: 1일 (오래된 채팅 자동 삭제)
   const RADIO_CHAT_TTL_DAYS = 1;
