@@ -729,17 +729,40 @@ export default function RadioChannel() {
             }}
           >
             <div className="relative h-[150px] sm:h-[190px]">
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
-                <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-violet-200 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
-                  {t("radio.heroTitle", "Veny Radio Studio")}
-                </div>
-                <div className="text-xs sm:text-sm text-white/80 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
-                  {channel.name}
-                  {channel.status === "live" ? " · LIVE" : ""}
-                </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6">
+                {isLive ? (
+                  /* ON AIR 깜박임 */
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-full bg-red-500 shadow-[0_0_10px_3px_rgba(239,68,68,0.7)]"
+                      style={{ animation: "onair-blink 1s ease-in-out infinite" }}
+                    />
+                    <span
+                      className="text-3xl sm:text-5xl font-black tracking-widest text-white drop-shadow-[0_0_24px_rgba(239,68,68,0.9)]"
+                      style={{ animation: "onair-blink 1s ease-in-out infinite", textShadow: "0 0 24px rgba(239,68,68,0.9), 0 4px 16px rgba(0,0,0,0.8)" }}
+                    >
+                      ON AIR
+                    </span>
+                    {typeof listenerCount === "number" && listenerCount > 0 && (
+                      <span className="text-sm font-semibold text-red-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">
+                        청취자 {listenerCount}명
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-2xl sm:text-3xl font-extrabold tracking-tight text-violet-200 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
+                      {t("radio.heroTitle", "Veny Radio Studio")}
+                    </div>
+                    <div className="text-xs sm:text-sm text-white/80 drop-shadow-[0_10px_28px_rgba(0,0,0,0.75)]">
+                      {channel.name}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
+          <style>{`@keyframes onair-blink { 0%,100%{opacity:1} 50%{opacity:0.25} }`}</style>
 
           <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr_280px] gap-4 lg:gap-6">
             {/* 1번: 채팅 (왼쪽) - 입력창 하단 고정, 메시지만 스크롤 */}
