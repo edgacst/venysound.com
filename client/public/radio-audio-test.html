@@ -905,7 +905,8 @@
       if (!urlSlug) return;
       if (!confirm('방송을 종료하시겠습니까?\n리스너에게 방송 종료 알림이 전송됩니다.')) return;
       audio.pause();
-      audio.src = '';
+      audio.removeAttribute('src');
+      audio.load(); // audio 엘리먼트를 NETWORK_EMPTY 상태로 완전히 초기화
       api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1014,7 +1015,10 @@
 
       lastPlayedTrackId = musicId; // play() 전 즉시 설정
       lastNowPlayingId = musicId;
-      audio.src = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
+      var streamUrl = API_BASE + '/api/music/' + encodeURIComponent(id) + '/stream';
+      audio.removeAttribute('src');
+      audio.load();
+      audio.src = streamUrl;
       audio.play().then(function(){
         if (t) {
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
@@ -1023,7 +1027,7 @@
         loadLyrics(musicId);
         broadcastTrack(musicId);
       })
-        .catch(function(e){ lastPlayedTrackId = null; show('재생 실패: ' + e.message, true); });
+        .catch(function(e){ lastPlayedTrackId = null; show('재생 실패: ' + e.message + ' [' + streamUrl + ']', true); });
     };
 
     function broadcastLocalTrack(t) {

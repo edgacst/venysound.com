@@ -164,7 +164,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       pendingSeekRef.current = useRadioPlayerStore.getState().initialSeekSeconds ?? null;
       inactive.src = streamUrl;
       const onReady = () => {
-        inactive.oncanplaythrough = null;
         const seek = pendingSeekRef.current;
         if (seek != null && seek > 0) {
           inactive.currentTime = Math.max(0, seek);
@@ -223,7 +222,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         };
         crossfadeRafRef.current = requestAnimationFrame(run);
       };
-      inactive.oncanplaythrough = onReady;
+      // iOS Safari는 스트리밍에서 canplaythrough 미발생 → canplay 병행 등록
+      let readyCalled = false;
+      const onReadyOnce = () => {
+        if (readyCalled) return;
+        readyCalled = true;
+        inactive.oncanplaythrough = null;
+        inactive.oncanplay = null;
+        onReady();
+      };
+      inactive.oncanplaythrough = onReadyOnce;
+      inactive.oncanplay = onReadyOnce;
       inactive.load();
     });
     return () => {
