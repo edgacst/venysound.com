@@ -1156,26 +1156,45 @@
       var next = tracks[nextIdx];
       if (!next) return;
 
-      if (next._localObjectPath) {
-        lastPlayedTrackId = next.id; // play() 전 즉시 설정
-        lastNowPlayingId = null;
-        audio.src = API_BASE + next._localObjectPath;
-        audio.play().then(function(){
-          if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (next.title || '') + ' – ' + (next.artist || '');
-          if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
-          broadcastLocalTrack(next);
-          applyFilter();
-        }).catch(function(e){ show('다음 곡 재생 실패: ' + e.message, true); });
-      } else {
-        lastPlayedTrackId = next.id; // play() 전 즉시 설정
-        lastNowPlayingId = next.id;
-        audio.src = API_BASE + '/api/music/' + encodeURIComponent(next.id) + '/stream';
-        audio.play().then(function(){
-          if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (next.title || '제목 없음') + ' – ' + (next.artist || '아티스트');
-          loadLyrics(next.id);
-          broadcastTrack(next.id);
-        }).catch(function(e){ show('다음 곡 재생 실패: ' + e.message, true); });
+      // 재생 실패 시 다음 곡으로 자동 스킵
+      function playNextOrSkip(targetNext, attempt) {
+        attempt = attempt || 0;
+        if (attempt > tracks.length) return; // 무한루프 방지
+        var allIds2 = tracks.map(function(t){ return t.id; });
+        var tIdx = allIds2.indexOf(targetNext.id);
+        function trySkip() {
+          var skipIdx = (tIdx + 1) % allIds2.length;
+          var skipTrack = tracks[skipIdx];
+          if (!skipTrack || skipIdx === tIdx) return; // 스킵할 곡 없음
+          playNextOrSkip(skipTrack, attempt + 1);
+        }
+        if (targetNext._localObjectPath) {
+          lastPlayedTrackId = targetNext.id;
+          lastNowPlayingId = null;
+          audio.removeAttribute('src');
+          audio.load();
+          audio.src = API_BASE + targetNext._localObjectPath;
+          audio.play().then(function(){
+            if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (targetNext.title || '') + ' – ' + (targetNext.artist || '');
+            if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
+            broadcastLocalTrack(targetNext);
+            applyFilter();
+          }).catch(function(e){ show('재생 실패 (스킵): ' + e.message, true); trySkip(); });
+        } else {
+          lastPlayedTrackId = targetNext.id;
+          lastNowPlayingId = targetNext.id;
+          var sUrl = API_BASE + '/api/music/' + encodeURIComponent(targetNext.id) + '/stream';
+          audio.removeAttribute('src');
+          audio.load();
+          audio.src = sUrl;
+          audio.play().then(function(){
+            if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (targetNext.title || '제목 없음') + ' – ' + (targetNext.artist || '아티스트');
+            loadLyrics(targetNext.id);
+            broadcastTrack(targetNext.id);
+          }).catch(function(e){ show('재생 실패 (스킵): ' + e.message + ' [' + sUrl + ']', true); trySkip(); });
+        }
       }
+      playNextOrSkip(next, 0);
     });
 
     function setMicUi(on) {
