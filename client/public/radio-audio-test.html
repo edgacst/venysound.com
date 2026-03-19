@@ -1294,6 +1294,8 @@
         }
         if (msg.type === 'radio_chat' && msg.message) {
           var m = msg.message;
+          // 내가 보낸 메시지는 이미 로컬에서 추가했으므로 중복 방지
+          if (meUserId && String(m.userId) === String(meUserId)) return;
           addChatMessage(m.username || String(m.userId || '?').slice(0, 8), m.content || '');
         }
         if (msg.type === 'radio_new_request') {
