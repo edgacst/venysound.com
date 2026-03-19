@@ -1619,7 +1619,7 @@
       var nextRole = (target.role === 'staff') ? 'listener' : 'staff';
       target.role = nextRole;
       renderUsers();
-      addSystemMessage(target.id + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
+      addSystemMessage((target.username || target.id.slice(0, 8)) + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
       closeCtx();
     };
 
@@ -1640,7 +1640,7 @@
       var nextRole = (target.role === 'cj') ? 'listener' : 'cj';
       target.role = nextRole;
       renderUsers();
-      addSystemMessage(target.id + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
+      addSystemMessage((target.username || target.id.slice(0, 8)) + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
       closeCtx();
     };
 

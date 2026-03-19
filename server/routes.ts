@@ -203,6 +203,8 @@ export async function registerRoutes(
         if (msg.type === "radio_leave" && typeof msg.slug === "string" && msg.slug) {
           const slug = String(msg.slug).trim().toLowerCase();
           if (wsUserId) {
+            // 퇴장 시 쿨다운 초기화 → 새로고침 후 재입장 시 radio_user_joined 즉시 발송
+            lastJoinBroadcastAt.delete(`${slug}:${wsUserId}`);
             try {
               const user = await storage.getUserById(wsUserId);
               const preferred =
@@ -259,6 +261,8 @@ export async function registerRoutes(
       const uid = wsUserId;
       const slugs = wsRadioSlugs.get(ws);
       if (uid && slugs && slugs.size > 0) {
+        // 연결 끊김 시 쿨다운 초기화 → 새로고침 후 재입장 시 radio_user_joined 즉시 발송
+        slugs.forEach((slug) => lastJoinBroadcastAt.delete(`${slug}:${uid}`));
         (async () => {
           try {
             const user = await storage.getUserById(uid);
