@@ -1200,6 +1200,21 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Music not found" });
       }
       const fn = music.filename || "";
+
+      // ── 1) 외부 URL (https://...) → 직접 리다이렉트
+      if (/^https?:\/\//i.test(fn)) {
+        res.set("Cache-Control", "no-store");
+        return res.redirect(302, fn);
+      }
+
+      // ── 2) 객체 스토리지 경로 (/objects/... 또는 objects/...) → 리다이렉트
+      if (fn.startsWith("/objects/") || fn.startsWith("objects/")) {
+        const objPath = fn.startsWith("/") ? fn : `/${fn}`;
+        res.set("Cache-Control", "no-store");
+        return res.redirect(302, objPath);
+      }
+
+      // ── 3) 로컬 파일 ID 추출
       let fileId = "";
       const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
       if (objMatch) {
@@ -1215,10 +1230,9 @@ export async function registerRoutes(
       }
       fileId = fileId.replace(/^\//, "");
       if (!fileId) {
-        return res.status(404).json({
-          error: "파일 경로를 찾을 수 없습니다",
-          hint: "DB의 filename 형식을 확인해 주세요. /file-guide 에서 연결 방법을 안내합니다.",
-        });
+        console.warn(`[stream] musicId=${id} filename="${fn}" → fileId 추출 실패`);
+        res.set("Content-Type", "audio/mpeg");
+        return res.status(404).end();
       }
       const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
       const candidates = [
@@ -1229,16 +1243,10 @@ export async function registerRoutes(
       ];
       const localPath = candidates.find((p) => existsSync(p));
       if (!localPath) {
-        // 객체 스토리지(/objects/...)에 있는 음원은 해당 경로로 리다이렉트해서 재생되게 한다.
-        // (송출실/리스너 모두 /api/music/:id/stream 을 공통으로 쓰기 위함)
-        if (typeof fn === "string" && fn.startsWith("/objects/")) {
-          res.set("Cache-Control", "no-store");
-          return res.redirect(302, fn);
-        }
-        return res.status(404).json({
-          error: "음원 파일을 찾을 수 없습니다",
-          hint: `local-uploads/uploads/ 에 ${baseId}.mp3 (또는 .wav, .ogg) 파일을 넣어 주세요. /file-guide 에서 전체 목록을 확인할 수 있습니다.`,
-        });
+        console.warn(`[stream] musicId=${id} filename="${fn}" → 로컬 파일 없음 (baseId=${baseId})`);
+        // 오디오 Content-Type 반환으로 브라우저 "no supported source" 오류 방지
+        res.set("Content-Type", "audio/mpeg");
+        return res.status(404).end();
       }
       const ext = path.extname(localPath).toLowerCase();
       const mime: Record<string, string> = {
