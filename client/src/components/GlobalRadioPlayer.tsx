@@ -105,7 +105,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           const newStreamUrl = objPath != null ? objPath : musicId != null ? `/api/music/${musicId}/stream` : null;
           if (newStreamUrl) {
             const current = useRadioPlayerStore.getState().streamUrl;
-            if (newStreamUrl !== current) {
+            const activeEl = activeIndexRef.current === 0 ? audioARef.current : audioBRef.current;
+            // URL이 같더라도 오디오 src가 비어있으면(트랙 종료 후) 다시 로드
+            const needsReload = !activeEl?.src || activeEl.src === window.location.href;
+            if (newStreamUrl !== current || needsReload) {
               setStream(slug, channelName ?? "", newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
             }
           }
@@ -311,6 +314,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const state = useRadioPlayerStore.getState();
     const currentSlug = state.slug;
     const currentUrl = state.streamUrl;
+    // streamUrl을 null로 초기화: 같은 곡이 루프될 때도 WS radio_now_playing이 setStream()을 호출하도록
+    useRadioPlayerStore.setState({ streamUrl: null });
     const match = currentUrl?.match(/\/api\/music\/(\d+)\/stream/);
     if (currentSlug && match) {
       const musicId = parseInt(match[1], 10);
@@ -332,9 +337,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     <>
       {/* 음소거 안내 */}
       {isMuted && isPlaying && (
-        <div className="fixed bottom-[60px] left-2 right-2 z-50">
+        <div className="fixed bottom-[68px] left-2 right-2 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg shadow-lg"
             onClick={handleUnmute}
           >
             🔊 소리 켜기 (탭하세요)
@@ -342,9 +347,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         </div>
       )}
       {needsTap && !isPlaying && (
-        <div className="fixed bottom-[60px] left-2 right-2 z-50">
+        <div className="fixed bottom-[68px] left-2 right-2 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg shadow-lg"
             onClick={handlePlay}
           >
             ▶ 탭하여 라디오 듣기
