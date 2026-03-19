@@ -954,24 +954,34 @@ export async function registerRoutes(
       writeFileSync(audioLocalPath, audioBuffer);
 
       // 2) 커버 이미지 다운로드 (선택)
-      let savedImageFilename: string | undefined;
-      if (imageUrl && typeof imageUrl === "string" && !/undefined|null/i.test(imageUrl)) {
+      let savedImagePath: string | null = null;
+      if (imageUrl && typeof imageUrl === "string" && /^https?:\/\//i.test(imageUrl)) {
         try {
           const imgRes = await fetch(imageUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
           if (imgRes.ok) {
             const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-            const imgId = crypto.randomUUID();
-            const imgFilename = `${imgId}.jpg`;
-            writeFileSync(path.join(localUploadsDir, imgFilename), imgBuf);
-            savedImageFilename = imgFilename;
+            if (imgBuf.length > 1000) { // 최소 크기 확인
+              const imgId = crypto.randomUUID();
+              const imgFilename = `${imgId}.jpg`;
+              writeFileSync(path.join(localUploadsDir, imgFilename), imgBuf);
+              // 프론트엔드가 /objects/uploads/ 경로로 접근해야 함
+              savedImagePath = `/objects/uploads/${imgFilename}`;
+            }
           }
         } catch {
           // 이미지 실패는 무시하고 계속
         }
       }
 
-      // 3) 장르 결정 - tags에서 첫번째 추출하거나 genre 파라미터 사용
-      const resolvedGenre = genre || (tags ? tags.split(/[,;]/).map((t: string) => t.trim()).filter(Boolean)[0] : "") || "팝뮤직";
+      // 3) 장르/태그 결정
+      // Suno description 모드에서 tags 필드에 이미지 프롬프트 텍스트가 담길 수 있음
+      // 짧고 album cover/cinematic 등 이미지 관련 단어 없으면 음악 스타일 태그로 사용
+      const rawTags = (tags || "").trim();
+      const isImagePrompt = rawTags.length > 60 || /album\s*cover|cinematic|photo|image|visual|artwork/i.test(rawTags);
+      const cleanedTags = isImagePrompt ? "" : rawTags;
+      const resolvedGenre = genre
+        || (cleanedTags ? cleanedTags.split(/[,;\s]+/).map((t: string) => t.trim()).filter(Boolean)[0] : "")
+        || "팝뮤직";
       const trackTitle = (title || "AI 생성 음악").trim();
       const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
 
@@ -980,9 +990,9 @@ export async function registerRoutes(
         title: trackTitle,
         artist: artistName,
         filename: audioFilename,
-        imageFilename: savedImageFilename || null,
+        imageFilename: savedImagePath,
         genre: resolvedGenre,
-        tags: tags || "",
+        tags: cleanedTags,
         lyrics: null,
         isAi: true,
         aiProvider: "suno",
