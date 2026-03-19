@@ -795,7 +795,7 @@ export default function CreateMusic() {
                     <li>AI 생성 배지가 자동으로 표시됩니다</li>
                     <li>무료 플랜은 AI 공개곡 1곡으로 제한됩니다</li>
                     <li>수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다</li>
-                    <li>Suno AI 이용약관 및 저작권법을 준수해야 합니다</li>
+                    <li>Venysound 이용약관 및 저작권법을 준수해야 합니다</li>
                     <li>부적절한 내용은 관리자에 의해 삭제될 수 있습니다</li>
                   </ul>
                 </div>
