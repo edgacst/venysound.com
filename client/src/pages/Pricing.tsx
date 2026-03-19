@@ -328,7 +328,7 @@ export default function Pricing() {
                     <Crown size={18} className="text-yellow-500" />
                     {t('pricing.premiumPlanName', 'Premium')}
                   </h3>
-                  <p className="text-muted-foreground text-xs">{t('pricing.premiumDescription', '3,000 크레딧/월, 뮤직비디오 생성, 프리미엄 배지')}</p>
+                  <p className="text-muted-foreground text-xs">{t('pricing.premiumDescription', 'AI 4,000 크레딧/월, 프리미엄 배지')}</p>
                 </div>
                 <div className="mb-4">
                   <span className="text-3xl font-bold" data-testid="text-premium-price">{premiumMonthly.toLocaleString("ko-KR")}{t('pricing.won', '원')}</span>
