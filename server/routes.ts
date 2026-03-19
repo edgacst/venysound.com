@@ -165,11 +165,11 @@ export async function registerRoutes(
           if (!wasAlreadyInRoom && wsUserId) {
             const leaveKey = `${slug}:${wsUserId}`;
             // 새로고침 감지: 퇴장 대기 타이머가 있으면 취소 (= 재접속이므로 퇴장/입장 알림 모두 생략)
+            // 쿨다운은 건드리지 않음 → 반복 재접속해도 입장 알림 중복 방지
             const pendingTimer = pendingLeaveTimers.get(leaveKey);
             if (pendingTimer) {
               clearTimeout(pendingTimer);
               pendingLeaveTimers.delete(leaveKey);
-              lastJoinBroadcastAt.delete(leaveKey); // 쿨다운 초기화
               /* 새로고침으로 재접속 → 알림 없이 조용히 복귀 */
             } else {
               const sameUserAlreadyInRoom = Array.from(room).some((s) => s !== ws && wsToUserId.get(s) === wsUserId);
@@ -277,15 +277,17 @@ export async function registerRoutes(
       const slugs = wsRadioSlugs.get(ws);
       if (uid && slugs && slugs.size > 0) {
         // 퇴장 알림 8초 지연: 새로고침이면 재접속 시 타이머 취소 → 알림 없이 조용히 복귀
+        // 주의: 쿨다운(lastJoinBroadcastAt)은 여기서 건드리지 않음 → 실제 퇴장(타이머 만료) 시에만 초기화
         slugs.forEach((slug) => {
           const leaveKey = `${slug}:${uid}`;
-          lastJoinBroadcastAt.delete(leaveKey);
           if (pendingLeaveTimers.has(leaveKey)) return; // 이미 대기 중
           const timer = setTimeout(async () => {
             pendingLeaveTimers.delete(leaveKey);
             // 같은 유저가 이미 다른 연결로 방에 있으면 퇴장 알림 생략
             const room = radioChannelRooms.get(slug);
             if (room && Array.from(room).some((s) => wsToUserId.get(s) === uid)) return;
+            // 실제 퇴장 확정 → 쿨다운 초기화 (다음 입장 시 알림 발송)
+            lastJoinBroadcastAt.delete(leaveKey);
             try {
               const user = await storage.getUserById(uid);
               const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
