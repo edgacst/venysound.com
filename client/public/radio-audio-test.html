@@ -1367,6 +1367,22 @@
         currentHostUserId = ch.currentHostId || null;
         renderUsers();
         updateMyBadge();
+
+        // 재입장 복원: 내가 현재 호스트면 ON AIR + 방송 종료 버튼 표시
+        if (meUserId && ch.currentHostId && String(ch.currentHostId) === String(meUserId) && ch.status === 'live') {
+          setOnAir(true);
+          if (btnEndBroadcast) btnEndBroadcast.style.display = '';
+          // 현재 재생 중인 곡 정보 복원
+          if (ch.nowPlayingMusicId && nowTitleEl) {
+            api('/api/music/' + encodeURIComponent(ch.nowPlayingMusicId))
+              .then(function(r){ return r.ok ? r.json() : null; })
+              .then(function(m) {
+                if (m && nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (m.title || '제목 없음') + ' – ' + (m.artist || '아티스트');
+              }).catch(function(){});
+          } else if (ch.nowPlayingObjectPath && nowTitleEl) {
+            nowTitleEl.textContent = '재생 중: 로컬 파일';
+          }
+        }
       }).catch(function() {});
       api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff').then(function(r){ return r.ok ? r.json() : []; }).then(function(list) {
         staffRoleMap = {};
@@ -1439,6 +1455,8 @@
         upsertUser({ id: meUserId, username: meUsername });
         renderUsers();
         updateMyBadge();
+        // meUserId 확정 후 채널 재조회 → 재입장 시 ON AIR 복원 체크
+        loadChannelAndStaff();
       }
       // auth 완료 후 WS 연결 → onopen 시 meUserId 확정 상태
       if (urlSlug) connectWs();
