@@ -260,7 +260,20 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (pauseTrigger > 0) el.pause();
   }, [pauseTrigger, getActiveAudio]);
 
-  // MediaSession API: 모바일 백그라운드 재생 + 잠금화면 컨트롤
+  const handleStop = useCallback(() => {
+    setPlayError(false);
+    setNeedsTap(false);
+    setIsMuted(false);
+    [audioARef.current, audioBRef.current].forEach((el) => {
+      if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
+    });
+    activeIndexRef.current = 0;
+    setActiveIndex(0);
+    setListenerCount(null);
+    clear();
+  }, [clear]);
+
+  // MediaSession API: handleStop 선언 이후에 위치해야 TDZ 에러 없음
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     if (!streamUrl || !channelName) return;
@@ -293,19 +306,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [isPlaying]);
-
-  const handleStop = useCallback(() => {
-    setPlayError(false);
-    setNeedsTap(false);
-    setIsMuted(false);
-    [audioARef.current, audioBRef.current].forEach((el) => {
-      if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
-    });
-    activeIndexRef.current = 0;
-    setActiveIndex(0);
-    setListenerCount(null);
-    clear();
-  }, [clear]);
 
   const onAudioPlay = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target === getActiveAudio()) setPlaying(true);
