@@ -118,6 +118,8 @@ export async function registerRoutes(
   const lastJoinBroadcastAt = new Map<string, number>();
   const JOIN_BROADCAST_COOLDOWN_MS = 60000;
   const radioLocalTitles = new Map<string, string | null>();
+  // 새로고침 감지용: 퇴장 알림을 8초 지연 후 발송. 그 사이 재접속하면 취소
+  const pendingLeaveTimers = new Map<string, ReturnType<typeof setTimeout>>(); // `${slug}:${userId}`
 
   function broadcastToRadioChannel(slug: string, data: object) {
     const room = radioChannelRooms.get(slug);
@@ -161,40 +163,50 @@ export async function registerRoutes(
           wsRadioSlugs.get(ws)!.add(slug);
           broadcastRadioListeners(slug);
           if (!wasAlreadyInRoom && wsUserId) {
-            const sameUserAlreadyInRoom = Array.from(room).some((s) => s !== ws && wsToUserId.get(s) === wsUserId);
-            if (sameUserAlreadyInRoom) {
-              /* 이미 이 방에 같은 유저가 다른 연결(다른 탭 등)로 있으면 입장 알림 안 함 */
+            const leaveKey = `${slug}:${wsUserId}`;
+            // 새로고침 감지: 퇴장 대기 타이머가 있으면 취소 (= 재접속이므로 퇴장/입장 알림 모두 생략)
+            const pendingTimer = pendingLeaveTimers.get(leaveKey);
+            if (pendingTimer) {
+              clearTimeout(pendingTimer);
+              pendingLeaveTimers.delete(leaveKey);
+              lastJoinBroadcastAt.delete(leaveKey); // 쿨다운 초기화
+              /* 새로고침으로 재접속 → 알림 없이 조용히 복귀 */
             } else {
-              const joinKey = `${slug}:${wsUserId}`;
-              const now = Date.now();
-              const lastAt = lastJoinBroadcastAt.get(joinKey);
-              if (lastAt != null && now - lastAt < JOIN_BROADCAST_COOLDOWN_MS) {
-                /* 같은 유저 입장 알림 60초에 한 번만 */
+              const sameUserAlreadyInRoom = Array.from(room).some((s) => s !== ws && wsToUserId.get(s) === wsUserId);
+              if (sameUserAlreadyInRoom) {
+                /* 다른 탭으로 이미 입장 중 → 알림 생략 */
               } else {
-                try {
-                  lastJoinBroadcastAt.set(joinKey, now);
-                  const explicitDisplayName =
-                    typeof msg.displayName === "string" && msg.displayName.trim()
-                      ? msg.displayName.trim()
-                      : null;
-                  let username: string | undefined;
-                  if (explicitDisplayName) {
-                    username = explicitDisplayName;
-                  } else {
-                    const user = await storage.getUserById(wsUserId);
-                    const preferred =
-                      (user?.firstName && String(user.firstName).trim()) ||
-                      (user?.username && String(user.username).trim()) ||
-                      null;
-                    username = (preferred as string | null) ?? undefined;
+                const joinKey = leaveKey;
+                const now = Date.now();
+                const lastAt = lastJoinBroadcastAt.get(joinKey);
+                if (lastAt != null && now - lastAt < JOIN_BROADCAST_COOLDOWN_MS) {
+                  /* 60초 쿨다운 */
+                } else {
+                  try {
+                    lastJoinBroadcastAt.set(joinKey, now);
+                    const explicitDisplayName =
+                      typeof msg.displayName === "string" && msg.displayName.trim()
+                        ? msg.displayName.trim()
+                        : null;
+                    let username: string | undefined;
+                    if (explicitDisplayName) {
+                      username = explicitDisplayName;
+                    } else {
+                      const user = await storage.getUserById(wsUserId);
+                      const preferred =
+                        (user?.firstName && String(user.firstName).trim()) ||
+                        (user?.username && String(user.username).trim()) ||
+                        null;
+                      username = (preferred as string | null) ?? undefined;
+                    }
+                    broadcastToRadioChannel(slug, {
+                      type: "radio_user_joined",
+                      userId: wsUserId,
+                      username,
+                    });
+                  } catch (e) {
+                    console.warn("[ws] radio_user_joined broadcast failed", e);
                   }
-                  broadcastToRadioChannel(slug, {
-                    type: "radio_user_joined",
-                    userId: wsUserId,
-                    username,
-                  });
-                } catch (e) {
-                  console.warn("[ws] radio_user_joined broadcast failed", e);
                 }
               }
             }
@@ -203,8 +215,11 @@ export async function registerRoutes(
         if (msg.type === "radio_leave" && typeof msg.slug === "string" && msg.slug) {
           const slug = String(msg.slug).trim().toLowerCase();
           if (wsUserId) {
-            // 퇴장 시 쿨다운 초기화 → 새로고침 후 재입장 시 radio_user_joined 즉시 발송
-            lastJoinBroadcastAt.delete(`${slug}:${wsUserId}`);
+            // 명시적 퇴장: 대기 중인 타이머 취소 후 즉시 퇴장 알림
+            const leaveKey = `${slug}:${wsUserId}`;
+            const pending = pendingLeaveTimers.get(leaveKey);
+            if (pending) { clearTimeout(pending); pendingLeaveTimers.delete(leaveKey); }
+            lastJoinBroadcastAt.delete(leaveKey);
             try {
               const user = await storage.getUserById(wsUserId);
               const preferred =
@@ -261,19 +276,26 @@ export async function registerRoutes(
       const uid = wsUserId;
       const slugs = wsRadioSlugs.get(ws);
       if (uid && slugs && slugs.size > 0) {
-        // 연결 끊김 시 쿨다운 초기화 → 새로고침 후 재입장 시 radio_user_joined 즉시 발송
-        slugs.forEach((slug) => lastJoinBroadcastAt.delete(`${slug}:${uid}`));
-        (async () => {
-          try {
-            const user = await storage.getUserById(uid);
-            const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
-            slugs.forEach((slug) => {
+        // 퇴장 알림 8초 지연: 새로고침이면 재접속 시 타이머 취소 → 알림 없이 조용히 복귀
+        slugs.forEach((slug) => {
+          const leaveKey = `${slug}:${uid}`;
+          lastJoinBroadcastAt.delete(leaveKey);
+          if (pendingLeaveTimers.has(leaveKey)) return; // 이미 대기 중
+          const timer = setTimeout(async () => {
+            pendingLeaveTimers.delete(leaveKey);
+            // 같은 유저가 이미 다른 연결로 방에 있으면 퇴장 알림 생략
+            const room = radioChannelRooms.get(slug);
+            if (room && Array.from(room).some((s) => wsToUserId.get(s) === uid)) return;
+            try {
+              const user = await storage.getUserById(uid);
+              const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
               broadcastToRadioChannel(slug, { type: "radio_user_left", userId: uid, username });
-            });
-          } catch (e) {
-            console.warn("[ws] radio_user_left on close broadcast failed", e);
-          }
-        })();
+            } catch (e) {
+              console.warn("[ws] radio_user_left on close broadcast failed", e);
+            }
+          }, 8000);
+          pendingLeaveTimers.set(leaveKey, timer);
+        });
       }
       if (slugs) {
         slugs.forEach((slug) => {
