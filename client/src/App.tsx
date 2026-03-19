@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useRadioPlayerStore } from "@/stores/radio-player";
 import { Router, Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -175,11 +176,12 @@ function Routes() {
 
 function App() {
   const radioWaveformRef = useRef<Uint8Array | null>(null);
+  const radioSlug = useRadioPlayerStore((s) => s.slug);
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
         <div className="app-root">
-          <div className="app-main">
+          <div className={`app-main${radioSlug ? " pb-14" : ""}`}>
             <TooltipProvider>
               <WsProviderWithAuth>
                 <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>

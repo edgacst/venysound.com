@@ -323,9 +323,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     <>
       {/* 음소거 안내 */}
       {isMuted && isPlaying && (
-        <div className="fixed bottom-[48px] left-0 right-0 z-50">
+        <div className="fixed bottom-[60px] left-2 right-2 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg"
             onClick={handleUnmute}
           >
             🔊 소리 켜기 (탭하세요)
@@ -333,9 +333,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         </div>
       )}
       {needsTap && !isPlaying && (
-        <div className="fixed bottom-[48px] left-0 right-0 z-50">
+        <div className="fixed bottom-[60px] left-2 right-2 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg"
             onClick={handlePlay}
           >
             ▶ 탭하여 라디오 듣기
@@ -343,9 +343,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         </div>
       )}
 
-      {/* 플레이 바 - 한 줄 */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-lg pb-[env(safe-area-inset-bottom)]">
-        <div className="max-w-7xl mx-auto px-3 py-2 flex items-center gap-2">
+      {/* 플레이 바 - 한 줄 floating */}
+      <div className="fixed bottom-2 left-2 right-2 z-50 bg-card border border-border rounded-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
+        <div className="px-3 py-2 flex items-center gap-2">
           {/* 라이브 인디케이터 */}
           <Radio className={`h-4 w-4 shrink-0 ${isPlaying ? "text-red-500" : "text-muted-foreground"}`} />
 
