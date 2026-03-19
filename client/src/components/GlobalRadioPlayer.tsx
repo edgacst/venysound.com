@@ -142,9 +142,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setUserStopped(true);
   }, [setUserStopped, getActiveAudio]);
 
-  // streamUrl 변경 시 오디오 로드 및 크로스페이드
+  // streamUrl 변경 시 에러 상태 초기화 + 오디오 로드 및 크로스페이드
   useEffect(() => {
     if (!streamUrl) return;
+    setPlayError(false);
     let cancelled = false;
     const rafId = requestAnimationFrame(() => {
       if (cancelled) return;
@@ -274,7 +275,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
   }, [getActiveAudio]);
 
-  const onAudioError = useCallback(() => {
+  const onAudioError = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
+    // 비활성 오디오 엘리먼트(src 없음)의 오류는 무시
+    if (e.target !== getActiveAudio()) return;
+    const el = e.target as HTMLAudioElement;
+    // src가 없는 경우는 정상적인 reset 동작이므로 무시
+    if (!el.src || el.src === window.location.href) return;
     setPlayError(true);
     setPlaying(false);
     toast({
@@ -282,7 +288,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       description: t("radio.listenErrorDesc", "네트워크 상태를 확인한 뒤 다시 시도해 주세요."),
       variant: "destructive",
     });
-  }, [setPlaying, toast, t]);
+  }, [getActiveAudio, setPlaying, toast, t]);
 
   const onAudioEnded = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     const el = e.target as HTMLAudioElement;

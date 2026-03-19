@@ -494,6 +494,7 @@
 
       <div class="btn-row" style="margin-top:10px;">
         <button id="btnPlay" disabled>송출전송</button>
+        <button id="btnEndBroadcast" style="background:#dc2626;display:none;">방송 종료</button>
         <span id="broadcastChannelLabel" class="pill" style="margin-left:8px;font-size:0.8rem;color:#94a3b8;"></span>
       </div>
 
@@ -891,11 +892,35 @@
       }).then(function(){
         lastNowPlayingId = musicId;
         show('채널 ' + urlSlug + ' 송출 중: ID ' + musicId, false);
+        if (btnEndBroadcast) btnEndBroadcast.style.display = '';
         applyFilter();
       }).catch(function(e){
         show('채널 송출 실패: ' + e.message, true);
       });
     }
+
+    // 방송 종료
+    var btnEndBroadcast = document.getElementById('btnEndBroadcast');
+    function endBroadcast() {
+      if (!urlSlug) return;
+      if (!confirm('방송을 종료하시겠습니까?\n리스너에게 방송 종료 알림이 전송됩니다.')) return;
+      audio.pause();
+      audio.src = '';
+      api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ended', nowPlayingMusicId: null, currentHostId: null })
+      }).then(function(r) {
+        if (!r.ok) return r.text().then(function(t){ throw new Error(t); });
+        show('방송이 종료되었습니다.', false);
+        btnEndBroadcast.style.display = 'none';
+        lastNowPlayingId = null;
+        applyFilter();
+      }).catch(function(e) {
+        show('방송 종료 실패: ' + e.message, true);
+      });
+    }
+    if (btnEndBroadcast) btnEndBroadcast.addEventListener('click', endBroadcast);
 
     var syncedLines = [];
     var lastSyncIdx = -1;
@@ -1024,6 +1049,7 @@
       }).then(function(){
         lastNowPlayingId = null;
         show('로컬 곡 송출 중: ' + (t.title || ''), false);
+        if (btnEndBroadcast) btnEndBroadcast.style.display = '';
       }).catch(function(e){
         show('송출 실패: ' + e.message, true);
       });
