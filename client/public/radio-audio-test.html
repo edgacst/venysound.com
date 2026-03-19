@@ -1134,9 +1134,13 @@
       if (audio.paused || audio.ended) return;
       if (audio.currentTime >= audio.duration - 0.5) {
         endedFallbackFired = true;
+        var trackIdAtTimeupdate = lastPlayedTrackId; // 현재 곡 ID 저장
         setTimeout(function() {
-          // ended 이벤트가 이미 정상 발화됐으면 lastPlayedTrackId가 이미 바뀌어 있음
-          // 아직 그대로면 ended가 안 온 것 → 수동으로 발화
+          // native ended가 이미 발화해서 곡이 넘어갔으면 취소
+          if (lastPlayedTrackId !== trackIdAtTimeupdate) {
+            endedFallbackFired = false;
+            return;
+          }
           audio.dispatchEvent(new Event('ended'));
           endedFallbackFired = false;
         }, 800);
