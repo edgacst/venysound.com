@@ -893,6 +893,112 @@ export async function registerRoutes(
     }
   });
 
+  // === AI 음악 사이트 공개 발행 ===
+  app.post("/api/ai-music/publish", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      const now = new Date();
+      const isPaidTier = user?.role === "admin" || (
+        (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
+        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
+      );
+
+      const { audioUrl, imageUrl, title, tags, genre, prompt } = req.body as {
+        audioUrl: string; imageUrl?: string; title?: string;
+        tags?: string; genre?: string; prompt?: string;
+      };
+      if (!audioUrl || typeof audioUrl !== "string") {
+        return res.status(400).json({ message: "audioUrl이 필요합니다." });
+      }
+
+      // 무료 유저: AI 공개곡 1곡 제한
+      if (!isPaidTier) {
+        const existing = await db.execute(sql`SELECT COUNT(*) as cnt FROM music WHERE user_id = ${userId} AND is_ai = true`);
+        const cnt = Number((existing.rows[0] as any)?.cnt ?? 0);
+        if (cnt >= 1) {
+          return res.status(403).json({
+            message: "무료 플랜은 AI 생성곡을 1곡까지 공개할 수 있습니다. Pro로 업그레이드하면 무제한 공개가 가능합니다.",
+            code: "AI_PUBLISH_LIMIT_REACHED",
+          });
+        }
+      }
+
+      // Suno 오디오 URL 유효성 검사 (만료된 링크 차단)
+      if (/\/None\.(mp3|wav|ogg)|undefined|null/i.test(audioUrl)) {
+        return res.status(400).json({ message: "음원 링크가 올바르지 않습니다." });
+      }
+
+      const localUploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+      mkdirSync(localUploadsDir, { recursive: true });
+
+      // 1) 오디오 다운로드 후 로컬 저장
+      const audioId = crypto.randomUUID();
+      const audioFilename = `${audioId}.mp3`;
+      const audioLocalPath = path.join(localUploadsDir, audioFilename);
+
+      let audioRes: Response;
+      try {
+        audioRes = await fetch(audioUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+      } catch (e) {
+        return res.status(502).json({ message: "음원 다운로드에 실패했습니다. 링크가 만료되었을 수 있습니다." });
+      }
+      if (!audioRes.ok) {
+        return res.status(502).json({ message: `음원 다운로드 실패 (${audioRes.status}). 링크가 만료되었을 수 있습니다.` });
+      }
+      const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+      if (audioBuffer.length < 10000) {
+        return res.status(502).json({ message: "음원 파일이 너무 작습니다. 링크가 만료되었을 수 있습니다." });
+      }
+      writeFileSync(audioLocalPath, audioBuffer);
+
+      // 2) 커버 이미지 다운로드 (선택)
+      let savedImageFilename: string | undefined;
+      if (imageUrl && typeof imageUrl === "string" && !/undefined|null/i.test(imageUrl)) {
+        try {
+          const imgRes = await fetch(imageUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (imgRes.ok) {
+            const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+            const imgId = crypto.randomUUID();
+            const imgFilename = `${imgId}.jpg`;
+            writeFileSync(path.join(localUploadsDir, imgFilename), imgBuf);
+            savedImageFilename = imgFilename;
+          }
+        } catch {
+          // 이미지 실패는 무시하고 계속
+        }
+      }
+
+      // 3) 장르 결정 - tags에서 첫번째 추출하거나 genre 파라미터 사용
+      const resolvedGenre = genre || (tags ? tags.split(/[,;]/).map((t: string) => t.trim()).filter(Boolean)[0] : "") || "팝뮤직";
+      const trackTitle = (title || "AI 생성 음악").trim();
+      const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
+
+      // 4) DB에 음악 등록
+      const newMusic = await storage.createMusic({
+        title: trackTitle,
+        artist: artistName,
+        filename: audioFilename,
+        imageFilename: savedImageFilename || null,
+        genre: resolvedGenre,
+        tags: tags || "",
+        lyrics: null,
+        isAi: true,
+        aiProvider: "suno",
+        price: 0,
+        isDownloadable: false, // 무료·유료 모두 AI 공개곡은 기본 다운로드 불가 (관리자가 수동 허용)
+        userId,
+      });
+
+      console.log(`[ai-music publish] userId=${userId} isPaid=${isPaidTier} musicId=${newMusic.id} title="${trackTitle}"`);
+      res.status(201).json({ music: newMusic });
+    } catch (e) {
+      console.error("[ai-music publish]", e);
+      res.status(500).json({ message: "공개 처리 중 오류가 발생했습니다." });
+    }
+  });
+
   // === Music Routes ===
   app.get(api.music.list.path, async (req, res) => {
     const { genre, search, tag, page, limit } = req.query as { genre?: string, search?: string, tag?: string, page?: string, limit?: string };

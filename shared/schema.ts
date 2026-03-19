@@ -20,6 +20,7 @@ export const music = pgTable("music", {
   tags: text("tags"),
   lyrics: text("lyrics"),
   isAi: boolean("is_ai").default(false),
+  aiProvider: text("ai_provider"), // 'suno' 등 AI 제공사
   price: integer("price").default(0),
   isDownloadable: boolean("is_downloadable").default(false),
   userId: text("user_id").references(() => users.id).notNull(),

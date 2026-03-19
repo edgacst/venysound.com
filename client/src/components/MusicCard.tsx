@@ -542,7 +542,9 @@ export function MusicCard({ music }: MusicCardProps) {
 
           <div className="absolute top-2 left-2 flex items-center gap-1">
             {music.isAi && (
-              <span className="text-xs bg-blue-600/80 text-white px-2 py-0.5 rounded-full">AI</span>
+              <span className="text-xs bg-blue-600/80 text-white px-2 py-0.5 rounded-full">
+                AI{(music as any).aiProvider ? ` · ${(music as any).aiProvider}` : ""}
+              </span>
             )}
             {music.lyrics && (
               <span className="text-xs bg-purple-600/80 text-white px-2 py-0.5 rounded-full" data-testid={`badge-lyrics-${music.id}`}>{t('music.lyrics')}</span>

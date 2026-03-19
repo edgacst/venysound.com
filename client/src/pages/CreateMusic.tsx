@@ -3,13 +3,21 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { PageTransition } from "@/components/PageTransition";
-import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUpload, Search, Play } from "lucide-react";
+import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUpload, Search, Play, Globe } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 const POLL_INTERVAL_MS = 3000;
 const AI_MUSIC_TASK_KEY = "ai_music_last_task";
@@ -29,6 +37,9 @@ function TrackCard({
   onUpload,
   onDownload,
   onPlay,
+  onPublish,
+  isPublishing,
+  isPublished,
   t,
 }: {
   track: SavedTrack;
@@ -37,6 +48,9 @@ function TrackCard({
   onUpload: () => void;
   onDownload: () => void;
   onPlay: () => void;
+  onPublish: () => void;
+  isPublishing: boolean;
+  isPublished: boolean;
   t: TTranslate;
 }) {
   const [showLyrics, setShowLyrics] = useState(false);
@@ -94,6 +108,22 @@ function TrackCard({
                       <span className="text-[10px] text-muted-foreground ml-0.5">({track.uploadCount})</span>
                     )}
                   </button>
+                  {isPublished ? (
+                    <span className="inline-flex items-center gap-0.5 text-green-500 font-medium">
+                      <Globe className="w-3 h-3" />
+                      {t("createMusic.published", "공개됨")}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onPublish}
+                      disabled={isPublishing}
+                      className="inline-flex items-center gap-0.5 hover:underline text-violet-500 disabled:opacity-50"
+                    >
+                      {isPublishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                      {t("createMusic.publishToSite", "신곡으로 공개")}
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -276,6 +306,48 @@ export default function CreateMusic() {
     },
     [persistTracks]
   );
+
+  // ── 신곡 공개 ──
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishedIds, setPublishedIds] = useState<Set<string>>(new Set());
+  const [publishConfirmTrack, setPublishConfirmTrack] = useState<SavedTrack | null>(null);
+
+  const handlePublishTrack = useCallback(async (track: SavedTrack) => {
+    if (!track.audio_url) return;
+    setPublishingId(track.id);
+    try {
+      const res = await fetch("/api/ai-music/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          audioUrl: track.audio_url,
+          imageUrl: track.image_url,
+          title: track.title,
+          tags: track.tags,
+          prompt: track.original_prompt ?? track.prompt,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({
+          title: "공개 실패",
+          description: data.message || "오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setPublishedIds((prev) => new Set([...prev, track.id]));
+      toast({
+        title: "신곡으로 공개되었습니다!",
+        description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
+      });
+    } catch {
+      toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
+    } finally {
+      setPublishingId(null);
+    }
+  }, [toast]);
 
   const goUploadWithTrack = useCallback(
     (track: SavedTrack) => {
@@ -684,6 +756,9 @@ export default function CreateMusic() {
                               onUpload={() => goUploadWithTrack(track)}
                               onDownload={() => handleDownloadTrack(track)}
                               onPlay={() => playTrackInGlobalPlayer(track)}
+                              onPublish={() => setPublishConfirmTrack(track)}
+                              isPublishing={publishingId === track.id}
+                              isPublished={publishedIds.has(track.id)}
                               t={t as TTranslate}
                             />
                           ))}
@@ -699,6 +774,60 @@ export default function CreateMusic() {
 
         <Footer />
       </div>
+
+      {/* 신곡 공개 동의 다이얼로그 */}
+      <Dialog open={!!publishConfirmTrack} onOpenChange={(open) => { if (!open) setPublishConfirmTrack(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-violet-500" />
+              신곡으로 사이트에 공개
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  <span className="font-semibold text-foreground">"{publishConfirmTrack?.title || "AI 생성 음악"}"</span>을(를)
+                  베니사운드 신곡 목록에 공개합니다.
+                </p>
+                <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs space-y-1.5">
+                  <p className="font-semibold text-amber-700 dark:text-amber-400">공개 전 확인해주세요</p>
+                  <ul className="list-disc list-inside space-y-1 text-amber-700 dark:text-amber-500">
+                    <li>AI 생성 배지가 자동으로 표시됩니다</li>
+                    <li>무료 플랜은 AI 공개곡 1곡으로 제한됩니다</li>
+                    <li>수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다</li>
+                    <li>Suno AI 이용약관 및 저작권법을 준수해야 합니다</li>
+                    <li>부적절한 내용은 관리자에 의해 삭제될 수 있습니다</li>
+                  </ul>
+                </div>
+                <p className="text-xs">
+                  위 내용에 동의하고 신곡으로 공개하시겠습니까?
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setPublishConfirmTrack(null)}>
+              취소
+            </Button>
+            <Button
+              className="bg-violet-600 hover:bg-violet-700 text-white"
+              disabled={publishingId === publishConfirmTrack?.id}
+              onClick={() => {
+                if (publishConfirmTrack) {
+                  handlePublishTrack(publishConfirmTrack);
+                  setPublishConfirmTrack(null);
+                }
+              }}
+            >
+              {publishingId === publishConfirmTrack?.id ? (
+                <><Loader2 className="w-4 h-4 animate-spin mr-1" />공개 중...</>
+              ) : (
+                <><Globe className="w-4 h-4 mr-1" />동의하고 공개</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 }

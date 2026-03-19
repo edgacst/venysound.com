@@ -8,43 +8,44 @@ export function Footer() {
   const { user } = useAuth();
   const isOwner = user?.email === "freecompr20@gmail.com";
   return (
-    <footer className="border-t border-white/5 bg-card mt-auto">
-      <div className="container px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <footer className="border-t border-white/5 bg-card mt-auto text-[11px] text-muted-foreground leading-4">
+      <div className="container px-4 py-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>
-            <h5 className="font-bold text-sm mb-2 flex items-center gap-2">
-              <img src={logoImage} alt="Veny Sound" className="h-5 w-auto rounded bg-white/10 p-0.5" />
-              <span className="font-display font-bold">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <img src={logoImage} alt="Veny Sound" className="h-4 w-auto rounded bg-white/10 p-0.5" />
+              <span className="font-bold">
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
               </span>
-            </h5>
-            <p className="text-xs text-muted-foreground">{t('footer.company')}</p>
-            <p className="text-xs text-muted-foreground">{t('footer.businessNumber')}</p>
-            <p className="text-xs text-muted-foreground">{t('footer.ceo')}</p>
+            </div>
+            <ul className="space-y-0">
+              <li>{t('footer.company')}</li>
+              <li>{t('footer.businessNumber')}</li>
+              <li>{t('footer.ceo')}</li>
+              <li>온라인음악서비스 제2026-000001호</li>
+            </ul>
           </div>
           <div>
-            <h5 className="font-bold text-xs mb-2">{t('footer.quickLinks')}</h5>
-            <ul className="space-y-1 text-xs text-muted-foreground">
-              <li><Link href="/about"><span className="hover:text-foreground cursor-pointer">{t('nav.about')}</span></Link></li>
-              <li><Link href="/music"><span className="hover:text-foreground cursor-pointer">{t('nav.musicList')}</span></Link></li>
-              <li><Link href="/popular"><span className="hover:text-foreground cursor-pointer">{t('nav.popular')}</span></Link></li>
+            <p className="font-semibold mb-1">{t('footer.quickLinks')}</p>
+            <ul className="space-y-0">
               <li><Link href="/legal"><span className="hover:text-foreground cursor-pointer">{t('footer.terms')}</span></Link></li>
               <li><Link href="/privacy"><span className="hover:text-foreground cursor-pointer">{t('footer.privacy')}</span></Link></li>
               <li><Link href="/refund-policy"><span className="hover:text-foreground cursor-pointer">{t('footer.refundPolicy')}</span></Link></li>
+              <li><Link href="/guide"><span className="hover:text-foreground cursor-pointer">{t('nav.guide', '이용안내')}</span></Link></li>
             </ul>
           </div>
           <div>
-            <h5 className="font-bold text-xs mb-2">{t('footer.support')}</h5>
-            <ul className="space-y-1 text-xs text-muted-foreground">
+            <p className="font-semibold mb-1">{t('footer.support')}</p>
+            <ul className="space-y-0">
               <li><Link href="/faq"><span className="hover:text-foreground cursor-pointer">FAQ</span></Link></li>
               <li>freecompr@naver.com</li>
               <li>010-8447-9973</li>
-              <li>{t('footer.address')}<br />{t('footer.address2')}</li>
+              <li>{t('footer.address')} {t('footer.address2')}</li>
             </ul>
           </div>
         </div>
-        <div className="border-t border-white/5 mt-6 pt-4 text-center text-xs text-muted-foreground">
+        <div className="border-t border-white/5 mt-4 pt-3 text-center">
           &copy; 2026 Veny_Sound. All rights reserved.
         </div>
       </div>
