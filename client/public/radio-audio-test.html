@@ -1345,15 +1345,17 @@
     }
 
     function roleBadgeHtml(role) {
+      // 이모티콘으로만 표시할 역할
+      var emojiOnly = { owner: '👑', cj: '🎤', staff: '🛠️', listener: '👂' };
+      if (emojiOnly[role]) {
+        return '<span style="font-size:1rem;flex-shrink:0;" title="' + role + '">' + emojiOnly[role] + '</span>';
+      }
       var map = {
-        owner:    { label: '국장',   color: '#a78bfa', bg: 'rgba(109,40,217,0.28)', border: 'rgba(167,139,250,0.45)' },
         dj:       { label: 'DJ',     color: '#c4b5fd', bg: 'rgba(109,40,217,0.18)', border: 'rgba(196,181,253,0.35)' },
         sub_host: { label: '부국장', color: '#fcd34d', bg: 'rgba(180,83,9,0.22)',   border: 'rgba(252,211,77,0.35)' },
-        cj:       { label: 'CJ',     color: '#34d399', bg: 'rgba(5,150,105,0.22)',  border: 'rgba(52,211,153,0.35)' },
-        staff:    { label: '스텝',   color: '#94a3b8', bg: 'rgba(30,41,59,0.7)',    border: 'rgba(148,163,184,0.28)' },
-        listener: { label: '청취자', color: '#64748b', bg: 'rgba(15,23,42,0.45)',   border: 'rgba(100,116,139,0.18)' },
       };
-      var s = map[role] || map['listener'];
+      var s = map[role];
+      if (!s) return '';
       return '<span style="display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;font-size:0.68rem;font-weight:700;color:' + s.color + ';background:' + s.bg + ';border:1px solid ' + s.border + ';flex-shrink:0;">' + escapeHtml(s.label) + '</span>';
     }
 
@@ -1472,7 +1474,7 @@
         })
         .forEach(function(u) {
           var role = getActualRole(u.id);
-          var roleEmoji = { owner: '', dj: '🎧 ', sub_host: '🌟 ', cj: '🎤 ', staff: '🛠️ ', listener: '' };
+          var roleEmoji = { owner: '', dj: '🎧 ', sub_host: '🌟 ', cj: '', staff: '', listener: '' };
           var displayName = (roleEmoji[role] || '') + (u.username || u.id.slice(0, 14));
           var row = document.createElement('div');
           row.className = 'user-row';
