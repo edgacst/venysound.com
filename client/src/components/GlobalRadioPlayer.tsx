@@ -260,6 +260,40 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (pauseTrigger > 0) el.pause();
   }, [pauseTrigger, getActiveAudio]);
 
+  // MediaSession API: 모바일 백그라운드 재생 + 잠금화면 컨트롤
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    if (!streamUrl || !channelName) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: channelName,
+      artist: "라디오 청취 중",
+      album: "venysound",
+    });
+    navigator.mediaSession.setActionHandler("play", () => {
+      const el = getActiveAudio();
+      if (el) el.play().catch(() => {});
+    });
+    navigator.mediaSession.setActionHandler("pause", () => {
+      const el = getActiveAudio();
+      if (el) el.pause();
+    });
+    navigator.mediaSession.setActionHandler("stop", () => {
+      handleStop();
+    });
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler("play", null);
+        navigator.mediaSession.setActionHandler("pause", null);
+        navigator.mediaSession.setActionHandler("stop", null);
+      } catch { /* ignore */ }
+    };
+  }, [streamUrl, channelName, getActiveAudio, handleStop]);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  }, [isPlaying]);
+
   const handleStop = useCallback(() => {
     setPlayError(false);
     setNeedsTap(false);

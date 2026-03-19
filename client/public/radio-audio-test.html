@@ -905,6 +905,20 @@
       btn.disabled = !has;
     }
 
+    function setMediaSession(title, artist) {
+      if (!('mediaSession' in navigator)) return;
+      try {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: title || '방송 중',
+          artist: artist || 'venysound 라디오',
+          album: urlSlug || '',
+        });
+        navigator.mediaSession.setActionHandler('play', function() { audio.play().catch(function(){}); });
+        navigator.mediaSession.setActionHandler('pause', function() { audio.pause(); });
+        navigator.mediaSession.setActionHandler('stop', function() { audio.pause(); });
+      } catch(e) {}
+    }
+
     function broadcastTrack(musicId) {
       if (!urlSlug) return;
       var startedAt = new Date().toISOString();
@@ -1073,6 +1087,7 @@
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
           if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
+          setMediaSession(t.title || '제목 없음', t.artist || '');
           broadcastLocalTrack(t);
           applyFilter();
         }).catch(function(e){ lastPlayedTrackId = null; show('재생 실패: ' + e.message, true); });
@@ -1089,6 +1104,7 @@
         if (t) {
           var label = (t.title || '제목 없음') + ' – ' + (t.artist || '아티스트');
           if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + label;
+          setMediaSession(t.title || '제목 없음', t.artist || '아티스트');
         }
         loadLyrics(musicId);
         broadcastTrack(musicId);
@@ -1183,6 +1199,7 @@
           audio.play().then(function(){
             if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (targetNext.title || '') + ' – ' + (targetNext.artist || '');
             if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
+            setMediaSession(targetNext.title || '', targetNext.artist || '');
             broadcastLocalTrack(targetNext);
             applyFilter();
           }).catch(function(e){ show('재생 실패 (스킵): ' + e.message, true); trySkip(); });
@@ -1195,6 +1212,7 @@
           audio.src = sUrl;
           audio.play().then(function(){
             if (nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (targetNext.title || '제목 없음') + ' – ' + (targetNext.artist || '아티스트');
+            setMediaSession(targetNext.title || '제목 없음', targetNext.artist || '아티스트');
             loadLyrics(targetNext.id);
             broadcastTrack(targetNext.id);
           }).catch(function(e){ show('재생 실패 (스킵): ' + e.message + ' [' + sUrl + ']', true); trySkip(); });
