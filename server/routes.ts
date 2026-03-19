@@ -1234,6 +1234,7 @@ export async function registerRoutes(
         path.join(uploadsDir, `${baseId}.ogg`),
       ];
       const localPath = candidates.find((p) => existsSync(p));
+      console.log(`[stream-debug] musicId=${id} fn="${fn}" fileId="${fileId}" cwd="${process.cwd()}" candidates=${JSON.stringify(candidates)} found=${localPath || "NONE"}`);
       if (!localPath) {
         // 로컬에 없으면 /objects/ 경로로 리다이렉트 (Replit object storage 폴백)
         if (fn.startsWith("/objects/") || fn.startsWith("objects/")) {
