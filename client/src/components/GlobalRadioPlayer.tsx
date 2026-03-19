@@ -1,25 +1,14 @@
 import { useRef, useEffect, useCallback, useState, type RefObject } from "react";
-// Note: waveformBufferRef prop kept for API compatibility but waveform AudioContext removed
-// to avoid browser autoplay policy blocking audio output via suspended AudioContext.
-import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { Radio, Pause, Play, X, Volume2, VolumeX } from "lucide-react";
+import { Pause, Play, X, Radio } from "lucide-react";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { useWs } from "@/contexts/WsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { resolveStorageUrl } from "@/lib/utils";
 
 const REFETCH_INTERVAL_MS = 8000;
 const CROSSFADE_DURATION_MS = 1500;
-
-function formatTime(sec: number): string {
-  if (!isFinite(sec) || sec < 0) return "0:00";
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
 
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t } = useTranslation();
@@ -35,19 +24,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [playError, setPlayError] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [listenerCount, setListenerCount] = useState<number | null>(null);
 
   const {
     slug,
     channelName,
-    trackTitle,
     streamUrl,
     isPlaying,
     userStopped,
-    initialSeekSeconds,
     playTrigger,
     pauseTrigger,
     setStream,
@@ -57,30 +41,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     clear,
   } = useRadioPlayerStore();
 
-  // 커버 이미지: streamUrl에서 musicId 추출 후 메타데이터 fetch
-  useEffect(() => {
-    const match = streamUrl?.match(/\/api\/music\/(\d+)\/stream/);
-    if (!match) {
-      setCoverImageUrl(null);
-      return;
-    }
-    const musicId = match[1];
-    let cancelled = false;
-    fetch(`/api/music/${musicId}`, { credentials: "include" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.imageFilename) {
-          setCoverImageUrl(resolveStorageUrl(data.imageFilename));
-        } else {
-          setCoverImageUrl(null);
-        }
-      })
-      .catch(() => { if (!cancelled) setCoverImageUrl(null); });
-    return () => { cancelled = true; };
-  }, [streamUrl]);
-
-  // Refetch channel when slug is set to get new nowPlaying
+  // Refetch channel to keep stream in sync
   useEffect(() => {
     if (!slug || !streamUrl) return;
     const interval = setInterval(async () => {
@@ -115,11 +76,22 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     return () => setPlayNowRef(null);
   }, [getActiveAudio, setPlayNowRef]);
 
-  // WebSocket: 곡 변경 감지
+  // WebSocket: 곡 변경 + 청취자 수 수신
   useEffect(() => {
     if (!slug) return;
     const normalizedSlug = slug.trim().toLowerCase();
     const unsub = subscribe((msg) => {
+      if (msg.type === "radio_listeners" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
+        const users = (msg as any).users;
+        if (Array.isArray(users)) setListenerCount(users.length);
+        else if (typeof (msg as any).count === "number") setListenerCount((msg as any).count);
+      }
+      if (msg.type === "radio_user_joined" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
+        setListenerCount((prev) => (prev ?? 0) + 1);
+      }
+      if (msg.type === "radio_user_left" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
+        setListenerCount((prev) => Math.max(0, (prev ?? 1) - 1));
+      }
       if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const objPath = (msg as any).nowPlayingObjectPath;
@@ -149,13 +121,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     return unsub;
   }, [slug, channelName, subscribe, clear, setStream]);
 
-  // 볼륨 적용
-  useEffect(() => {
-    [audioARef.current, audioBRef.current].forEach((el) => {
-      if (el) el.volume = volume;
-    });
-  }, [volume]);
-
   const handleUnmute = useCallback(() => {
     const el = getActiveAudio();
     if (el) el.muted = false;
@@ -177,35 +142,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setUserStopped(true);
   }, [setUserStopped, getActiveAudio]);
 
-  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = parseFloat(e.target.value);
-    setVolume(v);
-    const el = getActiveAudio();
-    if (el) {
-      el.volume = v;
-      el.muted = false;
-      setIsMuted(false);
-    }
-  }, [getActiveAudio]);
-
-  const handleToggleMute = useCallback(() => {
-    const el = getActiveAudio();
-    if (!el) return;
-    if (isMuted) {
-      el.muted = false;
-      setIsMuted(false);
-    } else {
-      el.muted = true;
-      setIsMuted(true);
-    }
-  }, [getActiveAudio, isMuted]);
-
-  // streamUrl 변경 시 비활성 플레이어에 로드 및 크로스페이드
+  // streamUrl 변경 시 오디오 로드 및 크로스페이드
   useEffect(() => {
     if (!streamUrl) return;
     let cancelled = false;
-    setCurrentTime(0);
-    setDuration(0);
     const rafId = requestAnimationFrame(() => {
       if (cancelled) return;
       const active = getActiveAudio();
@@ -222,7 +162,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       inactive.load();
       pendingSeekRef.current = useRadioPlayerStore.getState().initialSeekSeconds ?? null;
       inactive.src = streamUrl;
-      inactive.volume = volume;
       const onReady = () => {
         inactive.oncanplaythrough = null;
         const seek = pendingSeekRef.current;
@@ -255,14 +194,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
           if (oldActive) { oldActive.pause(); oldActive.currentTime = 0; }
-          inactive.volume = volume;
           tryPlay(inactive);
           return;
         }
         if (!active?.src || active.paused) {
           activeIndexRef.current = 1 - activeIndexRef.current;
           setActiveIndex(activeIndexRef.current);
-          inactive.volume = volume;
           tryPlay(inactive);
           return;
         }
@@ -272,8 +209,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const run = () => {
           const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
           const ease = t * (2 - t);
-          if (active) active.volume = (1 - ease) * volume;
-          inactive.volume = ease * volume;
+          if (active) active.volume = (1 - ease);
+          inactive.volume = ease;
           if (t < 1) {
             crossfadeRafRef.current = requestAnimationFrame(run);
           } else {
@@ -296,7 +233,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         crossfadeRafRef.current = null;
       }
     };
-  }, [streamUrl, getActiveAudio, getInactiveAudio, volume]);
+  }, [streamUrl, getActiveAudio, getInactiveAudio]);
 
   useEffect(() => {
     const el = getActiveAudio();
@@ -314,17 +251,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setPlayError(false);
     setNeedsTap(false);
     setIsMuted(false);
-    setCurrentTime(0);
-    setDuration(0);
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
     });
     activeIndexRef.current = 0;
     setActiveIndex(0);
+    setListenerCount(null);
     clear();
   }, [clear]);
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   const onAudioPlay = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target === getActiveAudio()) setPlaying(true);
@@ -338,8 +272,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const el = e.target as HTMLAudioElement;
     if (el !== getActiveAudio()) return;
     useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
-    setCurrentTime(el.currentTime);
-    if (isFinite(el.duration)) setDuration(el.duration);
   }, [getActiveAudio]);
 
   const onAudioError = useCallback(() => {
@@ -361,8 +293,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     el.load();
     setPlaying(false);
     setUserStopped(false);
-    setCurrentTime(0);
-    setDuration(0);
     const state = useRadioPlayerStore.getState();
     const currentSlug = state.slug;
     const currentUrl = state.streamUrl;
@@ -381,127 +311,72 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   if (!slug || !channelName) return null;
 
-  const statusText = playError
-    ? t("radio.listenError", "재생 오류")
-    : isMuted && isPlaying
-      ? t("radio.mutedPlaying", "🔇 음소거")
-      : isPlaying
-        ? t("radio.listeningTo", "LIVE")
-        : needsTap
-          ? t("radio.tapToContinue", "탭하여 계속")
-          : t("radio.listeningPaused", "일시정지");
+  const listenerText = listenerCount != null ? ` · 청취자 ${listenerCount}명` : "";
 
   return (
     <>
-      {/* 음소거/탭 안내 배너 */}
+      {/* 음소거 안내 */}
       {isMuted && isPlaying && (
-        <div className="fixed bottom-[72px] left-0 right-0 z-50">
+        <div className="fixed bottom-[48px] left-0 right-0 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-2 bg-amber-500 text-white text-sm font-semibold"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold"
             onClick={handleUnmute}
           >
-            <Volume2 className="h-4 w-4" />
-            {t("radio.tapToUnmute", "🔊 소리 켜기 (탭하세요)")}
+            🔊 소리 켜기 (탭하세요)
           </button>
         </div>
       )}
       {needsTap && !isPlaying && (
-        <div className="fixed bottom-[72px] left-0 right-0 z-50">
+        <div className="fixed bottom-[48px] left-0 right-0 z-50">
           <button
-            className="w-full flex items-center justify-center gap-2 py-2 bg-primary text-primary-foreground text-sm font-semibold"
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold"
             onClick={handlePlay}
           >
-            <Play className="h-4 w-4 fill-current" />
-            {t("radio.tapToPlay", "▶ 탭하여 라디오 듣기")}
+            ▶ 탭하여 라디오 듣기
           </button>
         </div>
       )}
 
-      {/* 플레이어 바 */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl pb-[env(safe-area-inset-bottom)]">
-        {/* 진행 바 (읽기 전용) */}
-        <div className="relative h-1 bg-muted">
-          <div
-            className="h-full bg-primary transition-none"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
+      {/* 플레이 바 - 한 줄 */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-lg pb-[env(safe-area-inset-bottom)]">
+        <div className="max-w-7xl mx-auto px-3 py-2 flex items-center gap-2">
+          {/* 라이브 인디케이터 */}
+          <Radio className={`h-4 w-4 shrink-0 ${isPlaying ? "text-red-500" : "text-muted-foreground"}`} />
 
-        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-2 sm:gap-4">
-          {/* 커버 이미지 + 곡 정보 */}
-          <Link
-            href={`/radio/${slug}`}
-            className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 max-w-[40%] sm:max-w-[35%] rounded-md hover:bg-white/5 active:bg-white/10 transition-colors touch-manipulation"
-          >
-            {coverImageUrl ? (
-              <img
-                src={coverImageUrl}
-                alt=""
-                className="w-10 h-10 sm:w-11 sm:h-11 rounded-md object-cover shadow-md shrink-0"
-              />
+          {/* 방송 정보 텍스트 */}
+          <span className="flex-1 min-w-0 text-sm truncate">
+            {playError ? (
+              <span className="text-destructive">재생 오류</span>
             ) : (
-              <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-md bg-muted flex items-center justify-center shrink-0">
-                <Radio className="h-5 w-5 text-primary" />
-              </div>
+              <>
+                <span className="font-medium">현재 </span>
+                <span className="font-semibold text-primary">{channelName}</span>
+                <span className="font-medium"> 방송 청취중</span>
+                {listenerText && (
+                  <span className="text-muted-foreground text-xs">{listenerText}</span>
+                )}
+              </>
             )}
-            <div className="overflow-hidden min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="font-semibold truncate text-sm text-foreground leading-tight">{channelName}</p>
-                <span className={`text-[10px] font-bold px-1 py-0.5 rounded shrink-0 ${
-                  isPlaying ? "bg-red-500 text-white" : "bg-muted text-muted-foreground"
-                }`}>
-                  {statusText}
-                </span>
-              </div>
-              {trackTitle && (
-                <p className="truncate text-xs text-muted-foreground leading-tight mt-0.5">{trackTitle}</p>
-              )}
-            </div>
-          </Link>
+          </span>
 
-          {/* 재생 컨트롤 */}
-          <div className="flex items-center gap-0.5 shrink-0">
-            {isPlaying ? (
-              <Button size="icon" variant="ghost" onClick={handlePause} aria-label={t("radio.listenPause", "일시정지")}>
-                <Pause className="h-5 w-5" />
-              </Button>
-            ) : (
-              <Button size="icon" variant="ghost" onClick={handlePlay} aria-label={t("radio.listenPlay", "재생")}>
-                <Play className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
-
-          {/* 시간 표시 */}
-          <div className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground shrink-0 tabular-nums">
-            <span>{formatTime(currentTime)}</span>
-            {duration > 0 && <><span>/</span><span>{formatTime(duration)}</span></>}
-          </div>
-
-          {/* 볼륨 컨트롤 */}
-          <div className="hidden sm:flex items-center gap-1 shrink-0">
-            <Button size="icon" variant="ghost" onClick={handleToggleMute}>
-              {isMuted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </Button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className="w-20 accent-primary h-1 cursor-pointer"
-              aria-label="볼륨"
-            />
-          </div>
-
-          {/* 닫기 */}
+          {/* 재생/일시정지 토글 */}
           <Button
             size="icon"
             variant="ghost"
-            className="shrink-0 ml-auto"
+            className="h-8 w-8 shrink-0"
+            onClick={isPlaying ? handlePause : handlePlay}
+            aria-label={isPlaying ? "일시정지" : "재생"}
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+
+          {/* X 종료 버튼 */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
             onClick={handleStop}
-            aria-label={t("radio.stopListening", "방송 정지")}
+            aria-label="방송 종료"
           >
             <X className="h-4 w-4" />
           </Button>
