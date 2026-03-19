@@ -29,6 +29,9 @@ export default function Legal() {
     { key: "article18", title: t('legal.article18') },
     { key: "article19", title: t('legal.article19') },
     { key: "article20", title: t('legal.article20') },
+    { key: "article21", title: t('legal.article21') },
+    { key: "article22", title: t('legal.article22') },
+    { key: "article23", title: t('legal.article23') },
   ];
 
   return (
