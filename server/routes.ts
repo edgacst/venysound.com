@@ -1243,12 +1243,6 @@ export async function registerRoutes(
       ];
       const localPath = candidates.find((p) => existsSync(p));
       if (!localPath) {
-        // /objects/ 경로는 object-storage 라우트로 리다이렉트 시도
-        const objFallback = fn.startsWith("/") ? fn : `/${fn}`;
-        if (objFallback.includes("/objects/")) {
-          res.set("Cache-Control", "no-store");
-          return res.redirect(302, objFallback.substring(objFallback.indexOf("/objects/")));
-        }
         console.warn(`[stream] musicId=${id} filename="${fn}" → 로컬 파일 없음 (baseId=${baseId})`);
         res.set("Content-Type", "audio/mpeg");
         return res.status(404).end();
