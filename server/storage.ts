@@ -2490,11 +2490,15 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
   }
 
   async addRadioChannelStaff(channelId: number, userId: string, role: string): Promise<void> {
+    const validRole = role === "sub_host" ? "sub_host" : role === "cj" ? "cj" : "staff";
     await db.insert(radioChannelStaff).values({
       channelId,
       userId,
-      role: role === "sub_host" ? "sub_host" : "staff",
-    }).onConflictDoNothing({ target: [radioChannelStaff.channelId, radioChannelStaff.userId] });
+      role: validRole,
+    }).onConflictDoUpdate({
+      target: [radioChannelStaff.channelId, radioChannelStaff.userId],
+      set: { role: validRole },
+    });
   }
 
   async removeRadioChannelStaff(channelId: number, userId: string): Promise<void> {

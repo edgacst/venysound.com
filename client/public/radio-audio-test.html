@@ -1321,6 +1321,7 @@
       if (userId === currentHostUserId) return 'dj';
       var sr = staffRoleMap[userId];
       if (sr === 'sub_host') return 'sub_host';
+      if (sr === 'cj') return 'cj';
       if (sr) return 'staff';
       return 'listener';
     }
@@ -1330,6 +1331,7 @@
         owner:    { label: '국장',   color: '#a78bfa', bg: 'rgba(109,40,217,0.28)', border: 'rgba(167,139,250,0.45)' },
         dj:       { label: 'DJ',     color: '#c4b5fd', bg: 'rgba(109,40,217,0.18)', border: 'rgba(196,181,253,0.35)' },
         sub_host: { label: '부국장', color: '#fcd34d', bg: 'rgba(180,83,9,0.22)',   border: 'rgba(252,211,77,0.35)' },
+        cj:       { label: 'CJ',     color: '#34d399', bg: 'rgba(5,150,105,0.22)',  border: 'rgba(52,211,153,0.35)' },
         staff:    { label: '스텝',   color: '#94a3b8', bg: 'rgba(30,41,59,0.7)',    border: 'rgba(148,163,184,0.28)' },
         listener: { label: '청취자', color: '#64748b', bg: 'rgba(15,23,42,0.45)',   border: 'rgba(100,116,139,0.18)' },
       };
@@ -1373,6 +1375,7 @@
         if (msg.type === 'radio_user_joined' && msg.userId) {
           upsertUser({ id: String(msg.userId), username: msg.username || null });
           renderUsers();
+          addSystemMessage((msg.username || String(msg.userId).slice(0, 8)) + ' 님이 입장했습니다.');
         }
         if (msg.type === 'radio_user_left' && msg.userId) {
           removeUserById(String(msg.userId));
@@ -1616,11 +1619,33 @@
       var target = getUserById(ctxTargetUserId);
       if (!target) return closeCtx();
 
-      var nextRole = (target.role === 'staff') ? 'listener' : 'staff';
-      target.role = nextRole;
-      renderUsers();
-      addSystemMessage((target.username || target.id.slice(0, 8)) + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
+      var isStaff = !!staffRoleMap[target.id];
+      var targetUserId = target.id;
+      var displayName = target.username || target.id.slice(0, 8);
       closeCtx();
+
+      if (isStaff) {
+        api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff/' + encodeURIComponent(targetUserId), { method: 'DELETE' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(list) {
+            delete staffRoleMap[targetUserId];
+            if (Array.isArray(list)) list.forEach(function(s){ if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
+            renderUsers();
+            addSystemMessage(displayName + ' 님의 스텝 권한이 해제되었습니다.');
+          }).catch(function(){ addSystemMessage('권한 변경 실패'); });
+      } else {
+        api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: targetUserId, role: 'staff' })
+        }).then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(list) {
+            staffRoleMap[targetUserId] = 'staff';
+            if (Array.isArray(list)) list.forEach(function(s){ if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
+            renderUsers();
+            addSystemMessage(displayName + ' 님의 권한이 스텝 으로 변경되었습니다.');
+          }).catch(function(){ addSystemMessage('권한 변경 실패'); });
+      }
     };
 
     ctxCj.onclick = function(e) {
@@ -1637,11 +1662,35 @@
       var target = getUserById(ctxTargetUserId);
       if (!target) return closeCtx();
 
-      var nextRole = (target.role === 'cj') ? 'listener' : 'cj';
-      target.role = nextRole;
-      renderUsers();
-      addSystemMessage((target.username || target.id.slice(0, 8)) + ' 님의 권한이 ' + nextRole + ' 로 변경되었습니다.');
+      var isCj = staffRoleMap[target.id] === 'cj';
+      var targetUserId = target.id;
+      var displayName = target.username || target.id.slice(0, 8);
       closeCtx();
+
+      if (isCj) {
+        // CJ 해제 → 스텝 삭제 API
+        api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff/' + encodeURIComponent(targetUserId), { method: 'DELETE' })
+          .then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(list) {
+            delete staffRoleMap[targetUserId];
+            if (Array.isArray(list)) list.forEach(function(s){ if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
+            renderUsers();
+            addSystemMessage(displayName + ' 님의 CJ 권한이 해제되었습니다.');
+          }).catch(function(){ addSystemMessage('권한 변경 실패'); });
+      } else {
+        // CJ 부여 → 스텝 추가 API
+        api('/api/radio/channels/' + encodeURIComponent(urlSlug) + '/staff', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: targetUserId, role: 'cj' })
+        }).then(function(r){ return r.ok ? r.json() : null; })
+          .then(function(list) {
+            staffRoleMap[targetUserId] = 'cj';
+            if (Array.isArray(list)) list.forEach(function(s){ if (s && s.userId) staffRoleMap[s.userId] = s.role || 'staff'; });
+            renderUsers();
+            addSystemMessage(displayName + ' 님의 권한이 CJ 로 변경되었습니다.');
+          }).catch(function(){ addSystemMessage('권한 변경 실패'); });
+      }
     };
 
     function formatTime(iso) {

@@ -3487,7 +3487,8 @@ export async function registerRoutes(
       const targetUserId = typeof bodyUserId === "string" && bodyUserId ? bodyUserId : (username ? await storage.getUserIdByUsername(String(username)) : undefined);
       if (!targetUserId) return res.status(400).json({ message: "사용자를 찾을 수 없습니다. 로그인 아이디 또는 이메일을 확인해 주세요." });
       if (targetUserId === channel.ownerId) return res.status(400).json({ message: "방장은 스텝으로 추가할 수 없습니다." });
-      await storage.addRadioChannelStaff(channel.id, targetUserId, role === "sub_host" ? "sub_host" : "staff");
+      const validRole = role === "sub_host" ? "sub_host" : role === "cj" ? "cj" : "staff";
+      await storage.addRadioChannelStaff(channel.id, targetUserId, validRole);
       const list = await storage.getRadioChannelStaff(channel.id);
       res.json(list);
     } catch (e) {
