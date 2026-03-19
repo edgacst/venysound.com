@@ -25,7 +25,20 @@ alwaysApply: true
 - 오디오 엘리먼트(A/B 크로스페이드)는 GlobalRadioPlayer 안에서만 관리한다.
 - RadioChannel.tsx 등 다른 페이지에 로컬 `<audio>` 엘리먼트를 추가하지 말 것.
 
+## 4. 송출실 연속 재생 (radio-audio-test.html)
+- 송출실에서 한 곡이 끝나면 자동으로 다음 곡으로 넘어간다.
+- 핵심 파일: `client/public/radio-audio-test.html`
+- `audio.addEventListener('ended', ...)` 핸들러와 `timeupdate` 폴백(`endedFallbackFired` + `trackIdAtTimeupdate` 가드)을 절대 건드리지 말 것.
+- `playNextOrSkip()` 함수 로직(재생 실패 시 자동 스킵 포함)을 변경하지 말 것.
+
+## 5. 서버 스트림 엔드포인트 (`/api/music/:id/stream`)
+- 현재 동작: `https://` → 직접 리다이렉트, 그 외 → fileId 추출 후 로컬 파일 직접 서빙(range 지원), 로컬 없으면 `/objects/` 리다이렉트.
+- 핵심 파일: `server/routes.ts` (line ~1195 `app.get("/api/music/:id/stream", ...)`)
+- **이 엔드포인트는 현재 완벽히 작동 중 — 다른 기능 추가 시 절대 건드리지 말 것.**
+- fileId 추출 로직, range 헤더 처리, createReadStream 파이프 코드를 변경하지 말 것.
+
 ## 수정 시 주의사항
-- GlobalRadioPlayer를 수정할 때는 반드시 `onAudioEnded`, `onCanPlayThrough`, `streamUrl` useEffect를 함께 검토할 것.
-- 서버 routes.ts 수정 시 `client-advance` 엔드포인트와 `AUTO_ADVANCE setInterval`이 살아있는지 확인할 것.
+- GlobalRadioPlayer를 수정할 때는 반드시 `onAudioEnded`, `onCanPlay`, `streamUrl` useEffect를 함께 검토할 것.
+- 서버 routes.ts 수정 시 `client-advance` 엔드포인트와 `AUTO_ADVANCE setInterval`, 그리고 스트림 엔드포인트가 살아있는지 확인할 것.
 - 오디오 관련 새 기능(녹음, 이퀄라이저 등)은 별도 AudioContext를 사용하고, GlobalRadioPlayer의 `<audio>` 엘리먼트에 `createMediaElementSource()`를 연결하지 말 것 (ended 이벤트 소실 원인).
+- `radio-audio-test.html`에 새 기능 추가 시 기존 `ended`/`timeupdate` 이벤트 리스너 코드를 절대 이동하거나 재작성하지 말 것.
