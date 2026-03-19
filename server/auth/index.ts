@@ -94,7 +94,7 @@ export async function setupAuth(app: Express) {
             const id = `google_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "google" });
-            if (!existing && user.email) {
+            if (!existing && user.id === id && user.email) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
@@ -127,7 +127,7 @@ export async function setupAuth(app: Express) {
             const id = `naver_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "naver" });
-            if (!existing && user.email) {
+            if (!existing && user.id === id && user.email) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
@@ -162,7 +162,7 @@ export async function setupAuth(app: Express) {
             const id = `kakao_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "kakao" });
-            if (!existing && user.email) {
+            if (!existing && user.id === id && user.email) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
@@ -197,7 +197,7 @@ export async function setupAuth(app: Express) {
             const id = `facebook_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "facebook" });
-            if (!existing && user.email) {
+            if (!existing && user.id === id && user.email) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );

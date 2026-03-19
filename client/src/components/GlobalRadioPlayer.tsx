@@ -339,6 +339,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const onAudioEnded = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     const el = e.target as HTMLAudioElement;
     if (el !== getActiveAudio()) return;
+    // 오디오 엘리먼트의 실제 src에서 musicId 추출 (스토어는 이미 다음 곡으로 바뀌어 있을 수 있음)
+    const endedSrc = el.src;
     el.pause();
     el.currentTime = 0;
     el.removeAttribute("src");
@@ -347,10 +349,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setUserStopped(false);
     const state = useRadioPlayerStore.getState();
     const currentSlug = state.slug;
-    const currentUrl = state.streamUrl;
     // streamUrl을 null로 초기화: 같은 곡이 루프될 때도 WS radio_now_playing이 setStream()을 호출하도록
     useRadioPlayerStore.setState({ streamUrl: null });
-    const match = currentUrl?.match(/\/api\/music\/(\d+)\/stream/);
+    // 방금 끝난 곡의 ID를 el.src에서 추출 (state.streamUrl 사용 시 이미 다음 곡 ID가 들어있어 곡 건너뜀 버그 발생)
+    const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
     if (currentSlug && match) {
       const musicId = parseInt(match[1], 10);
       fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
