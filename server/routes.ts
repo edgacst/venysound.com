@@ -1207,14 +1207,7 @@ export async function registerRoutes(
         return res.redirect(302, fn);
       }
 
-      // ── 2) 객체 스토리지 경로 (/objects/... 또는 objects/...) → 리다이렉트
-      if (fn.startsWith("/objects/") || fn.startsWith("objects/")) {
-        const objPath = fn.startsWith("/") ? fn : `/${fn}`;
-        res.set("Cache-Control", "no-store");
-        return res.redirect(302, objPath);
-      }
-
-      // ── 3) 로컬 파일 ID 추출
+      // ── 2) fileId 추출: /objects/uploads/UUID 포함 모든 경로 처리
       let fileId = "";
       const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
       if (objMatch) {
@@ -1230,7 +1223,6 @@ export async function registerRoutes(
       }
       fileId = fileId.replace(/^\//, "");
       if (!fileId) {
-        console.warn(`[stream] musicId=${id} filename="${fn}" → fileId 추출 실패`);
         res.set("Content-Type", "audio/mpeg");
         return res.status(404).end();
       }
@@ -1243,7 +1235,12 @@ export async function registerRoutes(
       ];
       const localPath = candidates.find((p) => existsSync(p));
       if (!localPath) {
-        console.warn(`[stream] musicId=${id} filename="${fn}" → 로컬 파일 없음 (baseId=${baseId})`);
+        // 로컬에 없으면 /objects/ 경로로 리다이렉트 (Replit object storage 폴백)
+        if (fn.startsWith("/objects/") || fn.startsWith("objects/")) {
+          const objPath = fn.startsWith("/") ? fn : `/${fn}`;
+          res.set("Cache-Control", "no-store");
+          return res.redirect(302, objPath);
+        }
         res.set("Content-Type", "audio/mpeg");
         return res.status(404).end();
       }
