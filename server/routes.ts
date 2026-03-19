@@ -130,6 +130,18 @@ export async function registerRoutes(
     });
   }
 
+  // 채팅/입퇴장 알림은 익명(미인증 소켓)에게 절대 노출하지 않기 위한 필터 브로드캐스트
+  function broadcastToRadioChannelAuthenticated(slug: string, data: object) {
+    const room = radioChannelRooms.get(slug);
+    if (!room) return;
+    const message = JSON.stringify(data);
+    room.forEach((client) => {
+      if (client.readyState !== WebSocket.OPEN) return;
+      if (!wsToUserId.get(client)) return; // 인증된 소켓만 전송
+      client.send(message);
+    });
+  }
+
   function broadcastRadioListeners(slug: string) {
     const room = radioChannelRooms.get(slug);
     const count = room ? room.size : 0;
@@ -199,7 +211,7 @@ export async function registerRoutes(
                         null;
                       username = (preferred as string | null) ?? undefined;
                     }
-                    broadcastToRadioChannel(slug, {
+                    broadcastToRadioChannelAuthenticated(slug, {
                       type: "radio_user_joined",
                       userId: wsUserId,
                       username,
@@ -227,7 +239,7 @@ export async function registerRoutes(
                 (user?.username && String(user.username).trim()) ||
                 null;
               const username = (preferred as string | null) ?? undefined;
-              broadcastToRadioChannel(slug, {
+              broadcastToRadioChannelAuthenticated(slug, {
                 type: "radio_user_left",
                 userId: wsUserId,
                 username,
@@ -260,7 +272,7 @@ export async function registerRoutes(
             const row = await storage.createRadioChatMessage(channel.id, wsUserId, content);
             const user = await storage.getUserById(wsUserId);
             const username = (user?.username ?? user?.firstName ?? null) as string | null;
-            broadcastToRadioChannel(slug, { type: "radio_chat", message: { id: row.id, userId: wsUserId, username, content: row.content, createdAt: (row.createdAt as Date).toISOString() } });
+            broadcastToRadioChannelAuthenticated(slug, { type: "radio_chat", message: { id: row.id, userId: wsUserId, username, content: row.content, createdAt: (row.createdAt as Date).toISOString() } });
           } catch (e) {
             console.error("[ws] radio_chat create/broadcast failed", e);
           }
@@ -291,7 +303,7 @@ export async function registerRoutes(
             try {
               const user = await storage.getUserById(uid);
               const username = ((user?.username ?? user?.firstName ?? null) as string | null) ?? undefined;
-              broadcastToRadioChannel(slug, { type: "radio_user_left", userId: uid, username });
+              broadcastToRadioChannelAuthenticated(slug, { type: "radio_user_left", userId: uid, username });
             } catch (e) {
               console.warn("[ws] radio_user_left on close broadcast failed", e);
             }
@@ -4081,7 +4093,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/radio/channels/:slug/chat", async (req, res) => {
+  app.get("/api/radio/channels/:slug/chat", isAuthenticated, async (req, res) => {
     try {
       const slug = String(req.params.slug || "").trim().toLowerCase();
       if (!slug) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });

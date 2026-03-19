@@ -263,13 +263,22 @@ export default function RadioChannel() {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
-    enabled: !!slug,
+    enabled: !!slug && !!user,
   });
   const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const canSeeChatRef = useRef(false);
   const [broadcastEndedMessage, setBroadcastEndedMessage] = useState<string | null>(null);
   useEffect(() => {
     setBroadcastEndedMessage(null);
   }, [slug]);
+
+  useEffect(() => {
+    canSeeChatRef.current = !!user && !!wsAuthenticated;
+    if (!canSeeChatRef.current) {
+      setMessages([]);
+      presentUserIdsRef.current.clear();
+    }
+  }, [user, wsAuthenticated]);
 
   useEffect(() => {
     if (!syncedLyrics.length || !isLive || nowPlayingId == null) {
@@ -300,6 +309,7 @@ export default function RadioChannel() {
   subscribeRef.current = subscribe;
   useEffect(() => {
     if (!Array.isArray(chatList)) return;
+    if (!canSeeChatRef.current) return;
     const normalized = chatList.map((m) => ({
       ...m,
       createdAt: typeof m.createdAt === "string" ? m.createdAt : (m.createdAt as Date).toISOString(),
@@ -311,6 +321,7 @@ export default function RadioChannel() {
     const normalizedSlug = slug.trim().toLowerCase();
     const unsub = subscribeRef.current((msg) => {
       if (msg.type === "radio_user_joined" && msg.userId) {
+        if (!canSeeChatRef.current) return;
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         // 이미 방에 있다고 판단되면 중복 입장 메시지 스킵
@@ -329,6 +340,7 @@ export default function RadioChannel() {
         return;
       }
       if (msg.type === "radio_user_left" && msg.userId) {
+        if (!canSeeChatRef.current) return;
         const userId = String(msg.userId);
         const username = msg.username != null ? String(msg.username) : undefined;
         // 방에 없는 유저 퇴장 이벤트는 무시
@@ -383,6 +395,7 @@ export default function RadioChannel() {
         return;
       }
       if (msg.type !== "radio_chat" || !msg.message) return;
+      if (!canSeeChatRef.current) return;
       const incoming = msg.message as ChatMsg;
       setMessages((prev) => {
         const withoutOptimistic = prev.filter(
@@ -778,7 +791,9 @@ export default function RadioChannel() {
                   </div>
                   <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">{t("radio.chatGroupHint", "같은 채널 시청자가 모두 보는 단체 채팅입니다.")}</p>
                   <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-                    {filteredMessages.length === 0 ? (
+                    {!user || !wsAuthenticated ? (
+                      <p className="text-muted-foreground text-sm text-center py-6">{t("radio.chatLoginRequired", "로그인하면 채팅을 볼 수 있습니다.")}</p>
+                    ) : filteredMessages.length === 0 ? (
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.noChatYet", "아직 메시지가 없습니다.")}</p>
                     ) : (
                       filteredMessages.map((m) => {
