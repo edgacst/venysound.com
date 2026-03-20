@@ -334,6 +334,12 @@ export function MusicCard({ music }: MusicCardProps) {
       setTipOpen(false);
       setTipAmount(1000);
       setTipMessage("");
+      // 후원 성공 시 크레딧/수익/후원 목록이 즉시 갱신되도록 캐시 무효화
+      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/sent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/received"] });
     },
     onError: (error: Error) => {
       toast({ title: t("music.tipFailed"), description: error.message, variant: "destructive" });
