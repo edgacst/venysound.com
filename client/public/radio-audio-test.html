@@ -1368,19 +1368,28 @@
         renderUsers();
         updateMyBadge();
 
-        // 재입장 복원: 내가 현재 호스트면 ON AIR + 방송 종료 버튼 표시
-        if (meUserId && ch.currentHostId && String(ch.currentHostId) === String(meUserId) && ch.status === 'live') {
+        // 재입장 복원: 라이브 중이면서 (현재 송출 호스트이거나 방장) → ON AIR + 방송 종료 버튼
+        // ※ 송출 시 서버에 currentHostId가 비어 있는 경우가 많아(자동 진행 유지), 방장 기준으로도 복원
+        var isCurrentHost = ch.currentHostId && String(ch.currentHostId) === String(meUserId);
+        var isChannelOwner = ch.ownerId && meUserId && String(ch.ownerId) === String(meUserId);
+        var canRestoreBroadcastUi = meUserId && ch.status === 'live' && (isCurrentHost || isChannelOwner);
+        if (canRestoreBroadcastUi) {
           setOnAir(true);
           if (btnEndBroadcast) btnEndBroadcast.style.display = '';
-          // 현재 재생 중인 곡 정보 복원
+          if (typeof ch.nowPlayingMusicId === 'number' && !isNaN(ch.nowPlayingMusicId)) {
+            lastNowPlayingId = ch.nowPlayingMusicId;
+          }
+          // 현재 재생 중인 곡 정보 복원 (로컬 HTML 오디오는 비어 있을 수 있음 — 리스너 쪽만 계속 재생 중일 수 있음)
           if (ch.nowPlayingMusicId && nowTitleEl) {
             api('/api/music/' + encodeURIComponent(ch.nowPlayingMusicId))
               .then(function(r){ return r.ok ? r.json() : null; })
               .then(function(m) {
                 if (m && nowTitleEl) nowTitleEl.textContent = '재생 중: ' + (m.title || '제목 없음') + ' – ' + (m.artist || '아티스트');
+                if (m && typeof ch.nowPlayingMusicId === 'number' && nowLyricsEl) loadLyrics(ch.nowPlayingMusicId);
               }).catch(function(){});
           } else if (ch.nowPlayingObjectPath && nowTitleEl) {
             nowTitleEl.textContent = '재생 중: 로컬 파일';
+            if (nowLyricsEl) { nowLyricsEl.textContent = '로컬 파일'; syncedLines = []; lastSyncIdx = -1; }
           }
         }
       }).catch(function() {});

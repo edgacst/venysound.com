@@ -30,6 +30,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "radio-channel-playlist-snapshot.sql", name: "radio_channel_playlist_snapshot" },
   { file: "radio-now-playing-object-path.sql", name: "radio_channels 로컬 송출 컬럼" },
   { file: "create-ai-music-usage.sql", name: "ai_music_usage" },
+  { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
 ];
 

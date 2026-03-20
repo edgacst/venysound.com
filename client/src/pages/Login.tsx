@@ -7,6 +7,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { LOGIN_PATH, REGISTER_PATH } from "@/lib/site-paths";
 
+/** 로그인 후 이동할 내부 경로 (?next=). 오픈 리다이렉트 방지 */
+function readSafeNextPath(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const next = params.get("next");
+    if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("://")) return "/";
+    return next;
+  } catch {
+    return "/";
+  }
+}
+
 export default function Login() {
   const { t } = useTranslation();
   const { user, isLoading } = useAuth();
@@ -27,7 +39,7 @@ export default function Login() {
   const hasAnyOAuth = loginOptions && (loginOptions.hasGoogle || loginOptions.hasNaver || loginOptions.hasKakao || loginOptions.hasFacebook || loginOptions.hasTikTok);
 
   useEffect(() => {
-    if (!isLoading && user) setLocation("/");
+    if (!isLoading && user) setLocation(readSafeNextPath());
   }, [isLoading, user, setLocation]);
 
   useEffect(() => {
@@ -50,7 +62,7 @@ export default function Login() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = "/"; }, 800);
+        setTimeout(() => { window.location.href = readSafeNextPath(); }, 800);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error, variant: "destructive" });
         setDevLoggingIn(false);
@@ -77,7 +89,7 @@ export default function Login() {
       const data = await res.json();
       if (res.ok && data.success) {
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = "/"; }, 800);
+        setTimeout(() => { window.location.href = readSafeNextPath(); }, 800);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }

@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
@@ -16,7 +16,7 @@ import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail } from "./email";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
-import { subscriptionPlans, payments, aiMusicUsage } from "../shared/models/auth";
+import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
 import { db } from "./db";
 import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
@@ -101,6 +101,32 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
   registerObjectStorageRoutes(app);
+
+  // DJ 송출실 HTML: 비로그인 직링크(/radio-audio-test.html?slug=…) 차단 — 세션 없으면 로그인으로
+  const radioAudioTestHtmlPaths = [
+    path.resolve(process.cwd(), "dist/public/radio-audio-test.html"),
+    path.resolve(process.cwd(), "client/public/radio-audio-test.html"),
+  ];
+  function resolveRadioAudioTestHtmlPath(): string | null {
+    for (const p of radioAudioTestHtmlPaths) {
+      if (existsSync(p)) return p;
+    }
+    return null;
+  }
+  app.get("/radio-audio-test.html", (req, res) => {
+    const r = req as Request & { isAuthenticated(): boolean; user?: { claims?: { sub?: string } } };
+    if (!r.isAuthenticated?.() || !r.user?.claims?.sub) {
+      const loginPath = getLoginPagePath();
+      const full = (req.originalUrl || "/radio-audio-test.html").split("#")[0];
+      return res.redirect(302, `${loginPath}?next=${encodeURIComponent(full)}`);
+    }
+    const htmlPath = resolveRadioAudioTestHtmlPath();
+    if (!htmlPath) {
+      return res.status(404).type("text/plain").send("radio-audio-test.html not found");
+    }
+    res.setHeader("Cache-Control", "no-store");
+    return res.sendFile(htmlPath);
+  });
 
   // WebSocket for visitor count + DM (noServer so /_vite_hmr can be handled by Vite)
   const wss = new WebSocketServer({ noServer: true });
@@ -632,6 +658,48 @@ export async function registerRoutes(
     return FREE_AI_MUSIC_LIMIT_PER_MONTH;
   }
 
+  async function insertAiMusicGenerationLog(params: {
+    userId: string;
+    user: (typeof users.$inferSelect) | undefined;
+    taskId: string;
+    provider: "suno" | "aimusicapi";
+    body: {
+      title?: string;
+      tags?: string;
+      prompt?: string;
+      gpt_description_prompt?: string;
+    };
+  }): Promise<void> {
+    try {
+      const { userId, user, taskId, provider, body } = params;
+      const tier = user?.subscriptionTier ?? "free";
+      // incrementAiMusicUsageAndDeductCredits 와 동일: free만 월 한도만, 그 외(만료 포함 pro/premium)는 크레딧 차감 시도
+      const billingKind =
+        user?.role === "admin" ? "admin" : tier === "free" ? "free" : "credits";
+      const creditsCharged = billingKind === "credits" ? AI_MUSIC_CREDITS_PER_TRACK : 0;
+      const promptText = (body.prompt ?? body.gpt_description_prompt ?? "").trim();
+      const parts = [
+        body.title?.trim() && `title: ${body.title.trim()}`,
+        body.tags?.trim() && `tags: ${body.tags.trim()}`,
+        promptText && `prompt: ${promptText.slice(0, 500)}`,
+      ].filter(Boolean) as string[];
+      const requestSummary = parts.length ? parts.join(" | ").slice(0, 2000) : null;
+      await db.insert(aiMusicGenerationLogs).values({
+        userId,
+        billingKind,
+        subscriptionTierAt: tier,
+        provider,
+        taskId,
+        requestTitle: body.title?.trim().slice(0, 500) || null,
+        requestSummary,
+        creditsCharged,
+        publishments: [],
+      });
+    } catch (e) {
+      console.error("[ai-music generation log insert]", e);
+    }
+  }
+
   app.get("/api/ai-music/usage", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
@@ -795,6 +863,13 @@ export async function registerRoutes(
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
         await incrementAiMusicUsageAndDeductCredits();
+        await insertAiMusicGenerationLog({
+          userId,
+          user,
+          taskId,
+          provider: "suno",
+          body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
+        });
         return res.json({ task_id: taskId, provider: "suno" });
       } catch (e) {
         console.error("[ai-music create suno]", e);
@@ -839,6 +914,13 @@ export async function registerRoutes(
         return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
       }
       await incrementAiMusicUsageAndDeductCredits();
+      await insertAiMusicGenerationLog({
+        userId,
+        user,
+        taskId,
+        provider: "aimusicapi",
+        body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
+      });
       res.json({ task_id: taskId, provider: "aimusicapi" });
     } catch (e) {
       console.error("[ai-music create]", e);
@@ -946,9 +1028,16 @@ export async function registerRoutes(
         (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
       );
 
-      const { audioUrl, imageUrl, title, tags, genre, prompt } = req.body as {
-        audioUrl: string; imageUrl?: string; title?: string;
-        tags?: string; genre?: string; prompt?: string;
+      const { audioUrl, imageUrl, title, tags, genre, prompt, taskId: publishTaskId, clipId: publishClipId, generationProvider } = req.body as {
+        audioUrl: string;
+        imageUrl?: string;
+        title?: string;
+        tags?: string;
+        genre?: string;
+        prompt?: string;
+        taskId?: string;
+        clipId?: string;
+        generationProvider?: string;
       };
       if (!audioUrl || typeof audioUrl !== "string") {
         return res.status(400).json({ message: "audioUrl이 필요합니다." });
@@ -1027,6 +1116,9 @@ export async function registerRoutes(
       const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
 
       // 4) DB에 음악 등록
+      const resolvedAiProvider =
+        generationProvider === "aimusicapi" || generationProvider === "suno" ? generationProvider : "suno";
+
       const newMusic = await storage.createMusic({
         title: trackTitle,
         artist: artistName,
@@ -1036,11 +1128,38 @@ export async function registerRoutes(
         tags: cleanedTags,
         lyrics: null,
         isAi: true,
-        aiProvider: "suno",
+        aiProvider: resolvedAiProvider,
         price: 0,
         isDownloadable: false, // 무료·유료 모두 AI 공개곡은 기본 다운로드 불가 (관리자가 수동 허용)
         userId,
       });
+
+      const logTaskId = typeof publishTaskId === "string" ? publishTaskId.trim() : "";
+      if (logTaskId) {
+        try {
+          const [logRow] = await db
+            .select()
+            .from(aiMusicGenerationLogs)
+            .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, logTaskId)))
+            .limit(1);
+          if (logRow) {
+            const clipStr = typeof publishClipId === "string" ? publishClipId.trim() : "";
+            const entry = {
+              musicId: newMusic.id,
+              clipId: clipStr || null,
+              deployment: "site",
+              publishedAt: new Date().toISOString(),
+            };
+            const prev = Array.isArray(logRow.publishments) ? logRow.publishments : [];
+            await db
+              .update(aiMusicGenerationLogs)
+              .set({ publishments: [...prev, entry] })
+              .where(eq(aiMusicGenerationLogs.id, logRow.id));
+          }
+        } catch (logErr) {
+          console.error("[ai-music publish generation log]", logErr);
+        }
+      }
 
       console.log(`[ai-music publish] userId=${userId} isPaid=${isPaidTier} musicId=${newMusic.id} title="${trackTitle}"`);
       res.status(201).json({ music: newMusic });
@@ -2751,6 +2870,36 @@ export async function registerRoutes(
     const search = req.query.search as string | undefined;
     const usersList = await storage.getAllUsers(search);
     res.json(usersList);
+  });
+
+  app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "200"), 10)));
+      const rows = await db
+        .select({
+          id: aiMusicGenerationLogs.id,
+          userId: aiMusicGenerationLogs.userId,
+          createdAt: aiMusicGenerationLogs.createdAt,
+          billingKind: aiMusicGenerationLogs.billingKind,
+          subscriptionTierAt: aiMusicGenerationLogs.subscriptionTierAt,
+          provider: aiMusicGenerationLogs.provider,
+          taskId: aiMusicGenerationLogs.taskId,
+          requestTitle: aiMusicGenerationLogs.requestTitle,
+          requestSummary: aiMusicGenerationLogs.requestSummary,
+          creditsCharged: aiMusicGenerationLogs.creditsCharged,
+          publishments: aiMusicGenerationLogs.publishments,
+          userEmail: users.email,
+          userFirstName: users.firstName,
+        })
+        .from(aiMusicGenerationLogs)
+        .leftJoin(users, eq(aiMusicGenerationLogs.userId, users.id))
+        .orderBy(desc(aiMusicGenerationLogs.createdAt))
+        .limit(limit);
+      res.json(rows);
+    } catch (e) {
+      console.error("[admin ai-music-generation-logs]", e);
+      res.status(500).json({ message: "AI 음악 생성 로그를 불러올 수 없습니다." });
+    }
   });
 
   app.delete("/api/admin/users/:id", isAuthenticated, isAdmin, async (req, res) => {

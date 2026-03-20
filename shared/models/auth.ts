@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, primaryKey, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, timestamp, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table (express-session + connect-pg-simple).
 export const sessions = pgTable(
@@ -75,4 +75,30 @@ export const aiMusicUsage = pgTable(
     updatedAt: timestamp("updated_at").defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.periodMonth] })]
+);
+
+/** AI 음악 생성 1회 요청 단위 로그 (관리자 조회용). billing_kind: free | credits | admin */
+export const aiMusicGenerationLogs = pgTable(
+  "ai_music_generation_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    billingKind: varchar("billing_kind", { length: 32 }).notNull(),
+    subscriptionTierAt: varchar("subscription_tier_at", { length: 32 }),
+    provider: varchar("provider", { length: 32 }).notNull(),
+    taskId: varchar("task_id", { length: 128 }),
+    requestTitle: varchar("request_title", { length: 512 }),
+    requestSummary: text("request_summary"),
+    creditsCharged: integer("credits_charged").default(0).notNull(),
+    /** 사이트 공개 등 배포 이력: [{ musicId, clipId?, deployment, publishedAt }] */
+    publishments: jsonb("publishments")
+      .$type<{ musicId: number; clipId?: string | null; deployment: string; publishedAt: string }[]>()
+      .default([]),
+  },
+  (table) => [
+    index("idx_ai_music_gen_logs_user").on(table.userId),
+    index("idx_ai_music_gen_logs_task").on(table.taskId),
+    index("idx_ai_music_gen_logs_created").on(table.createdAt),
+  ]
 );

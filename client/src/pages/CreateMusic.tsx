@@ -188,6 +188,9 @@ type SavedTrack = GeneratedTrack & {
   createdAt: number;
   uploadCount?: number;
   downloadCount?: number;
+  /** 생성 요청 task_id — 공개 시 관리자 로그와 연결 */
+  generationTaskId?: string;
+  generationProvider?: string;
 };
 
 export default function CreateMusic() {
@@ -263,6 +266,8 @@ export default function CreateMusic() {
           createdAt,
           uploadCount,
           downloadCount,
+          generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
+          generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
           audio_url: (t.audio_url ?? t.audioUrl) as string | undefined,
           image_url: (t.image_url ?? t.imageUrl) as string | undefined,
           clip_id: t.clip_id ?? t.id,
@@ -292,6 +297,8 @@ export default function CreateMusic() {
         prompt: t.prompt,
         original_prompt: t.original_prompt,
         custom_mode: t.custom_mode,
+        generationTaskId: t.generationTaskId,
+        generationProvider: t.generationProvider,
       }));
       localStorage.setItem(SAVED_TRACKS_KEY, JSON.stringify(toPersist));
     } catch {}
@@ -327,6 +334,9 @@ export default function CreateMusic() {
           title: track.title,
           tags: track.tags,
           prompt: track.original_prompt ?? track.prompt,
+          taskId: track.generationTaskId,
+          clipId: typeof track.clip_id === "string" ? track.clip_id : track.clip_id != null ? String(track.clip_id) : undefined,
+          generationProvider: track.generationProvider,
         }),
       });
       const data = await res.json();
@@ -435,6 +445,8 @@ export default function CreateMusic() {
         const now = Date.now();
         const userTitle = submittedTitleRef.current.trim();
         const userTags = submittedTagsRef.current.trim();
+        const genTaskId = tid;
+        const genProvider = provider ?? undefined;
         const toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
           const t = tr as Record<string, unknown>;
           return {
@@ -449,6 +461,8 @@ export default function CreateMusic() {
             original_prompt: submitModeRef.current === "custom" ? submittedLyricsRef.current : undefined,
             uploadCount: 0,
             downloadCount: 0,
+            generationTaskId: genTaskId,
+            generationProvider: genProvider,
           };
         });
         setSavedTracks((prev) => {

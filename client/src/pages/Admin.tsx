@@ -54,6 +54,7 @@ import {
   Radio,
   Pause,
   Play,
+  Sparkles,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -266,6 +267,32 @@ export default function Admin() {
       const res = await fetch("/api/admin/radio/channels", { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  type AiMusicGenLogRow = {
+    id: number;
+    userId: string;
+    createdAt: string;
+    billingKind: string;
+    subscriptionTierAt: string | null;
+    provider: string;
+    taskId: string | null;
+    requestTitle: string | null;
+    requestSummary: string | null;
+    creditsCharged: number;
+    publishments: { musicId: number; clipId?: string | null; deployment: string; publishedAt: string }[] | null;
+    userEmail: string | null;
+    userFirstName: string | null;
+  };
+  const { data: aiMusicGenLogs = [], isLoading: loadingAiMusicGenLogs, refetch: refetchAiMusicGenLogs } = useQuery<AiMusicGenLogRow[]>({
+    queryKey: ["/api/admin/ai-music-generation-logs"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/ai-music-generation-logs?limit=300", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: adminCheck?.isAdmin === true,
   });
@@ -717,6 +744,11 @@ export default function Admin() {
                 <Radio size={14} className="shrink-0" />
                 {t('admin.radioChannels', '방송 채널')}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{adminRadioChannels?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="ai-music-logs" className="gap-1.5">
+                <Sparkles size={14} className="shrink-0" />
+                {t('admin.aiMusicGenLogs', 'AI 음악 생성 로그')}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{aiMusicGenLogs?.length ?? 0}</Badge>
               </TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
@@ -2183,6 +2215,106 @@ export default function Admin() {
                       </td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+            </TabsContent>
+            <TabsContent value="ai-music-logs">
+        <Card className="p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Sparkles size={20} className="text-violet-400" />
+              {t('admin.aiMusicGenLogs', 'AI 음악 생성 로그')}
+            </h2>
+            <Button variant="outline" size="sm" className="gap-1.5 w-fit" onClick={() => refetchAiMusicGenLogs()} disabled={loadingAiMusicGenLogs}>
+              {loadingAiMusicGenLogs ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {t('common.refresh', '새로고침')}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t(
+              'admin.aiMusicGenLogsDesc',
+              '요청 단위로 무료/유료(크레딧) 여부·프로바이더·요약·사이트 공개(배포) 이력을 확인할 수 있습니다. 공개는 클라이언트에서 taskId를 넘긴 경우에만 로그에 연결됩니다.',
+            )}
+          </p>
+          {aiMusicGenLogs.length === 0 && !loadingAiMusicGenLogs ? (
+            <p className="text-sm text-muted-foreground py-4">{t('admin.aiMusicGenLogsEmpty', '기록이 없습니다. 테이블이 없다면 서버에서 db:deploy(또는 create-ai-music-generation-logs.sql)를 실행하세요.')}</p>
+          ) : (
+            <div className="overflow-x-auto max-h-[70vh] overflow-y-auto border border-border rounded-md">
+              <table className="w-full text-xs sm:text-sm min-w-[960px]">
+                <thead className="sticky top-0 bg-muted/95 z-10 border-b border-border">
+                  <tr>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogWhen', '일시')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogUser', '회원')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogBilling', '과금')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogPlanAt', '당시 플랜')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogProvider', 'API')}</th>
+                    <th className="text-left py-2 px-2 font-medium">taskId</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogTitle', '요청 제목')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogSummary', '요약')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogDeploy', '배포')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiMusicGenLogs.map((row) => {
+                    const billingLabel =
+                      row.billingKind === "free"
+                        ? t('admin.aiBillingFree', '무료')
+                        : row.billingKind === "credits"
+                          ? t('admin.aiBillingCredits', '유료·크레딧')
+                          : row.billingKind === "admin"
+                            ? t('admin.aiBillingAdmin', '관리자')
+                            : row.billingKind;
+                    const displayUser =
+                      row.userFirstName?.trim() ||
+                      row.userEmail?.split("@")[0] ||
+                      row.userId.slice(0, 12) + "…";
+                    const pubs = Array.isArray(row.publishments) ? row.publishments : [];
+                    return (
+                      <tr key={row.id} className="border-b border-border/50 hover:bg-muted/40 align-top">
+                        <td className="py-2 px-2 whitespace-nowrap text-muted-foreground">{formatDateTime(row.createdAt)}</td>
+                        <td className="py-2 px-2">
+                          <div className="font-medium">{displayUser}</div>
+                          <div className="text-[10px] text-muted-foreground break-all max-w-[140px]">{row.userEmail ?? row.userId}</div>
+                        </td>
+                        <td className="py-2 px-2">
+                          <Badge variant="secondary" className="text-[10px]">
+                            {billingLabel}
+                            {row.creditsCharged > 0 ? ` · -${row.creditsCharged}C` : ""}
+                          </Badge>
+                        </td>
+                        <td className="py-2 px-2">{row.subscriptionTierAt ?? "-"}</td>
+                        <td className="py-2 px-2">{row.provider}</td>
+                        <td className="py-2 px-2 font-mono text-[10px] break-all max-w-[120px]">{row.taskId ?? "-"}</td>
+                        <td className="py-2 px-2 max-w-[140px] truncate" title={row.requestTitle ?? ""}>
+                          {row.requestTitle ?? "—"}
+                        </td>
+                        <td className="py-2 px-2 max-w-[200px]">
+                          <span className="line-clamp-3 text-muted-foreground" title={row.requestSummary ?? ""}>
+                            {row.requestSummary ?? "—"}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2">
+                          {pubs.length === 0 ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <ul className="space-y-1">
+                              {pubs.map((p, i) => (
+                                <li key={`${p.musicId}-${i}`}>
+                                  <a href={`/music/${p.musicId}`} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                                    {p.deployment}: #{p.musicId}
+                                  </a>
+                                  {p.clipId ? <span className="text-muted-foreground ml-1 font-mono text-[10px]">{p.clipId}</span> : null}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

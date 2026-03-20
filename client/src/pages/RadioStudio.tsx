@@ -1,12 +1,17 @@
+import { useEffect } from "react";
 import { PageTransition } from "@/components/PageTransition";
 import { Navigation } from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { Link, useRoute } from "wouter";
+import { Link, useRoute, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 
 export default function RadioStudio() {
   const { t } = useTranslation();
+  const [, setLocation] = useLocation();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [, params] = useRoute("/radio/:slug/studio");
   // useRoute 가 일시적으로 params 를 반환 못할 때(새로고침 직후 등) pathname 에서 직접 추출
   const slug = params?.slug ?? (() => {
@@ -15,6 +20,14 @@ export default function RadioStudio() {
       return m ? decodeURIComponent(m[1]) : "";
     } catch { return ""; }
   })();
+
+  useEffect(() => {
+    if (!slug || authLoading) return;
+    if (!isAuthenticated) {
+      const next = `/radio/${encodeURIComponent(slug.trim().toLowerCase())}/studio`;
+      setLocation(`${LOGIN_PATH}?next=${encodeURIComponent(next)}`);
+    }
+  }, [slug, authLoading, isAuthenticated, setLocation]);
 
   if (!slug) {
     return (
@@ -28,6 +41,19 @@ export default function RadioStudio() {
                 {t("radio.backToRadio", "방송국으로")}
               </Button>
             </Link>
+          </div>
+        </div>
+      </PageTransition>
+    );
+  }
+
+  if (authLoading || !isAuthenticated) {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex flex-col">
+          <Navigation />
+          <div className="container px-4 py-10 text-center text-muted-foreground">
+            {authLoading ? t("common.loading", "불러오는 중…") : t("radio.studioLoginRequired", "송출실은 로그인 후 이용할 수 있습니다.")}
           </div>
         </div>
       </PageTransition>

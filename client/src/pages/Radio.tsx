@@ -4,7 +4,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, useLocation } from "wouter";
-import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, Play, Trash2 } from "lucide-react";
+import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, Play, Trash2, Users } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -134,17 +134,17 @@ export default function Radio() {
   return (
     <PageTransition>
       <div
-        className="min-h-screen flex flex-col lg:fixed lg:inset-0 lg:overflow-hidden"
+        className="min-h-screen flex flex-col"
         style={{
           background: "radial-gradient(circle at top, #1d2333 0, #020617 55%)",
         }}
       >
         <Navigation />
 
-        <div className="flex-1 min-h-0 lg:overflow-hidden">
-          <div className="container max-w-6xl px-3 md:px-6 py-8 md:py-12 h-full flex flex-col min-h-0 pb-24 lg:pb-12">
+        <div className="flex-1 flex flex-col">
+          <div className="container max-w-6xl px-3 md:px-6 py-8 md:py-12 flex flex-col gap-6 pb-12">
           {/* Hero */}
-          <header className="text-center mb-8 md:mb-10 shrink-0">
+          <header className="text-center mb-2 md:mb-4">
             <div className="inline-flex items-center justify-center w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-primary/10 text-primary mb-4 shadow-sm">
               <RadioIcon size={28} className="md:w-8 md:h-8" />
             </div>
@@ -154,10 +154,18 @@ export default function Radio() {
             <p className="text-muted-foreground text-sm md:text-base max-w-lg mx-auto leading-relaxed">
               {t("radio.subtitle", "업로드한 음원으로 바로 송출하는, 진짜 실시간 DJ 방송. 채팅·신청곡으로 청취자와 소통하세요.")}
             </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 mt-6">
+              <Button asChild size="default" className="gap-2">
+                <Link href="/radio/channels">
+                  <Users size={18} />
+                  {t("radio.browseChannels", "채널 목록에서 청취하기")}
+                </Link>
+              </Button>
+            </div>
           </header>
 
           {/* 상단 3열: 차별화 포인트 / 방송 공지 / 내 방송 채널 만들기 */}
-          <div className="grid gap-4 lg:gap-6 mb-6 md:grid-cols-2 xl:grid-cols-3 shrink-0">
+          <div className="grid gap-4 lg:gap-6 md:grid-cols-2 xl:grid-cols-3">
             <Card className="overflow-hidden border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
               <CardContent className="p-5 md:p-6">
                 <div className="flex items-center gap-2 mb-3">
@@ -347,9 +355,9 @@ export default function Radio() {
             </Card>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="mt-2">
             {/* 방송 관련 규정 */}
-            <aside className="min-h-0 overflow-hidden">
+            <aside>
               <Card className="border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)] shadow-[0_22px_60px_rgba(15,23,42,0.65)]">
                 <CardContent className="p-4 space-y-2">
                   <h3 className="text-sm font-semibold">
@@ -377,9 +385,7 @@ export default function Radio() {
           </div>
           </div>
 
-          <div className="shrink-0">
-            <Footer />
-          </div>
+          <Footer />
         </div>
       </div>
     </PageTransition>
