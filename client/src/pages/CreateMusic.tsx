@@ -3,7 +3,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { PageTransition } from "@/components/PageTransition";
-import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUpload, Search, Play, Globe } from "lucide-react";
+import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUpload, Search, Play, Globe, Coins } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -25,8 +25,15 @@ function nextAiMusicPollMs(apiState: string): number {
   if (apiState === "running") return 1500;
   return 2200;
 }
-const AI_MUSIC_TASK_KEY = "ai_music_last_task";
-const SAVED_TRACKS_KEY = "createMusic_savedTracks";
+/** 이전에는 `createMusic_savedTracks` 단일 키를 썼음 → 계정 간 목록이 섞임. 지금은 계정별 키만 사용. */
+
+function savedTracksStorageKey(userId: string): string {
+  return `createMusic_savedTracks:${userId}`;
+}
+
+function lastAiMusicTaskSessionKey(userId: string): string {
+  return `ai_music_last_task:${userId}`;
+}
 
 type TTranslate = (key: string, fallback?: string) => string;
 
@@ -64,6 +71,9 @@ function TrackCard({
   const isLyricsMode = track.custom_mode === true;
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
+  const hasDownloaded = (track.downloadCount ?? 0) > 0;
+  const hasUploaded = (track.uploadCount ?? 0) > 0;
+  const doneActionClass = "text-emerald-500 dark:text-emerald-400 font-medium";
   return (
     <div className="rounded-xl border border-border/60 bg-background/60 p-3 flex gap-3 items-start w-full">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
@@ -99,22 +109,34 @@ function TrackCard({
                     <Play className="w-3 h-3" />
                     {t("createMusic.play", "재생")}
                   </button>
-                  <button type="button" onClick={onDownload} className="inline-flex items-center gap-0.5 hover:underline">
+                  <button
+                    type="button"
+                    onClick={onDownload}
+                    className={`inline-flex items-center gap-0.5 hover:underline ${hasDownloaded ? doneActionClass : ""}`}
+                  >
                     <Download className="w-3 h-3" />
                     {t("createMusic.download", "다운로드")}
                     {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
-                      <span className="text-[10px] text-muted-foreground ml-0.5">({track.downloadCount})</span>
+                      <span className={`text-[10px] ml-0.5 ${hasDownloaded ? "text-emerald-600/80 dark:text-emerald-400/90" : "text-muted-foreground"}`}>
+                        ({track.downloadCount})
+                      </span>
                     )}
                   </button>
-                  <button type="button" onClick={onUpload} className="inline-flex items-center gap-0.5 hover:underline">
+                  <button
+                    type="button"
+                    onClick={onUpload}
+                    className={`inline-flex items-center gap-0.5 hover:underline ${hasUploaded ? doneActionClass : ""}`}
+                  >
                     <CloudUpload className="w-3 h-3" />
                     {t("createMusic.uploadThis", "업로드")}
                     {typeof track.uploadCount === "number" && track.uploadCount > 0 && (
-                      <span className="text-[10px] text-muted-foreground ml-0.5">({track.uploadCount})</span>
+                      <span className={`text-[10px] ml-0.5 ${hasUploaded ? "text-emerald-600/80 dark:text-emerald-400/90" : "text-muted-foreground"}`}>
+                        ({track.uploadCount})
+                      </span>
                     )}
                   </button>
                   {isPublished ? (
-                    <span className="inline-flex items-center gap-0.5 text-green-500 font-medium">
+                    <span className={`inline-flex items-center gap-0.5 ${doneActionClass}`}>
                       <Globe className="w-3 h-3" />
                       {t("createMusic.published", "공개됨")}
                     </span>
@@ -123,7 +145,7 @@ function TrackCard({
                       type="button"
                       onClick={onPublish}
                       disabled={isPublishing}
-                      className="inline-flex items-center gap-0.5 hover:underline text-violet-500 disabled:opacity-50"
+                      className="inline-flex items-center gap-0.5 hover:underline text-primary disabled:opacity-50"
                     >
                       {isPublishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
                       {t("createMusic.publishToSite", "신곡으로 공개")}
@@ -192,6 +214,8 @@ type SavedTrack = GeneratedTrack & {
   createdAt: number;
   uploadCount?: number;
   downloadCount?: number;
+  /** 사이트에 신곡 공개 완료 여부 (localStorage 유지) */
+  publishedToSite?: boolean;
   /** 생성 요청 task_id — 공개 시 관리자 로그와 연결 */
   generationTaskId?: string;
   generationProvider?: string;
@@ -203,7 +227,14 @@ export default function CreateMusic() {
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: aiUsage } = useQuery<{ limit: number; usedThisMonth: number; isPaidTier: boolean }>({
+  const { data: aiUsage } = useQuery<{
+    limit: number;
+    usedThisMonth: number;
+    isPaidTier: boolean;
+    creditsBalance?: number;
+    creditsPerMusicCreate?: number;
+    deductsCreditsPerCreate?: boolean;
+  }>({
     queryKey: ["/api/ai-music/usage"],
     enabled: !!user,
   });
@@ -246,9 +277,21 @@ export default function CreateMusic() {
   }, [status]);
 
   useEffect(() => {
+    if (!user?.id) {
+      setSavedTracks([]);
+      setTaskId(null);
+      setStatus("idle");
+      setResultTracks([]);
+      setErrorMessage(null);
+      return;
+    }
+    const storageKey = savedTracksStorageKey(user.id);
     try {
-      const raw = localStorage.getItem(SAVED_TRACKS_KEY);
-      if (!raw) return;
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        setSavedTracks([]);
+        return;
+      }
       const parsed = JSON.parse(raw) as unknown;
       const arr = Array.isArray(parsed)
         ? parsed
@@ -257,7 +300,10 @@ export default function CreateMusic() {
           : (parsed && typeof parsed === "object" && Array.isArray((parsed as { tracks?: unknown[] }).tracks))
             ? (parsed as { tracks: unknown[] }).tracks
             : [];
-      if (arr.length === 0) return;
+      if (arr.length === 0) {
+        setSavedTracks([]);
+        return;
+      }
       const normalized: SavedTrack[] = arr.map((item: unknown, i: number) => {
         const t = item as Record<string, unknown>;
         const id = typeof t.id === "string" ? t.id : `saved-${Date.now()}-${i}-${t.clip_id ?? t.id ?? i}`;
@@ -280,33 +326,42 @@ export default function CreateMusic() {
           prompt: t.prompt,
           original_prompt: t.original_prompt ?? t.prompt,
           custom_mode: Boolean(t.custom_mode),
+          publishedToSite: Boolean(t.publishedToSite),
         } as SavedTrack;
       });
       setSavedTracks(normalized);
     } catch {
-      // 손상된 데이터면 무시 (기존 목록 유지 불가)
+      setSavedTracks([]);
     }
-  }, []);
+  }, [user?.id]);
 
-  const persistTracks = useCallback((tracks: SavedTrack[]) => {
-    try {
-      const toPersist = tracks.map((t) => ({
-        id: t.id,
-        createdAt: t.createdAt,
-        clip_id: t.clip_id,
-        audio_url: t.audio_url,
-        image_url: t.image_url,
-        title: t.title,
-        tags: t.tags,
-        prompt: t.prompt,
-        original_prompt: t.original_prompt,
-        custom_mode: t.custom_mode,
-        generationTaskId: t.generationTaskId,
-        generationProvider: t.generationProvider,
-      }));
-      localStorage.setItem(SAVED_TRACKS_KEY, JSON.stringify(toPersist));
-    } catch {}
-  }, []);
+  const persistTracks = useCallback(
+    (tracks: SavedTrack[]) => {
+      const uid = user?.id;
+      if (!uid) return;
+      try {
+        const toPersist = tracks.map((t) => ({
+          id: t.id,
+          createdAt: t.createdAt,
+          clip_id: t.clip_id,
+          audio_url: t.audio_url,
+          image_url: t.image_url,
+          title: t.title,
+          tags: t.tags,
+          prompt: t.prompt,
+          original_prompt: t.original_prompt,
+          custom_mode: t.custom_mode,
+          generationTaskId: t.generationTaskId,
+          generationProvider: t.generationProvider,
+          uploadCount: t.uploadCount,
+          downloadCount: t.downloadCount,
+          publishedToSite: t.publishedToSite,
+        }));
+        localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(toPersist));
+      } catch {}
+    },
+    [user?.id],
+  );
 
   const removeSavedTrack = useCallback(
     (id: string) => {
@@ -321,7 +376,6 @@ export default function CreateMusic() {
 
   // ── 신곡 공개 ──
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [publishedIds, setPublishedIds] = useState<Set<string>>(new Set());
   const [publishConfirmTrack, setPublishConfirmTrack] = useState<SavedTrack | null>(null);
 
   const handlePublishTrack = useCallback(async (track: SavedTrack) => {
@@ -352,7 +406,11 @@ export default function CreateMusic() {
         });
         return;
       }
-      setPublishedIds((prev) => new Set([...prev, track.id]));
+      setSavedTracks((prev) => {
+        const next = prev.map((row) => (row.id === track.id ? { ...row, publishedToSite: true } : row));
+        persistTracks(next);
+        return next;
+      });
       toast({
         title: "신곡으로 공개되었습니다!",
         description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
@@ -362,7 +420,7 @@ export default function CreateMusic() {
     } finally {
       setPublishingId(null);
     }
-  }, [toast]);
+  }, [toast, persistTracks]);
 
   const goUploadWithTrack = useCallback(
     (track: SavedTrack) => {
@@ -551,18 +609,32 @@ export default function CreateMusic() {
       setTaskId(tid);
       setTaskProvider(provider ?? null);
       const creditsCharged = Number((data as { credits_charged?: number }).credits_charged) || 0;
+      const creditsBalanceAfter = (data as { credits_balance?: unknown }).credits_balance;
+      const balNum = typeof creditsBalanceAfter === "number" ? creditsBalanceAfter : Number(creditsBalanceAfter);
       if (creditsCharged > 0) {
         toast({
           title: t("createMusic.toastCreditsTitle"),
-          description: t("createMusic.toastCreditsDesc", { count: creditsCharged }),
+          description:
+            Number.isFinite(balNum) && balNum >= 0
+              ? t("createMusic.toastCreditsDescWithBalance", {
+                  count: creditsCharged,
+                  balance: balNum,
+                })
+              : t("createMusic.toastCreditsDesc", { count: creditsCharged }),
         });
+      }
+      if (Number.isFinite(balNum) && balNum >= 0) {
+        queryClient.setQueryData(["/api/credits"], { credits: balNum });
+        queryClient.setQueryData(["/api/ai-music/usage"], (prev: typeof aiUsage) =>
+          prev ? { ...prev, creditsBalance: balNum } : prev,
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       try {
-        sessionStorage.setItem(AI_MUSIC_TASK_KEY, JSON.stringify({ task_id: tid, provider }));
+        sessionStorage.setItem(lastAiMusicTaskSessionKey(user.id), JSON.stringify({ task_id: tid, provider }));
       } catch {}
       pollTask(tid, provider);
     } catch {
@@ -609,6 +681,33 @@ export default function CreateMusic() {
 
             {user && (
               <>
+                {aiUsage != null && (
+                  <div className="max-w-2xl mx-auto mb-4 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-6">
+                    <Link
+                      href="/credits"
+                      className="inline-flex items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-sm text-amber-100/95 hover:bg-amber-500/15 transition-colors"
+                    >
+                      <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>{t("createMusic.currentCredits", "보유 크레딧")}</span>
+                      <strong className="tabular-nums text-white">{Math.max(0, Number(aiUsage.creditsBalance ?? 0)).toLocaleString()}</strong>
+                    </Link>
+                    {aiUsage.deductsCreditsPerCreate ? (
+                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                        {t("createMusic.creditsDeductHint", "음악 1회 생성 시 {{n}} 크레딧이 차감됩니다.", {
+                          n: aiUsage.creditsPerMusicCreate ?? 20,
+                        })}
+                      </p>
+                    ) : user?.role === "admin" ? (
+                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                        {t("createMusic.creditsAdminHint", "관리자 계정은 생성 시 크레딧이 차감되지 않습니다.")}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                        {t("createMusic.creditsFreeHint", "무료 플랜은 월 한도 내에서 크레딧 없이 생성할 수 있습니다.")}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {aiUsage && aiUsage.limit > 0 && (
                   <p className="text-center text-sm text-muted-foreground mb-2">
                     {t("createMusic.usageThisMonth", "이번 달")} {aiUsage.usedThisMonth}/{aiUsage.limit}
@@ -800,7 +899,7 @@ export default function CreateMusic() {
                               onPlay={() => playTrackInGlobalPlayer(track)}
                               onPublish={() => setPublishConfirmTrack(track)}
                               isPublishing={publishingId === track.id}
-                              isPublished={publishedIds.has(track.id)}
+                              isPublished={!!track.publishedToSite}
                               t={t as TTranslate}
                             />
                           ))}

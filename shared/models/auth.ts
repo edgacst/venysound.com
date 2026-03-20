@@ -34,6 +34,8 @@ export const users = pgTable("users", {
   allowDirectMessages: boolean("allow_direct_messages").default(true), // false면 새 대화 요청 거절
   notifyNewMusicEmail: boolean("notify_new_music_email").default(true),
   notifyNewMusicPush: boolean("notify_new_music_push").default(true),
+  /** 댓글·팔로우·쪽지·좋아요 등 활동 알림 이메일 (SMTP 설정 시) */
+  notifyActivityEmail: boolean("notify_activity_email").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

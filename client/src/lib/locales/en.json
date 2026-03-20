@@ -1074,6 +1074,10 @@
     "unreadNotifications": "Unread",
     "countUnit": "",
     "markAllRead": "Mark all read",
+    "notifyNewMusicEmail": "Email me about new music for me",
+    "notifyNewMusicPush": "Push notifications for new music",
+    "notifyActivityEmail": "Activity emails",
+    "notifyActivityEmailDesc": "Email for comments, follows, DMs, likes, etc. (when SMTP is configured)",
     "noNotifications": "No notifications",
     "read": "Read",
     "noReports": "No copyright reports",
@@ -1363,6 +1367,11 @@
     "searchPlaceholder": "Search by title, style, or lyrics",
     "noSearchResults": "No results found.",
     "toastCreditsTitle": "Credits deducted",
-    "toastCreditsDesc": "{{count}} credits were used for this AI music generation."
+    "toastCreditsDesc": "{{count}} credits were used for this AI music generation.",
+    "toastCreditsDescWithBalance": "{{count}} credits deducted. Current balance: {{balance}} credits.",
+    "currentCredits": "Your credits",
+    "creditsDeductHint": "Each generation uses {{n}} credits.",
+    "creditsAdminHint": "Admin accounts are not charged credits per generation.",
+    "creditsFreeHint": "On the free plan you can generate within the monthly limit without spending credits."
   }
 }

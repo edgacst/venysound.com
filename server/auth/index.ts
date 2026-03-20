@@ -257,8 +257,6 @@ export async function setupAuth(app: Express) {
         if (existing.email === email) return res.status(409).json({ error: "이미 사용 중인 이메일입니다." });
       }
       const passwordHash = await bcrypt.hash(password, 10);
-      const premiumExpiresAt = new Date();
-      premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
       const [user] = await db
         .insert(users)
         .values({
@@ -267,9 +265,6 @@ export async function setupAuth(app: Express) {
           passwordHash,
           firstName: username,
           role: "user",
-          subscriptionTier: "premium",
-          subscriptionPlan: "premium",
-          subscriptionExpiresAt: premiumExpiresAt,
           registerSource: "email",
         })
         .returning();

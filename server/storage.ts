@@ -62,7 +62,7 @@ export interface IStorage {
 
   // Users
   getUserById(id: string): Promise<any | undefined>;
-  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }): Promise<any | undefined>;
+  updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean; notifyActivityEmail?: boolean }): Promise<any | undefined>;
 
   // New music notifications (email + push)
   getUsersToNotifyForNewMusic(music: { id: number; title: string; artist: string; genre?: string | null; userId: string }): Promise<{ userId: string; email: string | null; notifyNewMusicEmail: boolean; notifyNewMusicPush: boolean }[]>;
@@ -942,7 +942,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }): Promise<any | undefined> {
+  async updateUserProfile(userId: string, data: { firstName?: string; lastName?: string; profileImageUrl?: string; username?: string; allowDirectMessages?: boolean; notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean; notifyActivityEmail?: boolean }): Promise<any | undefined> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.firstName !== undefined) set.firstName = data.firstName.trim() || null;
     if (data.lastName !== undefined) set.lastName = data.lastName.trim() || null;
@@ -951,6 +951,7 @@ export class DatabaseStorage implements IStorage {
     if (data.allowDirectMessages !== undefined) set.allowDirectMessages = data.allowDirectMessages;
     if (data.notifyNewMusicEmail !== undefined) set.notifyNewMusicEmail = data.notifyNewMusicEmail;
     if (data.notifyNewMusicPush !== undefined) set.notifyNewMusicPush = data.notifyNewMusicPush;
+    if (data.notifyActivityEmail !== undefined) set.notifyActivityEmail = data.notifyActivityEmail;
     if (Object.keys(set).length <= 1) return this.getUserById(userId);
     const [user] = await db.update(users).set(set).where(eq(users.id, userId)).returning();
     return user;

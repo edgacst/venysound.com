@@ -333,7 +333,7 @@ function NotificationsSection() {
   const { user } = useAuth();
   const { data: myProfile } = useUserProfile(user?.id ?? "");
   const updateNotifyPrefs = useMutation({
-    mutationFn: async (prefs: { notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean }) => {
+    mutationFn: async (prefs: { notifyNewMusicEmail?: boolean; notifyNewMusicPush?: boolean; notifyActivityEmail?: boolean }) => {
       const res = await fetch(`/api/users/${user!.id}/profile`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -412,6 +412,7 @@ function NotificationsSection() {
   const profileUser = (myProfile as any)?.user;
   const notifyEmail = profileUser?.notifyNewMusicEmail !== false;
   const notifyPush = profileUser?.notifyNewMusicPush !== false;
+  const notifyActivity = profileUser?.notifyActivityEmail !== false;
 
   return (
     <div>
@@ -436,6 +437,15 @@ function NotificationsSection() {
                 onCheckedChange={(checked) => updateNotifyPrefs.mutate({ notifyNewMusicPush: checked })}
               />
             </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="notify-activity-email" className="text-sm">{t("profile.notifyActivityEmail", "활동 알림 이메일")}</Label>
+              <Switch
+                id="notify-activity-email"
+                checked={notifyActivity}
+                onCheckedChange={(checked) => updateNotifyPrefs.mutate({ notifyActivityEmail: checked })}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground -mt-2">{t("profile.notifyActivityEmailDesc", "댓글·팔로우·쪽지·좋아요 등이 있을 때 이메일로 알림 (SMTP 설정 시)")}</p>
             <div>
               <Button
                 variant="outline"

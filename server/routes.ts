@@ -13,7 +13,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
-import { sendNewMusicNotificationEmail } from "./email";
+import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigured, type ActivityEmailKind } from "./email";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
@@ -80,6 +80,39 @@ export async function registerRoutes(
     } catch {
       return "";
     }
+  }
+
+  /** SMTP·notify_activity_email 허용 시 댓글/팔로/좋아요/쪽지 메일 (비동기, 응답 지연 없음) */
+  function queueActivityEmail(
+    recipientUserId: string,
+    kind: ActivityEmailKind,
+    params: {
+      actorName: string;
+      musicTitle?: string;
+      postTitle?: string;
+      snippet?: string;
+      actionPath: string;
+    },
+  ): void {
+    if (!isEmailConfigured()) return;
+    void (async () => {
+      try {
+        const u = await storage.getUserById(recipientUserId);
+        if (!u?.email) return;
+        if ((u as { notifyActivityEmail?: boolean }).notifyActivityEmail === false) return;
+        const recipientName = (u.firstName as string) || (typeof u.email === "string" ? u.email.split("@")[0] : "") || "회원";
+        await sendSocialActivityEmail(u.email, kind, {
+          recipientName,
+          actorName: params.actorName,
+          musicTitle: params.musicTitle,
+          postTitle: params.postTitle,
+          snippet: params.snippet,
+          actionPath: params.actionPath,
+        });
+      } catch (e) {
+        console.error("[activity-email]", e);
+      }
+    })();
   }
 
   /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 유료(Pro/Premium 또는 admin)인지 반환 */
@@ -714,10 +747,26 @@ export async function registerRoutes(
       const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
       const usedThisMonth = usage?.count ?? 0;
-      return res.json({ limit, usedThisMonth, isPaidTier });
+      const tier = user?.subscriptionTier ?? "free";
+      const deductsCreditsPerCreate = user?.role !== "admin" && tier !== "free";
+      return res.json({
+        limit,
+        usedThisMonth,
+        isPaidTier,
+        creditsBalance: user?.credits ?? 0,
+        creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
+        deductsCreditsPerCreate,
+      });
     } catch (e) {
       console.error("[ai-music usage]", e);
-      res.status(500).json({ limit: FREE_AI_MUSIC_LIMIT_PER_MONTH, usedThisMonth: 0, isPaidTier: false });
+      res.status(500).json({
+        limit: FREE_AI_MUSIC_LIMIT_PER_MONTH,
+        usedThisMonth: 0,
+        isPaidTier: false,
+        creditsBalance: 0,
+        creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
+        deductsCreditsPerCreate: false,
+      });
     }
   });
 
@@ -902,7 +951,13 @@ export async function registerRoutes(
           provider: "suno",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
         });
-        return res.json({ task_id: taskId, provider: "suno", credits_charged: creditsCharged });
+        const [uAfterSuno] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+        return res.json({
+          task_id: taskId,
+          provider: "suno",
+          credits_charged: creditsCharged,
+          credits_balance: uAfterSuno?.credits ?? 0,
+        });
       } catch (e) {
         console.error("[ai-music create suno]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -963,7 +1018,13 @@ export async function registerRoutes(
         provider: "aimusicapi",
         body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
       });
-      res.json({ task_id: taskId, provider: "aimusicapi", credits_charged: creditsCharged });
+      const [uAfterAimusic] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+      res.json({
+        task_id: taskId,
+        provider: "aimusicapi",
+        credits_charged: creditsCharged,
+        credits_balance: uAfterAimusic?.credits ?? 0,
+      });
     } catch (e) {
       console.error("[ai-music create]", e);
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -1969,6 +2030,11 @@ export async function registerRoutes(
         payload: { fromName: likerName, musicTitle: music.title },
         url: `/music/${musicId}`
       });
+      queueActivityEmail(music.userId, "like", {
+        actorName: likerName,
+        musicTitle: music.title,
+        actionPath: `/music/${musicId}`,
+      });
     }
 
     res.json({ liked });
@@ -1999,6 +2065,12 @@ export async function registerRoutes(
           message: `${reviewerName}님이 "${musicItem.title}" 곡에 리뷰를 남겼습니다`,
           payload: { fromName: reviewerName, musicTitle: musicItem.title },
           url: `/music/${req.params.id}`,
+        });
+        queueActivityEmail(musicItem.userId, "review", {
+          actorName: reviewerName,
+          musicTitle: musicItem.title,
+          snippet: input.content?.trim(),
+          actionPath: `/music/${req.params.id}`,
         });
       }
       res.status(201).json(review);
@@ -2085,6 +2157,11 @@ export async function registerRoutes(
           message: `${commenterName}님이 창작 히스토리에 댓글을 남겼습니다`,
           payload: { fromName: commenterName },
           url: storyRow.musicId ? `/music/${storyRow.musicId}` : "/explore",
+        });
+        queueActivityEmail(storyRow.userId, "story_comment", {
+          actorName: commenterName,
+          snippet: input.content?.trim(),
+          actionPath: storyRow.musicId ? `/music/${storyRow.musicId}` : "/explore",
         });
       }
       res.status(201).json(comment);
@@ -2214,6 +2291,12 @@ export async function registerRoutes(
           payload: { fromName: commenterName },
           url: `/posts/${postId}`,
         });
+        queueActivityEmail((post as any).userId, "post_comment", {
+          actorName: commenterName,
+          postTitle: (post as any).title ?? "",
+          snippet: input.content?.trim(),
+          actionPath: `/posts/${postId}`,
+        });
       }
       res.status(201).json(comment);
     } catch (err) {
@@ -2272,6 +2355,10 @@ export async function registerRoutes(
           message: `${followerName}님이 팔로우하기 시작했습니다`,
           payload: { fromName: followerName },
           url: `/profile/${followerId}`
+        });
+        queueActivityEmail(followedId, "follow", {
+          actorName: followerName,
+          actionPath: `/profile/${followerId}`,
         });
       }
 
@@ -2341,6 +2428,7 @@ export async function registerRoutes(
         ...(username !== undefined && { username: username ? String(username) : "" }),
         ...(req.body.notifyNewMusicEmail !== undefined && { notifyNewMusicEmail: Boolean(req.body.notifyNewMusicEmail) }),
         ...(req.body.notifyNewMusicPush !== undefined && { notifyNewMusicPush: Boolean(req.body.notifyNewMusicPush) }),
+        ...(req.body.notifyActivityEmail !== undefined && { notifyActivityEmail: Boolean(req.body.notifyActivityEmail) }),
       });
       if (!updated) return res.status(404).json({ message: "프로필을 찾을 수 없습니다" });
       res.json(updated);
@@ -5327,6 +5415,12 @@ export async function registerRoutes(
             sender_last_name: sender?.lastName || "",
             sender_image: sender?.profileImageUrl || null,
           },
+        });
+        const senderLabel = `${sender?.firstName || ""} ${sender?.lastName || ""}`.trim() || "사용자";
+        queueActivityEmail(otherUserId, "dm", {
+          actorName: senderLabel,
+          snippet: content.trim(),
+          actionPath: "/messages",
         });
       }
 

@@ -105,3 +105,91 @@ export async function sendNewMusicNotificationEmail(to: string, params: { userNa
     console.error("[email] sendNewMusicNotificationEmail error:", err);
   }
 }
+
+/** 음원 리뷰·스토리 댓글·게시글 댓글·팔로·좋아요·쪽지 (추천 신곡은 sendNewMusicNotificationEmail 사용) */
+export type ActivityEmailKind = "review" | "story_comment" | "post_comment" | "follow" | "like" | "dm";
+
+const ACTIVITY_SUBJECT: Record<ActivityEmailKind, string> = {
+  review: "[Venysound] 내 음원에 새 리뷰가 달렸습니다",
+  story_comment: "[Venysound] 창작 히스토리에 새 댓글이 있습니다",
+  post_comment: "[Venysound] 내 게시글에 새 댓글이 있습니다",
+  follow: "[Venysound] 새 팔로워가 있습니다",
+  like: "[Venysound] 내 음원에 좋아요가 눌렸습니다",
+  dm: "[Venysound] 새 쪽지가 도착했습니다",
+};
+
+export async function sendSocialActivityEmail(
+  to: string,
+  kind: ActivityEmailKind,
+  params: {
+    recipientName: string;
+    actorName: string;
+    musicTitle?: string;
+    postTitle?: string;
+    snippet?: string;
+    /** 사이트 경로 (예: /music/1) 또는 전체 URL */
+    actionPath: string;
+  },
+): Promise<void> {
+  if (!isEmailConfigured()) return;
+  const siteUrl = (process.env.PUBLIC_SITE_URL || process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  const href = params.actionPath.startsWith("http")
+    ? params.actionPath
+    : `${siteUrl}${params.actionPath.startsWith("/") ? "" : "/"}${params.actionPath}`;
+
+  let bodyLines: string[] = [`<p>${params.recipientName}님, 안녕하세요.</p>`];
+  switch (kind) {
+    case "review":
+      bodyLines.push(`<p><strong>${params.actorName}</strong>님이 회원님의 음원 <strong>${params.musicTitle ?? ""}</strong>에 리뷰를 남겼습니다.</p>`);
+      if (params.snippet) bodyLines.push(`<p style="color:#666;">${escapeHtml(params.snippet)}</p>`);
+      break;
+    case "story_comment":
+      bodyLines.push(`<p><strong>${params.actorName}</strong>님이 창작 히스토리에 댓글을 남겼습니다.</p>`);
+      if (params.snippet) bodyLines.push(`<p style="color:#666;">${escapeHtml(params.snippet)}</p>`);
+      break;
+    case "post_comment":
+      bodyLines.push(`<p><strong>${params.actorName}</strong>님이 게시글 <strong>${params.postTitle ?? ""}</strong>에 댓글을 남겼습니다.</p>`);
+      if (params.snippet) bodyLines.push(`<p style="color:#666;">${escapeHtml(params.snippet)}</p>`);
+      break;
+    case "follow":
+      bodyLines.push(`<p><strong>${params.actorName}</strong>님이 회원님을 팔로우하기 시작했습니다.</p>`);
+      break;
+    case "like":
+      bodyLines.push(
+        `<p><strong>${params.actorName}</strong>님이 음원 <strong>${params.musicTitle ?? ""}</strong>에 좋아요를 눌렀습니다.</p>`,
+      );
+      break;
+    case "dm":
+      bodyLines.push(`<p><strong>${params.actorName}</strong>님이 쪽지를 보냈습니다.</p>`);
+      if (params.snippet) bodyLines.push(`<p style="color:#666;border-left:3px solid #ccc;padding-left:8px;">${escapeHtml(params.snippet)}</p>`);
+      break;
+  }
+  bodyLines.push(`<p><a href="${href}">Venysound에서 확인하기</a></p><p>— Venysound</p>`);
+  const html = bodyLines.join("\n");
+
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: MAIL_FROM,
+      to,
+      subject: ACTIVITY_SUBJECT[kind],
+      html,
+    });
+  } catch (err) {
+    console.error("[email] sendSocialActivityEmail error:", err);
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
