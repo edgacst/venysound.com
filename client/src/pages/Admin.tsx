@@ -2287,7 +2287,7 @@ export default function Admin() {
               )}
             </p>
           )}
-          {!aiMusicGenLogsError && aiMusicGenLogs.length > 0 && (
+          {!aiMusicGenLogsError && aiMusicGenLogs.length > 0 ? (
             <div className="overflow-x-auto max-h-[70vh] overflow-y-auto border border-border rounded-md">
               <table className="w-full text-xs sm:text-sm min-w-[960px]">
                 <thead className="sticky top-0 bg-muted/95 z-10 border-b border-border">
@@ -2328,7 +2328,7 @@ export default function Admin() {
                         <td className="py-2 px-2">
                           <Badge variant="secondary" className="text-[10px]">
                             {billingLabel}
-                            {row.creditsCharged > 0 ? ` · -${row.creditsCharged}C` : ""}
+                            {row.creditsCharged > 0 ? " · -" + row.creditsCharged + "C" : ""}
                           </Badge>
                         </td>
                         <td className="py-2 px-2">{row.subscriptionTierAt ?? "-"}</td>
@@ -2364,7 +2364,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
-          )}
+          ) : null}
         </Card>
             </TabsContent>
             <TabsContent value="backup">
