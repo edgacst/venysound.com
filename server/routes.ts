@@ -1773,19 +1773,19 @@ export async function registerRoutes(
       const price = isPremium ? input.price : 0;
 
       const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
-      await storage.addCredits(userId, 200);
+      await storage.addCredits(userId, 20);
       await storage.createCreditTransaction({
         userId,
         type: "music_upload_bonus",
-        amount: 200,
+        amount: 20,
         description: "음원 등록 보너스",
         relatedId: music.id,
       });
       await storage.createNotification({
         userId,
         type: "system",
-        message: "음원이 등록되었습니다. 200 크레딧이 지급되었습니다.",
-        payload: { musicTitle: music.title, amount: 200 },
+        message: "음원이 등록되었습니다. 20 크레딧이 지급되었습니다.",
+        payload: { musicTitle: music.title, amount: 20 },
         url: "/credits",
       });
       // 비동기로 "좋아할 만한 신곡" 알림 (이메일 + 푸시 + 앱 내 알림)
@@ -1984,21 +1984,21 @@ export async function registerRoutes(
         return res.status(403).json({ message: "삭제 권한이 없습니다" });
       }
 
-      // 이벤트: 음원 등록 시 지급한 200 크레딧 회수
+      // 이벤트: 음원 등록 시 지급한 20 크레딧 회수
       const ownerId = existing.userId;
-      await storage.addCredits(ownerId, -200);
+      await storage.addCredits(ownerId, -20);
       await storage.createCreditTransaction({
         userId: ownerId,
         type: "music_upload_bonus_reversal",
-        amount: -200,
+        amount: -20,
         description: "음원 삭제 시 등록 보너스 회수",
         relatedId: musicId,
       });
       await storage.createNotification({
         userId: ownerId,
         type: "system",
-        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 200 크레딧이 회수되었습니다.`,
-        payload: { musicTitle: existing.title, amount: -200 },
+        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 20 크레딧이 회수되었습니다.`,
+        payload: { musicTitle: existing.title, amount: -20 },
         url: "/credits",
       });
 
