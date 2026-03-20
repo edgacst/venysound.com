@@ -55,11 +55,16 @@ export default function Credits() {
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
     enabled: !!user,
+    // 다른 사용자가 보낸 후원/구매로 값이 바뀌어도 즉시 반영되도록 함
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const { data: transactions, isLoading: isLoadingTx } = useQuery<any[]>({
     queryKey: ["/api/credits/transactions"],
     enabled: !!user,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const { data: bankInfo } = useQuery<{ bankName: string; bankAccount: string; bankHolder: string }>({

@@ -611,6 +611,9 @@ function EarningsSection() {
       if (!res.ok) return { totalTips: 0, totalSales: 0, balance: 0 };
       return res.json();
     },
+    // 다른 사용자가 후원한 뒤에도 이 페이지를 열어둔 상태에서 업데이트되도록 함
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const { data: tipsReceived, isLoading: isLoadingTips } = useQuery<any[]>({
@@ -620,6 +623,8 @@ function EarningsSection() {
       if (!res.ok) return [];
       return res.json();
     },
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const { data: sales, isLoading: isLoadingSales } = useQuery<any[]>({
