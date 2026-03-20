@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 // 프로덕션(dist/index.cjs): 배너로 주입된 __APP_ROOT__ 사용.
@@ -17,6 +18,24 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
+import { pool } from "./db";
+
+async function runAutoMigrations() {
+  const migrationsDir = path.join(APP_ROOT, "script", "migrations");
+  if (!fs.existsSync(migrationsDir)) return;
+  const files = fs.readdirSync(migrationsDir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+  for (const file of files) {
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    try {
+      await pool.query(sql);
+      console.log(`[migrate] ✓ ${file}`);
+    } catch (err: any) {
+      console.error(`[migrate] ✗ ${file}:`, err.message);
+    }
+  }
+}
 
 const app = express();
 const httpServer = createServer(app);
@@ -62,6 +81,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  try {
+    await runAutoMigrations();
+  } catch (err) {
+    console.error("[migrate] 마이그레이션 실행 중 오류:", err);
+  }
   try {
     await seedDatabase();
   } catch (err) {
