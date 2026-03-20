@@ -2279,14 +2279,15 @@ export default function Admin() {
               </AlertDescription>
             </Alert>
           ) : null}
-          {aiMusicGenLogs.length === 0 && !loadingAiMusicGenLogs && !aiMusicGenLogsError ? (
+          {aiMusicGenLogs.length === 0 && !loadingAiMusicGenLogs && !aiMusicGenLogsError && (
             <p className="text-sm text-muted-foreground py-4">
               {t(
                 'admin.aiMusicGenLogsEmpty',
                 '아직 표시할 행이 없습니다. 배포 반영 후 AI 음악을 한 번 더 생성해 보세요. 테이블이 없다면 서버에서 db:deploy(또는 create-ai-music-generation-logs.sql)를 실행하세요.',
               )}
             </p>
-          ) : !aiMusicGenLogsError ? (
+          )}
+          {!aiMusicGenLogsError && aiMusicGenLogs.length > 0 && (
             <div className="overflow-x-auto max-h-[70vh] overflow-y-auto border border-border rounded-md">
               <table className="w-full text-xs sm:text-sm min-w-[960px]">
                 <thead className="sticky top-0 bg-muted/95 z-10 border-b border-border">
@@ -2363,7 +2364,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
-          ) : null}
+          )}
         </Card>
             </TabsContent>
             <TabsContent value="backup">

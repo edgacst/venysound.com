@@ -879,6 +879,10 @@ export async function registerRoutes(
         return res.json({ task_id: taskId, provider: "suno" });
       } catch (e) {
         console.error("[ai-music create suno]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        if (errMsg === "INSUFFICIENT_CREDITS") {
+          return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
+        }
         return res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
       }
     }
@@ -930,6 +934,10 @@ export async function registerRoutes(
       res.json({ task_id: taskId, provider: "aimusicapi" });
     } catch (e) {
       console.error("[ai-music create]", e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (errMsg === "INSUFFICIENT_CREDITS") {
+        return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
+      }
       res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
     }
   });
@@ -1181,7 +1189,11 @@ export async function registerRoutes(
     const pageNum = Math.max(1, parseInt(page || "1", 10));
     const limitNum = Math.min(500, Math.max(1, parseInt(limit || "30", 10)));
     const result = await storage.getMusicList(genre, search, tag, pageNum, limitNum);
-    res.json(result);
+    const viewer = await getViewerAiAccess(req);
+    const filtered = viewer.viewerIsAdmin
+      ? result.data
+      : result.data.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+    res.json({ ...result, data: filtered, total: filtered.length });
   });
 
   app.get("/api/music/tags", async (_req, res) => {
@@ -1256,7 +1268,9 @@ export async function registerRoutes(
     try {
       const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 10));
       const list = await storage.getWeeklyTopTracks(limit);
-      res.json(list);
+      const viewer = await getViewerAiAccess(req);
+      const filtered = viewer.viewerIsAdmin ? list : list.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+      res.json(filtered);
     } catch (e) {
       console.error("[music/top-weekly]", e);
       res.json([]);
@@ -1268,17 +1282,22 @@ export async function registerRoutes(
       const limit = Math.min(50, Math.max(1, parseInt(String(req.query.limit), 10) || 12));
       const days = Math.min(90, Math.max(1, parseInt(String(req.query.days), 10) || 7));
       const list = await storage.getRecentMusic(days, limit);
-      res.json(list);
+      const viewer = await getViewerAiAccess(req);
+      const filtered = viewer.viewerIsAdmin ? list : list.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+      res.json(filtered);
     } catch (e) {
       console.error("[music/recent]", e);
       res.json([]);
     }
   });
 
-  app.get("/api/artists/top-weekly", async (_req, res) => {
+  app.get("/api/artists/top-weekly", async (req, res) => {
     try {
+      const viewer = await getViewerAiAccess(req);
       const data = await storage.getWeeklyTopArtist(5);
       if (!data) return res.json(null);
+      const filteredTracks = viewer.viewerIsAdmin ? data.tracks : data.tracks.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+      (data as any).tracks = filteredTracks;
       res.json(data);
     } catch (e) {
       console.error("[artists/top-weekly]", e);
@@ -1286,8 +1305,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/music/popular", async (_req, res) => {
+  app.get("/api/music/popular", async (req, res) => {
     try {
+      const viewer = await getViewerAiAccess(req);
       const result = await db.execute(sql`
         SELECT 
           m.*,
@@ -1332,7 +1352,8 @@ export async function registerRoutes(
           streamSeconds: Number(r.stream_seconds || 0),
         };
       });
-      res.json(rows);
+      const filtered = viewer.viewerIsAdmin ? rows : rows.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+      res.json(filtered);
     } catch (error) {
       res.status(500).json({ message: "인기 음원을 불러올 수 없습니다" });
     }
@@ -1367,12 +1388,43 @@ export async function registerRoutes(
     }
   });
 
+  // === AI Music Visibility Guard ===
+  // Requirements:
+  // - AI-generated music (`music.is_ai = true`) should be visible only to its owner.
+  // - Public discovery endpoints must hide other users' AI music.
+  // - Even direct access endpoints (metadata / stream / similar) must enforce the same rule.
+  async function getViewerAiAccess(req: Request): Promise<{ viewerUserId: string | null; viewerIsAdmin: boolean }> {
+    // passport.session() may exist, but this route may not use isAuthenticated middleware.
+    const anyReq = req as any;
+    if (typeof anyReq?.isAuthenticated === "function" && anyReq.isAuthenticated() && anyReq.user?.claims?.sub) {
+      const viewerUserId = String(anyReq.user.claims.sub);
+      try {
+        const viewer = await storage.getUserById(viewerUserId);
+        return { viewerUserId, viewerIsAdmin: viewer?.role === "admin" };
+      } catch {
+        return { viewerUserId, viewerIsAdmin: false };
+      }
+    }
+    return { viewerUserId: null, viewerIsAdmin: false };
+  }
+
+  function canViewerAccessMusicAi(music: { isAi: boolean; userId: string }, viewer: { viewerUserId: string | null; viewerIsAdmin: boolean }): boolean {
+    if (!music.isAi) return true;
+    if (viewer.viewerIsAdmin) return true;
+    if (!viewer.viewerUserId) return false;
+    return String(music.userId) === String(viewer.viewerUserId);
+  }
+
   /** 음원 스트리밍 (더 구체적인 경로이므로 api.music.get보다 먼저 등록) */
   app.get("/api/music/:id/stream", async (req, res) => {
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const music = await storage.getMusicById(Number(id));
       if (!music) {
+        return res.status(404).json({ error: "Music not found" });
+      }
+      const viewer = await getViewerAiAccess(req);
+      if (!canViewerAccessMusicAi(music as any, viewer)) {
         return res.status(404).json({ error: "Music not found" });
       }
       const fn = music.filename || "";
@@ -1517,6 +1569,10 @@ export async function registerRoutes(
       if (!music) {
         return res.status(404).json({ message: "Music not found" });
       }
+      const viewer = await getViewerAiAccess(req);
+      if (!canViewerAccessMusicAi(music as any, viewer)) {
+        return res.status(404).json({ message: "Music not found" });
+      }
       const uploader = await storage.getUserById(music.userId);
       const now = new Date();
       const subscriptionPremium = (uploader?.subscriptionTier === "pro" || uploader?.subscriptionTier === "premium") && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
@@ -1537,8 +1593,15 @@ export async function registerRoutes(
     const id = Number(req.params.id);
     const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit), 10) || 8));
     try {
+      const viewer = await getViewerAiAccess(req);
+      const base = await storage.getMusicById(id);
+      if (base && !canViewerAccessMusicAi(base as any, viewer)) {
+        return res.json([]);
+      }
       const data = await storage.getSimilarMusic(id, limit);
-      res.json(data);
+      if (viewer.viewerIsAdmin) return res.json(data);
+      const filtered = data.filter((m) => canViewerAccessMusicAi(m as any, viewer));
+      res.json(filtered);
     } catch (e) {
       console.error("[music/similar]", e);
       res.json([]);
@@ -2083,7 +2146,11 @@ export async function registerRoutes(
   app.get(api.playlists.get.path, async (req, res) => {
     const playlist = await storage.getPlaylistById(Number(req.params.id));
     if (!playlist) return res.status(404).json({ message: "Playlist not found" });
-    res.json(playlist);
+    const viewer = await getViewerAiAccess(req);
+    const filteredMusics = Array.isArray((playlist as any).musics)
+      ? (playlist as any).musics.filter((m: any) => canViewerAccessMusicAi(m as any, viewer))
+      : (playlist as any).musics;
+    res.json({ ...playlist, musics: filteredMusics });
   });
 
   // === Community/Post Routes ===
@@ -2259,6 +2326,13 @@ export async function registerRoutes(
       storage.getFollowing(userId),
     ]);
 
+    // AI-generated music is private per-owner. When viewing another user's profile,
+    // hide AI tracks created by them.
+    const viewer = await getViewerAiAccess(req);
+    const viewingOwnProfile = viewer.viewerUserId != null && String(viewer.viewerUserId) === String(userId);
+    const canSeeAiMusic = viewer.viewerIsAdmin || viewingOwnProfile;
+    const uploadedMusicFiltered = canSeeAiMusic ? uploadedMusic : uploadedMusic.filter((m: any) => !m.isAi);
+
     let isFollowing = false;
     if (currentUserId && currentUserId !== userId) {
       isFollowing = await storage.isFollowing(currentUserId, userId);
@@ -2266,7 +2340,7 @@ export async function registerRoutes(
 
     res.json({
       user,
-      uploadedMusic,
+      uploadedMusic: uploadedMusicFiltered,
       likedMusic,
       followerCount,
       followingCount,
