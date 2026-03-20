@@ -7,6 +7,7 @@ import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUp
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -567,7 +568,7 @@ export default function CreateMusic() {
             {!authLoading && !user && (
               <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center max-w-xl mx-auto">
                 <p className="text-amber-200 mb-4">{t("createMusic.loginRequired", "로그인 후 음악 생성을 이용할 수 있습니다.")}</p>
-                <Link href="/login">
+                <Link href={LOGIN_PATH}>
                   <Button className="rounded-full">{t("nav.login", "로그인")}</Button>
                 </Link>
               </div>

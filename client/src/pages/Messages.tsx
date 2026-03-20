@@ -1,6 +1,7 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -272,7 +273,7 @@ export default function Messages() {
             <MessageSquare className="mx-auto mb-4 text-muted-foreground" size={48} />
             <h2 className="text-xl font-bold mb-2" data-testid="text-login-required">{t('messages.loginRequired', '로그인이 필요합니다')}</h2>
             <p className="text-muted-foreground mb-4">{t('messages.loginRequiredDesc', '메시지를 보내려면 먼저 로그인해주세요.')}</p>
-            <Link href="/login">
+            <Link href={LOGIN_PATH}>
               <Button data-testid="button-login">{t('messages.login', '로그인')}</Button>
             </Link>
           </div>

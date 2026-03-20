@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { Download, Music, Loader2, ShoppingBag } from "lucide-react";
 import { Link } from "wouter";
@@ -81,7 +82,7 @@ export default function MyLibrary() {
               <Music size={48} className="mx-auto text-muted-foreground mb-4" />
               <h2 className="text-xl font-semibold mb-2">{t('myLibrary.loginRequired', '로그인이 필요합니다')}</h2>
               <p className="text-muted-foreground mb-6">{t('myLibrary.loginRequiredDesc', '내 라이브러리를 보려면 로그인해주세요.')}</p>
-              <Link href="/login">
+              <Link href={LOGIN_PATH}>
                 <Button>{t('myLibrary.login', '로그인')}</Button>
               </Link>
             </div>

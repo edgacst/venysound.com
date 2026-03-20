@@ -8,6 +8,7 @@ import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, P
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { resolveStorageUrl } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -337,7 +338,7 @@ export default function Radio() {
                   )
                 ) : (
                   <Button asChild variant="outline" className="gap-2 w-full" size="default">
-                    <Link href="/login">
+                    <Link href={LOGIN_PATH}>
                       {t("radio.loginToCreate", "로그인 후 만들기")}
                     </Link>
                   </Button>

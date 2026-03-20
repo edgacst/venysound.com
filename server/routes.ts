@@ -21,6 +21,7 @@ import { db } from "./db";
 import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
 import geoip from "geoip-lite";
+import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
 
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
@@ -370,8 +371,8 @@ export async function registerRoutes(
       "/about",
       "/pricing",
       "/credits",
-      "/login",
-      "/register",
+      getLoginPagePath(),
+      getRegisterPagePath(),
       "/faq",
       "/legal",
       "/privacy",
@@ -3443,7 +3444,7 @@ export async function registerRoutes(
           type: "system",
           message: `새 크레딧 입금 신청이 있습니다. (총 ${amount.toLocaleString()}원)`,
           payload: { amount },
-          url: "/admin",
+          url: getAdminPagePath(),
         });
       }
       const bankName = process.env.BANK_NAME || "은행명";
@@ -5054,7 +5055,7 @@ export async function registerRoutes(
           type: "system",
           message: "새 회원 신고가 접수되었습니다.",
           payload: { reportedUserId },
-          url: "/admin",
+          url: getAdminPagePath(),
         });
       }
       res.json({ success: true });

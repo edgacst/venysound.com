@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { LOGIN_PATH, REGISTER_PATH } from "@/lib/site-paths";
 
 export default function Login() {
   const { t } = useTranslation();
@@ -38,7 +39,7 @@ export default function Login() {
         description: t("login.oauthFailedHint", "redirect URI가 Google 콘솔과 일치하는지, .env의 SITE_URL이 실제 접속 주소인지 확인해 주세요."),
         variant: "destructive",
       });
-      window.history.replaceState({}, "", "/login");
+      window.history.replaceState({}, "", LOGIN_PATH);
     }
   }, [toast, t]);
 
@@ -220,7 +221,7 @@ export default function Login() {
         {/* 회원가입 링크 */}
         <p className="text-center text-sm text-zinc-500">
           {t("login.noAccount", "계정이 없으신가요?")}{" "}
-          <Link href="/register" className="text-purple-400 hover:text-purple-300 font-medium">
+          <Link href={REGISTER_PATH} className="text-purple-400 hover:text-purple-300 font-medium">
             {t("login.register", "회원가입")}
           </Link>
         </p>

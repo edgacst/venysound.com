@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useRadioPlayerStore } from "@/stores/radio-player";
-import { Router, Switch, Route, useLocation } from "wouter";
+import { Router, Switch, Route, useLocation, Redirect } from "wouter";
+import { LOGIN_PATH, REGISTER_PATH, ADMIN_PATH } from "@/lib/site-paths";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -27,6 +28,15 @@ function PageTitle() {
   const [pathname] = useLocation();
   useEffect(() => {
     const path = (pathname || "/").replace(/^\//, "") || "home";
+    const pa = pathname || "/";
+    if (pa === LOGIN_PATH) {
+      document.title = "로그인 | VenySound";
+      return;
+    }
+    if (pa === REGISTER_PATH) {
+      document.title = "회원가입 | VenySound";
+      return;
+    }
     const titles: Record<string, string> = {
       "": DEFAULT_TITLE,
       home: DEFAULT_TITLE,
@@ -38,8 +48,6 @@ function PageTitle() {
       radio: "실시간 DJ 방송 · 베니방송국 | VenySound",
       "radio/create": "방송 채널 만들기 | VenySound",
       guide: "스타트 가이드 | VenySound",
-      login: "로그인 | VenySound",
-      register: "회원가입 | VenySound",
       pricing: "요금제 | VenySound",
       about: "소개 | VenySound",
       legal: "이용약관 | VenySound",
@@ -154,9 +162,24 @@ function Routes() {
       <Route path="/privacy" component={Privacy} />
       <Route path="/refund-policy" component={RefundPolicy} />
       <Route path="/faq" component={FAQ} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      <Route path="/admin" component={Admin} />
+      <Route path={LOGIN_PATH} component={Login} />
+      <Route path={REGISTER_PATH} component={Register} />
+      <Route path={ADMIN_PATH} component={Admin} />
+      {LOGIN_PATH !== "/login" && (
+        <Route path="/login">
+          <Redirect to={LOGIN_PATH} />
+        </Route>
+      )}
+      {REGISTER_PATH !== "/register" && (
+        <Route path="/register">
+          <Redirect to={REGISTER_PATH} />
+        </Route>
+      )}
+      {ADMIN_PATH !== "/admin" && (
+        <Route path="/admin">
+          <Redirect to={ADMIN_PATH} />
+        </Route>
+      )}
       <Route path="/pricing" component={Pricing} />
       <Route path="/credits" component={Credits} />
       <Route path="/my-library" component={MyLibrary} />

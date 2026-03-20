@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useToast } from "@/hooks/use-toast";
+import { REGISTER_PATH } from "@/lib/site-paths";
 
 export function LoginModal() {
   const { t } = useTranslation();
@@ -234,7 +235,7 @@ export function LoginModal() {
           <div className="w-full mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-sm">
             <span className="text-white/50">{t("login.noAccount", "계정이 없으신가요?")}</span>
             <Link
-              href="/register"
+              href={REGISTER_PATH}
               onClick={close}
               className="text-[#a78bfa] hover:text-white font-medium transition-colors"
               data-testid="link-modal-register"

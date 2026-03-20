@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Music, Eye, EyeOff, User, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { LOGIN_PATH } from "@/lib/site-paths";
 
 export default function Register() {
   const { t, i18n } = useTranslation();
@@ -291,7 +292,7 @@ export default function Register() {
         {/* 로그인 링크 */}
         <p className="text-center text-sm text-zinc-500 mt-6">
           {t("register.alreadyHaveAccount", "이미 계정이 있으신가요?")}{" "}
-          <Link href="/login" className="text-purple-400 hover:text-purple-300 font-medium">
+          <Link href={LOGIN_PATH} className="text-purple-400 hover:text-purple-300 font-medium">
             {t("login.loginButton", "로그인")}
           </Link>
         </p>

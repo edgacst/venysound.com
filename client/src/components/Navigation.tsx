@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { ADMIN_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -226,7 +227,7 @@ export function Navigation() {
                   </DropdownMenuItem>
                   {adminCheck?.isAdmin && (
                     <DropdownMenuItem asChild>
-                      <Link href="/admin">
+                      <Link href={ADMIN_PATH}>
                         <div className="flex items-center gap-2 cursor-pointer w-full" data-testid="link-admin">
                           <ShieldCheck size={16} /> {t('nav.admin')}
                         </div>
@@ -323,7 +324,7 @@ export function Navigation() {
                   <NavLink href="/my-library" icon={Download}>{t('nav.myLibrary')}</NavLink>
                   <NavLink href="/dashboard" icon={BarChart3}>{t('nav.dashboard')}</NavLink>
                   {adminCheck?.isAdmin && (
-                    <NavLink href="/admin" icon={ShieldCheck}>{t('nav.admin')}</NavLink>
+                    <NavLink href={ADMIN_PATH} icon={ShieldCheck}>{t('nav.admin')}</NavLink>
                   )}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

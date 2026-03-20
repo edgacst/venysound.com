@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ArrowLeft, Loader2, Mic2, ImagePlus } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { resolveStorageUrl } from "@/lib/utils";
 
@@ -65,7 +66,7 @@ export default function RadioCreate() {
   }, [name]);
 
   if (!isAuthLoading && !user) {
-    setLocation("/login");
+    setLocation(LOGIN_PATH);
     return null;
   }
 

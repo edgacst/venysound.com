@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark } from "lucide-react";
 import { Link, useSearch } from "wouter";
@@ -209,7 +210,7 @@ export default function Credits() {
           <Coins className="mx-auto mb-4 text-primary" size={48} />
           <h2 className="text-xl font-bold mb-2">{t('credits.loginRequired', '로그인이 필요합니다')}</h2>
           <p className="text-muted-foreground mb-4">{t('credits.loginRequiredDesc', '크레딧을 충전하려면 먼저 로그인해주세요')}</p>
-          <Link href="/login">
+          <Link href={LOGIN_PATH}>
             <Button data-testid="button-go-login">{t('credits.goLogin', '로그인하기')}</Button>
           </Link>
         </Card>

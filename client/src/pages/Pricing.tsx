@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -135,7 +136,7 @@ export default function Pricing() {
   const handleBankTransferClick = (planId: "pro" | "premium") => {
     if (!user) {
       toast({ title: t('pricing.loginRequired', '로그인이 필요합니다'), description: t('pricing.loginRequiredDesc', '유료 구독을 위해 먼저 로그인해주세요'), variant: "destructive" });
-      window.location.href = "/login";
+      window.location.href = LOGIN_PATH;
       return;
     }
     setSelectedPlanId(planId);

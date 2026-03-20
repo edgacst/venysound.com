@@ -1,3 +1,5 @@
+import { LOGIN_PATH } from "@/lib/site-paths";
+
 export function isUnauthorizedError(error: Error): boolean {
   return /^401: .*Unauthorized/.test(error.message);
 }
@@ -10,5 +12,5 @@ export function redirectToLogin(toast?: (options: { title: string; description: 
       variant: "destructive",
     });
   }
-  window.location.href = "/login";
+  window.location.href = LOGIN_PATH;
 }

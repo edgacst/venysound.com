@@ -1,6 +1,7 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useRoute, Link, useLocation, useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLikeMusic, useMyLikes, useLikeCounts, usePlayCounts } from "@/hooks/use-music";
@@ -866,7 +867,7 @@ export default function MusicDetail() {
                 ) : (
                   <div className="mb-6 p-4 rounded-md bg-white/5 border border-white/10 text-center">
                     <p className="text-sm text-muted-foreground mb-3">{t('musicDetail.loginToReview', '리뷰를 작성하려면 로그인이 필요합니다')}</p>
-                    <Link href="/login">
+                    <Link href={LOGIN_PATH}>
                       <Button size="sm" className="gap-2" data-testid="button-login-for-review">
                         {t('musicDetail.loginAndReview', '로그인하고 리뷰 작성하기')}
                       </Button>

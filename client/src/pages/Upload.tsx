@@ -27,6 +27,7 @@ import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft
 import { useState, useEffect, useCallback } from "react";
 import jsmediatags from "jsmediatags";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/PageTransition";
 import { LyricsSyncEditor } from "@/components/MusicCard";
@@ -133,7 +134,7 @@ export default function Upload() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      setLocation("/login");
+      setLocation(LOGIN_PATH);
     }
   }, [isAuthLoading, isAuthenticated, setLocation]);
 

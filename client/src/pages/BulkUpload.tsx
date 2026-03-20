@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
@@ -81,7 +82,7 @@ export default function BulkUpload() {
 
   useEffect(() => {
     if (!isAuthLoading && !isAuthenticated) {
-      setLocation("/login");
+      setLocation(LOGIN_PATH);
     }
   }, [isAuthLoading, isAuthenticated, setLocation]);
 

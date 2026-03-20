@@ -1,9 +1,10 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { LOGIN_PATH } from "@/lib/site-paths";
 
 export function redirectToLogin() {
   if (typeof window === "undefined") return;
   const current = window.location.pathname + window.location.search + window.location.hash;
-  const loginPath = "/login";
+  const loginPath = LOGIN_PATH;
   if (window.location.pathname.startsWith(loginPath)) return;
   const nextParam = encodeURIComponent(current || "/");
   window.location.href = `${loginPath}?next=${nextParam}`;

@@ -14,6 +14,7 @@ import { db } from "../db";
 import { users } from "../../shared/models/auth";
 import { eq, or } from "drizzle-orm";
 import { sendWelcomeEmail } from "../email";
+import { getLoginPagePath } from "../site-paths";
 
 function buildUserSession(
   id: string,
@@ -362,13 +363,13 @@ export async function setupAuth(app: Express) {
         passport.authenticate("google", (err: Error | null, user: unknown) => {
           if (err) {
             console.error("[auth] Google callback error:", err.message);
-            return res.redirect("/login?error=google");
+            return res.redirect(`${getLoginPagePath()}?error=google`);
           }
-          if (!user) return res.redirect("/login?error=google");
+          if (!user) return res.redirect(`${getLoginPagePath()}?error=google`);
           req.login(user, (loginErr) => {
             if (loginErr) {
               console.error("[auth] Google session error:", loginErr);
-              return res.redirect("/login?error=google");
+              return res.redirect(`${getLoginPagePath()}?error=google`);
             }
             res.redirect("/");
           });
@@ -379,17 +380,17 @@ export async function setupAuth(app: Express) {
 
   if (hasNaver) {
     app.get("/api/auth/naver", passport.authenticate("naver"));
-    app.get("/api/auth/naver/callback", passport.authenticate("naver", { failureRedirect: "/login", successRedirect: "/" }));
+    app.get("/api/auth/naver/callback", passport.authenticate("naver", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
   }
 
   if (hasKakao) {
     app.get("/api/auth/kakao", passport.authenticate("kakao"));
-    app.get("/api/auth/kakao/callback", passport.authenticate("kakao", { failureRedirect: "/login", successRedirect: "/" }));
+    app.get("/api/auth/kakao/callback", passport.authenticate("kakao", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
   }
 
   if (hasFacebook) {
     app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email", "public_profile"] }));
-    app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { failureRedirect: "/login", successRedirect: "/" }));
+    app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
   }
 
   if (hasTikTok) {
@@ -415,10 +416,10 @@ export async function setupAuth(app: Express) {
       delete (req.session as any)?.tiktokCsrfState;
       if (error) {
         console.error("TikTok OAuth error:", error, error_description);
-        return res.redirect("/login?error=tiktok");
+        return res.redirect(`${getLoginPagePath()}?error=tiktok`);
       }
       if (!savedState || state !== savedState || typeof code !== "string") {
-        return res.redirect("/login?error=invalid_state");
+        return res.redirect(`${getLoginPagePath()}?error=invalid_state`);
       }
       const redirectUri = tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`;
       try {
@@ -436,7 +437,7 @@ export async function setupAuth(app: Express) {
         const tokenData = await tokenRes.json();
         if (tokenData.error || !tokenData.access_token || !tokenData.open_id) {
           console.error("TikTok token error:", tokenData);
-          return res.redirect("/login?error=tiktok");
+          return res.redirect(`${getLoginPagePath()}?error=tiktok`);
         }
         const userRes = await fetch(
           "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url",
@@ -462,13 +463,13 @@ export async function setupAuth(app: Express) {
         req.login(sessionUser, (err) => {
           if (err) {
             console.error("TikTok login session error:", err);
-            return res.redirect("/login?error=session");
+            return res.redirect(`${getLoginPagePath()}?error=session`);
           }
           res.redirect("/");
         });
       } catch (err) {
         console.error("TikTok callback error:", err);
-        res.redirect("/login?error=tiktok");
+        res.redirect(`${getLoginPagePath()}?error=tiktok`);
       }
     });
   }
