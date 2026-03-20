@@ -1,5 +1,4 @@
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 
 // 프로덕션(dist/index.cjs): 배너로 주입된 __APP_ROOT__ 사용.
@@ -20,19 +19,97 @@ import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { pool } from "./db";
 
+// 마이그레이션 SQL을 코드에 직접 내장 (파일 읽기 방식은 배포 패키지에 포함 안 됨)
+const MIGRATIONS: { name: string; sql: string }[] = [
+  {
+    name: "001-add-payload-donation-badge",
+    sql: `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS payload JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS donation_badge VARCHAR(32);`,
+  },
+  {
+    name: "002-add-register-source",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS register_source VARCHAR(32);`,
+  },
+  {
+    name: "003-message-settings-block-report",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS allow_direct_messages BOOLEAN DEFAULT true;
+CREATE TABLE IF NOT EXISTS user_blocks (
+  id SERIAL PRIMARY KEY,
+  blocker_id TEXT NOT NULL REFERENCES users(id),
+  blocked_id TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(blocker_id, blocked_id)
+);
+CREATE TABLE IF NOT EXISTS user_reports (
+  id SERIAL PRIMARY KEY,
+  reporter_id TEXT NOT NULL REFERENCES users(id),
+  reported_user_id TEXT NOT NULL REFERENCES users(id),
+  reason TEXT NOT NULL,
+  message_id INTEGER,
+  conversation_id INTEGER,
+  status TEXT DEFAULT 'pending',
+  admin_note TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);`,
+  },
+  {
+    name: "004-credit-transactions-timestamptz",
+    sql: `ALTER TABLE credit_transactions ALTER COLUMN created_at TYPE TIMESTAMPTZ;`,
+  },
+  {
+    name: "008-notify-activity-email",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_activity_email boolean NOT NULL DEFAULT true;`,
+  },
+  {
+    name: "009-notify-music-email-push",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_new_music_email boolean NOT NULL DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_new_music_push boolean NOT NULL DEFAULT true;`,
+  },
+  {
+    name: "010-ai-music-tables",
+    sql: `CREATE TABLE IF NOT EXISTS ai_music_usage (
+  user_id VARCHAR NOT NULL,
+  period_month VARCHAR NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (user_id, period_month)
+);
+CREATE TABLE IF NOT EXISTS ai_music_generation_logs (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR(128) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  billing_kind VARCHAR(32) NOT NULL,
+  subscription_tier_at VARCHAR(32),
+  provider VARCHAR(32) NOT NULL,
+  task_id VARCHAR(128),
+  request_title VARCHAR(512),
+  request_summary TEXT,
+  credits_charged INTEGER NOT NULL DEFAULT 0,
+  publishments JSONB DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_user ON ai_music_generation_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_task ON ai_music_generation_logs(task_id);
+CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_created ON ai_music_generation_logs(created_at);`,
+  },
+];
+
 async function runAutoMigrations() {
-  const migrationsDir = path.join(APP_ROOT, "script", "migrations");
-  if (!fs.existsSync(migrationsDir)) return;
-  const files = fs.readdirSync(migrationsDir)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-  for (const file of files) {
-    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+  // 마이그레이션 추적 테이블 생성
+  await pool.query(`CREATE TABLE IF NOT EXISTS _migrations (
+    name VARCHAR PRIMARY KEY,
+    applied_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  const { rows } = await pool.query<{ name: string }>(`SELECT name FROM _migrations`);
+  const applied = new Set(rows.map((r) => r.name));
+
+  for (const { name, sql } of MIGRATIONS) {
+    if (applied.has(name)) continue;
     try {
       await pool.query(sql);
-      console.log(`[migrate] ✓ ${file}`);
+      await pool.query(`INSERT INTO _migrations(name) VALUES($1) ON CONFLICT DO NOTHING`, [name]);
+      console.log(`[migrate] ✓ ${name}`);
     } catch (err: any) {
-      console.error(`[migrate] ✗ ${file}:`, err.message);
+      console.error(`[migrate] ✗ ${name}:`, err.message);
     }
   }
 }
