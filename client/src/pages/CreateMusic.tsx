@@ -708,15 +708,13 @@ export default function CreateMusic() {
                     )}
                   </div>
                 )}
-                {aiUsage && aiUsage.limit > 0 && (
+                {aiUsage && aiUsage.limit > 0 && aiUsage.usedThisMonth >= aiUsage.limit && (
                   <p className="text-center text-sm text-muted-foreground mb-2">
                     {t("createMusic.usageThisMonth", "이번 달")} {aiUsage.usedThisMonth}/{aiUsage.limit}
                     {aiUsage.limit <= 10 ? t("createMusic.usageSongs", "곡 생성") : t("createMusic.usageCredits", " 크레딧")}
-                    {aiUsage.usedThisMonth >= aiUsage.limit && (
-                      <Link href="/pricing" className="ml-1 text-primary hover:underline">
-                        {aiUsage.isPaidTier ? t("createMusic.upgradePlan", "플랜 업그레이드") : t("createMusic.upgradeToUnlimited", "Pro로 업그레이드")}
-                      </Link>
-                    )}
+                    <Link href="/pricing" className="ml-1 text-primary hover:underline">
+                      {aiUsage.isPaidTier ? t("createMusic.upgradePlan", "플랜 업그레이드") : t("createMusic.upgradeToUnlimited", "Pro로 업그레이드")}
+                    </Link>
                   </p>
                 )}
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,1fr),minmax(480px,1.5fr)] gap-8 lg:gap-10 items-start w-full">
