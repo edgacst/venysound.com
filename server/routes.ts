@@ -412,7 +412,10 @@ export async function registerRoutes(
       (p) => `<url><loc>${base}${p || "/"}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${p ? "0.8" : "1.0"}</priority></url>`
     );
     try {
-      const { data: musicList } = await storage.getMusicList(undefined, undefined, undefined, 1, 10000);
+      const { data: musicList } = await storage.getMusicList(undefined, undefined, undefined, 1, 10000, {
+        viewerUserId: null,
+        viewerIsAdmin: false,
+      });
       for (const m of musicList) {
         urls.push(`<url><loc>${base}/music/${m.id}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`);
       }
@@ -1206,12 +1209,9 @@ export async function registerRoutes(
     const { genre, search, tag, page, limit } = req.query as { genre?: string, search?: string, tag?: string, page?: string, limit?: string };
     const pageNum = Math.max(1, parseInt(page || "1", 10));
     const limitNum = Math.min(500, Math.max(1, parseInt(limit || "30", 10)));
-    const result = await storage.getMusicList(genre, search, tag, pageNum, limitNum);
     const viewer = await getViewerAiAccess(req);
-    const filtered = viewer.viewerIsAdmin
-      ? result.data
-      : result.data.filter((m) => canViewerAccessMusicAi(m as any, viewer));
-    res.json({ ...result, data: filtered, total: filtered.length });
+    const result = await storage.getMusicList(genre, search, tag, pageNum, limitNum, viewer);
+    res.json(result);
   });
 
   app.get("/api/music/tags", async (_req, res) => {

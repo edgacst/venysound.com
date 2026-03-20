@@ -14,10 +14,20 @@ import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNot
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
+/** 공개 목록·사이트맵 등: AI 곡은 소유자(또는 관리자)만 포함되도록 필터할 때 사용 */
+export type MusicListAiVisibility = { viewerUserId: string | null; viewerIsAdmin: boolean };
+
 export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
-  getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
+  getMusicList(
+    genre?: string,
+    search?: string,
+    tag?: string,
+    page?: number,
+    limit?: number,
+    aiVisibility?: MusicListAiVisibility,
+  ): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
   getMusicById(id: number): Promise<Music | undefined>;
   getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]>;
   
@@ -243,7 +253,14 @@ export class DatabaseStorage implements IStorage {
     return newMusic;
   }
 
-  async getMusicList(genre?: string, search?: string, tag?: string, page: number = 1, limit: number = 30): Promise<{ data: Music[]; total: number }> {
+  async getMusicList(
+    genre?: string,
+    search?: string,
+    tag?: string,
+    page: number = 1,
+    limit: number = 30,
+    aiVisibility?: MusicListAiVisibility,
+  ): Promise<{ data: Music[]; total: number }> {
     const genreGroups: Record<string, string[]> = {
       "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
       "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
@@ -266,9 +283,18 @@ export class DatabaseStorage implements IStorage {
       conditions.push(ilike(music.tags, `%${tag}%`));
     }
 
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const countResult = await db.select({ count: sql<number>`count(*)` }).from(music).where(whereClause);
+    let aiClause: ReturnType<typeof eq> | ReturnType<typeof or> | undefined;
+    if (aiVisibility) {
+      if (aiVisibility.viewerIsAdmin) aiClause = undefined;
+      else if (!aiVisibility.viewerUserId) aiClause = eq(music.isAi, false);
+      else aiClause = or(eq(music.isAi, false), eq(music.userId, aiVisibility.viewerUserId));
+    } else aiClause = undefined;
+
+    const fullWhere = aiClause ? (baseWhere ? and(baseWhere, aiClause) : aiClause) : baseWhere;
+
+    const countResult = await db.select({ count: sql<number>`count(*)` }).from(music).where(fullWhere);
     const total = Number(countResult[0]?.count || 0);
 
     const offset = (page - 1) * limit;
@@ -299,9 +325,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(music.createdAt))
       .limit(limit)
       .offset(offset);
-    if (whereClause) {
+    if (fullWhere) {
       // @ts-ignore
-      query = query.where(whereClause);
+      query = query.where(fullWhere);
     }
     const rows = await query;
     const now = new Date();

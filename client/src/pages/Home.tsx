@@ -26,7 +26,7 @@ export default function Home() {
   const { t, i18n } = useTranslation();
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
-  const { data: musicResult, isLoading } = useMusicList();
+  const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
   const musicList = musicResult?.data;
   const totalCount = musicResult?.total || 0;
 
