@@ -286,15 +286,35 @@ export default function Admin() {
     userEmail: string | null;
     userFirstName: string | null;
   };
-  const { data: aiMusicGenLogs = [], isLoading: loadingAiMusicGenLogs, refetch: refetchAiMusicGenLogs } = useQuery<AiMusicGenLogRow[]>({
+  const {
+    data: aiMusicGenLogs = [],
+    isLoading: loadingAiMusicGenLogs,
+    isError: aiMusicGenLogsError,
+    error: aiMusicGenLogsErr,
+    refetch: refetchAiMusicGenLogs,
+  } = useQuery<AiMusicGenLogRow[]>({
     queryKey: ["/api/admin/ai-music-generation-logs"],
     queryFn: async () => {
       const res = await fetch("/api/admin/ai-music-generation-logs?limit=300", { credentials: "include" });
-      if (!res.ok) return [];
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const j = (await res.json()) as { message?: string };
+          detail = typeof j?.message === "string" ? j.message : "";
+        } catch {
+          try {
+            detail = await res.text();
+          } catch {
+            detail = "";
+          }
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     },
     enabled: adminCheck?.isAdmin === true,
+    retry: false,
   });
 
   const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
@@ -2239,9 +2259,34 @@ export default function Admin() {
               '요청 단위로 무료/유료(크레딧) 여부·프로바이더·요약·사이트 공개(배포) 이력을 확인할 수 있습니다. 공개는 클라이언트에서 taskId를 넘긴 경우에만 로그에 연결됩니다.',
             )}
           </p>
-          {aiMusicGenLogs.length === 0 && !loadingAiMusicGenLogs ? (
-            <p className="text-sm text-muted-foreground py-4">{t('admin.aiMusicGenLogsEmpty', '기록이 없습니다. 테이블이 없다면 서버에서 db:deploy(또는 create-ai-music-generation-logs.sql)를 실행하세요.')}</p>
-          ) : (
+          <p className="text-xs text-muted-foreground/90 mb-4 border border-border/60 rounded-md px-3 py-2 bg-muted/30">
+            {t(
+              'admin.aiMusicGenLogsRetroNote',
+              '※ 이 로그는 기능 추가 이후 새로 요청한 생성부터만 쌓입니다. 예전에 만든 곡·월 사용량(ai_music_usage)은 여기에 자동으로 채워지지 않습니다.',
+            )}
+          </p>
+          {aiMusicGenLogsError ? (
+            <Alert variant="destructive" className="mb-4">
+              <AlertTitle>{t('admin.aiMusicGenLogsLoadFailed', '로그를 불러오지 못했습니다')}</AlertTitle>
+              <AlertDescription>
+                {(aiMusicGenLogsErr as Error)?.message || 'Unknown error'}
+                <span className="block mt-2 text-xs opacity-90">
+                  {t(
+                    'admin.aiMusicGenLogsLoadHint',
+                    '403이면 관리자 계정인지 확인하세요. 500이면 서버 로그와 DB에 ai_music_generation_logs 테이블 존재 여부를 확인하세요.',
+                  )}
+                </span>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {aiMusicGenLogs.length === 0 && !loadingAiMusicGenLogs && !aiMusicGenLogsError ? (
+            <p className="text-sm text-muted-foreground py-4">
+              {t(
+                'admin.aiMusicGenLogsEmpty',
+                '아직 표시할 행이 없습니다. 배포 반영 후 AI 음악을 한 번 더 생성해 보세요. 테이블이 없다면 서버에서 db:deploy(또는 create-ai-music-generation-logs.sql)를 실행하세요.',
+              )}
+            </p>
+          ) : !aiMusicGenLogsError ? (
             <div className="overflow-x-auto max-h-[70vh] overflow-y-auto border border-border rounded-md">
               <table className="w-full text-xs sm:text-sm min-w-[960px]">
                 <thead className="sticky top-0 bg-muted/95 z-10 border-b border-border">
@@ -2318,7 +2363,7 @@ export default function Admin() {
                 </tbody>
               </table>
             </div>
-          )}
+          ) : null}
         </Card>
             </TabsContent>
             <TabsContent value="backup">

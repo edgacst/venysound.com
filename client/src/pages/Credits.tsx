@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark } from "lucide-react";
+import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles } from "lucide-react";
 import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -161,6 +161,7 @@ export default function Credits() {
       case "tip_sent": return t('credits.typeTip', '후원');
       case "tip_received": return t('credits.typeTipReceived', '후원 받음');
       case "purchase": return t('credits.typePurchase', '구매');
+      case "ai_music_create": return t('credits.typeAiMusicCreate', 'AI 음악 생성');
       default: return type;
     }
   };
@@ -171,6 +172,7 @@ export default function Credits() {
       case "tip_sent": return <Gift size={14} className="text-yellow-500" />;
       case "tip_received": return <Gift size={14} className="text-green-400" />;
       case "purchase": return <Download size={14} className="text-blue-400" />;
+      case "ai_music_create": return <Sparkles size={14} className="text-purple-400" />;
       default: return <Coins size={14} />;
     }
   };

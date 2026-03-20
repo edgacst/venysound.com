@@ -18,7 +18,7 @@ import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
 import { db } from "./db";
-import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments } from "../shared/schema";
+import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments, creditTransactions } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -811,6 +811,12 @@ export async function registerRoutes(
           .update(users)
           .set({ credits: currentCredits - AI_MUSIC_CREDITS_PER_TRACK, updatedAt: new Date() })
           .where(eq(users.id, userId));
+        await tx.insert(creditTransactions).values({
+          userId,
+          type: "ai_music_create",
+          amount: -AI_MUSIC_CREDITS_PER_TRACK,
+          description: "AI 음악 생성",
+        });
         await tx.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
           VALUES (${userId}, ${periodMonth}, 1, NOW())

@@ -20,7 +20,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 
-const POLL_INTERVAL_MS = 3000;
+/** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
+function nextAiMusicPollMs(apiState: string): number {
+  if (apiState === "running") return 1500;
+  return 2200;
+}
 const AI_MUSIC_TASK_KEY = "ai_music_last_task";
 const SAVED_TRACKS_KEY = "createMusic_savedTracks";
 
@@ -477,7 +481,7 @@ export default function CreateMusic() {
         setTaskId(null);
       }
       if (state === "pending" || state === "running") {
-        setTimeout(() => pollTask(tid, provider), POLL_INTERVAL_MS);
+        setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
     [persistTracks]
@@ -542,6 +546,8 @@ export default function CreateMusic() {
       setTaskId(tid);
       setTaskProvider(provider ?? null);
       queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
       try {
         sessionStorage.setItem(AI_MUSIC_TASK_KEY, JSON.stringify({ task_id: tid, provider }));
       } catch {}
@@ -731,9 +737,17 @@ export default function CreateMusic() {
                         const s = elapsedSec % 60;
                         const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
                         return (
-                      <div className="flex items-center gap-2 text-muted-foreground text-sm mb-4">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        {t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`}
+                      <div className="mb-4 space-y-1.5">
+                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`}
+                        </div>
+                        <p className="text-xs text-muted-foreground/90 leading-relaxed pl-6">
+                          {t(
+                            "createMusic.generatingSlowHint",
+                            "음원은 외부 AI 서버에서 만듭니다. 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
+                          )}
+                        </p>
                       </div>
                         );
                       })()}
