@@ -16,6 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { apiRequest } from "@/lib/queryClient";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
+const CREDIT_TO_WON = 7.5;
+
 const CREDIT_PACKAGES = [
   { amount: 1000, label: "1,000" },
   { amount: 3000, label: "3,000" },
@@ -25,9 +27,14 @@ const CREDIT_PACKAGES = [
   { amount: 50000, label: "50,000" },
 ];
 
+/** 크레딧 수량 → 원화 가격 (1크레딧 = 7.5원) */
+function creditsToWon(credits: number) {
+  return Math.round(credits * CREDIT_TO_WON);
+}
+
 /** 충전금 + 부가세 10% = 총결재금액 */
-function totalWithVat(chargeAmount: number) {
-  return Math.round(chargeAmount * 1.1);
+function totalWithVat(credits: number) {
+  return Math.round(creditsToWon(credits) * 1.1);
 }
 
 export default function Credits() {
@@ -181,6 +188,7 @@ export default function Credits() {
     if (!selectedPackage || !user || !tossClientKey?.clientKey) return;
     const amount = totalWithVat(selectedPackage);
     const orderId = `CREDIT_${String(user.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)}_${Date.now()}`;
+    // amount는 원화 결제금액 (크레딧 수량 × 7.5원 + 부가세 10%)
     sessionStorage.setItem("credit_charge", JSON.stringify({ amount }));
     setTossLoading(true);
     try {
@@ -246,7 +254,7 @@ export default function Credits() {
               </div>
             </div>
             <Badge variant="outline" className="text-sm px-3 py-1">
-              {t('credits.exchangeRate', '1 크레딧 = 1원')}
+              {t('credits.exchangeRate', '1 크레딧 = 7.5원')}
             </Badge>
           </div>
         </Card>
@@ -270,7 +278,7 @@ export default function Credits() {
                     <Coins size={18} className="text-primary" />
                     <span className="text-2xl font-bold">{pkg.label}</span>
                   </div>
-                  <p className="text-sm text-muted-foreground">{pkg.amount.toLocaleString()}{t('credits.won', '원')}</p>
+                  <p className="text-sm text-muted-foreground">{creditsToWon(pkg.amount).toLocaleString()}{t('credits.won', '원')}</p>
                 </div>
               </Card>
             ))}
@@ -284,7 +292,7 @@ export default function Credits() {
                 <p className="text-sm text-muted-foreground">{t('credits.selectedPackage', '선택한 패키지')}</p>
                 <p className="text-xl font-bold">{selectedPackage.toLocaleString()} {t('credits.creditUnit', '크레딧')}</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {t('credits.totalPaymentLine', { charge: selectedPackage.toLocaleString(), total: totalWithVat(selectedPackage).toLocaleString(), defaultValue: `충전금 ${selectedPackage.toLocaleString()}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString()}원` })}
+                  {t('credits.totalPaymentLine', { charge: creditsToWon(selectedPackage).toLocaleString(), total: totalWithVat(selectedPackage).toLocaleString(), defaultValue: `충전금 ${creditsToWon(selectedPackage).toLocaleString()}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString()}원` })}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -329,14 +337,14 @@ export default function Credits() {
             ) : selectedPackage != null ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {t('credits.modalIntro', { charge: selectedPackage.toLocaleString("ko-KR"), total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), defaultValue: `충전금 ${selectedPackage.toLocaleString("ko-KR")}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.` })}
+                  {t('credits.modalIntro', { charge: creditsToWon(selectedPackage).toLocaleString("ko-KR"), total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), defaultValue: `충전금 ${creditsToWon(selectedPackage).toLocaleString("ko-KR")}원 + 부가세 10% = 총결재 ${totalWithVat(selectedPackage).toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.` })}
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
                     <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankInfo.bankName}</p>
                     <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
                     <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
-                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {totalWithVat(selectedPackage).toLocaleString("ko-KR")}{t('pricing.won', '원')} ({t('credits.depositAmountWithVat', { total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), charge: selectedPackage.toLocaleString("ko-KR"), defaultValue: `${selectedPackage.toLocaleString("ko-KR")}원 + 부가세 10%` })})</p>
+                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {totalWithVat(selectedPackage).toLocaleString("ko-KR")}{t('pricing.won', '원')} ({t('credits.depositAmountWithVat', { total: totalWithVat(selectedPackage).toLocaleString("ko-KR"), charge: creditsToWon(selectedPackage).toLocaleString("ko-KR"), defaultValue: `${creditsToWon(selectedPackage).toLocaleString("ko-KR")}원 + 부가세 10%` })})</p>
                   </div>
                 )}
                 <Button
