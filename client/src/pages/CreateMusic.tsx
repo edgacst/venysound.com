@@ -534,6 +534,11 @@ export default function CreateMusic() {
           toast({ title: data.message, variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
         }
+        if (res.status === 402 && (data as { code?: string }).code === "INSUFFICIENT_CREDITS") {
+          toast({ title: data.message ?? "크레딧이 부족합니다.", variant: "destructive" });
+          queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+        }
         return;
       }
       const tid = data.task_id;

@@ -755,6 +755,9 @@ export async function registerRoutes(
     }
     // @ts-ignore
     const userId = req.user?.claims?.sub as string;
+    if (!userId || typeof userId !== "string") {
+      return res.status(401).json({ message: "로그인이 필요합니다." });
+    }
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     const now = new Date();
     const isPaidTier = user?.role === "admin" || (
@@ -857,6 +860,11 @@ export async function registerRoutes(
           const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
           return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
         }
+        const sunoBizCode = (data as { code?: number }).code;
+        if (typeof sunoBizCode === "number" && sunoBizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "Suno API 오류";
+          return res.status(502).json({ message: String(msg) });
+        }
         const d = data as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string };
         const taskId =
           (typeof d?.data?.taskId === "string" && d.data.taskId) ||
@@ -880,10 +888,15 @@ export async function registerRoutes(
       } catch (e) {
         console.error("[ai-music create suno]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
-        if (errMsg === "INSUFFICIENT_CREDITS") {
+        if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
           return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
         }
-        return res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
+        const payload: { message: string; code: string; detail?: string } = {
+          message: "음악 생성 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_CREATE_ERROR",
+        };
+        if (process.env.NODE_ENV === "development") payload.detail = errMsg.slice(0, 500);
+        return res.status(500).json(payload);
       }
     }
 
@@ -935,10 +948,15 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[ai-music create]", e);
       const errMsg = e instanceof Error ? e.message : String(e);
-      if (errMsg === "INSUFFICIENT_CREDITS") {
+      if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
         return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
       }
-      res.status(500).json({ message: "음악 생성 요청 중 오류가 발생했습니다." });
+      const payload: { message: string; code: string; detail?: string } = {
+        message: "음악 생성 요청 중 오류가 발생했습니다.",
+        code: "AI_MUSIC_CREATE_ERROR",
+      };
+      if (process.env.NODE_ENV === "development") payload.detail = errMsg.slice(0, 500);
+      res.status(500).json(payload);
     }
   });
 
