@@ -489,7 +489,7 @@ export default function MusicDetail() {
                 )}
                 {uploaderIsPremium && musicData.isDownloadable && musicData.price > 0 && (
                   <Badge variant="outline" className="text-xs border-green-500/30 text-green-400" data-testid="badge-price">
-                    <DollarSign size={10} className="mr-0.5" />{musicData.price.toLocaleString()}{t('common.won', '원')}
+                    <DollarSign size={10} className="mr-0.5" />{musicData.price.toLocaleString()} {t('credits.creditUnit')}
                   </Badge>
                 )}
               </div>
@@ -958,7 +958,7 @@ export default function MusicDetail() {
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t('musicDetail.infoDownload', '다운로드')}</span>
                       <span className="font-medium text-green-400">
-                        {musicData.price > 0 ? `${musicData.price.toLocaleString()}${t('common.won', '원')}` : t('musicDetail.free', '무료')}
+                        {musicData.price > 0 ? `${musicData.price.toLocaleString()} ${t('credits.creditUnit')}` : t('musicDetail.free', '무료')}
                       </span>
                     </div>
                   )}

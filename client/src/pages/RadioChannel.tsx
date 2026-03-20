@@ -1024,7 +1024,7 @@ export default function RadioChannel() {
                           onClick={() => tipMutation.mutate({ toUserId: channel.ownerId, amount: tipAmount, message: tipMessage.trim() || undefined })}
                           disabled={tipMutation.isPending || tipAmount < 100}
                         >
-                          {tipMutation.isPending ? t("music.tipping") : `${tipAmount.toLocaleString()} ${t("common.won")} ${t("music.tipSubmit")}`}
+                          {tipMutation.isPending ? t("music.tipping") : `${tipAmount.toLocaleString()} ${t("credits.creditUnit")} ${t("music.tipSubmit")}`}
                         </Button>
                       </div>
                     </DialogContent>

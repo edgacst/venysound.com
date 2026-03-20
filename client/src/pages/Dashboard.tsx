@@ -371,7 +371,7 @@ export default function Dashboard() {
                               <span className="text-muted-foreground tabular-nums w-12 text-right">{Number(track.playCount).toLocaleString()}{t('dashboard.playUnit', '회')}</span>
                               <span className="text-muted-foreground tabular-nums w-14 text-right">{formatDuration(Number(track.totalSeconds))}</span>
                               <span className="font-medium text-yellow-500 tabular-nums w-16 text-right">
-                                {track.tipAmount > 0 ? `${Number(track.tipAmount).toLocaleString()}${t('dashboard.won', '원')}` : "-"}
+                                {track.tipAmount > 0 ? `${Number(track.tipAmount).toLocaleString()}${t('credits.creditUnit', '크레딧')}` : "-"}
                               </span>
                             </div>
                           </div>

@@ -623,7 +623,7 @@ export function MusicCard({ music }: MusicCardProps) {
                   data-testid={`badge-price-${music.id}`}
                 >
                   <DollarSign size={10} />
-                  {music.price.toLocaleString()}원
+                  {music.price.toLocaleString()} {t('credits.creditUnit')}
                 </span>
               )}
             </div>
@@ -783,11 +783,11 @@ export function MusicCard({ music }: MusicCardProps) {
                   disabled={!uploaderIsPremium || !editIsDownloadable}
                   data-testid="input-edit-price"
                 />
-                <span className="text-sm text-muted-foreground">{t('common.won', '원')}</span>
+                <span className="text-sm text-muted-foreground">{t('credits.creditUnit')}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {uploaderIsPremium
-                  ? t('upload.priceDesc', '최소 100원부터 설정 가능합니다')
+                  ? t('upload.priceDesc', '최소 100 크레딧부터 설정 가능합니다')
                   : t('music.premiumPriceHint', '판매 금액 설정은 프리미엄 업로더만 가능합니다')}
               </p>
             </div>
@@ -944,7 +944,7 @@ export function MusicCard({ music }: MusicCardProps) {
                     onClick={() => setTipAmount(amt)}
                     data-testid={`button-tip-amount-${amt}`}
                   >
-                    {amt.toLocaleString()}{t('common.won')}
+                    {amt.toLocaleString()} {t('credits.creditUnit')}
                   </Button>
                 ))}
               </div>
@@ -977,7 +977,7 @@ export function MusicCard({ music }: MusicCardProps) {
               disabled={tipMutation.isPending || tipAmount < 100}
               data-testid="button-confirm-tip"
             >
-              {tipMutation.isPending ? t('music.tipping') : `${tipAmount.toLocaleString()} ${t('common.won')} ${t('music.tipSubmit')}`}
+              {tipMutation.isPending ? t('music.tipping') : `${tipAmount.toLocaleString()} ${t('credits.creditUnit')} ${t('music.tipSubmit')}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -994,7 +994,7 @@ export function MusicCard({ music }: MusicCardProps) {
             </DialogDescription>
           </DialogHeader>
           <div className="text-center py-4">
-            <p className="text-3xl font-bold text-foreground">{(music.price || 0).toLocaleString()}{t('common.won')}</p>
+            <p className="text-3xl font-bold text-foreground">{(music.price || 0).toLocaleString()} {t('credits.creditUnit')}</p>
             <p className="text-sm text-muted-foreground mt-2">구매 후 음원을 다운로드할 수 있습니다</p>
           </div>
           <DialogFooter>
