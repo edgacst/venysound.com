@@ -816,7 +816,7 @@
     "bankRequestSubmitted": "入金申込完了",
     "bankRequestFailed": "入金申込失敗",
     "modalIntro": "チャージ{{charge}}ウォン + 消費税10% = 合計{{total}}ウォンを下記口座へお振込みください。確認後クレジットが付与されます。",
-    "depositAmountWithVat": "{{total}}ウォン（チャージ{{charge}}ウォン + 消費税10%）",
+    "depositAmountWithVat": "チャージ{{charge}}ウォン + 消費税10%",
     "loginRequired": "ログインが必要です",
     "loginRequiredDesc": "クレジットをチャージするにはログインしてください",
     "goLogin": "ログインへ",

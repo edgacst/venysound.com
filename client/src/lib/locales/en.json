@@ -907,7 +907,7 @@
     "bankRequestSubmitted": "Deposit request submitted",
     "bankRequestFailed": "Deposit request failed",
     "modalIntro": "Please transfer total {{total}} KRW (charge {{charge}} KRW + 10% VAT) to the account below. Credits will be added after confirmation.",
-    "depositAmountWithVat": "{{total}} KRW (charge {{charge}} KRW + 10% VAT)",
+    "depositAmountWithVat": "charge {{charge}} KRW + 10% VAT",
     "loginRequired": "Login Required",
     "loginRequiredDesc": "Please log in to charge credits",
     "goLogin": "Go to Login",

@@ -928,7 +928,7 @@
     "bankRequestSubmitted": "입금 신청 완료",
     "bankRequestFailed": "입금 신청 실패",
     "modalIntro": "충전금 {{charge}}원 + 부가세 10% = 총결재 {{total}}원을 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.",
-    "depositAmountWithVat": "{{total}}원 (충전 {{charge}}원 + 부가세 10%)",
+    "depositAmountWithVat": "충전 {{charge}}원 + 부가세 10%",
     "loginRequired": "로그인이 필요합니다",
     "loginRequiredDesc": "크레딧을 충전하려면 먼저 로그인해주세요",
     "goLogin": "로그인하기",
