@@ -79,6 +79,12 @@ export default function Radio() {
 
   const { data: myChannel } = useQuery<{ id: number; name: string; slug: string; status: string } | null>({
     queryKey: ["/api/radio/channels/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/radio/channels/me", { credentials: "include" });
+      if (res.status === 401) return null;
+      if (!res.ok) throw new Error("Failed to load channel");
+      return res.json();
+    },
     enabled: !!user,
   });
 

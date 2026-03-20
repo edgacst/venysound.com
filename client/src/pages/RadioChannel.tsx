@@ -5,7 +5,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Link } from "wouter";
+import { Link, Redirect } from "wouter";
 import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
@@ -62,9 +62,20 @@ function parseLrcToSyncedLines(lyrics?: string | null): SyncedLyricLine[] {
   return result;
 }
 
+/** /radio/channels·/radio/create 와 충돌 시 :slug 가 잡히는 경우 방지 */
+function reservedRadioPathRedirect(slug: string) {
+  const s = slug.trim().toLowerCase();
+  if (s === "channels") return "/radio/channels" as const;
+  if (s === "create") return "/radio/create" as const;
+  return null;
+}
+
 export default function RadioChannel() {
   const [, params] = useRoute("/radio/:slug");
   const slug = params?.slug ?? "";
+  const reservedTo = slug ? reservedRadioPathRedirect(slug) : null;
+  if (reservedTo) return <Redirect to={reservedTo} />;
+
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();

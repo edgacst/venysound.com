@@ -49,6 +49,8 @@ export function getSession() {
     tableName: "sessions",
   });
   const isProd = process.env.NODE_ENV === "production";
+  /** www / apex 겸용 시 `.venysound.com` 처럼 앞에 점을 넣어 동일 세션 쿠키 공유 (OAuth 콜백 호스트와 청취 호스트가 다를 때 로그인 유지) */
+  const cookieDomain = (process.env.SESSION_COOKIE_DOMAIN || "").trim() || undefined;
   return session({
     secret: process.env.SESSION_SECRET || "local-dev-secret-change-in-prod",
     store: sessionStore,
@@ -59,6 +61,7 @@ export function getSession() {
       secure: isProd,
       maxAge: sessionTtl,
       sameSite: "lax",
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     },
   });
 }
