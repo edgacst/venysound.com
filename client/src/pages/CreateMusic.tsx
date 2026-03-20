@@ -550,9 +550,17 @@ export default function CreateMusic() {
       }
       setTaskId(tid);
       setTaskProvider(provider ?? null);
+      const creditsCharged = Number((data as { credits_charged?: number }).credits_charged) || 0;
+      if (creditsCharged > 0) {
+        toast({
+          title: t("createMusic.toastCreditsTitle"),
+          description: t("createMusic.toastCreditsDesc", { count: creditsCharged }),
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       try {
         sessionStorage.setItem(AI_MUSIC_TASK_KEY, JSON.stringify({ task_id: tid, provider }));
       } catch {}

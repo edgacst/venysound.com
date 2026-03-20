@@ -1383,6 +1383,8 @@
     "noLyricsOrDescription": "저장된 가사/설명이 없습니다.",
     "noTracksYet": "아직 생성된 곡이 없습니다. 왼쪽에서 음악을 생성해 보세요.",
     "searchPlaceholder": "제목·스타일·가사로 검색",
-    "noSearchResults": "검색 결과가 없습니다."
+    "noSearchResults": "검색 결과가 없습니다.",
+    "toastCreditsTitle": "크레딧이 차감되었습니다",
+    "toastCreditsDesc": "AI 음악 생성 1회에 {{count}} 크레딧이 사용되었습니다."
   }
 }

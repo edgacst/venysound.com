@@ -792,8 +792,9 @@ export async function registerRoutes(
     const customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
 
-    async function incrementAiMusicUsageAndDeductCredits() {
-      if (user?.role === "admin") return;
+    /** @returns 이번 요청에서 차감한 크레딧(없으면 0). 클라이언트 알림용 */
+    async function incrementAiMusicUsageAndDeductCredits(): Promise<number> {
+      if (user?.role === "admin") return 0;
       // Free: 월 2곡까지만, 크레딧 차감 없이 카운트만
       if ((user?.subscriptionTier ?? "free") === "free") {
         await db.execute(sql`
@@ -801,7 +802,7 @@ export async function registerRoutes(
           VALUES (${userId}, ${periodMonth}, 1, NOW())
           ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
         `);
-        return;
+        return 0;
       }
       // Pro / Premium: 크레딧 차감 + 사용량 카운트
       await db.transaction(async (tx) => {
@@ -826,6 +827,22 @@ export async function registerRoutes(
           ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
         `);
       });
+      return AI_MUSIC_CREDITS_PER_TRACK;
+    }
+
+    async function notifyCreditsDeductedForAiCreate(creditsCharged: number) {
+      if (creditsCharged <= 0) return;
+      try {
+        await storage.createNotification({
+          userId,
+          type: "system",
+          message: `AI 음악 생성 요청으로 ${creditsCharged} 크레딧이 차감되었습니다.`,
+          payload: { creditsCharged, kind: "ai_music_create" },
+          url: "/credits",
+        });
+      } catch (e) {
+        console.error("[ai-music create] credit notification", e);
+      }
     }
 
     if (SUNOAPI_KEY) {
@@ -876,7 +893,8 @@ export async function registerRoutes(
           console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
-        await incrementAiMusicUsageAndDeductCredits();
+        const creditsCharged = await incrementAiMusicUsageAndDeductCredits();
+        await notifyCreditsDeductedForAiCreate(creditsCharged);
         await insertAiMusicGenerationLog({
           userId,
           user,
@@ -884,7 +902,7 @@ export async function registerRoutes(
           provider: "suno",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
         });
-        return res.json({ task_id: taskId, provider: "suno" });
+        return res.json({ task_id: taskId, provider: "suno", credits_charged: creditsCharged });
       } catch (e) {
         console.error("[ai-music create suno]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -936,7 +954,8 @@ export async function registerRoutes(
         console.warn("[ai-music create aimusicapi] 응답 구조:", JSON.stringify(data).slice(0, 300));
         return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
       }
-      await incrementAiMusicUsageAndDeductCredits();
+      const creditsCharged = await incrementAiMusicUsageAndDeductCredits();
+      await notifyCreditsDeductedForAiCreate(creditsCharged);
       await insertAiMusicGenerationLog({
         userId,
         user,
@@ -944,7 +963,7 @@ export async function registerRoutes(
         provider: "aimusicapi",
         body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
       });
-      res.json({ task_id: taskId, provider: "aimusicapi" });
+      res.json({ task_id: taskId, provider: "aimusicapi", credits_charged: creditsCharged });
     } catch (e) {
       console.error("[ai-music create]", e);
       const errMsg = e instanceof Error ? e.message : String(e);

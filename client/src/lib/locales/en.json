@@ -1361,6 +1361,8 @@
     "noLyricsOrDescription": "No lyrics or description saved.",
     "noTracksYet": "No generated tracks yet. Create music on the left.",
     "searchPlaceholder": "Search by title, style, or lyrics",
-    "noSearchResults": "No results found."
+    "noSearchResults": "No results found.",
+    "toastCreditsTitle": "Credits deducted",
+    "toastCreditsDesc": "{{count}} credits were used for this AI music generation."
   }
 }
