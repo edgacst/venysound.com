@@ -3476,10 +3476,10 @@ export async function registerRoutes(
       bankAccount,
       bankHolder,
       plans: [
-        { id: "pro", name: proPlan?.name ?? "Pro", monthlyPrice: proPlan?.monthlyPrice ?? 15400, yearlyPrice: proPlan?.yearlyPrice ?? 166320 },
+        { id: "pro", name: proPlan?.name ?? "Pro", monthlyPrice: proPlan?.monthlyPrice ?? 16500, yearlyPrice: proPlan?.yearlyPrice ?? 166320 },
         { id: "premium", name: premiumPlan?.name ?? "Premium", monthlyPrice: premiumPlan?.monthlyPrice ?? 33000, yearlyPrice: premiumPlan?.yearlyPrice ?? 356400 },
       ],
-      amountMonthly: proPlan?.monthlyPrice ?? 15400,
+      amountMonthly: proPlan?.monthlyPrice ?? 16500,
       amountYearly: proPlan?.yearlyPrice ?? 166320,
     });
   });
@@ -3499,9 +3499,9 @@ export async function registerRoutes(
       let amount: number;
       try {
         const [planRow] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, plan)).limit(1);
-        amount = planRow ? (billingPeriod === "monthly" ? planRow.monthlyPrice : planRow.yearlyPrice) : (plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : billingPeriod === "monthly" ? 15400 : 166320);
+        amount = planRow ? (billingPeriod === "monthly" ? planRow.monthlyPrice : planRow.yearlyPrice) : (plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : billingPeriod === "monthly" ? 16500 : 166320);
       } catch {
-        amount = plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : (billingPeriod === "monthly" ? 15400 : 166320);
+        amount = plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : (billingPeriod === "monthly" ? 16500 : 166320);
       }
       const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
 
