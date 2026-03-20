@@ -855,7 +855,7 @@ export async function registerRoutes(
       }
       // Pro / Premium: 크레딧 차감 + 사용량 카운트
       await db.transaction(async (tx) => {
-        const [u] = await tx.select().from(users).where(eq(users.id, userId)).forUpdate();
+        const [u] = await tx.select().from(users).where(eq(users.id, userId));
         const currentCredits = u?.credits ?? 0;
         if (currentCredits < AI_MUSIC_CREDITS_PER_TRACK) {
           throw new Error("INSUFFICIENT_CREDITS");
