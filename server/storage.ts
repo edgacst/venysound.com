@@ -10,7 +10,7 @@ import {
   type Tip, type Purchase, type Conversation, type DirectMessage,
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
 } from "@shared/schema";
-import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNotNull } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNotNull, isNull } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
@@ -285,11 +285,13 @@ export class DatabaseStorage implements IStorage {
 
     const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
+    // TS canViewerAccessMusicAi 와 동일: isAi 가 falsy(null/false) 이면 일반 곡으로 공개. NULL 행은 예전 시드/DB에 흔함.
+    const nonAiOrNull = or(eq(music.isAi, false), isNull(music.isAi));
     let aiClause: ReturnType<typeof eq> | ReturnType<typeof or> | undefined;
     if (aiVisibility) {
       if (aiVisibility.viewerIsAdmin) aiClause = undefined;
-      else if (!aiVisibility.viewerUserId) aiClause = eq(music.isAi, false);
-      else aiClause = or(eq(music.isAi, false), eq(music.userId, aiVisibility.viewerUserId));
+      else if (!aiVisibility.viewerUserId) aiClause = nonAiOrNull;
+      else aiClause = or(nonAiOrNull, eq(music.userId, aiVisibility.viewerUserId));
     } else aiClause = undefined;
 
     const fullWhere = aiClause ? (baseWhere ? and(baseWhere, aiClause) : aiClause) : baseWhere;
