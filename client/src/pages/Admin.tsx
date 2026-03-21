@@ -1613,12 +1613,20 @@ export default function Admin() {
             <Undo2 size={20} className="text-primary" />
             {t("admin.creditRefundListTitle", "충전 크레딧 환불 신청")}
           </h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            {t(
-              "admin.creditRefundListHint",
-              "승인 시 사이트 내 크레딧만 차감되며, 원화 환불은 별도로 처리합니다.",
-            )}
-          </p>
+          <div className="text-sm text-muted-foreground mb-4 space-y-2">
+            <p>
+              {t(
+                "admin.creditRefundListHint",
+                "승인 시 사이트 내 크레딧만 차감되며, 원화 환불은 별도로 처리합니다.",
+              )}
+            </p>
+            <p className="text-xs leading-relaxed border-l-2 border-primary/40 pl-3">
+              {t(
+                "admin.creditRefundListWorkflow",
+                "운영 순서: ① 필터「대기중」→ 승인 또는 반려 ② 승인 건은 계좌로 원화 입금 후「원화 기록」에 금액·메모(증빙) 저장 ③ 분쟁·감사 대응은 각 행「이력」에서 append-only 로그(신청·승인/반려·원화기록)를 확인하세요.",
+              )}
+            </p>
+          </div>
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <Select value={creditRefundFilter} onValueChange={(v) => setCreditRefundFilter(v as typeof creditRefundFilter)}>
               <SelectTrigger className="w-44" data-testid="select-credit-refund-filter">

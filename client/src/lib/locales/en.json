@@ -963,6 +963,7 @@
     "creditRefundRequests": "Credit refunds",
     "creditRefundListTitle": "Charged credit refund requests",
     "creditRefundListHint": "Approving deducts in-site credits only; KRW refunds are handled separately.",
+    "creditRefundListWorkflow": "Ops flow: ① Filter Pending → Approve or Reject ② After bank transfer for approved items, use “Record KRW” for amount + memo (proof) ③ For disputes/audit, open “History” on a row to see the append-only log (request / approve·reject / KRW entries).",
     "creditRefundUser": "User",
     "creditRefundCredits": "Credits",
     "creditRefundReason": "Reason",
