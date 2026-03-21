@@ -494,6 +494,25 @@ export const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
   }),
 }));
 
+/** 충전 크레딧 환불 신청 (관리자 승인 시 잔액 차감, 원화 환불은 별도 처리) */
+export const creditRefundRequests = pgTable("credit_refund_requests", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  creditsAmount: integer("credits_amount").notNull(),
+  reason: text("reason"),
+  status: text("status").default("pending").notNull(), // pending | approved | rejected
+  adminNote: text("admin_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+});
+
+export const creditRefundRequestsRelations = relations(creditRefundRequests, ({ one }) => ({
+  user: one(users, {
+    fields: [creditRefundRequests.userId],
+    references: [users.id],
+  }),
+}));
+
 // Music Stories table (creative history by uploader)
 export const musicStories = pgTable("music_stories", {
   id: serial("id").primaryKey(),
@@ -585,6 +604,7 @@ export type CreatePurchaseRequest = z.infer<typeof insertPurchaseSchema>;
 
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type Withdrawal = typeof withdrawals.$inferSelect;
+export type CreditRefundRequest = typeof creditRefundRequests.$inferSelect;
 
 export type MusicStory = typeof musicStories.$inferSelect;
 export type StoryComment = typeof storyComments.$inferSelect;

@@ -6,13 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles } from "lucide-react";
+import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles, Undo2 } from "lucide-react";
 import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { CREDIT_TO_WON, creditsSupplyWon, creditsTotalWithVatWon } from "@shared/credits-pricing";
@@ -43,6 +45,9 @@ export default function Credits() {
     message: string;
   } | null>(null);
   const [tossLoading, setTossLoading] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundCreditsInput, setRefundCreditsInput] = useState("");
+  const [refundReason, setRefundReason] = useState("");
 
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
@@ -50,6 +55,21 @@ export default function Credits() {
     // 다른 사용자가 보낸 후원/구매로 값이 바뀌어도 즉시 반영되도록 함
     refetchOnWindowFocus: true,
     refetchOnMount: true,
+  });
+
+  const { data: refundRequests, isLoading: isLoadingRefunds } = useQuery<
+    Array<{
+      id: number;
+      creditsAmount: number;
+      reason: string | null;
+      status: string;
+      adminNote: string | null;
+      createdAt: string;
+      processedAt: string | null;
+    }>
+  >({
+    queryKey: ["/api/credits/refund-requests"],
+    enabled: !!user,
   });
 
   const { data: transactions, isLoading: isLoadingTx } = useQuery<any[]>({
@@ -133,6 +153,28 @@ export default function Credits() {
     },
   });
 
+  const refundRequestMutation = useMutation({
+    mutationFn: async ({ credits, reason }: { credits: number; reason: string }) => {
+      const res = await apiRequest("POST", "/api/credits/refund-request", { credits, reason });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: t("credits.refundRequestSubmitted", "환불 신청 완료"),
+        description: (data as { message?: string }).message ?? t("credits.refundRequestSubmittedDesc", "검토 후 안내드립니다."),
+      });
+      setRefundOpen(false);
+      setRefundCreditsInput("");
+      setRefundReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+    },
+    onError: (error: Error) => {
+      toast({ title: t("credits.refundRequestFailed", "신청 실패"), description: error.message, variant: "destructive" });
+    },
+  });
+
   const chargeMutation = useMutation({
     mutationFn: async (amount: number) => {
       const res = await fetch("/api/credits/charge", {
@@ -166,6 +208,7 @@ export default function Credits() {
       case "tip_received": return t('credits.typeTipReceived', '후원 받음');
       case "purchase": return t('credits.typePurchase', '구매');
       case "ai_music_create": return t('credits.typeAiMusicCreate', 'AI 음악 생성');
+      case "refund": return t('credits.typeRefund', '환불');
       default: return type;
     }
   };
@@ -177,6 +220,7 @@ export default function Credits() {
       case "tip_received": return <Gift size={14} className="text-green-400" />;
       case "purchase": return <Download size={14} className="text-blue-400" />;
       case "ai_music_create": return <Sparkles size={14} className="text-purple-400" />;
+      case "refund": return <Undo2 size={14} className="text-orange-400" />;
       default: return <Coins size={14} />;
     }
   };
@@ -257,6 +301,113 @@ export default function Credits() {
             </Badge>
           </div>
         </Card>
+
+        <Card className="p-6 mb-8 border-border/80">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Undo2 className="text-orange-400" size={20} />
+                {t("credits.refundSectionTitle", "충전 크레딧 환불")}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                {t(
+                  "credits.refundSectionDesc",
+                  "미사용 충전 크레딧에 대한 환불은 환불 정책(7일 이내 등)에 따라 검토됩니다. 승인 시 크레딧만 차감되며, 원화 환불은 별도로 안내됩니다.",
+                )}
+              </p>
+              <Link href="/refund-policy" className="text-xs text-primary hover:underline mt-2 inline-block">
+                {t("credits.refundPolicyLink", "환불 정책 보기")}
+              </Link>
+            </div>
+            <Button variant="outline" className="shrink-0 gap-2" onClick={() => setRefundOpen(true)} data-testid="button-refund-request">
+              <Undo2 size={16} />
+              {t("credits.refundRequestButton", "환불 신청")}
+            </Button>
+          </div>
+          {isLoadingRefunds ? (
+            <div className="flex justify-center py-4 mt-4">
+              <Loader2 className="animate-spin text-muted-foreground" size={22} />
+            </div>
+          ) : refundRequests && refundRequests.length > 0 ? (
+            <div className="mt-4 pt-4 border-t border-border/60 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">{t("credits.refundHistoryTitle", "내 환불 신청")}</p>
+              {refundRequests.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex flex-wrap items-center justify-between gap-2 text-sm rounded-lg bg-muted/30 px-3 py-2"
+                  data-testid={`refund-request-${r.id}`}
+                >
+                  <span className="tabular-nums">{r.creditsAmount.toLocaleString()} {t("credits.creditUnit", "크레딧")}</span>
+                  <Badge variant={r.status === "pending" ? "secondary" : r.status === "approved" ? "default" : "destructive"}>
+                    {r.status === "pending"
+                      ? t("credits.refundStatusPending", "검토 중")
+                      : r.status === "approved"
+                        ? t("credits.refundStatusApproved", "승인")
+                        : t("credits.refundStatusRejected", "반려")}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground w-full sm:w-auto">
+                    {r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : ""}
+                    {r.adminNote ? ` · ${r.adminNote}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+
+        <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("credits.refundDialogTitle", "충전 크레딧 환불 신청")}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="refund-credits">{t("credits.refundCreditsLabel", "환불 요청 크레딧")}</Label>
+                <input
+                  id="refund-credits"
+                  type="number"
+                  min={1}
+                  max={creditData?.credits ?? 0}
+                  className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={refundCreditsInput}
+                  onChange={(e) => setRefundCreditsInput(e.target.value)}
+                  placeholder={t("credits.refundCreditsPlaceholder", "숫자 입력")}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t("credits.refundMaxHint", "보유: {{n}} 크레딧", { n: (creditData?.credits ?? 0).toLocaleString() })}
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="refund-reason">{t("credits.refundReasonLabel", "사유 (선택)")}</Label>
+                <Textarea
+                  id="refund-reason"
+                  className="mt-1 min-h-[80px]"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder={t("credits.refundReasonPlaceholder", "요청 사유를 입력해 주세요")}
+                />
+              </div>
+              <Button
+                className="w-full"
+                disabled={refundRequestMutation.isPending}
+                onClick={() => {
+                  const n = parseInt(refundCreditsInput, 10);
+                  if (!Number.isFinite(n) || n < 1) {
+                    toast({ title: t("credits.refundInvalidAmount", "올바른 크레딧 수를 입력해 주세요"), variant: "destructive" });
+                    return;
+                  }
+                  if (n > (creditData?.credits ?? 0)) {
+                    toast({ title: t("credits.refundExceedsBalance", "보유 크레딧을 초과할 수 없습니다"), variant: "destructive" });
+                    return;
+                  }
+                  refundRequestMutation.mutate({ credits: n, reason: refundReason.trim() });
+                }}
+              >
+                {refundRequestMutation.isPending ? <Loader2 className="animate-spin" size={18} /> : t("credits.refundSubmit", "신청하기")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <div className="mb-8">
           <h2 className="text-xl font-semibold mb-4">{t('credits.selectPackage', '충전 패키지 선택')}</h2>

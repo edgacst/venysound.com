@@ -55,6 +55,7 @@ import {
   Pause,
   Play,
   Sparkles,
+  Undo2,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -72,6 +73,20 @@ const statusLabels: Record<string, string> = {
   reviewing: "검토중",
   resolved: "처리완료",
   rejected: "반려",
+};
+
+type AdminCreditRefundRow = {
+  id: number;
+  userId: string;
+  creditsAmount: number;
+  reason: string | null;
+  status: string;
+  adminNote: string | null;
+  createdAt: string;
+  processedAt: string | null;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 const curatedMainGenres: Record<string, string[]> = {
@@ -124,6 +139,9 @@ export default function Admin() {
   const [curatedMainGenre, setCuratedMainGenre] = useState<string>("");
   const [curatedSubGenre, setCuratedSubGenre] = useState<string>("");
   const curatedSubGenres = curatedMainGenre ? curatedMainGenres[curatedMainGenre] || [] : [];
+  const [creditRefundFilter, setCreditRefundFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [creditRefundRejectId, setCreditRefundRejectId] = useState<number | null>(null);
+  const [creditRefundRejectNote, setCreditRefundRejectNote] = useState("");
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -659,6 +677,58 @@ export default function Admin() {
     },
   });
 
+  const { data: creditRefundPendingList } = useQuery<AdminCreditRefundRow[]>({
+    queryKey: ["/api/admin/credit-refund-requests", "pending"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/credit-refund-requests?status=pending", { credentials: "include", cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch credit refunds");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const { data: creditRefundRows, isLoading: loadingCreditRefunds } = useQuery<AdminCreditRefundRow[]>({
+    queryKey: ["/api/admin/credit-refund-requests", creditRefundFilter],
+    queryFn: async () => {
+      const url =
+        creditRefundFilter === "all"
+          ? "/api/admin/credit-refund-requests?status=all"
+          : `/api/admin/credit-refund-requests?status=${creditRefundFilter}`;
+      const res = await fetch(url, { credentials: "include", cache: "no-store" });
+      if (!res.ok) throw new Error("Failed to fetch credit refunds");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const approveCreditRefundMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests"] });
+      toast({ title: t("admin.creditRefundApproved", "승인되었습니다. 사용자 크레딧이 차감되었습니다.") });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t("admin.updateFailed", "처리에 실패했습니다"), variant: "destructive" });
+    },
+  });
+
+  const rejectCreditRefundMutation = useMutation({
+    mutationFn: async ({ id, adminNote }: { id: number; adminNote: string }) => {
+      await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/reject`, { adminNote });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests"] });
+      setCreditRefundRejectId(null);
+      setCreditRefundRejectNote("");
+      toast({ title: t("admin.creditRefundRejected", "반려 처리되었습니다") });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t("admin.updateFailed", "처리에 실패했습니다"), variant: "destructive" });
+    },
+  });
+
   const { data: userReportsList, isLoading: loadingUserReports } = useQuery<any[]>({
     queryKey: ["/api/admin/user-reports"],
     queryFn: async () => {
@@ -749,6 +819,13 @@ export default function Admin() {
               <TabsTrigger value="bank" className="gap-1.5">
                 {t('admin.pendingBankPayments', '입금 대기')}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-bank-count">{pendingBankPayments?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="credit-refunds" className="gap-1.5">
+                <Undo2 size={14} className="shrink-0" />
+                {t("admin.creditRefundRequests", "크레딧 환불")}
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-credit-refund-count">
+                  {creditRefundPendingList?.length ?? 0}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="withdrawal" className="gap-1.5">
                 {t('admin.withdrawalManagement', '출금')}
@@ -1446,6 +1523,123 @@ export default function Admin() {
                 ) : (
                   <tr>
                     <td colSpan={6} className="text-center p-8 text-muted-foreground">{t('admin.noPendingBankPayments', '입금 대기 건이 없습니다')}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+            </TabsContent>
+            <TabsContent value="credit-refunds">
+        <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-credit-refund-requests">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+            <Undo2 size={20} className="text-primary" />
+            {t("admin.creditRefundListTitle", "충전 크레딧 환불 신청")}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t(
+              "admin.creditRefundListHint",
+              "승인 시 사이트 내 크레딧만 차감되며, 원화 환불은 별도로 처리합니다.",
+            )}
+          </p>
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <Select value={creditRefundFilter} onValueChange={(v) => setCreditRefundFilter(v as typeof creditRefundFilter)}>
+              <SelectTrigger className="w-44" data-testid="select-credit-refund-filter">
+                <SelectValue placeholder={t("admin.statusFilter", "상태 필터")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pending">{t("admin.pending", "대기중")}</SelectItem>
+                <SelectItem value="all">{t("admin.all", "전체")}</SelectItem>
+                <SelectItem value="approved">{t("admin.approved", "승인")}</SelectItem>
+                <SelectItem value="rejected">{t("admin.rejectedStatus", "거부")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundUser", "회원")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundCredits", "크레딧")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundReason", "사유")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.status", "상태")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.requestDate", "요청일")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.manage", "관리")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingCreditRefunds ? (
+                  <tr>
+                    <td colSpan={6} className="text-center p-8">
+                      <Loader2 className="animate-spin mx-auto text-primary" size={20} />
+                    </td>
+                  </tr>
+                ) : creditRefundRows && creditRefundRows.length > 0 ? (
+                  creditRefundRows.map((r) => (
+                    <tr key={r.id} className="border-b border-white/5" data-testid={`credit-refund-row-${r.id}`}>
+                      <td className="p-3">
+                        {r.firstName && r.lastName ? `${r.firstName} ${r.lastName}` : r.email || r.userId}
+                      </td>
+                      <td className="p-3 font-medium tabular-nums">{r.creditsAmount.toLocaleString()}</td>
+                      <td className="p-3 text-xs text-muted-foreground max-w-[200px] truncate" title={r.reason || ""}>
+                        {r.reason || "—"}
+                      </td>
+                      <td className="p-3">
+                        <Badge
+                          variant={r.status === "pending" ? "secondary" : r.status === "approved" ? "default" : "destructive"}
+                        >
+                          {r.status === "pending"
+                            ? t("admin.pending", "대기중")
+                            : r.status === "approved"
+                              ? t("admin.approved", "승인")
+                              : t("admin.rejectedStatus", "거부")}
+                        </Badge>
+                        {r.adminNote ? (
+                          <div className="text-[10px] text-muted-foreground mt-1 max-w-[160px] truncate" title={r.adminNote}>
+                            {r.adminNote}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : ""}
+                      </td>
+                      <td className="p-3">
+                        {r.status === "pending" ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => approveCreditRefundMutation.mutate(r.id)}
+                              disabled={approveCreditRefundMutation.isPending}
+                              data-testid={`credit-refund-approve-${r.id}`}
+                            >
+                              <CheckCircle size={12} className="mr-1" />
+                              {t("admin.creditRefundApprove", "승인")}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                setCreditRefundRejectId(r.id);
+                                setCreditRefundRejectNote("");
+                              }}
+                              disabled={rejectCreditRefundMutation.isPending}
+                              data-testid={`credit-refund-reject-${r.id}`}
+                            >
+                              <XCircle size={12} className="mr-1" />
+                              {t("admin.creditRefundReject", "반려")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="text-center p-8 text-muted-foreground">
+                      {t("admin.creditRefundNoRows", "해당 상태의 신청이 없습니다")}
+                    </td>
                   </tr>
                 )}
               </tbody>
@@ -2534,6 +2728,52 @@ export default function Admin() {
             </TabsContent>
           </Tabs>
       </div>
+      <Dialog
+        open={creditRefundRejectId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreditRefundRejectId(null);
+            setCreditRefundRejectNote("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="dialog-credit-refund-reject">
+          <DialogHeader>
+            <DialogTitle>{t("admin.creditRefundRejectTitle", "환불 신청 반려")}</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            className="min-h-[100px]"
+            value={creditRefundRejectNote}
+            onChange={(e) => setCreditRefundRejectNote(e.target.value)}
+            placeholder={t("admin.creditRefundRejectNote", "반려 사유 (회원에게 표시)")}
+          />
+          <div className="flex gap-2 justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreditRefundRejectId(null);
+                setCreditRefundRejectNote("");
+              }}
+            >
+              {t("common.cancel", "취소")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={rejectCreditRefundMutation.isPending || creditRefundRejectId === null}
+              onClick={() => {
+                if (creditRefundRejectId === null) return;
+                rejectCreditRefundMutation.mutate({ id: creditRefundRejectId, adminNote: creditRefundRejectNote });
+              }}
+            >
+              {rejectCreditRefundMutation.isPending ? (
+                <Loader2 className="animate-spin w-4 h-4" />
+              ) : (
+                t("admin.creditRefundRejectSubmit", "반려 처리")
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       </div>
     </PageTransition>
   );

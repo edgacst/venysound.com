@@ -18,7 +18,7 @@ import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
 import { db } from "./db";
-import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments, creditTransactions } from "../shared/schema";
+import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments, creditTransactions, creditRefundRequests } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -3786,6 +3786,219 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("Credits request-bank error:", err);
       res.status(500).json({ message: err?.message || "입금 신청에 실패했습니다" });
+    }
+  });
+
+  // 충전 크레딧 환불 신청 (정책 검토 후 관리자가 승인 시 잔액만 차감; 원화 환불은 운영에서 별도 처리)
+  app.post("/api/credits/refund-request", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const creditsRaw = Number((req.body as { credits?: unknown }).credits);
+      const reason = typeof (req.body as { reason?: unknown }).reason === "string" ? String((req.body as { reason: string }).reason).trim().slice(0, 2000) : "";
+      if (!Number.isFinite(creditsRaw) || creditsRaw < 1 || !Number.isInteger(creditsRaw)) {
+        return res.status(400).json({ message: "환불 요청 크레딧은 1 이상의 정수여야 합니다" });
+      }
+      const credits = Math.floor(creditsRaw);
+      const balance = await storage.getUserCredits(userId);
+      if (credits > balance) {
+        return res.status(400).json({ message: "보유 크레딧보다 많은 금액은 신청할 수 없습니다" });
+      }
+      const [pending] = await db
+        .select({ id: creditRefundRequests.id })
+        .from(creditRefundRequests)
+        .where(and(eq(creditRefundRequests.userId, userId), eq(creditRefundRequests.status, "pending")))
+        .limit(1);
+      if (pending) {
+        return res.status(400).json({ message: "이미 처리 대기 중인 환불 신청이 있습니다" });
+      }
+      const [inserted] = await db
+        .insert(creditRefundRequests)
+        .values({ userId, creditsAmount: credits, reason: reason || null, status: "pending" })
+        .returning();
+      await storage.createNotification({
+        userId,
+        type: "system",
+        message: `크레딧 환불 신청이 접수되었습니다. (${credits.toLocaleString()} 크레딧) 검토 후 안내드립니다.`,
+        payload: { refundRequestId: inserted.id, credits },
+        url: "/credits",
+      });
+      const adminRows = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+      for (const admin of adminRows) {
+        if (admin.id === userId) continue;
+        await storage.createNotification({
+          userId: admin.id,
+          type: "system",
+          message: `새 크레딧 환불 신청: ${credits.toLocaleString()} 크레딧`,
+          payload: { refundRequestId: inserted.id, userId },
+          url: getAdminPagePath(),
+        });
+      }
+      res.json({ success: true, id: inserted.id, message: "환불 신청이 접수되었습니다" });
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.toLowerCase().includes("credit_refund_requests") && msg.toLowerCase().includes("relation")) {
+        return res.status(500).json({ message: "DB에 credit_refund_requests 테이블이 없습니다. script/migrations/011-credit-refund-requests.sql 을 실행해 주세요." });
+      }
+      console.error("Credits refund-request error:", err);
+      res.status(500).json({ message: "환불 신청에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/credits/refund-requests", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const rows = await db
+        .select()
+        .from(creditRefundRequests)
+        .where(eq(creditRefundRequests.userId, userId))
+        .orderBy(desc(creditRefundRequests.createdAt));
+      const serialized = rows.map((r) => ({
+        ...r,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+        processedAt: r.processedAt instanceof Date ? r.processedAt.toISOString() : r.processedAt,
+      }));
+      res.json(serialized);
+    } catch (err: any) {
+      console.error("Credits refund-requests list error:", err);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
+  });
+
+  app.get("/api/admin/credit-refund-requests", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const statusFilter = typeof req.query.status === "string" ? req.query.status : "all";
+      const selectCols = {
+        id: creditRefundRequests.id,
+        userId: creditRefundRequests.userId,
+        creditsAmount: creditRefundRequests.creditsAmount,
+        reason: creditRefundRequests.reason,
+        status: creditRefundRequests.status,
+        adminNote: creditRefundRequests.adminNote,
+        createdAt: creditRefundRequests.createdAt,
+        processedAt: creditRefundRequests.processedAt,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      };
+      const fromJoin = () =>
+        db
+          .select(selectCols)
+          .from(creditRefundRequests)
+          .leftJoin(users, eq(creditRefundRequests.userId, users.id));
+      let rows;
+      if (statusFilter === "pending") {
+        rows = await fromJoin()
+          .where(eq(creditRefundRequests.status, "pending"))
+          .orderBy(desc(creditRefundRequests.createdAt));
+      } else if (statusFilter === "approved" || statusFilter === "rejected") {
+        rows = await fromJoin()
+          .where(eq(creditRefundRequests.status, statusFilter))
+          .orderBy(desc(creditRefundRequests.createdAt));
+      } else {
+        rows = await fromJoin().orderBy(desc(creditRefundRequests.createdAt));
+      }
+      res.json(
+        rows.map((r) => ({
+          ...r,
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+          processedAt: r.processedAt instanceof Date ? r.processedAt.toISOString() : r.processedAt,
+        })),
+      );
+    } catch (err) {
+      console.error("Admin credit-refund-requests error:", err);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
+  });
+
+  app.post("/api/admin/credit-refund-requests/:id/approve", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "잘못된 요청입니다" });
+      }
+      let approvedUserId = "";
+      let approvedAmount = 0;
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(creditRefundRequests)
+          .where(and(eq(creditRefundRequests.id, id), eq(creditRefundRequests.status, "pending")));
+        if (!row) {
+          throw new Error("NOT_PENDING");
+        }
+        const [u] = await tx.select({ credits: users.credits }).from(users).where(eq(users.id, row.userId));
+        const bal = u?.credits ?? 0;
+        if (bal < row.creditsAmount) {
+          throw new Error("INSUFFICIENT_BALANCE");
+        }
+        approvedUserId = row.userId;
+        approvedAmount = row.creditsAmount;
+        await tx
+          .update(users)
+          .set({ credits: sql`COALESCE(${users.credits}, 0) - ${row.creditsAmount}`, updatedAt: new Date() })
+          .where(eq(users.id, row.userId));
+        await tx.insert(creditTransactions).values({
+          userId: row.userId,
+          type: "refund",
+          amount: -row.creditsAmount,
+          description: `환불 승인 (신청 #${row.id}, 충전 크레딧 차감. 원화 환불은 별도 입금)`,
+        });
+        await tx
+          .update(creditRefundRequests)
+          .set({ status: "approved", processedAt: new Date(), adminNote: null })
+          .where(eq(creditRefundRequests.id, id));
+      });
+      const newBal = await storage.getUserCredits(approvedUserId);
+      await storage.createNotification({
+        userId: approvedUserId,
+        type: "system",
+        message: `크레딧 환불이 승인되어 ${approvedAmount.toLocaleString()} 크레딧이 차감되었습니다. 현재 잔액 ${newBal.toLocaleString()} 크레딧. 원화 환불은 별도 안내에 따라 진행됩니다.`,
+        payload: { refundRequestId: id, creditsDeducted: approvedAmount },
+        url: "/credits",
+      });
+      res.json({ success: true, message: "승인되었습니다. 사용자 크레딧이 차감되었습니다." });
+    } catch (err: any) {
+      const m = err?.message || String(err);
+      if (m === "NOT_PENDING") return res.status(400).json({ message: "대기 중인 신청이 아닙니다" });
+      if (m === "INSUFFICIENT_BALANCE") return res.status(400).json({ message: "사용자 잔액이 부족합니다. 거절하거나 잔액을 확인하세요." });
+      console.error("Approve credit refund error:", err);
+      res.status(500).json({ message: "처리에 실패했습니다" });
+    }
+  });
+
+  app.post("/api/admin/credit-refund-requests/:id/reject", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "잘못된 요청입니다" });
+      }
+      const note =
+        typeof (req.body as { adminNote?: unknown })?.adminNote === "string"
+          ? String((req.body as { adminNote: string }).adminNote).trim().slice(0, 2000)
+          : "";
+      const [updated] = await db
+        .update(creditRefundRequests)
+        .set({ status: "rejected", adminNote: note || null, processedAt: new Date() })
+        .where(and(eq(creditRefundRequests.id, id), eq(creditRefundRequests.status, "pending")))
+        .returning();
+      if (!updated) {
+        return res.status(400).json({ message: "대기 중인 신청이 아닙니다" });
+      }
+      await storage.createNotification({
+        userId: updated.userId,
+        type: "system",
+        message: note
+          ? `크레딧 환불 신청이 반려되었습니다. 사유: ${note.slice(0, 200)}`
+          : "크레딧 환불 신청이 반려되었습니다.",
+        payload: { refundRequestId: id },
+        url: "/credits",
+      });
+      res.json({ success: true, message: "반려 처리되었습니다" });
+    } catch (err) {
+      console.error("Reject credit refund error:", err);
+      res.status(500).json({ message: "처리에 실패했습니다" });
     }
   });
 
