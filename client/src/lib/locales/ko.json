@@ -977,7 +977,8 @@
     "refundInvalidAmount": "올바른 크레딧 수를 입력해 주세요",
     "refundExceedsBalance": "보유 크레딧을 초과할 수 없습니다",
     "refundRequestedAtLabel": "신청",
-    "refundProcessedAtLabel": "처리"
+    "refundProcessedAtLabel": "처리",
+    "refundKrwRecordedLabel": "원화 입금"
   },
   "admin": {
     "creditRefundRequests": "크레딧 환불",
@@ -996,7 +997,23 @@
     "creditRefundRejectSubmit": "반려 처리",
     "creditRefundNoRows": "해당 상태의 신청이 없습니다",
     "creditRefundApproved": "승인되었습니다. 사용자 크레딧이 차감되었습니다.",
-    "creditRefundRejected": "반려 처리되었습니다"
+    "creditRefundRejected": "반려 처리되었습니다",
+    "creditRefundKrwRecorded": "원화 환불이 기록되었습니다",
+    "creditRefundKrwColumn": "원화 입금",
+    "creditRefundAuditLog": "이력",
+    "creditRefundKrwRecord": "원화 기록",
+    "creditRefundKrwDialogTitle": "원화 입금 기록",
+    "creditRefundKrwDialogHint": "실제 계좌 입금액(원)을 기록합니다. 다시 저장하면 목록에 보이는 값은 최신으로 바뀌고, 이력에는 기록이 계속 쌓입니다.",
+    "creditRefundKrwAmount": "입금액(원)",
+    "creditRefundKrwMemo": "메모·증빙 안내",
+    "creditRefundKrwSave": "저장",
+    "creditRefundKrwInvalid": "0 이상의 정수를 입력하세요",
+    "creditRefundAuditTitle": "환불 이력 (감사 로그)",
+    "creditRefundAuditEmpty": "이력이 없습니다",
+    "refundEventCreated": "신청 접수",
+    "refundEventApproved": "크레딧 승인(차감)",
+    "refundEventRejected": "반려",
+    "refundEventKrw": "원화 입금 기록"
   },
   "register": {
     "createAccount": "새 계정 만들기",

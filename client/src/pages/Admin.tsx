@@ -56,6 +56,8 @@ import {
   Play,
   Sparkles,
   Undo2,
+  History,
+  Banknote,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -85,12 +87,29 @@ type AdminCreditRefundRow = {
   createdAt: string;
   processedAt: string | null;
   processedByUserId: string | null;
+  krwRefundAmountWon: number | null;
+  krwRefundCompletedAt: string | null;
+  krwRefundNote: string | null;
+  krwRefundRecordedByUserId: string | null;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
   processorEmail: string | null;
   processorFirstName: string | null;
   processorLastName: string | null;
+  krwRecorderEmail: string | null;
+  krwRecorderFirstName: string | null;
+  krwRecorderLastName: string | null;
+};
+
+type RefundAuditEventRow = {
+  id: number;
+  refundRequestId: number;
+  eventType: string;
+  actorUserId: string | null;
+  metadata: unknown;
+  note: string | null;
+  createdAt: string;
 };
 
 const curatedMainGenres: Record<string, string[]> = {
@@ -146,6 +165,10 @@ export default function Admin() {
   const [creditRefundFilter, setCreditRefundFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [creditRefundRejectId, setCreditRefundRejectId] = useState<number | null>(null);
   const [creditRefundRejectNote, setCreditRefundRejectNote] = useState("");
+  const [krwRecordId, setKrwRecordId] = useState<number | null>(null);
+  const [krwAmountWonInput, setKrwAmountWonInput] = useState("");
+  const [krwNoteInput, setKrwNoteInput] = useState("");
+  const [auditRefundId, setAuditRefundId] = useState<number | null>(null);
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -709,8 +732,10 @@ export default function Admin() {
     mutationFn: async (id: number) => {
       await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/approve`);
     },
-    onSuccess: () => {
+    onSuccess: (_d, id) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests", id, "events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
       toast({ title: t("admin.creditRefundApproved", "승인되었습니다. 사용자 크레딧이 차감되었습니다.") });
     },
     onError: (err: any) => {
@@ -722,8 +747,10 @@ export default function Admin() {
     mutationFn: async ({ id, adminNote }: { id: number; adminNote: string }) => {
       await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/reject`, { adminNote });
     },
-    onSuccess: () => {
+    onSuccess: (_d, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests", vars.id, "events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
       setCreditRefundRejectId(null);
       setCreditRefundRejectNote("");
       toast({ title: t("admin.creditRefundRejected", "반려 처리되었습니다") });
@@ -731,6 +758,37 @@ export default function Admin() {
     onError: (err: any) => {
       toast({ title: err?.message || t("admin.updateFailed", "처리에 실패했습니다"), variant: "destructive" });
     },
+  });
+
+  const recordKrwRefundMutation = useMutation({
+    mutationFn: async ({ id, amountWon, note }: { id: number; amountWon: number; note: string }) => {
+      await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/krw-refund`, { amountWon, note });
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/credit-refund-requests", vars.id, "events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
+      setKrwRecordId(null);
+      setKrwAmountWonInput("");
+      setKrwNoteInput("");
+      toast({ title: t("admin.creditRefundKrwRecorded", "원화 환불이 기록되었습니다") });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t("admin.updateFailed", "처리에 실패했습니다"), variant: "destructive" });
+    },
+  });
+
+  const { data: refundAuditEvents, isLoading: loadingRefundAudit } = useQuery<RefundAuditEventRow[]>({
+    queryKey: ["/api/admin/credit-refund-requests", auditRefundId, "events"],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/credit-refund-requests/${auditRefundId}/events`, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to fetch refund audit");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true && auditRefundId !== null,
   });
 
   const { data: userReportsList, isLoading: loadingUserReports } = useQuery<any[]>({
@@ -789,6 +847,21 @@ export default function Admin() {
   const formatDateTime = (dateStr: string) => {
     const d = new Date(dateStr);
     return `${formatDate(dateStr)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  };
+
+  const refundEventTypeLabel = (type: string) => {
+    switch (type) {
+      case "request_created":
+        return t("admin.refundEventCreated", "신청 접수");
+      case "admin_approved":
+        return t("admin.refundEventApproved", "크레딧 승인(차감)");
+      case "admin_rejected":
+        return t("admin.refundEventRejected", "반려");
+      case "krw_refund_recorded":
+        return t("admin.refundEventKrw", "원화 입금 기록");
+      default:
+        return type;
+    }
   };
 
   return (
@@ -1570,13 +1643,14 @@ export default function Admin() {
                   <th className="text-left p-3 font-medium">{t("admin.creditRefundRequestedAt", "신청일")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.creditRefundProcessedAt", "처리일")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.creditRefundProcessor", "처리 관리자")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundKrwColumn", "원화 입금")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.manage", "관리")}</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingCreditRefunds ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8">
+                    <td colSpan={9} className="text-center p-8">
                       <Loader2 className="animate-spin mx-auto text-primary" size={20} />
                     </td>
                   </tr>
@@ -1617,41 +1691,92 @@ export default function Admin() {
                           ? `${r.processorFirstName} ${r.processorLastName}`
                           : r.processorEmail || r.processedByUserId || "—"}
                       </td>
-                      <td className="p-3">
-                        {r.status === "pending" ? (
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => approveCreditRefundMutation.mutate(r.id)}
-                              disabled={approveCreditRefundMutation.isPending}
-                              data-testid={`credit-refund-approve-${r.id}`}
-                            >
-                              <CheckCircle size={12} className="mr-1" />
-                              {t("admin.creditRefundApprove", "승인")}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                setCreditRefundRejectId(r.id);
-                                setCreditRefundRejectNote("");
-                              }}
-                              disabled={rejectCreditRefundMutation.isPending}
-                              data-testid={`credit-refund-reject-${r.id}`}
-                            >
-                              <XCircle size={12} className="mr-1" />
-                              {t("admin.creditRefundReject", "반려")}
-                            </Button>
+                      <td className="p-3 text-xs align-top">
+                        {r.krwRefundCompletedAt ? (
+                          <div className="space-y-0.5">
+                            <div className="font-medium tabular-nums text-foreground">
+                              {r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—"}
+                            </div>
+                            <div className="text-muted-foreground whitespace-nowrap">
+                              {new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR")}
+                            </div>
+                            {r.krwRefundNote ? (
+                              <div className="text-[10px] truncate max-w-[160px]" title={r.krwRefundNote}>
+                                {r.krwRefundNote}
+                              </div>
+                            ) : null}
+                            {r.krwRecorderFirstName && r.krwRecorderLastName ? (
+                              <div className="text-[10px] text-muted-foreground">
+                                {r.krwRecorderFirstName} {r.krwRecorderLastName}
+                              </div>
+                            ) : null}
                           </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                          "—"
                         )}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex flex-col gap-2 items-start">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => setAuditRefundId(r.id)}
+                            data-testid={`credit-refund-audit-${r.id}`}
+                          >
+                            <History size={12} />
+                            {t("admin.creditRefundAuditLog", "이력")}
+                          </Button>
+                          {r.status === "pending" ? (
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => approveCreditRefundMutation.mutate(r.id)}
+                                disabled={approveCreditRefundMutation.isPending}
+                                data-testid={`credit-refund-approve-${r.id}`}
+                              >
+                                <CheckCircle size={12} className="mr-1" />
+                                {t("admin.creditRefundApprove", "승인")}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  setCreditRefundRejectId(r.id);
+                                  setCreditRefundRejectNote("");
+                                }}
+                                disabled={rejectCreditRefundMutation.isPending}
+                                data-testid={`credit-refund-reject-${r.id}`}
+                              >
+                                <XCircle size={12} className="mr-1" />
+                                {t("admin.creditRefundReject", "반려")}
+                              </Button>
+                            </div>
+                          ) : r.status === "approved" ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="gap-1"
+                              onClick={() => {
+                                setKrwRecordId(r.id);
+                                setKrwAmountWonInput(
+                                  r.krwRefundAmountWon != null ? String(r.krwRefundAmountWon) : "",
+                                );
+                                setKrwNoteInput(r.krwRefundNote ?? "");
+                              }}
+                              data-testid={`credit-refund-krw-${r.id}`}
+                            >
+                              <Banknote size={12} />
+                              {t("admin.creditRefundKrwRecord", "원화 기록")}
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-muted-foreground">
+                    <td colSpan={9} className="text-center p-8 text-muted-foreground">
                       {t("admin.creditRefundNoRows", "해당 상태의 신청이 없습니다")}
                     </td>
                   </tr>
@@ -2786,6 +2911,108 @@ export default function Admin() {
               )}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={krwRecordId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setKrwRecordId(null);
+            setKrwAmountWonInput("");
+            setKrwNoteInput("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="dialog-credit-refund-krw">
+          <DialogHeader>
+            <DialogTitle>{t("admin.creditRefundKrwDialogTitle", "원화 입금 기록")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "admin.creditRefundKrwDialogHint",
+              "실제 계좌 입금액(원)을 기록합니다. 다시 저장하면 목록에 보이는 값은 최신으로 바뀌고, 이력 탭에는 기록이 계속 쌓입니다.",
+            )}
+          </p>
+          <div>
+            <span className="text-sm font-medium">{t("admin.creditRefundKrwAmount", "입금액(원)")}</span>
+            <Input
+              type="number"
+              min={0}
+              step={1}
+              className="mt-1"
+              value={krwAmountWonInput}
+              onChange={(e) => setKrwAmountWonInput(e.target.value)}
+            />
+          </div>
+          <div>
+            <span className="text-sm font-medium">{t("admin.creditRefundKrwMemo", "메모·증빙 안내")}</span>
+            <Textarea className="mt-1 min-h-[80px]" value={krwNoteInput} onChange={(e) => setKrwNoteInput(e.target.value)} />
+          </div>
+          <div className="flex gap-2 justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setKrwRecordId(null);
+                setKrwAmountWonInput("");
+                setKrwNoteInput("");
+              }}
+            >
+              {t("common.cancel", "취소")}
+            </Button>
+            <Button
+              disabled={recordKrwRefundMutation.isPending || krwRecordId === null}
+              onClick={() => {
+                const n = parseInt(krwAmountWonInput, 10);
+                if (krwRecordId === null) return;
+                if (!Number.isFinite(n) || n < 0) {
+                  toast({ title: t("admin.creditRefundKrwInvalid", "0 이상의 정수를 입력하세요"), variant: "destructive" });
+                  return;
+                }
+                recordKrwRefundMutation.mutate({ id: krwRecordId, amountWon: n, note: krwNoteInput.trim() });
+              }}
+            >
+              {recordKrwRefundMutation.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : t("admin.creditRefundKrwSave", "저장")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={auditRefundId !== null}
+        onOpenChange={(open) => {
+          if (!open) setAuditRefundId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" data-testid="dialog-credit-refund-audit">
+          <DialogHeader>
+            <DialogTitle>{t("admin.creditRefundAuditTitle", "환불 이력 (감사 로그)")}</DialogTitle>
+          </DialogHeader>
+          {loadingRefundAudit ? (
+            <Loader2 className="animate-spin mx-auto my-8 text-primary" />
+          ) : refundAuditEvents && refundAuditEvents.length > 0 ? (
+            <ul className="space-y-3 text-sm">
+              {refundAuditEvents.map((ev) => (
+                <li key={ev.id} className="border border-border/60 rounded-lg p-3 space-y-1">
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <span className="font-medium">{refundEventTypeLabel(ev.eventType)}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {ev.createdAt ? new Date(ev.createdAt).toLocaleString("ko-KR") : ""}
+                    </span>
+                  </div>
+                  {ev.actorUserId ? (
+                    <p className="text-[10px] text-muted-foreground font-mono">actor: {ev.actorUserId}</p>
+                  ) : null}
+                  {ev.note ? <p className="text-xs text-muted-foreground">{ev.note}</p> : null}
+                  {ev.metadata != null ? (
+                    <pre className="text-[10px] bg-muted/40 p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
+                      {JSON.stringify(ev.metadata, null, 2)}
+                    </pre>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground py-6 text-center">{t("admin.creditRefundAuditEmpty", "이력이 없습니다")}</p>
+          )}
         </DialogContent>
       </Dialog>
       </div>

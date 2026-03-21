@@ -18,8 +18,21 @@ import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
 import { db } from "./db";
-import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments, creditTransactions, creditRefundRequests } from "../shared/schema";
-import { eq, sql, inArray, and, desc } from "drizzle-orm";
+import {
+  users,
+  streamingLogs,
+  music,
+  announcements,
+  follows,
+  notifications,
+  insertAnnouncementSchema,
+  musicStories as musicStoriesTable,
+  postComments,
+  creditTransactions,
+  creditRefundRequests,
+  creditRefundEvents,
+} from "../shared/schema";
+import { eq, sql, inArray, and, desc, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -3813,10 +3826,21 @@ export async function registerRoutes(
       if (pending) {
         return res.status(400).json({ message: "이미 처리 대기 중인 환불 신청이 있습니다" });
       }
-      const [inserted] = await db
-        .insert(creditRefundRequests)
-        .values({ userId, creditsAmount: credits, reason: reason || null, status: "pending" })
-        .returning();
+      const [inserted] = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(creditRefundRequests)
+          .values({ userId, creditsAmount: credits, reason: reason || null, status: "pending" })
+          .returning();
+        if (!row) throw new Error("INSERT_FAILED");
+        await tx.insert(creditRefundEvents).values({
+          refundRequestId: row.id,
+          eventType: "request_created",
+          actorUserId: userId,
+          metadata: { credits, reason: reason || null },
+          note: null,
+        });
+        return [row];
+      });
       await storage.createNotification({
         userId,
         type: "system",
@@ -3862,6 +3886,8 @@ export async function registerRoutes(
         ...r,
         createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
         processedAt: r.processedAt instanceof Date ? r.processedAt.toISOString() : r.processedAt,
+        krwRefundCompletedAt:
+          r.krwRefundCompletedAt instanceof Date ? r.krwRefundCompletedAt.toISOString() : r.krwRefundCompletedAt,
       }));
       res.json(serialized);
     } catch (err: any) {
@@ -3874,6 +3900,7 @@ export async function registerRoutes(
     try {
       const statusFilter = typeof req.query.status === "string" ? req.query.status : "all";
       const refundProcessorUser = alias(users, "credit_refund_processor");
+      const krwRecorderUser = alias(users, "credit_refund_krw_recorder");
       const selectCols = {
         id: creditRefundRequests.id,
         userId: creditRefundRequests.userId,
@@ -3884,19 +3911,27 @@ export async function registerRoutes(
         createdAt: creditRefundRequests.createdAt,
         processedAt: creditRefundRequests.processedAt,
         processedByUserId: creditRefundRequests.processedByUserId,
+        krwRefundAmountWon: creditRefundRequests.krwRefundAmountWon,
+        krwRefundCompletedAt: creditRefundRequests.krwRefundCompletedAt,
+        krwRefundNote: creditRefundRequests.krwRefundNote,
+        krwRefundRecordedByUserId: creditRefundRequests.krwRefundRecordedByUserId,
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
         processorEmail: refundProcessorUser.email,
         processorFirstName: refundProcessorUser.firstName,
         processorLastName: refundProcessorUser.lastName,
+        krwRecorderEmail: krwRecorderUser.email,
+        krwRecorderFirstName: krwRecorderUser.firstName,
+        krwRecorderLastName: krwRecorderUser.lastName,
       };
       const fromJoin = () =>
         db
           .select(selectCols)
           .from(creditRefundRequests)
           .leftJoin(users, eq(creditRefundRequests.userId, users.id))
-          .leftJoin(refundProcessorUser, eq(creditRefundRequests.processedByUserId, refundProcessorUser.id));
+          .leftJoin(refundProcessorUser, eq(creditRefundRequests.processedByUserId, refundProcessorUser.id))
+          .leftJoin(krwRecorderUser, eq(creditRefundRequests.krwRefundRecordedByUserId, krwRecorderUser.id));
       let rows;
       if (statusFilter === "pending") {
         rows = await fromJoin()
@@ -3914,6 +3949,8 @@ export async function registerRoutes(
           ...r,
           createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
           processedAt: r.processedAt instanceof Date ? r.processedAt.toISOString() : r.processedAt,
+          krwRefundCompletedAt:
+            r.krwRefundCompletedAt instanceof Date ? r.krwRefundCompletedAt.toISOString() : r.krwRefundCompletedAt,
         })),
       );
     } catch (err) {
@@ -3963,6 +4000,13 @@ export async function registerRoutes(
           .update(creditRefundRequests)
           .set({ status: "approved", processedAt: new Date(), adminNote: null, processedByUserId: adminId })
           .where(eq(creditRefundRequests.id, id));
+        await tx.insert(creditRefundEvents).values({
+          refundRequestId: id,
+          eventType: "admin_approved",
+          actorUserId: adminId,
+          metadata: { creditsAmount: row.creditsAmount, requestCreatedAt: createdAtIso },
+          note: null,
+        });
       });
       const newBal = await storage.getUserCredits(approvedUserId);
       await storage.createNotification({
@@ -3994,11 +4038,23 @@ export async function registerRoutes(
         typeof (req.body as { adminNote?: unknown })?.adminNote === "string"
           ? String((req.body as { adminNote: string }).adminNote).trim().slice(0, 2000)
           : "";
-      const [updated] = await db
-        .update(creditRefundRequests)
-        .set({ status: "rejected", adminNote: note || null, processedAt: new Date(), processedByUserId: adminId })
-        .where(and(eq(creditRefundRequests.id, id), eq(creditRefundRequests.status, "pending")))
-        .returning();
+      const [updated] = await db.transaction(async (tx) => {
+        const [u] = await tx
+          .update(creditRefundRequests)
+          .set({ status: "rejected", adminNote: note || null, processedAt: new Date(), processedByUserId: adminId })
+          .where(and(eq(creditRefundRequests.id, id), eq(creditRefundRequests.status, "pending")))
+          .returning();
+        if (u) {
+          await tx.insert(creditRefundEvents).values({
+            refundRequestId: id,
+            eventType: "admin_rejected",
+            actorUserId: adminId,
+            metadata: { adminNote: note || null },
+            note: note || null,
+          });
+        }
+        return [u];
+      });
       if (!updated) {
         return res.status(400).json({ message: "대기 중인 신청이 아닙니다" });
       }
@@ -4015,6 +4071,89 @@ export async function registerRoutes(
     } catch (err) {
       console.error("Reject credit refund error:", err);
       res.status(500).json({ message: "처리에 실패했습니다" });
+    }
+  });
+
+  app.post("/api/admin/credit-refund-requests/:id/krw-refund", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // @ts-ignore
+      const adminId = req.user.claims.sub as string;
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "잘못된 요청입니다" });
+      }
+      const amountRaw = Number((req.body as { amountWon?: unknown }).amountWon);
+      const krwNote =
+        typeof (req.body as { note?: unknown })?.note === "string"
+          ? String((req.body as { note: string }).note).trim().slice(0, 2000)
+          : "";
+      if (!Number.isFinite(amountRaw) || amountRaw < 0 || !Number.isInteger(amountRaw)) {
+        return res.status(400).json({ message: "원화 금액은 0 이상의 정수(원)여야 합니다" });
+      }
+      const amountWon = Math.floor(amountRaw);
+      const [row] = await db.select().from(creditRefundRequests).where(eq(creditRefundRequests.id, id)).limit(1);
+      if (!row) {
+        return res.status(404).json({ message: "신청을 찾을 수 없습니다" });
+      }
+      if (row.status !== "approved") {
+        return res.status(400).json({ message: "승인된 신청만 원화 환불을 기록할 수 있습니다" });
+      }
+      const now = new Date();
+      await db.transaction(async (tx) => {
+        await tx
+          .update(creditRefundRequests)
+          .set({
+            krwRefundAmountWon: amountWon,
+            krwRefundCompletedAt: now,
+            krwRefundNote: krwNote || null,
+            krwRefundRecordedByUserId: adminId,
+          })
+          .where(eq(creditRefundRequests.id, id));
+        await tx.insert(creditRefundEvents).values({
+          refundRequestId: id,
+          eventType: "krw_refund_recorded",
+          actorUserId: adminId,
+          metadata: { amountWon },
+          note: krwNote || null,
+        });
+      });
+      await storage.createNotification({
+        userId: row.userId,
+        type: "system",
+        message:
+          amountWon > 0
+            ? `크레딧 환불(신청 #${id}) 원화 ${amountWon.toLocaleString()}원 입금이 기록되었습니다.`
+            : `크레딧 환불(신청 #${id}) 관련 원화 처리 메모가 등록되었습니다.`,
+        payload: { refundRequestId: id, krwAmountWon: amountWon },
+        url: "/credits",
+      });
+      res.json({ success: true, message: "원화 환불이 기록되었습니다" });
+    } catch (err) {
+      console.error("Krw refund record error:", err);
+      res.status(500).json({ message: "기록에 실패했습니다" });
+    }
+  });
+
+  app.get("/api/admin/credit-refund-requests/:id/events", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      if (!Number.isFinite(id) || id < 1) {
+        return res.status(400).json({ message: "잘못된 요청입니다" });
+      }
+      const rows = await db
+        .select()
+        .from(creditRefundEvents)
+        .where(eq(creditRefundEvents.refundRequestId, id))
+        .orderBy(asc(creditRefundEvents.id));
+      res.json(
+        rows.map((e) => ({
+          ...e,
+          createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : e.createdAt,
+        })),
+      );
+    } catch (err) {
+      console.error("Refund events list error:", err);
+      res.status(500).json({ message: "이력을 불러올 수 없습니다" });
     }
   });
 

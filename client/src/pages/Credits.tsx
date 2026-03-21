@@ -67,6 +67,9 @@ export default function Credits() {
       createdAt: string;
       processedAt: string | null;
       processedByUserId?: string | null;
+      krwRefundAmountWon?: number | null;
+      krwRefundCompletedAt?: string | null;
+      krwRefundNote?: string | null;
     }>
   >({
     queryKey: ["/api/credits/refund-requests"],
@@ -357,6 +360,15 @@ export default function Credits() {
                       <span>
                         {t("credits.refundProcessedAtLabel", "처리")}{" "}
                         {new Date(r.processedAt).toLocaleString("ko-KR")}
+                      </span>
+                    ) : null}
+                    {r.krwRefundCompletedAt ? (
+                      <span>
+                        {t("credits.refundKrwRecordedLabel", "원화 입금 기록")}{" "}
+                        {r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—"}
+                        {" · "}
+                        {new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR")}
+                        {r.krwRefundNote ? ` · ${r.krwRefundNote}` : ""}
                       </span>
                     ) : null}
                     {r.adminNote ? <span className="break-words max-w-full">{r.adminNote}</span> : null}

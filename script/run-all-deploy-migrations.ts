@@ -35,6 +35,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "notify-activity-email.sql", name: "users notify_activity_email 컬럼" },
   { file: "credit-refund-requests.sql", name: "credit_refund_requests" },
   { file: "credit-refund-requests-processed-by.sql", name: "credit_refund_requests.processed_by_user_id" },
+  { file: "credit-refund-events-krw.sql", name: "credit_refund_events + krw_refund_*" },
 ];
 
 async function main() {

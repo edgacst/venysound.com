@@ -506,12 +506,38 @@ export const creditRefundRequests = pgTable("credit_refund_requests", {
   processedAt: timestamp("processed_at", { withTimezone: true }),
   /** 승인/반려 처리한 관리자 user id (감사·CS 근거) */
   processedByUserId: text("processed_by_user_id").references(() => users.id),
+  /** 원화 환불(입금) 처리 스냅샷 — 상세 이력은 credit_refund_events */
+  krwRefundAmountWon: integer("krw_refund_amount_won"),
+  krwRefundCompletedAt: timestamp("krw_refund_completed_at", { withTimezone: true }),
+  krwRefundNote: text("krw_refund_note"),
+  krwRefundRecordedByUserId: text("krw_refund_recorded_by_user_id").references(() => users.id),
 });
 
-export const creditRefundRequestsRelations = relations(creditRefundRequests, ({ one }) => ({
+/** 환불 신청·승인·반려·원화기록 등 append-only 감사 로그 */
+export const creditRefundEvents = pgTable("credit_refund_events", {
+  id: serial("id").primaryKey(),
+  refundRequestId: integer("refund_request_id")
+    .references(() => creditRefundRequests.id, { onDelete: "cascade" })
+    .notNull(),
+  eventType: text("event_type").notNull(),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  metadata: jsonb("metadata"),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const creditRefundRequestsRelations = relations(creditRefundRequests, ({ one, many }) => ({
   user: one(users, {
     fields: [creditRefundRequests.userId],
     references: [users.id],
+  }),
+  refundEvents: many(creditRefundEvents),
+}));
+
+export const creditRefundEventsRelations = relations(creditRefundEvents, ({ one }) => ({
+  refundRequest: one(creditRefundRequests, {
+    fields: [creditRefundEvents.refundRequestId],
+    references: [creditRefundRequests.id],
   }),
 }));
 
@@ -607,6 +633,7 @@ export type CreatePurchaseRequest = z.infer<typeof insertPurchaseSchema>;
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type Withdrawal = typeof withdrawals.$inferSelect;
 export type CreditRefundRequest = typeof creditRefundRequests.$inferSelect;
+export type CreditRefundEvent = typeof creditRefundEvents.$inferSelect;
 
 export type MusicStory = typeof musicStories.$inferSelect;
 export type StoryComment = typeof storyComments.$inferSelect;

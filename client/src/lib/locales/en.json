@@ -956,7 +956,8 @@
     "refundInvalidAmount": "Enter a valid credit amount",
     "refundExceedsBalance": "Cannot exceed your balance",
     "refundRequestedAtLabel": "Requested",
-    "refundProcessedAtLabel": "Processed"
+    "refundProcessedAtLabel": "Processed",
+    "refundKrwRecordedLabel": "KRW transfer recorded"
   },
   "admin": {
     "creditRefundRequests": "Credit refunds",
@@ -975,7 +976,23 @@
     "creditRefundRejectSubmit": "Reject",
     "creditRefundNoRows": "No requests in this filter",
     "creditRefundApproved": "Approved. User credits were deducted.",
-    "creditRefundRejected": "Request rejected"
+    "creditRefundRejected": "Request rejected",
+    "creditRefundKrwRecorded": "KRW refund recorded",
+    "creditRefundKrwColumn": "KRW paid",
+    "creditRefundAuditLog": "History",
+    "creditRefundKrwRecord": "Record KRW",
+    "creditRefundKrwDialogTitle": "Record bank transfer (KRW)",
+    "creditRefundKrwDialogHint": "Record the actual amount sent to the customer’s account. Saving again updates the summary row; the audit log keeps every entry.",
+    "creditRefundKrwAmount": "Amount (KRW)",
+    "creditRefundKrwMemo": "Memo / reference",
+    "creditRefundKrwSave": "Save",
+    "creditRefundKrwInvalid": "Enter a non-negative whole number",
+    "creditRefundAuditTitle": "Refund audit log",
+    "creditRefundAuditEmpty": "No events yet",
+    "refundEventCreated": "Request submitted",
+    "refundEventApproved": "Credits approved (deducted)",
+    "refundEventRejected": "Rejected",
+    "refundEventKrw": "KRW transfer recorded"
   },
   "register": {
     "createAccount": "Create new account",
