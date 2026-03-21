@@ -31,6 +31,18 @@ const CREDIT_PACKAGES = [
 const creditsToWon = creditsSupplyWon;
 const totalWithVat = creditsTotalWithVatWon;
 
+const REFUND_OTP_PURPOSE = "credit_refund";
+
+function maskEmailForDisplay(email: string): string {
+  const trimmed = email.trim();
+  const at = trimmed.indexOf("@");
+  if (at <= 0) return "***";
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  const head = local.slice(0, Math.min(2, local.length));
+  return `${head}***@${domain}`;
+}
+
 export default function Credits() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -50,9 +62,15 @@ export default function Credits() {
   const [refundReason, setRefundReason] = useState("");
   const REFUND_PAGE_SIZE = 100;
   const [refundHistoryPage, setRefundHistoryPage] = useState(1);
-  const [refundPassword, setRefundPassword] = useState("");
+  const [refundOtpCode, setRefundOtpCode] = useState("");
+  const [refundProofToken, setRefundProofToken] = useState("");
   const [refundVerified, setRefundVerified] = useState(false);
   const [refundVerifying, setRefundVerifying] = useState(false);
+  const [refundSendingOtp, setRefundSendingOtp] = useState(false);
+  const [bindEmailInput, setBindEmailInput] = useState("");
+  const [bindEmailOtp, setBindEmailOtp] = useState("");
+  const [bindSendingOtp, setBindSendingOtp] = useState(false);
+  const [bindVerifying, setBindVerifying] = useState(false);
 
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
@@ -180,8 +198,20 @@ export default function Credits() {
   });
 
   const refundRequestMutation = useMutation({
-    mutationFn: async ({ credits, reason }: { credits: number; reason: string }) => {
-      const res = await apiRequest("POST", "/api/credits/refund-request", { credits, reason });
+    mutationFn: async ({
+      credits,
+      reason,
+      refundProofToken: token,
+    }: {
+      credits: number;
+      reason: string;
+      refundProofToken: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/credits/refund-request", {
+        credits,
+        reason,
+        refundProofToken: token,
+      });
       return res.json();
     },
     onSuccess: (data) => {
@@ -192,7 +222,8 @@ export default function Credits() {
       setRefundOpen(false);
       setRefundCreditsInput("");
       setRefundReason("");
-      setRefundPassword("");
+      setRefundOtpCode("");
+      setRefundProofToken("");
       setRefundVerified(false);
       setRefundVerifying(false);
       queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
@@ -430,7 +461,23 @@ export default function Credits() {
           ) : null}
         </Card>
 
-        <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+        <Dialog
+          open={refundOpen}
+          onOpenChange={(open) => {
+            setRefundOpen(open);
+            if (!open) {
+              setRefundOtpCode("");
+              setRefundProofToken("");
+              setRefundVerified(false);
+              setRefundVerifying(false);
+              setRefundSendingOtp(false);
+              setBindEmailInput("");
+              setBindEmailOtp("");
+              setBindSendingOtp(false);
+              setBindVerifying(false);
+            }
+          }}
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t("credits.refundDialogTitle", "충전 크레딧 환불 신청")}</DialogTitle>
@@ -471,55 +518,200 @@ export default function Credits() {
                     </Badge>
                   ) : null}
                 </div>
-                <div className="flex items-start gap-2">
-                  <div className="flex-1 min-w-0">
-                    <Label htmlFor="refund-auth-password" className="text-xs text-muted-foreground">
-                      {t("credits.identityPasswordLabel", "비밀번호")}
-                    </Label>
-                    <input
-                      id="refund-auth-password"
-                      type="password"
-                      className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      value={refundPassword}
-                      onChange={(e) => setRefundPassword(e.target.value)}
-                      placeholder={t("credits.identityPasswordPlaceholder", "로그인 비밀번호를 입력해 주세요")}
-                    />
+                {!user?.email ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      {t(
+                        "credits.bindEmailForRefundHint",
+                        "SNS만 연동된 계정은 이메일을 등록한 뒤 환불 본인인증을 진행할 수 있습니다. 아래에 본인 이메일을 입력하고 인증해 주세요.",
+                      )}
+                    </p>
+                    <div>
+                      <Label htmlFor="refund-bind-email" className="text-xs text-muted-foreground">
+                        {t("credits.bindEmailLabel", "등록할 이메일")}
+                      </Label>
+                      <input
+                        id="refund-bind-email"
+                        type="email"
+                        autoComplete="email"
+                        className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={bindEmailInput}
+                        onChange={(e) => setBindEmailInput(e.target.value)}
+                        placeholder={t("credits.bindEmailPlaceholder", "example@email.com")}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      disabled={bindSendingOtp || !bindEmailInput.trim()}
+                      onClick={async () => {
+                        setBindSendingOtp(true);
+                        try {
+                          await apiRequest("POST", "/api/auth/send-account-email-otp", { email: bindEmailInput.trim() });
+                          toast({
+                            title: t("credits.bindEmailOtpSent", "인증 메일 발송"),
+                            description: t("credits.bindEmailOtpSentDesc", "메일함의 6자리 코드를 입력한 뒤 이메일 확인을 눌러 주세요."),
+                          });
+                        } catch (e: any) {
+                          toast({
+                            title: t("credits.refundOtpSendFailed", "발송 실패"),
+                            description: e?.message || t("credits.refundOtpSendFailedDesc", "잠시 후 다시 시도해 주세요."),
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setBindSendingOtp(false);
+                        }
+                      }}
+                    >
+                      {bindSendingOtp ? <Loader2 className="animate-spin" size={18} /> : t("credits.bindEmailSendCode", "인증 코드 보내기")}
+                    </Button>
+                    <div>
+                      <Label htmlFor="refund-bind-otp" className="text-xs text-muted-foreground">
+                        {t("credits.bindEmailOtpLabel", "이메일 인증 코드")}
+                      </Label>
+                      <input
+                        id="refund-bind-otp"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm tracking-widest"
+                        value={bindEmailOtp}
+                        onChange={(e) => setBindEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                        placeholder={t("credits.refundOtpPlaceholder", "6자리")}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      className="w-full sm:w-auto"
+                      disabled={bindVerifying || bindEmailOtp.length !== 6 || !bindEmailInput.trim()}
+                      onClick={async () => {
+                        setBindVerifying(true);
+                        try {
+                          await apiRequest("POST", "/api/auth/verify-account-email-otp", {
+                            email: bindEmailInput.trim(),
+                            code: bindEmailOtp,
+                          });
+                          await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+                          setBindEmailOtp("");
+                          toast({
+                            title: t("credits.bindEmailDone", "이메일 등록 완료"),
+                            description: t("credits.bindEmailDoneDesc", "이제 아래에서 환불 인증 코드를 요청할 수 있습니다."),
+                          });
+                        } catch (e: any) {
+                          toast({
+                            title: t("credits.identityVerifyFailed", "인증 실패"),
+                            description: e?.message || t("credits.refundOtpWrong", "코드를 확인해 주세요."),
+                            variant: "destructive",
+                          });
+                        } finally {
+                          setBindVerifying(false);
+                        }
+                      }}
+                    >
+                      {bindVerifying ? <Loader2 className="animate-spin" size={18} /> : t("credits.bindEmailConfirm", "이메일 확인")}
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={refundVerifying || refundVerified || !refundPassword.trim()}
-                    onClick={async () => {
-                      setRefundVerifying(true);
-                      try {
-                        await apiRequest("POST", "/api/auth/confirm-password", { password: refundPassword });
-                        setRefundVerified(true);
-                        toast({ title: t("credits.identityVerified", "인증완료"), description: t("credits.identityVerifiedDesc", "환불 신청을 진행할 수 있습니다.") });
-                      } catch (e: any) {
-                        setRefundVerified(false);
-                        toast({
-                          title: t("credits.identityVerifyFailed", "인증 실패"),
-                          description: e?.message || t("credits.identityVerifyFailedDesc", "비밀번호를 확인해 주세요."),
-                          variant: "destructive",
-                        });
-                      } finally {
-                        setRefundVerifying(false);
-                      }
-                    }}
-                  >
-                    {refundVerifying ? <Loader2 className="animate-spin" size={18} /> : t("credits.identityVerifyButton", "인증하기")}
-                  </Button>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {t("credits.identityVerifyHint", "환불 신청은 계정 보안을 위해 비밀번호 재확인이 필요합니다.")}
-                </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {t("credits.refundOtpEmailHint", "등록 이메일로 코드가 전송됩니다: {{email}}", {
+                        email: maskEmailForDisplay(user.email),
+                      })}
+                    </p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="shrink-0"
+                        disabled={refundSendingOtp || refundVerified}
+                        onClick={async () => {
+                          setRefundSendingOtp(true);
+                          try {
+                            await apiRequest("POST", "/api/auth/send-sensitive-otp", { purpose: REFUND_OTP_PURPOSE });
+                            toast({
+                              title: t("credits.refundOtpSent", "인증 코드 발송"),
+                              description: t("credits.refundOtpSentDesc", "이메일을 확인한 뒤 6자리 코드를 입력해 주세요."),
+                            });
+                          } catch (e: any) {
+                            toast({
+                              title: t("credits.refundOtpSendFailed", "발송 실패"),
+                              description: e?.message || t("credits.refundOtpSendFailedDesc", "잠시 후 다시 시도해 주세요."),
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setRefundSendingOtp(false);
+                          }
+                        }}
+                      >
+                        {refundSendingOtp ? <Loader2 className="animate-spin" size={18} /> : t("credits.refundOtpSend", "인증 코드 보내기")}
+                      </Button>
+                      <div className="flex-1 min-w-[140px]">
+                        <Label htmlFor="refund-auth-otp" className="text-xs text-muted-foreground">
+                          {t("credits.refundOtpLabel", "이메일 인증 코드")}
+                        </Label>
+                        <input
+                          id="refund-auth-otp"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm tracking-widest"
+                          value={refundOtpCode}
+                          onChange={(e) => setRefundOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                          placeholder={t("credits.refundOtpPlaceholder", "6자리")}
+                          disabled={refundVerified}
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="shrink-0"
+                        disabled={refundVerifying || refundVerified || refundOtpCode.length !== 6}
+                        onClick={async () => {
+                          setRefundVerifying(true);
+                          try {
+                            const res = await apiRequest("POST", "/api/auth/verify-sensitive-otp", {
+                              purpose: REFUND_OTP_PURPOSE,
+                              code: refundOtpCode,
+                            });
+                            const data = (await res.json()) as { refundProofToken?: string };
+                            if (!data.refundProofToken) throw new Error("인증 응답이 올바르지 않습니다.");
+                            setRefundProofToken(data.refundProofToken);
+                            setRefundVerified(true);
+                            toast({
+                              title: t("credits.identityVerified", "인증완료"),
+                              description: t("credits.identityVerifiedDesc", "환불 신청을 진행할 수 있습니다."),
+                            });
+                          } catch (e: any) {
+                            setRefundVerified(false);
+                            setRefundProofToken("");
+                            toast({
+                              title: t("credits.identityVerifyFailed", "인증 실패"),
+                              description: e?.message || t("credits.refundOtpWrong", "코드를 확인해 주세요."),
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setRefundVerifying(false);
+                          }
+                        }}
+                      >
+                        {refundVerifying ? <Loader2 className="animate-spin" size={18} /> : t("credits.refundOtpConfirm", "확인")}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("credits.refundOtpHint", "환불 신청은 등록된 이메일로 받은 인증 코드로 본인 확인이 필요합니다. 코드는 약 10분간 유효합니다.")}
+                    </p>
+                  </>
+                )}
               </div>
               <Button
                 className="w-full"
-                disabled={refundRequestMutation.isPending || !refundVerified}
+                disabled={refundRequestMutation.isPending || !refundVerified || !refundProofToken}
                 onClick={() => {
-                  if (!refundVerified) {
+                  if (!refundVerified || !refundProofToken) {
                     toast({ title: t("credits.identityVerifyRequired", "본인인증이 필요합니다"), variant: "destructive" });
                     return;
                   }
@@ -532,7 +724,7 @@ export default function Credits() {
                     toast({ title: t("credits.refundExceedsBalance", "보유 크레딧을 초과할 수 없습니다"), variant: "destructive" });
                     return;
                   }
-                  refundRequestMutation.mutate({ credits: n, reason: refundReason.trim() });
+                  refundRequestMutation.mutate({ credits: n, reason: refundReason.trim(), refundProofToken });
                 }}
               >
                 {refundRequestMutation.isPending ? <Loader2 className="animate-spin" size={18} /> : t("credits.refundSubmit", "신청하기")}

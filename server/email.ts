@@ -193,3 +193,49 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+export type SensitiveOtpEmailKind = "credit_refund" | "account_email";
+
+/** 크레딧 환불·계정 이메일 등록 등 민감 작업용 6자리 OTP 메일 */
+export async function sendSensitiveOtpEmail(
+  to: string,
+  params: { code: string; kind: SensitiveOtpEmailKind }
+): Promise<void> {
+  if (!isEmailConfigured()) return;
+  const subject =
+    params.kind === "credit_refund"
+      ? "[Venysound] 크레딧 환불 본인확인 인증 코드"
+      : params.kind === "account_email"
+        ? "[Venysound] 계정 이메일 인증 코드"
+        : "[Venysound] 인증 코드";
+  const intro =
+    params.kind === "credit_refund"
+      ? "크레딧 환불 신청을 위한 본인확인 코드입니다. 타인에게 공유하지 마세요."
+      : params.kind === "account_email"
+        ? "계정에 등록할 이메일 주소 확인을 위한 인증 코드입니다. 타인에게 공유하지 마세요."
+        : "요청하신 본인확인 코드입니다. 타인에게 공유하지 마세요.";
+  const html = `
+    <p>${escapeHtml(intro)}</p>
+    <p style="font-size:22px;font-weight:bold;letter-spacing:4px;">${escapeHtml(params.code)}</p>
+    <p>유효 시간: 약 10분</p>
+    <p>— Venysound</p>
+  `;
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: MAIL_FROM,
+      to,
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error("[email] sendSensitiveOtpEmail error:", err);
+    throw err;
+  }
+}

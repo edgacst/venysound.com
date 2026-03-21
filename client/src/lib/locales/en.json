@@ -982,6 +982,7 @@
     "creditRefundKrwColumn": "KRW paid",
     "creditRefundAuditLog": "History",
     "creditRefundKrwRecord": "Record KRW",
+    "creditRefundKrwRecordShort": "KRW",
     "creditRefundKrwDialogTitle": "Record bank transfer (KRW)",
     "creditRefundKrwDialogHint": "Record the actual amount sent to the customer’s account. Saving again updates the summary row; the audit log keeps every entry.",
     "creditRefundKrwAmount": "Amount (KRW)",

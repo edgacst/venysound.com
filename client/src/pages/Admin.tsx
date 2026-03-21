@@ -1758,32 +1758,38 @@ export default function Admin() {
                           "—"
                         )}
                       </td>
-                      <td className="p-2">
-                        <div className="flex items-center gap-1 flex-wrap">
+                      <td className="p-1.5 align-middle whitespace-nowrap">
+                        <div className="inline-flex flex-nowrap items-center gap-0.5">
                           <Button
+                            type="button"
                             size="sm"
                             variant="outline"
-                            className="gap-1"
+                            title={t("admin.creditRefundAuditLog", "이력")}
+                            className="h-7 min-h-7 px-1.5 py-0 text-[10px] gap-0.5 shrink-0"
                             onClick={() => setAuditRefundId(r.id)}
                             data-testid={`credit-refund-audit-${r.id}`}
                           >
-                            <History size={12} />
+                            <History className="size-3 shrink-0" aria-hidden />
                             {t("admin.creditRefundAuditLog", "이력")}
                           </Button>
                           {r.status === "pending" ? (
-                            <div className="flex flex-wrap gap-1">
+                            <>
                               <Button
+                                type="button"
                                 size="sm"
+                                className="h-7 min-h-7 px-1.5 py-0 text-[10px] gap-0.5 shrink-0"
                                 onClick={() => approveCreditRefundMutation.mutate(r.id)}
                                 disabled={approveCreditRefundMutation.isPending}
                                 data-testid={`credit-refund-approve-${r.id}`}
                               >
-                                <CheckCircle size={12} className="mr-1" />
+                                <CheckCircle className="size-3 shrink-0" aria-hidden />
                                 {t("admin.creditRefundApprove", "승인")}
                               </Button>
                               <Button
+                                type="button"
                                 size="sm"
                                 variant="destructive"
+                                className="h-7 min-h-7 px-1.5 py-0 text-[10px] gap-0.5 shrink-0"
                                 onClick={() => {
                                   setCreditRefundRejectId(r.id);
                                   setCreditRefundRejectNote("");
@@ -1791,15 +1797,17 @@ export default function Admin() {
                                 disabled={rejectCreditRefundMutation.isPending}
                                 data-testid={`credit-refund-reject-${r.id}`}
                               >
-                                <XCircle size={12} className="mr-1" />
+                                <XCircle className="size-3 shrink-0" aria-hidden />
                                 {t("admin.creditRefundReject", "반려")}
                               </Button>
-                            </div>
+                            </>
                           ) : r.status === "approved" ? (
                             <Button
+                              type="button"
                               size="sm"
                               variant="secondary"
-                              className="gap-1"
+                              title={t("admin.creditRefundKrwRecord", "원화 기록")}
+                              className="h-7 min-h-7 px-1.5 py-0 text-[10px] gap-0.5 shrink-0"
                               onClick={() => {
                                 setKrwRecordId(r.id);
                                 setKrwAmountWonInput(
@@ -1809,8 +1817,8 @@ export default function Admin() {
                               }}
                               data-testid={`credit-refund-krw-${r.id}`}
                             >
-                              <Banknote size={12} />
-                              {t("admin.creditRefundKrwRecord", "원화 기록")}
+                              <Banknote className="size-3 shrink-0" aria-hidden />
+                              {t("admin.creditRefundKrwRecordShort", "원화")}
                             </Button>
                           ) : null}
                         </div>

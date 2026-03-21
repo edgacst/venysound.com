@@ -1003,6 +1003,7 @@
     "creditRefundKrwColumn": "원화 입금",
     "creditRefundAuditLog": "이력",
     "creditRefundKrwRecord": "원화 기록",
+    "creditRefundKrwRecordShort": "원화",
     "creditRefundKrwDialogTitle": "원화 입금 기록",
     "creditRefundKrwDialogHint": "실제 계좌 입금액(원)을 기록합니다. 다시 저장하면 목록에 보이는 값은 최신으로 바뀌고, 이력에는 기록이 계속 쌓입니다.",
     "creditRefundKrwAmount": "입금액(원)",

@@ -541,6 +541,20 @@ export const creditRefundEventsRelations = relations(creditRefundEvents, ({ one 
   }),
 }));
 
+/** 이메일 OTP (환불 등 민감 작업 본인확인). deploy/sensitive-email-otp.sql */
+export const sensitiveEmailOtpChallenges = pgTable("sensitive_email_otp_challenges", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  purpose: text("purpose").notNull(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  verifyAttempts: integer("verify_attempts").default(0).notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
 // Music Stories table (creative history by uploader)
 export const musicStories = pgTable("music_stories", {
   id: serial("id").primaryKey(),

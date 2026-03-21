@@ -14,6 +14,7 @@ import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError 
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigured, type ActivityEmailKind } from "./email";
+import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
@@ -3808,6 +3809,12 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub as string;
+      const proof = (req.body as { refundProofToken?: unknown }).refundProofToken;
+      if (!verifyCreditRefundProof(proof, userId)) {
+        return res.status(403).json({
+          message: "이메일 인증이 필요합니다. 인증 코드를 요청한 뒤 확인해 주세요.",
+        });
+      }
       const creditsRaw = Number((req.body as { credits?: unknown }).credits);
       const reason = typeof (req.body as { reason?: unknown }).reason === "string" ? String((req.body as { reason: string }).reason).trim().slice(0, 2000) : "";
       if (!Number.isFinite(creditsRaw) || creditsRaw < 1 || !Number.isInteger(creditsRaw)) {

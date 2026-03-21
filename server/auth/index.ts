@@ -14,6 +14,13 @@ import { db } from "../db";
 import { users } from "../../shared/models/auth";
 import { eq, or } from "drizzle-orm";
 import { sendWelcomeEmail } from "../email";
+import {
+  sendCreditRefundOtp,
+  verifyCreditRefundOtp,
+  SENSITIVE_OTP_PURPOSE_CREDIT_REFUND,
+  sendAccountEmailVerificationOtp,
+  verifyAccountEmailBind,
+} from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
 
 function buildUserSession(
@@ -541,6 +548,72 @@ export function registerAuthRoutes(app: Express): void {
       console.error("[auth] confirm-password error:", e);
       return res.status(500).json({ message: "본인인증에 실패했습니다" });
     }
+  });
+
+  // 이메일 OTP: 크레딧 환불 등 (소셜 로그인·비밀번호 없음 계정 포함)
+  app.post("/api/auth/send-sensitive-otp", isAuthenticated, async (req, res) => {
+    const purpose = (req.body as { purpose?: unknown }).purpose;
+    if (purpose !== SENSITIVE_OTP_PURPOSE_CREDIT_REFUND) {
+      return res.status(400).json({ message: "지원하지 않는 인증 유형입니다." });
+    }
+    const userId = (req.user as any).claims?.sub as string | undefined;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const result = await sendCreditRefundOtp(userId);
+    if ("error" in result) {
+      return res.status(result.status).json({ message: result.error });
+    }
+    return res.json({ success: true });
+  });
+
+  app.post("/api/auth/verify-sensitive-otp", isAuthenticated, async (req, res) => {
+    const purpose = (req.body as { purpose?: unknown }).purpose;
+    const code = (req.body as { code?: unknown }).code;
+    if (purpose !== SENSITIVE_OTP_PURPOSE_CREDIT_REFUND) {
+      return res.status(400).json({ message: "지원하지 않는 인증 유형입니다." });
+    }
+    if (typeof code !== "string") {
+      return res.status(400).json({ message: "인증 코드를 입력해 주세요" });
+    }
+    const userId = (req.user as any).claims?.sub as string | undefined;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const result = await verifyCreditRefundOtp(userId, code);
+    if ("error" in result) {
+      return res.status(result.status).json({ message: result.error });
+    }
+    return res.json({ success: true, refundProofToken: result.refundProofToken });
+  });
+
+  /** SNS 등 이메일 미등록 계정: 입력 주소로 OTP → 검증 후 users.email 저장 */
+  app.post("/api/auth/send-account-email-otp", isAuthenticated, async (req, res) => {
+    const email = (req.body as { email?: unknown }).email;
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ message: "이메일을 입력해 주세요" });
+    }
+    const userId = (req.user as any).claims?.sub as string | undefined;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const result = await sendAccountEmailVerificationOtp(userId, email);
+    if ("error" in result) {
+      return res.status(result.status).json({ message: result.error });
+    }
+    return res.json({ success: true });
+  });
+
+  app.post("/api/auth/verify-account-email-otp", isAuthenticated, async (req, res) => {
+    const email = (req.body as { email?: unknown }).email;
+    const code = (req.body as { code?: unknown }).code;
+    if (typeof email !== "string" || !email.trim()) {
+      return res.status(400).json({ message: "이메일을 입력해 주세요" });
+    }
+    if (typeof code !== "string") {
+      return res.status(400).json({ message: "인증 코드를 입력해 주세요" });
+    }
+    const userId = (req.user as any).claims?.sub as string | undefined;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const result = await verifyAccountEmailBind(userId, email, code);
+    if ("error" in result) {
+      return res.status(result.status).json({ message: result.error });
+    }
+    return res.json({ success: true });
   });
 }
 
