@@ -158,9 +158,20 @@ export default function Pricing() {
   const premiumYearly = 324000;
   const proMonthlyWithVat = Math.round(proMonthly * 1.1);
   const premiumMonthlyWithVat = Math.round(premiumMonthly * 1.1);
-  const displayPrice = selectedPlanId === "premium"
-    ? (billingPeriod === "monthly" ? premiumMonthly : premiumYearly)
-    : (billingPeriod === "monthly" ? proMonthly : proYearly);
+  /** 계좌이체 입금액 = 서버·DB와 동일(부가세 포함). 모달 안내는 반드시 이 금액을 씁니다. */
+  const planRow = bankInfo?.plans?.find((p) => p.id === selectedPlanId);
+  const subscriptionPayAmount =
+    planRow != null
+      ? billingPeriod === "monthly"
+        ? planRow.monthlyPrice
+        : planRow.yearlyPrice
+      : selectedPlanId === "premium"
+        ? billingPeriod === "monthly"
+          ? 33000
+          : 356400
+        : billingPeriod === "monthly"
+          ? 16500
+          : 166320;
 
   return (
     <PageTransition>
@@ -421,14 +432,14 @@ export default function Pricing() {
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {t('pricing.bankModalInstruction', '{{period}} {{amount}}원을 아래 계좌로 입금해 주시면 즉시 확인 후 적용됩니다.', { period: billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간'), amount: displayPrice.toLocaleString("ko-KR") })}
+                  {t('pricing.bankModalInstruction', '{{period}} 부가세 포함 {{amount}}원을 아래 계좌로 입금해 주시면 확인 후 적용됩니다.', { period: billingPeriod === "monthly" ? t('pricing.monthly', '월간') : t('pricing.yearly', '연간'), amount: subscriptionPayAmount.toLocaleString("ko-KR") })}
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
                     <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankInfo.bankName}</p>
                     <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
                     <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
-                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {displayPrice.toLocaleString("ko-KR")}{t('pricing.won', '원')}</p>
+                    <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {subscriptionPayAmount.toLocaleString("ko-KR")}{t('pricing.won', '원')}</p>
                   </div>
                 )}
                 <Button

@@ -15,8 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { apiRequest } from "@/lib/queryClient";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
-
-const CREDIT_TO_WON = 7.5;
+import { CREDIT_TO_WON, creditsSupplyWon, creditsTotalWithVatWon } from "@shared/credits-pricing";
 
 const CREDIT_PACKAGES = [
   { amount: 1000, label: "1,000" },
@@ -27,15 +26,8 @@ const CREDIT_PACKAGES = [
   { amount: 50000, label: "50,000" },
 ];
 
-/** 크레딧 수량 → 원화 가격 (1크레딧 = 7.5원) */
-function creditsToWon(credits: number) {
-  return Math.round(credits * CREDIT_TO_WON);
-}
-
-/** 충전금 + 부가세 10% = 총결재금액 */
-function totalWithVat(credits: number) {
-  return Math.round(creditsToWon(credits) * 1.1);
-}
+const creditsToWon = creditsSupplyWon;
+const totalWithVat = creditsTotalWithVatWon;
 
 export default function Credits() {
   const { t } = useTranslation();
@@ -242,7 +234,9 @@ export default function Credits() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2" data-testid="text-credits-title">{t('credits.title', '크레딧 충전')}</h1>
           <p className="text-muted-foreground">{t('credits.subtitle', '크레딧을 충전하여 아티스트를 후원하고 음원을 구매하세요')}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('credits.vatNotice', '부가세 별도, 현금 영수증 발행')}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t('credits.vatNotice', '표시된 총 결제액에는 부가세 10%가 포함됩니다. 현금영수증·세금계산서 발행 가능')}
+          </p>
         </div>
 
         <Card className="p-6 mb-8">

@@ -22,6 +22,7 @@ import { users, streamingLogs, music, announcements, follows, notifications, ins
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
+import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
 
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
@@ -3549,13 +3550,13 @@ export async function registerRoutes(
       await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
 
       if (payment.plan === "credit_charge") {
-        const creditAmount = Math.round(payment.amount / 1.1);
+        const creditAmount = creditsFromTotalVatInclusiveWon(payment.amount);
         await storage.addCredits(payment.userId, creditAmount);
         await storage.createCreditTransaction({
           userId: payment.userId,
           type: "charge",
           amount: creditAmount,
-          description: `${creditAmount.toLocaleString()}원 크레딧 충전 (계좌이체, 총결재 ${payment.amount.toLocaleString()}원)`,
+          description: `${creditAmount.toLocaleString()} 크레딧 충전 (계좌이체, 총결제 ${payment.amount.toLocaleString()}원)`,
         });
         await storage.createNotification({
           userId: payment.userId,
@@ -3684,12 +3685,17 @@ export async function registerRoutes(
         }
       }
 
-      await storage.addCredits(userId, amount);
+      const creditsToAdd = creditsFromTotalVatInclusiveWon(Number(amount));
+      if (creditsToAdd < 1) {
+        return res.status(400).json({ message: "결제 금액으로 환산된 크레딧이 없습니다" });
+      }
+
+      await storage.addCredits(userId, creditsToAdd);
       await storage.createCreditTransaction({
         userId,
         type: "charge",
-        amount,
-        description: `${amount.toLocaleString()}원 크레딧 충전`,
+        amount: creditsToAdd,
+        description: `${creditsToAdd.toLocaleString()} 크레딧 충전 (총결제 ${Number(amount).toLocaleString()}원)`,
       });
 
       const newCredits = await storage.getUserCredits(userId);
