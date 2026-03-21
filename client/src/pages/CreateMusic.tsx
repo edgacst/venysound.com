@@ -701,6 +701,13 @@ export default function CreateMusic() {
                       <p className="text-sm text-muted-foreground text-center sm:text-left">
                         {t("createMusic.creditsAdminHint", "관리자 계정은 생성 시 크레딧이 차감되지 않습니다.")}
                       </p>
+                    ) : aiUsage.isPaidTier ? (
+                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                        {t(
+                          "createMusic.creditsSubscriptionHint",
+                          "구독 플랜: 이번 달 AI 한도(크레딧)만 사용됩니다. 크레딧 충전 잔액은 AI 생성에 차감되지 않습니다.",
+                        )}
+                      </p>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center sm:text-left">
                         {t("createMusic.creditsFreeHint", "무료 플랜은 월 한도 내에서 크레딧 없이 생성할 수 있습니다.")}

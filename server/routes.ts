@@ -707,10 +707,14 @@ export async function registerRoutes(
     try {
       const { userId, user, taskId, provider, body } = params;
       const tier = user?.subscriptionTier ?? "free";
-      // incrementAiMusicUsageAndDeductCredits 와 동일: free만 월 한도만, 그 외(만료 포함 pro/premium)는 크레딧 차감 시도
+      const nowLog = new Date();
+      const subscriptionActive =
+        (tier === "pro" || tier === "premium") &&
+        (user == null || !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > nowLog);
       const billingKind =
-        user?.role === "admin" ? "admin" : tier === "free" ? "free" : "credits";
-      const creditsCharged = billingKind === "credits" ? AI_MUSIC_CREDITS_PER_TRACK : 0;
+        user?.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
+      const creditsCharged =
+        billingKind === "admin" || billingKind === "free" ? 0 : AI_MUSIC_CREDITS_PER_TRACK;
       const promptText = (body.prompt ?? body.gpt_description_prompt ?? "").trim();
       const parts = [
         body.title?.trim() && `title: ${body.title.trim()}`,
@@ -749,7 +753,12 @@ export async function registerRoutes(
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
       const usedThisMonth = usage?.count ?? 0;
       const tier = user?.subscriptionTier ?? "free";
-      const deductsCreditsPerCreate = user?.role !== "admin" && tier !== "free";
+      const subActive =
+        (tier === "pro" || tier === "premium") &&
+        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now);
+      /** 유효 Pro/Premium: 지갑 미차감. 만료된 pro/premium만 지갑 차감 경로와 동일하게 UI에 표시. */
+      const deductsCreditsPerCreate =
+        user?.role !== "admin" && (tier === "pro" || tier === "premium") && !subActive;
       return res.json({
         limit,
         usedThisMonth,
@@ -818,7 +827,12 @@ export async function registerRoutes(
     const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
     const used = usage?.count ?? 0;
-    if (limit >= 0 && used >= limit) {
+    const tierNow = user?.subscriptionTier ?? "free";
+    /** Free: count = 곡 수. Pro/Premium 월 한도: count = 이번 달 사용한 AI 크레딧 합계(곡당 20). */
+    const usageWouldExceed =
+      limit >= 0 &&
+      (tierNow === "free" ? used >= limit : used + AI_MUSIC_CREDITS_PER_TRACK > limit);
+    if (usageWouldExceed) {
       return res.status(403).json({
         message: limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
           ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. Pro로 업그레이드하면 월 2,000 크레딧을 사용할 수 있습니다.`
@@ -842,7 +856,7 @@ export async function registerRoutes(
     const customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
 
-    /** @returns 이번 요청에서 차감한 크레딧(없으면 0). 클라이언트 알림용 */
+    /** @returns 이번 요청에서 지갑(users.credits)에서 차감한 크레딧(없으면 0). 유효 Pro/Premium은 구독 월 한도만 소모하고 지갑은 건드리지 않음. */
     async function incrementAiMusicUsageAndDeductCredits(): Promise<number> {
       if (user?.role === "admin") return 0;
       // Free: 월 2곡까지만, 크레딧 차감 없이 카운트만
@@ -854,7 +868,16 @@ export async function registerRoutes(
         `);
         return 0;
       }
-      // Pro / Premium: 크레딧 차감 + 사용량 카운트
+      // 유효 Pro/Premium: 요금제에 포함된 월 2,000(또는 4,000) 크레딧 한도만 사용 — 크레딧 충전 잔액과 무관
+      if (isPaidTier) {
+        await db.execute(sql`
+          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_CREDITS_PER_TRACK}, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_CREDITS_PER_TRACK}, updated_at = NOW()
+        `);
+        return 0;
+      }
+      // 등급은 pro/premium이나 구독 만료 등: 기존처럼 지갑 크레딧 차감 + 사용량(크레딧 단위) 반영
       await db.transaction(async (tx) => {
         const [u] = await tx.select().from(users).where(eq(users.id, userId));
         const currentCredits = u?.credits ?? 0;
@@ -873,8 +896,8 @@ export async function registerRoutes(
         });
         await tx.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, 1, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_CREDITS_PER_TRACK}, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_CREDITS_PER_TRACK}, updated_at = NOW()
         `);
       });
       return AI_MUSIC_CREDITS_PER_TRACK;
