@@ -118,6 +118,7 @@ export interface IStorage {
   getWeeklyTopTracks(limit?: number): Promise<(MusicWithUploaderTier & { playCount: number; totalSeconds: number })[]>;
   getRecentMusic(days?: number, limit?: number): Promise<MusicWithUploaderTier[]>;
   getWeeklyTopArtist(limitTracks?: number): Promise<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number; tracks: MusicWithUploaderTier[] } | null>;
+  getWeeklyTopArtists(limit?: number): Promise<Array<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number }>>;
   createCuratedPlaylist(data: { name: string; description?: string | null; slug: string }): Promise<{ id: number }>;
   updateCuratedPlaylist(id: number, data: { name?: string; description?: string | null; slug?: string; sortOrder?: number }): Promise<void>;
   deleteCuratedPlaylist(id: number): Promise<void>;
@@ -638,6 +639,36 @@ export class DatabaseStorage implements IStorage {
       totalSeconds: Number(row.total_seconds || 0),
       tracks,
     };
+  }
+
+  async getWeeklyTopArtists(limit: number = 8): Promise<Array<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number }>> {
+    const safeLimit = Math.min(20, Math.max(1, limit));
+    const result = await db.execute(sql`
+      SELECT
+        m.user_id AS user_id,
+        u.first_name,
+        u.last_name,
+        u.profile_image_url,
+        COUNT(sl.id)::int AS play_count,
+        COALESCE(SUM(sl.duration_seconds), 0)::int AS total_seconds
+      FROM streaming_logs sl
+      JOIN music m ON sl.music_id = m.id
+      LEFT JOIN users u ON m.user_id = u.id
+      WHERE sl.created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY m.user_id, u.first_name, u.last_name, u.profile_image_url
+      ORDER BY play_count DESC, total_seconds DESC
+      LIMIT ${safeLimit}
+    `);
+    return (result.rows as any[])
+      .map((row) => ({
+        userId: String(row.user_id ?? ""),
+        firstName: row.first_name ?? null,
+        lastName: row.last_name ?? null,
+        profileImageUrl: row.profile_image_url ?? null,
+        playCount: Number(row.play_count || 0),
+        totalSeconds: Number(row.total_seconds || 0),
+      }))
+      .filter((a) => a.userId.length > 0);
   }
 
   async getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]> {

@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, User as UserIcon, Play } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { resolveStorageUrl } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
@@ -31,9 +32,9 @@ export default function Home() {
   const totalCount = musicResult?.total || 0;
 
   const { data: weeklyTop } = useQuery<any[]>({
-    queryKey: ["/api/music/top-weekly"],
+    queryKey: ["/api/music/top-weekly", 16],
     queryFn: async () => {
-      const res = await fetch("/api/music/top-weekly?limit=10");
+      const res = await fetch("/api/music/top-weekly?limit=16");
       if (!res.ok) return [];
       return res.json();
     },
@@ -147,70 +148,66 @@ export default function Home() {
   function WeeklyTopArtistSection() {
     const { t } = useTranslation();
     const { data } = useQuery<{
-      userId: string;
-      firstName: string | null;
-      lastName: string | null;
-      profileImageUrl: string | null;
-      playCount: number;
-      totalSeconds: number;
-      tracks: any[];
-    } | null>({
-      queryKey: ["/api/artists/top-weekly"],
+      artists: Array<{
+        userId: string;
+        firstName: string | null;
+        lastName: string | null;
+        profileImageUrl: string | null;
+        playCount: number;
+        totalSeconds: number;
+      }>;
+    }>({
+      queryKey: ["/api/artists/top-weekly", 8],
       queryFn: async () => {
-        const res = await fetch("/api/artists/top-weekly");
-        if (!res.ok) return null;
+        const res = await fetch("/api/artists/top-weekly?limit=8");
+        if (!res.ok) return { artists: [] };
         return res.json();
       },
     });
 
-    if (!data || !data.tracks || data.tracks.length === 0) return null;
-
-    const minutes = Math.floor((data.totalSeconds || 0) / 60);
+    const artists = data?.artists ?? [];
+    if (artists.length === 0) return null;
 
     return (
-      <section className="container px-4 pt-8 pb-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
-          <div>
-            <p className="text-sm md:text-base font-semibold tracking-wide text-primary mb-1">
-              {t('home.weeklyArtistLabel', '이번 주 아티스트')}
-            </p>
-            <h2 className="text-2xl md:text-3xl font-display font-bold mb-1" data-testid="text-weekly-artist-name">
-              {data.firstName || t('home.unknownArtist', '아티스트')}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t('home.weeklyArtistDesc', '최근 7일 동안 가장 많이 재생된 아티스트입니다.')}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <UserIcon size={16} className="text-primary" />
-              <span>{t('home.weeklyArtistPlays', { defaultValue: '{{count}}회 재생', count: data.playCount })}</span>
-            </div>
-            {minutes > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Play size={14} className="text-emerald-400" />
-                <span>{t('home.weeklyArtistMinutes', { defaultValue: '{{minutes}}분 감상', minutes })}</span>
-              </div>
-            )}
-            <Link href={`/profile/${data.userId}`}>
-              <Button size="sm" className="gap-2">
-                <UserIcon size={14} />
-                {t('home.viewArtistProfile', '아티스트 프로필 보기')}
-              </Button>
-            </Link>
-          </div>
+      <section className="container px-4 pt-8 pb-4" data-testid="section-weekly-artists">
+        <div className="mb-6">
+          <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-weekly-artist-section-title">
+            {t("home.weeklyArtistLabel", "이번 주 아티스트")}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t("home.weeklyArtistDesc", "최근 7일 동안 가장 많이 재생된 아티스트입니다.")}
+          </p>
         </div>
-        <div className="mb-2">
-          <h3 className="text-sm font-semibold text-muted-foreground">
-            {t('home.weeklyArtistTracks', '이 아티스트의 인기 트랙')}
-          </h3>
-        </div>
-        <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {data.tracks.slice(0, 8).map((track) => (
-            <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
-              <MusicCard music={track} />
-            </div>
-          ))}
+        <div className="grid grid-cols-4 md:grid-cols-8 gap-3 md:gap-4">
+          {artists.map((a) => {
+            const displayName = a.firstName?.trim() || t("home.unknownArtist", "아티스트");
+            const avatarSrc =
+              a.profileImageUrl != null && a.profileImageUrl !== ""
+                ? a.profileImageUrl.startsWith("http")
+                  ? a.profileImageUrl
+                  : resolveStorageUrl(a.profileImageUrl)
+                : undefined;
+            const initials = displayName.slice(0, 2).toUpperCase();
+            return (
+              <Link
+                key={a.userId}
+                href={`/profile/${a.userId}`}
+                className="group flex flex-col items-center rounded-xl border border-border/60 bg-card/30 p-2 md:p-3 text-center transition-colors hover:bg-muted/40 hover:border-primary/30 min-w-0"
+                data-testid={`link-weekly-artist-${a.userId}`}
+              >
+                <Avatar className="w-12 h-12 md:w-14 md:h-14 mb-2 ring-2 ring-transparent group-hover:ring-primary/20">
+                  <AvatarImage src={avatarSrc} alt="" className="object-cover" />
+                  <AvatarFallback className="text-xs font-medium">{initials}</AvatarFallback>
+                </Avatar>
+                <p className="text-xs md:text-sm font-medium truncate w-full" title={a.firstName ?? undefined}>
+                  {displayName}
+                </p>
+                <p className="text-[10px] md:text-xs text-muted-foreground tabular-nums">
+                  {t("home.weeklyArtistPlays", { defaultValue: "{{count}}회", count: a.playCount })}
+                </p>
+              </Link>
+            );
+          })}
         </div>
       </section>
     );
@@ -471,10 +468,10 @@ export default function Home() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true }}
-            className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+            className="music-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4"
           >
-            {weeklyTop.slice(0, 10).map((music) => (
-              <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
+            {weeklyTop.slice(0, 16).map((music) => (
+              <motion.div key={music.id} variants={item} className="min-w-0">
                 <MusicCard music={music} />
               </motion.div>
             ))}
@@ -502,10 +499,10 @@ export default function Home() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true }}
-            className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+            className="music-grid grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4"
           >
-            {musicList?.slice(0, 10).map((music) => (
-              <motion.div key={music.id} variants={item} className="transform scale-90 md:scale-90 origin-top-left">
+            {musicList?.slice(0, 16).map((music) => (
+              <motion.div key={music.id} variants={item} className="min-w-0">
                 <MusicCard music={music} />
               </motion.div>
             ))}

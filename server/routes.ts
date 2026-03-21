@@ -1384,12 +1384,12 @@ export async function registerRoutes(
 
   app.get("/api/artists/top-weekly", async (req, res) => {
     try {
-      const data = await storage.getWeeklyTopArtist(5);
-      if (!data) return res.json(null);
-      res.json(data);
+      const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit), 10) || 8));
+      const artists = await storage.getWeeklyTopArtists(limit);
+      res.json({ artists });
     } catch (e) {
       console.error("[artists/top-weekly]", e);
-      res.json(null);
+      res.json({ artists: [] });
     }
   });
 
