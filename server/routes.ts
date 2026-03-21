@@ -3838,7 +3838,10 @@ export async function registerRoutes(
     } catch (err: any) {
       const msg = String(err?.message || "");
       if (msg.toLowerCase().includes("credit_refund_requests") && msg.toLowerCase().includes("relation")) {
-        return res.status(500).json({ message: "DB에 credit_refund_requests 테이블이 없습니다. script/migrations/011-credit-refund-requests.sql 을 실행해 주세요." });
+        return res.status(500).json({
+          message:
+            "DB에 credit_refund_requests 테이블이 없습니다. 서버에서 npm run db:deploy 를 실행하거나, deploy/credit-refund-requests.sql(또는 script/migrations/011-credit-refund-requests.sql)을 DB에 적용해 주세요.",
+        });
       }
       console.error("Credits refund-request error:", err);
       res.status(500).json({ message: "환불 신청에 실패했습니다" });

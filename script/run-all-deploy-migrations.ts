@@ -33,6 +33,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
   { file: "notify-activity-email.sql", name: "users notify_activity_email 컬럼" },
+  { file: "credit-refund-requests.sql", name: "credit_refund_requests" },
 ];
 
 async function main() {

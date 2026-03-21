@@ -1,4 +1,5 @@
 -- 크레딧 환불 신청 (관리자 승인 시 credit_transactions 에 refund 기록 + 잔액 차감)
+-- 배포 자동 적용: deploy/credit-refund-requests.sql (npm run db:deploy)
 CREATE TABLE IF NOT EXISTS credit_refund_requests (
   id SERIAL PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id),
