@@ -262,7 +262,7 @@ export function MusicCard({ music }: MusicCardProps) {
   const [reportOriginalTitle, setReportOriginalTitle] = useState("");
   const [reportDetails, setReportDetails] = useState("");
   const [tipOpen, setTipOpen] = useState(false);
-  const [tipAmount, setTipAmount] = useState(1000);
+  const [tipAmount, setTipAmount] = useState(500);
   const [tipMessage, setTipMessage] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
@@ -332,7 +332,7 @@ export function MusicCard({ music }: MusicCardProps) {
     onSuccess: () => {
       toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
       setTipOpen(false);
-      setTipAmount(1000);
+      setTipAmount(500);
       setTipMessage("");
       // 후원 성공 시 크레딧/수익/후원 목록이 즉시 갱신되도록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -941,7 +941,7 @@ export function MusicCard({ music }: MusicCardProps) {
             <div>
               <Label>{t('music.tipAmount')}</Label>
               <div className="flex gap-2 mt-2 flex-wrap">
-                {[1000, 3000, 5000, 10000].map((amt) => (
+                {[100, 200, 300, 400, 500, 1000].map((amt) => (
                   <Button
                     key={amt}
                     type="button"

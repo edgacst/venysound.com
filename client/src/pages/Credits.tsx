@@ -18,12 +18,12 @@ import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import { CREDIT_TO_WON, creditsSupplyWon, creditsTotalWithVatWon } from "@shared/credits-pricing";
 
 const CREDIT_PACKAGES = [
+  { amount: 500, label: "500" },
   { amount: 1000, label: "1,000" },
+  { amount: 1500, label: "1,500" },
+  { amount: 2000, label: "2,000" },
+  { amount: 2500, label: "2,500" },
   { amount: 3000, label: "3,000" },
-  { amount: 5000, label: "5,000" },
-  { amount: 10000, label: "10,000" },
-  { amount: 30000, label: "30,000" },
-  { amount: 50000, label: "50,000" },
 ];
 
 const creditsToWon = creditsSupplyWon;

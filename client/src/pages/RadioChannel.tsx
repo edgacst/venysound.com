@@ -420,7 +420,7 @@ export default function RadioChannel() {
   }, [slug, clearRadioPlayer, queryClient]);
 
   const [tipOpen, setTipOpen] = useState(false);
-  const [tipAmount, setTipAmount] = useState(1000);
+  const [tipAmount, setTipAmount] = useState(500);
   const [tipMessage, setTipMessage] = useState("");
 
   const [editOpen, setEditOpen] = useState(false);
@@ -515,7 +515,7 @@ export default function RadioChannel() {
     onSuccess: () => {
       toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
       setTipOpen(false);
-      setTipAmount(1000);
+      setTipAmount(500);
       setTipMessage("");
       // 후원 성공 시 크레딧/수익 관련 캐시 갱신
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -1007,7 +1007,7 @@ export default function RadioChannel() {
                         <div>
                           <Label>{t("music.tipAmount")}</Label>
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {[500, 1000, 2000, 5000].map((amt) => (
+                            {[100, 200, 300, 400, 500, 1000].map((amt) => (
                               <Button key={amt} type="button" variant={tipAmount === amt ? "default" : "outline"} size="sm" onClick={() => setTipAmount(amt)}>
                                 {amt.toLocaleString()}
                               </Button>
