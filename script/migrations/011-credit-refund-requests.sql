@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS credit_refund_requests (
   status TEXT NOT NULL DEFAULT 'pending',
   admin_note TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  processed_at TIMESTAMPTZ
+  processed_at TIMESTAMPTZ,
+  processed_by_user_id TEXT REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_credit_refund_requests_user ON credit_refund_requests(user_id);

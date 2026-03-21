@@ -84,9 +84,13 @@ type AdminCreditRefundRow = {
   adminNote: string | null;
   createdAt: string;
   processedAt: string | null;
+  processedByUserId: string | null;
   email: string | null;
   firstName: string | null;
   lastName: string | null;
+  processorEmail: string | null;
+  processorFirstName: string | null;
+  processorLastName: string | null;
 };
 
 const curatedMainGenres: Record<string, string[]> = {
@@ -1563,14 +1567,16 @@ export default function Admin() {
                   <th className="text-left p-3 font-medium">{t("admin.creditRefundCredits", "크레딧")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.creditRefundReason", "사유")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.status", "상태")}</th>
-                  <th className="text-left p-3 font-medium">{t("admin.requestDate", "요청일")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundRequestedAt", "신청일")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundProcessedAt", "처리일")}</th>
+                  <th className="text-left p-3 font-medium">{t("admin.creditRefundProcessor", "처리 관리자")}</th>
                   <th className="text-left p-3 font-medium">{t("admin.manage", "관리")}</th>
                 </tr>
               </thead>
               <tbody>
                 {loadingCreditRefunds ? (
                   <tr>
-                    <td colSpan={6} className="text-center p-8">
+                    <td colSpan={8} className="text-center p-8">
                       <Loader2 className="animate-spin mx-auto text-primary" size={20} />
                     </td>
                   </tr>
@@ -1602,6 +1608,14 @@ export default function Admin() {
                       </td>
                       <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
                         {r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : ""}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {r.processedAt ? new Date(r.processedAt).toLocaleString("ko-KR") : "—"}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">
+                        {r.processorFirstName && r.processorLastName
+                          ? `${r.processorFirstName} ${r.processorLastName}`
+                          : r.processorEmail || r.processedByUserId || "—"}
                       </td>
                       <td className="p-3">
                         {r.status === "pending" ? (
@@ -1637,7 +1651,7 @@ export default function Admin() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="text-center p-8 text-muted-foreground">
+                    <td colSpan={8} className="text-center p-8 text-muted-foreground">
                       {t("admin.creditRefundNoRows", "해당 상태의 신청이 없습니다")}
                     </td>
                   </tr>

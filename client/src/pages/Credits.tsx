@@ -66,6 +66,7 @@ export default function Credits() {
       adminNote: string | null;
       createdAt: string;
       processedAt: string | null;
+      processedByUserId?: string | null;
     }>
   >({
     queryKey: ["/api/credits/refund-requests"],
@@ -345,9 +346,20 @@ export default function Credits() {
                         ? t("credits.refundStatusApproved", "승인")
                         : t("credits.refundStatusRejected", "반려")}
                   </Badge>
-                  <span className="text-xs text-muted-foreground w-full sm:w-auto">
-                    {r.createdAt ? new Date(r.createdAt).toLocaleString("ko-KR") : ""}
-                    {r.adminNote ? ` · ${r.adminNote}` : ""}
+                  <span className="text-xs text-muted-foreground w-full flex flex-col gap-0.5 sm:items-end sm:text-right">
+                    {r.createdAt ? (
+                      <span>
+                        {t("credits.refundRequestedAtLabel", "신청")}{" "}
+                        {new Date(r.createdAt).toLocaleString("ko-KR")}
+                      </span>
+                    ) : null}
+                    {r.status !== "pending" && r.processedAt ? (
+                      <span>
+                        {t("credits.refundProcessedAtLabel", "처리")}{" "}
+                        {new Date(r.processedAt).toLocaleString("ko-KR")}
+                      </span>
+                    ) : null}
+                    {r.adminNote ? <span className="break-words max-w-full">{r.adminNote}</span> : null}
                   </span>
                 </div>
               ))}

@@ -20,6 +20,7 @@ import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from
 import { db } from "./db";
 import { users, streamingLogs, music, announcements, follows, notifications, insertAnnouncementSchema, musicStories as musicStoriesTable, postComments, creditTransactions, creditRefundRequests } from "../shared/schema";
 import { eq, sql, inArray, and, desc } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
@@ -3872,6 +3873,7 @@ export async function registerRoutes(
   app.get("/api/admin/credit-refund-requests", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const statusFilter = typeof req.query.status === "string" ? req.query.status : "all";
+      const refundProcessorUser = alias(users, "credit_refund_processor");
       const selectCols = {
         id: creditRefundRequests.id,
         userId: creditRefundRequests.userId,
@@ -3881,15 +3883,20 @@ export async function registerRoutes(
         adminNote: creditRefundRequests.adminNote,
         createdAt: creditRefundRequests.createdAt,
         processedAt: creditRefundRequests.processedAt,
+        processedByUserId: creditRefundRequests.processedByUserId,
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        processorEmail: refundProcessorUser.email,
+        processorFirstName: refundProcessorUser.firstName,
+        processorLastName: refundProcessorUser.lastName,
       };
       const fromJoin = () =>
         db
           .select(selectCols)
           .from(creditRefundRequests)
-          .leftJoin(users, eq(creditRefundRequests.userId, users.id));
+          .leftJoin(users, eq(creditRefundRequests.userId, users.id))
+          .leftJoin(refundProcessorUser, eq(creditRefundRequests.processedByUserId, refundProcessorUser.id));
       let rows;
       if (statusFilter === "pending") {
         rows = await fromJoin()
@@ -3917,6 +3924,8 @@ export async function registerRoutes(
 
   app.post("/api/admin/credit-refund-requests/:id/approve", isAuthenticated, isAdmin, async (req, res) => {
     try {
+      // @ts-ignore
+      const adminId = req.user.claims.sub as string;
       const id = parseInt(String(req.params.id), 10);
       if (!Number.isFinite(id) || id < 1) {
         return res.status(400).json({ message: "잘못된 요청입니다" });
@@ -3942,15 +3951,17 @@ export async function registerRoutes(
           .update(users)
           .set({ credits: sql`COALESCE(${users.credits}, 0) - ${row.creditsAmount}`, updatedAt: new Date() })
           .where(eq(users.id, row.userId));
+        const createdAtIso =
+          row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? "");
         await tx.insert(creditTransactions).values({
           userId: row.userId,
           type: "refund",
           amount: -row.creditsAmount,
-          description: `환불 승인 (신청 #${row.id}, 충전 크레딧 차감. 원화 환불은 별도 입금)`,
+          description: `환불 승인 (신청 #${row.id}, 접수 ${createdAtIso}, ${row.creditsAmount} 크레딧 차감. 원화 환불 별도 입금)`,
         });
         await tx
           .update(creditRefundRequests)
-          .set({ status: "approved", processedAt: new Date(), adminNote: null })
+          .set({ status: "approved", processedAt: new Date(), adminNote: null, processedByUserId: adminId })
           .where(eq(creditRefundRequests.id, id));
       });
       const newBal = await storage.getUserCredits(approvedUserId);
@@ -3973,6 +3984,8 @@ export async function registerRoutes(
 
   app.post("/api/admin/credit-refund-requests/:id/reject", isAuthenticated, isAdmin, async (req, res) => {
     try {
+      // @ts-ignore
+      const adminId = req.user.claims.sub as string;
       const id = parseInt(String(req.params.id), 10);
       if (!Number.isFinite(id) || id < 1) {
         return res.status(400).json({ message: "잘못된 요청입니다" });
@@ -3983,7 +3996,7 @@ export async function registerRoutes(
           : "";
       const [updated] = await db
         .update(creditRefundRequests)
-        .set({ status: "rejected", adminNote: note || null, processedAt: new Date() })
+        .set({ status: "rejected", adminNote: note || null, processedAt: new Date(), processedByUserId: adminId })
         .where(and(eq(creditRefundRequests.id, id), eq(creditRefundRequests.status, "pending")))
         .returning();
       if (!updated) {

@@ -504,6 +504,8 @@ export const creditRefundRequests = pgTable("credit_refund_requests", {
   adminNote: text("admin_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
+  /** 승인/반려 처리한 관리자 user id (감사·CS 근거) */
+  processedByUserId: text("processed_by_user_id").references(() => users.id),
 });
 
 export const creditRefundRequestsRelations = relations(creditRefundRequests, ({ one }) => ({

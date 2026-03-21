@@ -954,7 +954,9 @@
     "refundRequestSubmittedDesc": "We will notify you after review.",
     "refundRequestFailed": "Request failed",
     "refundInvalidAmount": "Enter a valid credit amount",
-    "refundExceedsBalance": "Cannot exceed your balance"
+    "refundExceedsBalance": "Cannot exceed your balance",
+    "refundRequestedAtLabel": "Requested",
+    "refundProcessedAtLabel": "Processed"
   },
   "admin": {
     "creditRefundRequests": "Credit refunds",
@@ -963,6 +965,9 @@
     "creditRefundUser": "User",
     "creditRefundCredits": "Credits",
     "creditRefundReason": "Reason",
+    "creditRefundRequestedAt": "Requested",
+    "creditRefundProcessedAt": "Processed",
+    "creditRefundProcessor": "Processed by",
     "creditRefundApprove": "Approve",
     "creditRefundReject": "Reject",
     "creditRefundRejectTitle": "Reject refund request",
