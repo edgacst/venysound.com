@@ -1370,8 +1370,20 @@
     "toastCreditsDesc": "{{count}} credits were used for this AI music generation.",
     "toastCreditsDescWithBalance": "{{count}} credits deducted. Current balance: {{balance}} credits.",
     "currentCredits": "Your credits",
-    "creditsDeductHint": "Each generation uses {{n}} credits.",
+    "aiQuotaTitle": "AI usage limit",
+    "walletCreditsLabel": "Wallet credits",
+    "walletCreditsSub": "Tips, paid downloads, etc. (Credits top-up page)",
+    "subscriptionAiLabel": "Subscription AI credits",
+    "freeAiQuotaLabel": "Free AI generations",
+    "freeAiQuotaCount": "This month {{used}} / {{limit}} tracks",
+    "freeAiQuotaSub": "Separate from wallet credits · resets each calendar month",
+    "subscriptionAiQuotaCount": "This month {{used}} / {{limit}}",
+    "subscriptionAiQuotaSub": "{{n}} AI credits left · {{per}} per generation (wallet not used for AI)",
+    "quotaUnlimited": "Unlimited",
+    "quotaAdminNote": "Admin account",
+    "creditsDeductHint": "Each generation deducts {{n}} wallet credits (e.g. expired subscription).",
     "creditsAdminHint": "Admin accounts are not charged credits per generation.",
-    "creditsFreeHint": "On the free plan you can generate within the monthly limit without spending credits."
+    "creditsSubscriptionHint": "Only subscription AI allowance is used. Wallet credits are not spent on AI generation.",
+    "creditsFreeHint": "On the free plan you can generate within the monthly track limit without spending wallet credits."
   }
 }

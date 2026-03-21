@@ -231,7 +231,9 @@ export default function CreateMusic() {
     limit: number;
     usedThisMonth: number;
     isPaidTier: boolean;
+    walletCredits?: number;
     creditsBalance?: number;
+    quota?: { kind: "songs" | "subscription_credits" | "unlimited"; used: number; limit: number };
     creditsPerMusicCreate?: number;
     deductsCreditsPerCreate?: boolean;
   }>({
@@ -626,7 +628,7 @@ export default function CreateMusic() {
       if (Number.isFinite(balNum) && balNum >= 0) {
         queryClient.setQueryData(["/api/credits"], { credits: balNum });
         queryClient.setQueryData(["/api/ai-music/usage"], (prev: typeof aiUsage) =>
-          prev ? { ...prev, creditsBalance: balNum } : prev,
+          prev ? { ...prev, creditsBalance: balNum, walletCredits: balNum } : prev,
         );
       }
       queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
@@ -682,35 +684,105 @@ export default function CreateMusic() {
             {user && (
               <>
                 {aiUsage != null && (
-                  <div className="max-w-2xl mx-auto mb-4 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 sm:gap-6">
-                    <Link
-                      href="/credits"
-                      className="inline-flex items-center gap-2 rounded-full border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-sm text-amber-100/95 hover:bg-amber-500/15 transition-colors"
-                    >
-                      <Coins className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>{t("createMusic.currentCredits", "보유 크레딧")}</span>
-                      <strong className="tabular-nums text-white">{Math.max(0, Number(aiUsage.creditsBalance ?? 0)).toLocaleString()}</strong>
-                    </Link>
+                  <div className="max-w-2xl mx-auto mb-4 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Link
+                        href="/credits"
+                        className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-center hover:bg-amber-500/15 transition-colors min-h-[5.5rem]"
+                      >
+                        <div className="flex items-center gap-2 text-xs font-medium text-amber-200/90">
+                          <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+                          {t("createMusic.walletCreditsLabel", "충전 크레딧")}
+                        </div>
+                        <strong className="text-xl tabular-nums text-white">
+                          {Math.max(0, Number(aiUsage.walletCredits ?? aiUsage.creditsBalance ?? 0)).toLocaleString()}
+                        </strong>
+                        <span className="text-[11px] text-amber-100/70 leading-tight px-1">
+                          {t("createMusic.walletCreditsSub", "후원·유료 음원 구매 등 (크레딧 충전 페이지)")}
+                        </span>
+                      </Link>
+                      <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-center min-h-[5.5rem]">
+                        {(() => {
+                          const q = aiUsage.quota ?? {
+                            kind: aiUsage.limit < 0 ? ("unlimited" as const) : aiUsage.limit <= 10 ? ("songs" as const) : ("subscription_credits" as const),
+                            used: aiUsage.usedThisMonth,
+                            limit: aiUsage.limit,
+                          });
+                          if (q.kind === "unlimited") {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                                  <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
+                                  {t("createMusic.aiQuotaTitle", "AI 사용 한도")}
+                                </div>
+                                <strong className="text-lg text-white">{t("createMusic.quotaUnlimited", "무제한")}</strong>
+                                <span className="text-[11px] text-violet-100/70">{t("createMusic.quotaAdminNote", "관리자 계정")}</span>
+                              </>
+                            );
+                          }
+                          if (q.kind === "songs") {
+                            return (
+                              <>
+                                <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                                  <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
+                                  {t("createMusic.freeAiQuotaLabel", "무료 AI 생성")}
+                                </div>
+                                <strong className="text-xl tabular-nums text-white">
+                                  {t("createMusic.freeAiQuotaCount", "이번 달 {{used}} / {{limit}}곡", {
+                                    used: q.used,
+                                    limit: Math.max(0, q.limit),
+                                  })}
+                                </strong>
+                                <span className="text-[11px] text-violet-100/70 leading-tight px-1">
+                                  {t("createMusic.freeAiQuotaSub", "충전 크레딧과 별도 · 월이 바뀌면 초기화")}
+                                </span>
+                              </>
+                            );
+                          }
+                          const remaining = q.limit >= 0 ? Math.max(0, q.limit - q.used) : 0;
+                          return (
+                            <>
+                              <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                                <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
+                                {t("createMusic.subscriptionAiLabel", "구독 AI 크레딧")}
+                              </div>
+                              <strong className="text-xl tabular-nums text-white">
+                                {t("createMusic.subscriptionAiQuotaCount", "이번 달 {{used}} / {{limit}}", {
+                                  used: q.used,
+                                  limit: q.limit,
+                                })}
+                              </strong>
+                              <span className="text-[11px] text-violet-100/70 leading-tight px-1">
+                                {t("createMusic.subscriptionAiQuotaSub", {
+                                  n: remaining,
+                                  per: aiUsage.creditsPerMusicCreate ?? 20,
+                                })}
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
                     {aiUsage.deductsCreditsPerCreate ? (
-                      <p className="text-sm text-muted-foreground text-center sm:text-left">
-                        {t("createMusic.creditsDeductHint", "음악 1회 생성 시 {{n}} 크레딧이 차감됩니다.", {
+                      <p className="text-sm text-muted-foreground text-center">
+                        {t("createMusic.creditsDeductHint", "음악 1회 생성 시 충전 크레딧 {{n}}이 차감됩니다. (구독 만료 등)", {
                           n: aiUsage.creditsPerMusicCreate ?? 20,
                         })}
                       </p>
                     ) : user?.role === "admin" ? (
-                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                      <p className="text-sm text-muted-foreground text-center">
                         {t("createMusic.creditsAdminHint", "관리자 계정은 생성 시 크레딧이 차감되지 않습니다.")}
                       </p>
                     ) : aiUsage.isPaidTier ? (
-                      <p className="text-sm text-muted-foreground text-center sm:text-left">
+                      <p className="text-sm text-muted-foreground text-center">
                         {t(
                           "createMusic.creditsSubscriptionHint",
-                          "구독 플랜: 이번 달 AI 한도(크레딧)만 사용됩니다. 크레딧 충전 잔액은 AI 생성에 차감되지 않습니다.",
+                          "구독 혜택으로 표시된 AI 크레딧만 소모됩니다. 충전 크레딧은 AI 생성에 쓰이지 않습니다.",
                         )}
                       </p>
                     ) : (
-                      <p className="text-sm text-muted-foreground text-center sm:text-left">
-                        {t("createMusic.creditsFreeHint", "무료 플랜은 월 한도 내에서 크레딧 없이 생성할 수 있습니다.")}
+                      <p className="text-sm text-muted-foreground text-center">
+                        {t("createMusic.creditsFreeHint", "무료 플랜은 월 한도 내에서 충전 크레딧 없이 생성할 수 있습니다.")}
                       </p>
                     )}
                   </div>

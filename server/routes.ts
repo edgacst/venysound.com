@@ -759,11 +759,16 @@ export async function registerRoutes(
       /** 유효 Pro/Premium: 지갑 미차감. 만료된 pro/premium만 지갑 차감 경로와 동일하게 UI에 표시. */
       const deductsCreditsPerCreate =
         user?.role !== "admin" && (tier === "pro" || tier === "premium") && !subActive;
+      const walletCredits = user?.credits ?? 0;
+      const quotaKind: "songs" | "subscription_credits" | "unlimited" =
+        user?.role === "admin" ? "unlimited" : tier === "free" ? "songs" : "subscription_credits";
       return res.json({
         limit,
         usedThisMonth,
         isPaidTier,
-        creditsBalance: user?.credits ?? 0,
+        walletCredits,
+        creditsBalance: walletCredits,
+        quota: { kind: quotaKind, used: usedThisMonth, limit },
         creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
         deductsCreditsPerCreate,
       });
@@ -773,7 +778,9 @@ export async function registerRoutes(
         limit: FREE_AI_MUSIC_LIMIT_PER_MONTH,
         usedThisMonth: 0,
         isPaidTier: false,
+        walletCredits: 0,
         creditsBalance: 0,
+        quota: { kind: "songs" as const, used: 0, limit: FREE_AI_MUSIC_LIMIT_PER_MONTH },
         creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
         deductsCreditsPerCreate: false,
       });
