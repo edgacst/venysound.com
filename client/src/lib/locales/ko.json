@@ -55,7 +55,9 @@
     "radioBannerTitle": "베니방송국",
     "radioBannerSubtitle": "나만의 방송 채널을 만들고 실시간으로 음악을 송출하세요",
     "radioBannerCampaign": "나도 DJ해볼까?",
-    "radioBannerButton": "방송국 가기"
+    "radioBannerButton": "방송국 가기",
+    "weeklyArtistLabel": "이번주 뮤직크리에이터",
+    "weeklyArtistDesc": "최근 7일 동안 가장 많이 재생된 뮤직크리에이터입니다."
   },
   "radio": {
     "title": "베니방송국",
@@ -126,7 +128,7 @@
     "stopListening": "방송 정지",
     "tapToPlayHint": "모바일에서는 재생 버튼을 눌러 들으세요.",
     "pcClickHint": "소리가 안 나면 화면을 한 번 클릭해 보세요.",
-    "listenersCount": "{{count}}명 시청 중",
+    "listenersCount": "{{count}}명 청취 중",
     "tipToDj": "DJ에게 후원",
     "chatTitle": "채팅",
     "chatPlaceholder": "메시지를 입력하세요...",
@@ -158,7 +160,7 @@
     "backToChannel": "방송 채널로 돌아가기",
     "heroTitle": "Veny Radio Studio",
     "chatGroupSuffix": "(단체)",
-    "chatGroupHint": "같은 채널 시청자가 모두 보는 단체 채팅입니다.",
+    "chatGroupHint": "같은 채널 청취자가 모두 보는 단체 채팅입니다.",
     "leftChat": "님이 퇴장했습니다.",
     "waveformListenerHint": "파형은 청취자로 접속하면 표시됩니다.",
     "broadcastEndedBy": "님이 방송을 종료했습니다.",

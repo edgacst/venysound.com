@@ -172,10 +172,10 @@ export default function Home() {
       <section className="container px-4 pt-8 pb-4" data-testid="section-weekly-artists">
         <div className="mb-6">
           <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-weekly-artist-section-title">
-            {t("home.weeklyArtistLabel", "이번 주 아티스트")}
+            {t("home.weeklyArtistLabel", "이번주 뮤직크리에이터")}
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            {t("home.weeklyArtistDesc", "최근 7일 동안 가장 많이 재생된 아티스트입니다.")}
+            {t("home.weeklyArtistDesc", "최근 7일 동안 가장 많이 재생된 뮤직크리에이터입니다.")}
           </p>
         </div>
         <div className="grid grid-cols-4 md:grid-cols-8 gap-3 md:gap-4">

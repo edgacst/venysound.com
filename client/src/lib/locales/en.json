@@ -55,7 +55,9 @@
     "radioBannerTitle": "Veny Radio",
     "radioBannerSubtitle": "Create your own channel and stream music in real time.",
     "radioBannerCampaign": "I'll try being a DJ too",
-    "radioBannerButton": "Go to Radio"
+    "radioBannerButton": "Go to Radio",
+    "weeklyArtistLabel": "Weekly music creator",
+    "weeklyArtistDesc": "The music creator whose tracks were played the most in the last 7 days."
   },
   "radio": {
     "title": "Veny Radio",
@@ -125,7 +127,7 @@
     "stopListening": "Stop",
     "tapToPlayHint": "On mobile, tap Play to listen.",
     "pcClickHint": "If you don't hear sound, try clicking anywhere once.",
-    "listenersCount": "{{count}} watching",
+    "listenersCount": "{{count}} listening",
     "tipToDj": "Support DJ",
     "chatTitle": "Chat",
     "chatPlaceholder": "Type a message...",
@@ -157,7 +159,7 @@
     "backToChannel": "Back to channel",
     "heroTitle": "Veny Radio Studio",
     "chatGroupSuffix": "(group)",
-    "chatGroupHint": "Group chat visible to everyone watching this channel.",
+    "chatGroupHint": "Group chat visible to everyone listening on this channel.",
     "leftChat": "left the chat.",
     "waveformListenerHint": "Waveform is shown when viewing as a listener.",
     "broadcastEndedBy": "ended the broadcast.",

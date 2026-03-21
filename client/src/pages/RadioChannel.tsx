@@ -800,7 +800,7 @@ export default function RadioChannel() {
                       <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
                     )}
                   </div>
-                  <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">{t("radio.chatGroupHint", "같은 채널 시청자가 모두 보는 단체 채팅입니다.")}</p>
+                  <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">{t("radio.chatGroupHint", "같은 채널 청취자가 모두 보는 단체 채팅입니다.")}</p>
                   <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
                     {!user || !wsAuthenticated ? (
                       <p className="text-muted-foreground text-sm text-center py-6">{t("radio.chatLoginRequired", "로그인하면 채팅을 볼 수 있습니다.")}</p>
@@ -967,7 +967,7 @@ export default function RadioChannel() {
                   {channel.status === "live" && (
                     <span className="inline-flex items-center gap-1 text-muted-foreground text-sm">
                       <Users size={14} />
-                      {t("radio.listenersCount", "{{count}}명 시청 중", { count: listenerCount })}
+                      {t("radio.listenersCount", "{{count}}명 청취 중", { count: listenerCount })}
                     </span>
                   )}
                 </div>
