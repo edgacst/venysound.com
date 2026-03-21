@@ -484,9 +484,15 @@ export default function Credits() {
             }
           }}
         >
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[min(90vh,720px)] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{t("credits.refundDialogTitle", "충전 크레딧 환불 신청")}</DialogTitle>
+              <p className="text-sm text-muted-foreground pt-1">
+                {t(
+                  "credits.refundDialogVerifyNote",
+                  "아래 본인인증(이메일 코드)을 완료한 뒤 신청하기를 눌러 주세요.",
+                )}
+              </p>
             </DialogHeader>
             <div className="space-y-4">
               <div>
