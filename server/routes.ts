@@ -3325,10 +3325,7 @@ export async function registerRoutes(
 
   app.get("/api/toss/client-key", async (_req, res) => {
     const clientKey = process.env.TOSS_CLIENT_KEY;
-    if (!clientKey) {
-      return res.status(500).json({ message: "토스페이먼츠 설정이 필요합니다" });
-    }
-    res.json({ clientKey });
+    res.json({ clientKey: clientKey || null });
   });
 
   app.get("/api/toss/billing/success", isAuthenticated, async (req, res) => {
@@ -5357,12 +5354,6 @@ export async function registerRoutes(
       console.error("Withdrawal update error:", err);
       res.status(500).json({ message: "출금 상태 변경에 실패했습니다" });
     }
-  });
-
-  // Toss client key for frontend
-  app.get("/api/toss/client-key", (_req, res) => {
-    const clientKey = process.env.TOSS_CLIENT_KEY;
-    res.json({ clientKey: clientKey || null });
   });
 
   // === Streaming Logs ===

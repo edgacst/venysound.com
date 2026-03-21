@@ -162,9 +162,15 @@ export default function Credits() {
 
   useEffect(() => {
     if (!refundOpen) return;
-    setRefundPassword("");
+    setRefundOtpCode("");
+    setRefundProofToken("");
     setRefundVerified(false);
     setRefundVerifying(false);
+    setRefundSendingOtp(false);
+    setBindEmailInput("");
+    setBindEmailOtp("");
+    setBindSendingOtp(false);
+    setBindVerifying(false);
     setRefundHistoryPage(1);
   }, [refundOpen]);
 
