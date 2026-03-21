@@ -512,6 +512,36 @@ export function registerAuthRoutes(app: Express): void {
       res.status(500).json({ message: "Server error" });
     }
   });
+
+  // 본인인증(재확인): 환불/정산 같은 민감 요청 전에 비밀번호를 다시 확인
+  app.post("/api/auth/confirm-password", isAuthenticated, async (req, res) => {
+    const { password } = req.body as { password?: unknown };
+    if (typeof password !== "string" || password.trim().length === 0) {
+      return res.status(400).json({ message: "비밀번호를 입력해 주세요" });
+    }
+    try {
+      const userId = (req.user as any).claims?.sub as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      if (!user || !user.passwordHash) {
+        return res.status(400).json({ message: "비밀번호 인증이 불가능한 계정입니다. 비밀번호 설정 후 이용해 주세요." });
+      }
+
+      const valid = await bcrypt.compare(password, user.passwordHash);
+      if (!valid) return res.status(401).json({ message: "비밀번호가 올바르지 않습니다." });
+
+      return res.json({ success: true });
+    } catch (e) {
+      console.error("[auth] confirm-password error:", e);
+      return res.status(500).json({ message: "본인인증에 실패했습니다" });
+    }
+  });
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {

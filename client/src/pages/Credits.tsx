@@ -48,6 +48,11 @@ export default function Credits() {
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundCreditsInput, setRefundCreditsInput] = useState("");
   const [refundReason, setRefundReason] = useState("");
+  const REFUND_PAGE_SIZE = 100;
+  const [refundHistoryPage, setRefundHistoryPage] = useState(1);
+  const [refundPassword, setRefundPassword] = useState("");
+  const [refundVerified, setRefundVerified] = useState(false);
+  const [refundVerifying, setRefundVerifying] = useState(false);
 
   const { data: creditData, isLoading } = useQuery<{ credits: number }>({
     queryKey: ["/api/credits"],
@@ -75,6 +80,11 @@ export default function Credits() {
     queryKey: ["/api/credits/refund-requests"],
     enabled: !!user,
   });
+
+  const refundTotalCount = refundRequests?.length ?? 0;
+  const refundPageCount = Math.max(1, Math.ceil(refundTotalCount / REFUND_PAGE_SIZE));
+  const refundHistoryItems =
+    refundRequests?.slice((refundHistoryPage - 1) * REFUND_PAGE_SIZE, refundHistoryPage * REFUND_PAGE_SIZE) ?? [];
 
   const { data: transactions, isLoading: isLoadingTx } = useQuery<any[]>({
     queryKey: ["/api/credits/transactions"],
@@ -132,6 +142,18 @@ export default function Credits() {
     }
   }, [user, searchString, queryClient, toast, t]);
 
+  useEffect(() => {
+    if (!refundOpen) return;
+    setRefundPassword("");
+    setRefundVerified(false);
+    setRefundVerifying(false);
+    setRefundHistoryPage(1);
+  }, [refundOpen]);
+
+  useEffect(() => {
+    setRefundHistoryPage(1);
+  }, [refundTotalCount]);
+
   const requestBankMutation = useMutation({
     mutationFn: async (totalPayment: number) => {
       const res = await apiRequest("POST", "/api/credits/request-bank", { amount: totalPayment });
@@ -170,6 +192,9 @@ export default function Credits() {
       setRefundOpen(false);
       setRefundCreditsInput("");
       setRefundReason("");
+      setRefundPassword("");
+      setRefundVerified(false);
+      setRefundVerifying(false);
       queryClient.invalidateQueries({ queryKey: ["/api/credits/refund-requests"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
@@ -335,46 +360,72 @@ export default function Credits() {
           ) : refundRequests && refundRequests.length > 0 ? (
             <div className="mt-4 pt-4 border-t border-border/60 space-y-2">
               <p className="text-xs font-medium text-muted-foreground">{t("credits.refundHistoryTitle", "내 환불 신청")}</p>
-              {refundRequests.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex flex-wrap items-center justify-between gap-2 text-sm rounded-lg bg-muted/30 px-3 py-2"
-                  data-testid={`refund-request-${r.id}`}
-                >
-                  <span className="tabular-nums">{r.creditsAmount.toLocaleString()} {t("credits.creditUnit", "크레딧")}</span>
-                  <Badge variant={r.status === "pending" ? "secondary" : r.status === "approved" ? "default" : "destructive"}>
-                    {r.status === "pending"
-                      ? t("credits.refundStatusPending", "검토 중")
-                      : r.status === "approved"
-                        ? t("credits.refundStatusApproved", "승인")
-                        : t("credits.refundStatusRejected", "반려")}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground w-full flex flex-col gap-0.5 sm:items-end sm:text-right">
-                    {r.createdAt ? (
-                      <span>
-                        {t("credits.refundRequestedAtLabel", "신청")}{" "}
-                        {new Date(r.createdAt).toLocaleString("ko-KR")}
-                      </span>
-                    ) : null}
-                    {r.status !== "pending" && r.processedAt ? (
-                      <span>
-                        {t("credits.refundProcessedAtLabel", "처리")}{" "}
-                        {new Date(r.processedAt).toLocaleString("ko-KR")}
-                      </span>
-                    ) : null}
-                    {r.krwRefundCompletedAt ? (
-                      <span>
-                        {t("credits.refundKrwRecordedLabel", "원화 입금 기록")}{" "}
-                        {r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—"}
-                        {" · "}
-                        {new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR")}
-                        {r.krwRefundNote ? ` · ${r.krwRefundNote}` : ""}
-                      </span>
-                    ) : null}
-                    {r.adminNote ? <span className="break-words max-w-full">{r.adminNote}</span> : null}
-                  </span>
+              {refundHistoryItems.map((r) => {
+                const statusText =
+                  r.status === "pending"
+                    ? t("credits.refundStatusPending", "검토 중")
+                    : r.status === "approved"
+                      ? t("credits.refundStatusApproved", "승인")
+                      : t("credits.refundStatusRejected", "반려");
+                const metaParts: string[] = [];
+                if (r.createdAt) metaParts.push(`${t("credits.refundRequestedAtLabel", "신청")} ${new Date(r.createdAt).toLocaleString("ko-KR")}`);
+                if (r.status !== "pending" && r.processedAt)
+                  metaParts.push(`${t("credits.refundProcessedAtLabel", "처리")} ${new Date(r.processedAt).toLocaleString("ko-KR")}`);
+                if (r.krwRefundCompletedAt) {
+                  const krwAmountText = r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—";
+                  const krwDateText = new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR");
+                  metaParts.push(`${t("credits.refundKrwRecordedLabel", "원화 입금 기록")} ${krwAmountText} · ${krwDateText}${r.krwRefundNote ? ` · ${r.krwRefundNote}` : ""}`);
+                }
+                if (r.adminNote) metaParts.push(r.adminNote);
+                const metaText = metaParts.join(" · ");
+                return (
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between gap-2 text-xs rounded-lg bg-muted/30 px-3 py-1.5"
+                    data-testid={`refund-request-${r.id}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="tabular-nums whitespace-nowrap shrink-0">{r.creditsAmount.toLocaleString()} {t("credits.creditUnit", "크레딧")}</span>
+                      <Badge variant={r.status === "pending" ? "secondary" : r.status === "approved" ? "default" : "destructive"} className="shrink-0">
+                        {statusText}
+                      </Badge>
+                    </div>
+                    <span
+                      className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[260px] sm:max-w-[420px]"
+                      title={metaText || undefined}
+                    >
+                      {metaText || "—"}
+                    </span>
+                  </div>
+                );
+              })}
+              {refundTotalCount > REFUND_PAGE_SIZE && (
+                <div className="flex items-center justify-between gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={refundHistoryPage <= 1}
+                    onClick={() => setRefundHistoryPage((p) => Math.max(1, p - 1))}
+                    data-testid="refund-history-prev"
+                  >
+                    이전
+                  </Button>
+                  <div className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                    {(refundHistoryPage - 1) * REFUND_PAGE_SIZE + 1}-{Math.min(refundHistoryPage * REFUND_PAGE_SIZE, refundTotalCount)} / {refundTotalCount}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    disabled={refundHistoryPage >= refundPageCount}
+                    onClick={() => setRefundHistoryPage((p) => Math.min(refundPageCount, p + 1))}
+                    data-testid="refund-history-next"
+                  >
+                    다음
+                  </Button>
                 </div>
-              ))}
+              )}
             </div>
           ) : null}
         </Card>
@@ -411,10 +462,67 @@ export default function Credits() {
                   placeholder={t("credits.refundReasonPlaceholder", "요청 사유를 입력해 주세요")}
                 />
               </div>
+              <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-sm">{t("credits.identityVerifyTitle", "본인인증")}</Label>
+                  {refundVerified ? (
+                    <Badge variant="default" className="shrink-0">
+                      {t("credits.identityVerified", "인증완료")}
+                    </Badge>
+                  ) : null}
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <Label htmlFor="refund-auth-password" className="text-xs text-muted-foreground">
+                      {t("credits.identityPasswordLabel", "비밀번호")}
+                    </Label>
+                    <input
+                      id="refund-auth-password"
+                      type="password"
+                      className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={refundPassword}
+                      onChange={(e) => setRefundPassword(e.target.value)}
+                      placeholder={t("credits.identityPasswordPlaceholder", "로그인 비밀번호를 입력해 주세요")}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0"
+                    disabled={refundVerifying || refundVerified || !refundPassword.trim()}
+                    onClick={async () => {
+                      setRefundVerifying(true);
+                      try {
+                        await apiRequest("POST", "/api/auth/confirm-password", { password: refundPassword });
+                        setRefundVerified(true);
+                        toast({ title: t("credits.identityVerified", "인증완료"), description: t("credits.identityVerifiedDesc", "환불 신청을 진행할 수 있습니다.") });
+                      } catch (e: any) {
+                        setRefundVerified(false);
+                        toast({
+                          title: t("credits.identityVerifyFailed", "인증 실패"),
+                          description: e?.message || t("credits.identityVerifyFailedDesc", "비밀번호를 확인해 주세요."),
+                          variant: "destructive",
+                        });
+                      } finally {
+                        setRefundVerifying(false);
+                      }
+                    }}
+                  >
+                    {refundVerifying ? <Loader2 className="animate-spin" size={18} /> : t("credits.identityVerifyButton", "인증하기")}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {t("credits.identityVerifyHint", "환불 신청은 계정 보안을 위해 비밀번호 재확인이 필요합니다.")}
+                </p>
+              </div>
               <Button
                 className="w-full"
-                disabled={refundRequestMutation.isPending}
+                disabled={refundRequestMutation.isPending || !refundVerified}
                 onClick={() => {
+                  if (!refundVerified) {
+                    toast({ title: t("credits.identityVerifyRequired", "본인인증이 필요합니다"), variant: "destructive" });
+                    return;
+                  }
                   const n = parseInt(refundCreditsInput, 10);
                   if (!Number.isFinite(n) || n < 1) {
                     toast({ title: t("credits.refundInvalidAmount", "올바른 크레딧 수를 입력해 주세요"), variant: "destructive" });

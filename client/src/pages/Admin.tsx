@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Navigation } from "@/components/Navigation";
@@ -169,6 +169,8 @@ export default function Admin() {
   const [krwAmountWonInput, setKrwAmountWonInput] = useState("");
   const [krwNoteInput, setKrwNoteInput] = useState("");
   const [auditRefundId, setAuditRefundId] = useState<number | null>(null);
+  const REFUND_ADMIN_PAGE_SIZE = 100;
+  const [creditRefundPage, setCreditRefundPage] = useState(1);
 
   const { data: adminCheck, isLoading: checkingAdmin } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -728,6 +730,15 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
+  useEffect(() => {
+    setCreditRefundPage(1);
+  }, [creditRefundFilter, creditRefundRows?.length]);
+
+  const creditRefundTotalCount = creditRefundRows?.length ?? 0;
+  const creditRefundPageCount = Math.max(1, Math.ceil(creditRefundTotalCount / REFUND_ADMIN_PAGE_SIZE));
+  const creditRefundPageItems =
+    creditRefundRows?.slice((creditRefundPage - 1) * REFUND_ADMIN_PAGE_SIZE, creditRefundPage * REFUND_ADMIN_PAGE_SIZE) ?? [];
+
   const approveCreditRefundMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("POST", `/api/admin/credit-refund-requests/${id}/approve`);
@@ -1180,6 +1191,31 @@ export default function Admin() {
               </tbody>
             </table>
           </div>
+          {creditRefundTotalCount > REFUND_ADMIN_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-2 pt-3 px-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={creditRefundPage <= 1}
+                onClick={() => setCreditRefundPage((p) => Math.max(1, p - 1))}
+                data-testid="credit-refund-history-prev"
+              >
+                이전
+              </Button>
+              <div className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                {(creditRefundPage - 1) * REFUND_ADMIN_PAGE_SIZE + 1}-{Math.min(creditRefundPage * REFUND_ADMIN_PAGE_SIZE, creditRefundTotalCount)} / {creditRefundTotalCount}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={creditRefundPage >= creditRefundPageCount}
+                onClick={() => setCreditRefundPage((p) => Math.min(creditRefundPageCount, p + 1))}
+                data-testid="credit-refund-history-next"
+              >
+                다음
+              </Button>
+            </div>
+          )}
         </Card>
             </TabsContent>
             <TabsContent value="copyright">
@@ -1334,7 +1370,7 @@ export default function Admin() {
         </h2>
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="text-left p-3 font-medium">{t('admin.number', '번호')}</th>
@@ -1663,7 +1699,7 @@ export default function Admin() {
                     </td>
                   </tr>
                 ) : creditRefundRows && creditRefundRows.length > 0 ? (
-                  creditRefundRows.map((r) => (
+                  creditRefundPageItems.map((r) => (
                     <tr key={r.id} className="border-b border-white/5" data-testid={`credit-refund-row-${r.id}`}>
                       <td className="p-3">
                         {r.firstName && r.lastName ? `${r.firstName} ${r.lastName}` : r.email || r.userId}
@@ -1699,32 +1735,31 @@ export default function Admin() {
                           ? `${r.processorFirstName} ${r.processorLastName}`
                           : r.processorEmail || r.processedByUserId || "—"}
                       </td>
-                      <td className="p-3 text-xs align-top">
+                      <td className="p-2 text-xs whitespace-nowrap">
                         {r.krwRefundCompletedAt ? (
-                          <div className="space-y-0.5">
-                            <div className="font-medium tabular-nums text-foreground">
-                              {r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—"}
-                            </div>
-                            <div className="text-muted-foreground whitespace-nowrap">
-                              {new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR")}
-                            </div>
-                            {r.krwRefundNote ? (
-                              <div className="text-[10px] truncate max-w-[160px]" title={r.krwRefundNote}>
-                                {r.krwRefundNote}
-                              </div>
-                            ) : null}
-                            {r.krwRecorderFirstName && r.krwRecorderLastName ? (
-                              <div className="text-[10px] text-muted-foreground">
-                                {r.krwRecorderFirstName} {r.krwRecorderLastName}
-                              </div>
-                            ) : null}
-                          </div>
+                          <span
+                            className="inline-block max-w-[200px] truncate text-muted-foreground"
+                            title={
+                              [
+                                r.krwRefundNote ? `memo: ${r.krwRefundNote}` : null,
+                                r.krwRecorderFirstName && r.krwRecorderLastName
+                                  ? `by: ${r.krwRecorderFirstName} ${r.krwRecorderLastName}`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            }
+                          >
+                            {r.krwRefundAmountWon != null ? `${r.krwRefundAmountWon.toLocaleString()}${t("common.won", "원")}` : "—"} ·{" "}
+                            {new Date(r.krwRefundCompletedAt).toLocaleString("ko-KR")}
+                            {r.krwRefundNote ? ` · ${r.krwRefundNote}` : ""}
+                          </span>
                         ) : (
                           "—"
                         )}
                       </td>
-                      <td className="p-3">
-                        <div className="flex flex-col gap-2 items-start">
+                      <td className="p-2">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <Button
                             size="sm"
                             variant="outline"
@@ -1736,7 +1771,7 @@ export default function Admin() {
                             {t("admin.creditRefundAuditLog", "이력")}
                           </Button>
                           {r.status === "pending" ? (
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-1">
                               <Button
                                 size="sm"
                                 onClick={() => approveCreditRefundMutation.mutate(r.id)}
