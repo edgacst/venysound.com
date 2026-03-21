@@ -707,7 +707,7 @@ export default function CreateMusic() {
                             kind: aiUsage.limit < 0 ? ("unlimited" as const) : aiUsage.limit <= 10 ? ("songs" as const) : ("subscription_credits" as const),
                             used: aiUsage.usedThisMonth,
                             limit: aiUsage.limit,
-                          });
+                          };
                           if (q.kind === "unlimited") {
                             return (
                               <>
