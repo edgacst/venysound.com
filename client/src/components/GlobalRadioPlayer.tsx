@@ -41,9 +41,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     clear,
   } = useRadioPlayerStore();
 
-  // Refetch channel to keep stream in sync
+  // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
   useEffect(() => {
-    if (!slug || !streamUrl) return;
+    if (!slug || !channelName) return;
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
@@ -58,13 +58,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           : nowPlayingId != null ? `/api/music/${nowPlayingId}/stream`
           : null;
         if (!newStreamUrl) { clear(); return; }
-        if (newStreamUrl !== streamUrl) {
+        const currentUrl = useRadioPlayerStore.getState().streamUrl;
+        if (newStreamUrl !== currentUrl) {
           setStream(slug, (data?.name ?? channelName) ?? "", newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
         }
       } catch { /* ignore */ }
     }, REFETCH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [slug, streamUrl, channelName, clear, setStream]);
+  }, [slug, channelName, clear, setStream]);
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
@@ -439,33 +440,31 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         </div>
       </div>
 
-      {/* 숨겨진 오디오 엘리먼트 */}
-      {streamUrl && (
-        <>
-          <audio
-            ref={audioARef}
-            className="hidden"
-            preload="auto"
-            playsInline
-            onPlay={onAudioPlay}
-            onPause={onAudioPause}
-            onTimeUpdate={onAudioTimeUpdate}
-            onError={onAudioError}
-            onEnded={onAudioEnded}
-          />
-          <audio
-            ref={audioBRef}
-            className="hidden"
-            preload="auto"
-            playsInline
-            onPlay={onAudioPlay}
-            onPause={onAudioPause}
-            onTimeUpdate={onAudioTimeUpdate}
-            onError={onAudioError}
-            onEnded={onAudioEnded}
-          />
-        </>
-      )}
+      {/* 숨겨진 오디오 엘리먼트 — streamUrl이 곡 사이에 null이어도 마운트 유지(리스너 페이지 밖에서 ref 끊김 방지) */}
+      <>
+        <audio
+          ref={audioARef}
+          className="hidden"
+          preload="auto"
+          playsInline
+          onPlay={onAudioPlay}
+          onPause={onAudioPause}
+          onTimeUpdate={onAudioTimeUpdate}
+          onError={onAudioError}
+          onEnded={onAudioEnded}
+        />
+        <audio
+          ref={audioBRef}
+          className="hidden"
+          preload="auto"
+          playsInline
+          onPlay={onAudioPlay}
+          onPause={onAudioPause}
+          onTimeUpdate={onAudioTimeUpdate}
+          onError={onAudioError}
+          onEnded={onAudioEnded}
+        />
+      </>
     </>
   );
 }
