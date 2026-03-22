@@ -2270,6 +2270,15 @@ export async function registerRoutes(
     res.json({ ...p, userId: p.userId ?? p.user_id ?? p.user?.id ?? null });
   });
 
+  /** 게시글 조회수 +1 (세션당 1회는 클라이언트 sessionStorage로 중복 방지) */
+  app.post("/api/posts/:id/view", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: "Invalid id" });
+    const ok = await storage.incrementPostViewCount(id);
+    if (!ok) return res.status(404).json({ message: "Post not found" });
+    res.json({ ok: true });
+  });
+
   app.post(api.posts.create.path, isAuthenticated, async (req, res) => {
     try {
       const input = api.posts.create.input.parse(req.body);

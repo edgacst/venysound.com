@@ -6,6 +6,7 @@ import { useWs } from "@/contexts/WsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 const REFETCH_INTERVAL_MS = 8000;
 const CROSSFADE_DURATION_MS = 1500;
@@ -415,6 +416,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               </>
             )}
           </span>
+
+          {slug ? (
+            <Button variant="outline" size="sm" className="h-8 shrink-0 px-2 text-xs" asChild>
+              <Link href={`/radio/${encodeURIComponent(slug.trim().toLowerCase())}`}>
+                {t("radio.goToChannel", "채널 가기")}
+              </Link>
+            </Button>
+          ) : null}
 
           {/* 재생/일시정지 토글 */}
           <Button

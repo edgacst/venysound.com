@@ -9,7 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MessageSquare, Heart, Plus, Search, ChevronLeft, ChevronRight, ImagePlus, Loader2, X } from "lucide-react";
+import { MessageSquare, Heart, Plus, Search, ChevronLeft, ChevronRight, ImagePlus, Loader2, X, Eye } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko, ja, zhCN } from "date-fns/locale";
 import { useForm } from "react-hook-form";
@@ -23,6 +23,17 @@ import { useTranslation } from 'react-i18next';
 
 const categories = ["전체", "자유", "음악추천", "질문", "정보", "후기", "콜라보"];
 const POSTS_PER_PAGE = 10;
+
+type PostWithUser = {
+  id: number;
+  title: string;
+  content: string;
+  category?: string | null;
+  attachment?: string | null;
+  createdAt?: string | Date;
+  viewCount?: number;
+  user?: { firstName?: string | null; profileImageUrl?: string | null };
+};
 const IMAGE_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
 
 export default function Community() {
@@ -276,12 +287,16 @@ export default function Community() {
                     </div>
                     <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{post.content}</p>
                   </div>
-                  {(post as PostWithUser).attachment && (
+                  {post.attachment && (
                     <div className="w-12 h-12 shrink-0 rounded overflow-hidden border border-white/10 bg-secondary/30">
-                      <img src={(post as PostWithUser).attachment} alt="" className="w-full h-full object-cover" />
+                      <img src={post.attachment} alt="" className="w-full h-full object-cover" />
                     </div>
                   )}
                   <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1 tabular-nums" title={t("community.views", "조회")}>
+                      <Eye size={12} />
+                      {post.viewCount ?? 0}
+                    </span>
                     <span className="flex items-center gap-1">
                       <MessageSquare size={12} />
                       {t('community.comments')}

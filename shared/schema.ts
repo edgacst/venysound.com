@@ -153,6 +153,7 @@ export const posts = pgTable("posts", {
   userId: text("user_id").references(() => users.id).notNull(),
   category: text("category"),
   attachment: text("attachment"), // Path in object storage
+  viewCount: integer("view_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

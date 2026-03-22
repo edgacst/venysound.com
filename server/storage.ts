@@ -53,6 +53,7 @@ export interface IStorage {
   createPost(post: CreatePostRequest & { userId: string }): Promise<any>;
   getPosts(category?: string, search?: string): Promise<any[]>;
   getPostById(id: number): Promise<any | undefined>;
+  incrementPostViewCount(id: number): Promise<boolean>;
   updatePost(id: number, userId: string, data: { title?: string; content?: string; category?: string | null; attachment?: string | null }): Promise<boolean>;
   deletePost(id: number, userId: string): Promise<boolean>;
   createPostComment(comment: CreatePostCommentRequest & { userId: string, postId: number }): Promise<any>;
@@ -907,6 +908,15 @@ export class DatabaseStorage implements IStorage {
     if (!result) return undefined;
     
     return { ...result.post, user: result.user };
+  }
+
+  async incrementPostViewCount(id: number): Promise<boolean> {
+    const updated = await db
+      .update(posts)
+      .set({ viewCount: sql`${posts.viewCount} + 1` })
+      .where(eq(posts.id, id))
+      .returning({ id: posts.id });
+    return updated.length > 0;
   }
 
   async updatePost(id: number, _userId: string, data: { title?: string; content?: string; category?: string | null; attachment?: string | null }): Promise<boolean> {

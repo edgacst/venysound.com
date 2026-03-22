@@ -8,11 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { formatDistanceToNow } from "date-fns";
 import { ko, ja, zhCN } from "date-fns/locale";
-import { ArrowLeft, MessageSquare, Loader2, Send, Trash2, Reply, CornerDownRight, Pencil, X, ImagePlus } from "lucide-react";
+import { ArrowLeft, MessageSquare, Loader2, Send, Trash2, Reply, CornerDownRight, Pencil, X, ImagePlus, Eye } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
@@ -53,7 +53,24 @@ export default function PostDetail() {
       return res.json();
     },
     enabled: !!postId,
+    refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (!postId) return;
+    const key = `community_post_view_${postId}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      /* private mode */
+    }
+    fetch(`/api/posts/${postId}/view`, { method: "POST", credentials: "include" })
+      .then((res) => {
+        if (res.ok) queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
+      })
+      .catch(() => {});
+  }, [postId, queryClient]);
 
   const updatePostMutation = useUpdatePost(Number(postId));
   const deletePostMutation = useDeletePost();
@@ -415,8 +432,14 @@ export default function PostDetail() {
                 )}
                 <span className="text-sm font-medium">{post.user?.firstName || t('postDetail.anonymous', '익명')}</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: dateLocale }) : ""}
+              <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span>
+                  {post.createdAt ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: dateLocale }) : ""}
+                </span>
+                <span className="inline-flex items-center gap-1 tabular-nums" title={t("postDetail.views", "조회")}>
+                  <Eye size={14} className="opacity-80 shrink-0" />
+                  {post.viewCount ?? 0}
+                </span>
               </p>
             </div>
             {isPostOwner && (
