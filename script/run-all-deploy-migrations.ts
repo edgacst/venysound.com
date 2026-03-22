@@ -37,6 +37,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "credit-refund-requests-processed-by.sql", name: "credit_refund_requests.processed_by_user_id" },
   { file: "credit-refund-events-krw.sql", name: "credit_refund_events + krw_refund_*" },
   { file: "sensitive-email-otp.sql", name: "sensitive_email_otp_challenges" },
+  { file: "posts-view-count.sql", name: "posts view_count" },
 ];
 
 async function main() {

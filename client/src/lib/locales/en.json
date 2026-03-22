@@ -26,6 +26,7 @@
   },
   "home": {
     "heroSubtitle": "A Space Connected Through Music",
+    "heroBrandLine": "VenySound (베니사운드) — Music sharing & streaming, AI music creation",
     "shareNow": "Share your music with the world right now.",
     "musicCount": "Currently <bold>{{count}}</bold> amazing tracks are registered.",
     "searchPlaceholder": "Search for music or artists you'd like to hear",
@@ -670,6 +671,7 @@
   },
   "legal": {
     "title": "Terms of Service",
+    "scopeIntro": "These Terms of Service apply to VenySound (the \"Service\"). VenySound is a music streaming, upload, community, and related e-commerce service operated by Edgar CST Co., Ltd., including the website venysound.com and related services or app integrations offered by the same operator.",
     "refundPolicyNote": "Refund terms for digital content (credits, tips, paid music, subscriptions) are set out in our [Refund Policy].",
     "tableOfContents": "Table of Contents",
     "effectiveDate": "Effective Date: January 1, 2026",
@@ -774,6 +776,7 @@
   },
   "privacy": {
     "title": "Privacy Policy",
+    "scopeIntro": "This Privacy Policy applies to VenySound (the \"Service\"). VenySound is a music streaming, upload, and community service operated by Edgar CST Co., Ltd., including the website venysound.com and related services or app integrations offered by the same operator.",
     "effectiveDate": "Effective date: January 1, 2026",
     "companyName": "Company: Edgar CST Co., Ltd.",
     "ceo": "CEO: Kim Ki-cheol",

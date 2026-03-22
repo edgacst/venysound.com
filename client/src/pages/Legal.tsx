@@ -42,6 +42,7 @@ export default function Legal() {
           <h1 className="text-3xl font-bold mb-2" data-testid="text-legal-title">
             {t('legal.title')}
           </h1>
+          <p className="text-sm text-foreground leading-relaxed mb-4">{t("legal.scopeIntro")}</p>
           <p className="text-sm text-muted-foreground mb-8">{t('legal.effectiveDate')}</p>
           <p className="text-sm text-muted-foreground mb-6">
             {t('legal.refundPolicyNote').split('[').map((part, i) => {

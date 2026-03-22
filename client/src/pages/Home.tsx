@@ -267,6 +267,15 @@ export default function Home() {
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
           </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.03 }}
+            className="text-sm md:text-base text-white/85 mb-3 drop-shadow-md font-medium"
+            data-testid="text-hero-brand-korean"
+          >
+            {t("home.heroBrandLine")}
+          </motion.p>
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

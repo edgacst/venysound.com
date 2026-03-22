@@ -35,6 +35,7 @@ export default function Privacy() {
           <h1 className="text-3xl font-bold mb-2" data-testid="text-privacy-title">
             {t("privacy.title")}
           </h1>
+          <p className="text-sm text-foreground leading-relaxed mb-4">{t("privacy.scopeIntro")}</p>
           <p className="text-sm text-muted-foreground mb-8">{t("privacy.effectiveDate")}</p>
 
           {deletionCode && (
