@@ -98,7 +98,7 @@ export interface IStorage {
   }>;
   recordVisit(visitorKey: string, path: string, extra?: { userId?: string; ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
   getAdminUserAccessLogs(userId: string, limit: number, offset: number): Promise<{ logs: { id: number; visitedAt: Date; path: string; deviceType: string | null }[]; total: number }>;
-  /** 일자(Asia/Seoul)별 방문자 단위: 첫·마지막 페이지뷰 시각 및 그 간격(초), 페이지뷰 수 */
+  /** 일자(Asia/Seoul)별 방문자 단위: 첫·마지막 페이지뷰 시각 및 그 간격(초), 페이지뷰 수, GeoIP(국가·지역) */
   getAdminVisitorSessionsByDate(dateStr: string, limit: number, offset: number): Promise<{
     rows: {
       userId: string | null;
@@ -107,6 +107,8 @@ export interface IStorage {
       lastAt: Date;
       durationSeconds: number;
       pageViews: number;
+      countryCode: string | null;
+      region: string | null;
       email: string | null;
       username: string | null;
       firstName: string | null;
@@ -1223,6 +1225,8 @@ export class DatabaseStorage implements IStorage {
       lastAt: Date;
       durationSeconds: number;
       pageViews: number;
+      countryCode: string | null;
+      region: string | null;
       email: string | null;
       username: string | null;
       firstName: string | null;
@@ -1255,6 +1259,8 @@ export class DatabaseStorage implements IStorage {
           s.last_at AS last_at,
           s.duration_seconds AS duration_seconds,
           s.page_views AS page_views,
+          s.country_code AS country_code,
+          s.region AS region,
           u.email AS email,
           u.username AS username,
           u.first_name AS first_name,
@@ -1266,7 +1272,9 @@ export class DatabaseStorage implements IStorage {
             min(v.visited_at) AS first_at,
             max(v.visited_at) AS last_at,
             (extract(epoch FROM max(v.visited_at) - min(v.visited_at)))::int AS duration_seconds,
-            count(*)::int AS page_views
+            count(*)::int AS page_views,
+            max(v.country_code) AS country_code,
+            max(v.region) AS region
           FROM analytics_visits v
           WHERE v.visited_at >= ${start} AND v.visited_at < ${end}
           GROUP BY (CASE WHEN v.user_id IS NOT NULL THEN 'u:' || v.user_id ELSE 'v:' || v.visitor_key END)
@@ -1283,6 +1291,8 @@ export class DatabaseStorage implements IStorage {
         lastAt: r.last_at instanceof Date ? r.last_at : new Date(String(r.last_at)),
         durationSeconds: Number(r.duration_seconds ?? 0),
         pageViews: Number(r.page_views ?? 0),
+        countryCode: (r.country_code as string | null) ?? null,
+        region: (r.region as string | null) ?? null,
         email: (r.email as string | null) ?? null,
         username: (r.username as string | null) ?? null,
         firstName: (r.first_name as string | null) ?? null,

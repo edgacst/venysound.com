@@ -2787,6 +2787,8 @@ export async function registerRoutes(
           lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
           durationSeconds: r.durationSeconds,
           pageViews: r.pageViews,
+          countryCode: r.countryCode,
+          region: r.region,
           email: r.email,
           username: r.username,
           firstName: r.firstName,

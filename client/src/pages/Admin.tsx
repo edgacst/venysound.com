@@ -291,6 +291,8 @@ export default function Admin() {
       lastAt: string;
       durationSeconds: number;
       pageViews: number;
+      countryCode: string | null;
+      region: string | null;
       email: string | null;
       username: string | null;
       firstName: string | null;
@@ -943,6 +945,19 @@ export default function Admin() {
     return `${t("admin.guestVisitor", "비로그인")} · ${vk.slice(0, 8)}…`;
   };
 
+  /** GeoIP(방문 기록 시점 IP 기준). VPN·사설망이면 비어 있거나 부정확할 수 있음 */
+  const formatGeoLabel = (countryCode: string | null, region: string | null) => {
+    if (!countryCode) return "—";
+    try {
+      const countryName = new Intl.DisplayNames(["ko"], { type: "region" }).of(countryCode);
+      const base = countryName || countryCode;
+      if (region) return `${base} · ${region}`;
+      return base;
+    } catch {
+      return region ? `${countryCode} · ${region}` : countryCode;
+    }
+  };
+
   const refundEventTypeLabel = (type: string) => {
     switch (type) {
       case "request_created":
@@ -1230,7 +1245,7 @@ export default function Admin() {
             <p className="text-xs text-muted-foreground mb-3">
               {t(
                 "admin.visitorSessionsHint",
-                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류는 해당 날짜 안 첫·마지막 페이지뷰 사이 간격이며, 실제 이탈 시각과 다를 수 있습니다.",
+                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류는 해당 날짜 안 첫·마지막 페이지뷰 사이 간격이며, 실제 이탈 시각과 다를 수 있습니다. 국가·지역은 접속 시점 IP 기준(GeoIP)이며 VPN·로컬망에서는 비어 있거나 다를 수 있습니다.",
               )}
             </p>
             <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -1262,6 +1277,9 @@ export default function Admin() {
                     <thead>
                       <tr className="border-b border-border bg-muted/30">
                         <th className="text-left p-2 font-medium">{t("admin.visitorWho", "방문자")}</th>
+                        <th className="text-left p-2 font-medium whitespace-nowrap min-w-[140px]">
+                          {t("admin.visitorGeo", "국가·지역")}
+                        </th>
                         <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.firstActivity", "첫 활동")}</th>
                         <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.lastActivity", "마지막 활동")}</th>
                         <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.stayDuration", "체류(추정)")}</th>
@@ -1273,6 +1291,9 @@ export default function Admin() {
                         visitorSessionsData!.rows.map((row, idx) => (
                           <tr key={`${row.visitorKey}-${row.firstAt}-${idx}`} className="border-b border-border/50">
                             <td className="p-2 max-w-[220px] break-words">{formatVisitorSessionLabel(row)}</td>
+                            <td className="p-2 text-muted-foreground text-xs max-w-[200px]">
+                              {formatGeoLabel(row.countryCode, row.region)}
+                            </td>
                             <td className="p-2 text-muted-foreground whitespace-nowrap tabular-nums text-xs">
                               {formatDateTime(row.firstAt)}
                             </td>
@@ -1285,7 +1306,7 @@ export default function Admin() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                          <td colSpan={6} className="p-6 text-center text-muted-foreground">
                             {t("admin.noVisitorSessions", "해당 날짜 기록이 없습니다.")}
                           </td>
                         </tr>
