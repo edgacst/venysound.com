@@ -1253,8 +1253,18 @@ export default function Admin() {
                             <div className="text-xs text-muted-foreground">{r.artistName}</div>
                           </td>
                           <td className="p-2 text-xs">{r.ownerUserId}</td>
-                          <td className="p-2">{r.status}</td>
-                          <td className="p-2 text-xs text-muted-foreground">{r.rejectionReason || "-"}</td>
+                          <td className="p-2">
+                            {r.status === "approved" ? (
+                              <Badge className="bg-green-500/20 text-green-600 dark:text-green-400">
+                                승인됨
+                              </Badge>
+                            ) : (
+                              r.status
+                            )}
+                          </td>
+                          <td className="p-2 text-xs text-muted-foreground">
+                            {r.status === "rejected" ? (r.rejectionReason || "-") : "-"}
+                          </td>
                           <td className="p-2 text-right">
                             <div className="flex items-center justify-end gap-2">
                               {r.status === "submitted" ? (

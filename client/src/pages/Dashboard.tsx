@@ -549,8 +549,18 @@ export default function Dashboard() {
                                 <div className="font-medium">{r.releaseTitle}</div>
                                 <div className="text-xs text-muted-foreground">{r.artistName}</div>
                               </td>
-                              <td className="p-2">{r.status}</td>
-                              <td className="p-2 text-xs text-muted-foreground">{r.rejectionReason || "-"}</td>
+                              <td className="p-2">
+                                {r.status === "approved" ? (
+                                  <span className="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">
+                                    승인됨
+                                  </span>
+                                ) : (
+                                  r.status
+                                )}
+                              </td>
+                              <td className="p-2 text-xs text-muted-foreground">
+                                {r.status === "rejected" ? (r.rejectionReason || "-") : "-"}
+                              </td>
                               <td className="p-2 text-right">
                                 {(r.status === "draft" || r.status === "rejected") ? (
                                   <Button
