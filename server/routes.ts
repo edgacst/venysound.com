@@ -3709,6 +3709,37 @@ export async function registerRoutes(
     }
   });
 
+  // === Admin: Distributor API 미연동 시 외부 릴리즈 ref 수동 연결 ===
+  // DistroKid/TuneCore에 업로드 후, Distributor가 알려준 외부 릴리즈 ID/Ref를 여기 붙이면
+  // webhooks(status/payouts)가 해당 release를 찾아 상태를 업데이트할 수 있습니다.
+  app.post("/api/admin/distribution/releases/:id/link-external-ref", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // @ts-ignore
+      const adminUserId = req.user.claims.sub as string;
+      const releaseId = parsePositiveIntParam(req.params.id);
+      if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
+
+      const externalReleaseRefRaw = typeof req.body?.externalReleaseRef === "string" ? req.body.externalReleaseRef : "";
+      const externalReleaseRef = externalReleaseRefRaw.trim();
+      const status =
+        req.body?.status === "live" ? "live" : "delivered";
+
+      if (!externalReleaseRef) return res.status(400).json({ message: "externalReleaseRef 가 필요합니다." });
+
+      const updated = await storage.linkDistributionReleaseExternalRef({
+        adminUserId,
+        releaseId,
+        externalReleaseRef,
+        status,
+      });
+
+      if (!updated) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
+      res.json({ success: true, releaseId: updated.id, externalReleaseRef: updated.externalReleaseRef, status: updated.status });
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message ?? "외부 릴리즈 ref 연결에 실패했습니다." });
+    }
+  });
+
   // === Distributor Webhooks (status / payouts) ===
   // 보안: 헤더 `x-distribution-webhook-secret` 값이 ENV와 일치해야 합니다.
   function requireDistributionWebhookSecret(req: any, res: any, next: any) {

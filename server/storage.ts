@@ -134,6 +134,13 @@ export interface IStorage {
   reviewDistributionRelease(input: { adminUserId: string; releaseId: number; action: "approved" | "rejected"; reason?: string | null }): Promise<DistributionRelease | undefined>;
   /** Platform Readiness mode: release 오디오/커버 로컬 존재 및 기본 포맷 규격 체크 */
   runDistributionQc(input: { adminUserId: string; releaseId: number }): Promise<DistributionRelease | undefined>;
+  /** Admin: 외부 릴리즈 ref 수동 연결(Distributor API 없을 때 수동 업로드 후 필요) */
+  linkDistributionReleaseExternalRef(input: {
+    adminUserId: string;
+    releaseId: number;
+    externalReleaseRef: string;
+    status: "delivered" | "live";
+  }): Promise<DistributionRelease | undefined>;
   addDistributionEarning(input: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string | null; externalRef?: string | null }): Promise<{ ledgerRows: number; netAmount: number; platformAmount: number; distributedAmount: number }>;
   getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
@@ -1615,6 +1622,28 @@ export class DatabaseStorage implements IStorage {
         qcCheckedAt: new Date(),
         qcChecklist: checklist,
         qcResults,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.id, input.releaseId))
+      .returning();
+
+    return updated;
+  }
+
+  async linkDistributionReleaseExternalRef(input: {
+    adminUserId: string;
+    releaseId: number;
+    externalReleaseRef: string;
+    status: "delivered" | "live";
+  }): Promise<DistributionRelease | undefined> {
+    const ext = input.externalReleaseRef.trim();
+    if (!ext) throw new Error("externalReleaseRef is required");
+
+    const [updated] = await db
+      .update(distributionReleases)
+      .set({
+        externalReleaseRef: ext,
+        status: input.status,
         updatedAt: new Date(),
       })
       .where(eq(distributionReleases.id, input.releaseId))

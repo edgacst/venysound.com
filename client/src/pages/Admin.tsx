@@ -214,6 +214,7 @@ export default function Admin() {
     rejectionReason: string | null;
     qcStatus?: string;
     qcCheckedAt?: string | null;
+    externalReleaseRef?: string | null;
   }>>({
     queryKey: ["/api/admin/distribution/releases", distributionStatusFilter],
     queryFn: async () => {
@@ -737,6 +738,22 @@ export default function Admin() {
     },
     onError: (err: any) => {
       toast({ title: err?.message || "유통 QC 실행에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
+  const linkExternalReleaseRefMutation = useMutation({
+    mutationFn: async ({ releaseId, externalReleaseRef }: { releaseId: number; externalReleaseRef: string }) => {
+      await apiRequest("POST", `/api/admin/distribution/releases/${releaseId}/link-external-ref`, {
+        externalReleaseRef,
+        status: "delivered",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      toast({ title: "외부 릴리즈 ref 연결을 완료했습니다." });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "외부 릴리즈 ref 연결에 실패했습니다.", variant: "destructive" });
     },
   });
 
@@ -1411,6 +1428,22 @@ export default function Admin() {
                                       onClick={() => runDistributionQcMutation.mutate(r.id)}
                                     >
                                       QC 실행
+                                    </Button>
+                                  )}
+
+                                  {r.qcStatus === "passed" && !r.externalReleaseRef && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={linkExternalReleaseRefMutation.isPending}
+                                      onClick={() => {
+                                        const v = window.prompt("DistroKid(또는 배포사)에서 받은 externalReleaseRef(Release ID/Ref)를 입력하세요.");
+                                        if (!v) return;
+                                        linkExternalReleaseRefMutation.mutate({ releaseId: r.id, externalReleaseRef: v });
+                                      }}
+                                    >
+                                      외부 ref 연결
                                     </Button>
                                   )}
 
