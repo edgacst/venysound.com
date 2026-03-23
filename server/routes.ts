@@ -2796,8 +2796,8 @@ export async function registerRoutes(
       const allowed = new Set(["distrokid", "tuneCore".toLowerCase(), "cdbaby", "ditto", "onerpm", "generic"]);
       const distributorFinal = allowed.has(distributor) ? distributor : "generic";
 
-      const approvedReleases = await storage.listAdminDistributionReleases("approved");
-      const release = approvedReleases.find((r: any) => r.id === releaseId);
+      const adminReleases = await storage.listAdminDistributionReleases();
+      const release = adminReleases.find((r: any) => r.id === releaseId);
       if (!release) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
 
       // 기존 호환: approved면 그대로 허용
