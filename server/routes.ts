@@ -2800,8 +2800,10 @@ export async function registerRoutes(
       const release = approvedReleases.find((r: any) => r.id === releaseId);
       if (!release) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
 
-      if (release.status !== "approved") {
-        return res.status(400).json({ message: "승인된 릴리즈만 유통 패키지를 다운로드할 수 있습니다." });
+      // 기존 호환: approved면 그대로 허용
+      // 새 규칙: QC 통과(qcStatus=passed)면 delivered/live에서도 허용
+      if (release.status !== "approved" && release.qcStatus !== "passed") {
+        return res.status(400).json({ message: "QC 통과 또는 승인된 릴리즈만 유통 패키지를 다운로드할 수 있습니다." });
       }
 
       const music = await storage.getMusicById(release.musicId);

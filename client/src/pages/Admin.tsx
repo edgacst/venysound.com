@@ -1390,7 +1390,7 @@ export default function Admin() {
                                     반려
                                   </Button>
                                 </>
-                              ) : r.status === "approved" ? (
+                              ) : ["approved", "delivered", "live"].includes(r.status) ? (
                                 <>
                                   {r.qcStatus === "passed" ? (
                                     <Button
@@ -1423,15 +1423,6 @@ export default function Admin() {
                                     정산 입력
                                   </Button>
                                 </>
-                              ) : ["delivered", "live"].includes(r.status) ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDistributionSelectedReleaseId(r.id)}
-                                >
-                                  정산 입력
-                                </Button>
                               ) : (
                                 <span className="text-xs text-muted-foreground">-</span>
                               )}

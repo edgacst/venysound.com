@@ -1554,10 +1554,10 @@ export class DatabaseStorage implements IStorage {
 
     if (!release) return undefined;
 
-    // QC는 승인(approved) 이후 유통 패키지 준비 단계에서만 실행하도록 제한
-    if (release.status !== "approved") {
-      // 실패로 마킹해도 되지만, 운영에서 원인 파악이 어려워서 명확히 에러로 처리
-      throw new Error(`release qc only allowed in approved status (current: ${release.status})`);
+    // Platform Readiness mode:
+    // 운영 테스트/상태 복구를 위해 approved뿐 아니라 delivered/live에서도 QC 실행을 허용한다.
+    if (!["approved", "delivered", "live"].includes(release.status)) {
+      throw new Error(`release qc only allowed in approved/delivered/live status (current: ${release.status})`);
     }
 
     const musicItem = await this.getMusicById(release.musicId);
