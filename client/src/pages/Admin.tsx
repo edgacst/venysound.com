@@ -1431,7 +1431,8 @@ export default function Admin() {
                                     </Button>
                                   )}
 
-                                  {r.qcStatus === "passed" && !r.externalReleaseRef && (
+                                  {r.qcStatus === "passed" &&
+                                    (!r.externalReleaseRef || r.externalReleaseRef === `${distributionBatchDistributor}:${r.id}`) && (
                                     <Button
                                       type="button"
                                       size="sm"
