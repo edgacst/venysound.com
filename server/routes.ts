@@ -57,6 +57,14 @@ function isActivePaidSubscription(
   return !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now;
 }
 
+/** 경로 파라미터를 양의 정수 id로 파싱 (NaN·0·음수·비정수면 null) */
+function parsePositiveIntParam(raw: string | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) return null;
+  return n;
+}
+
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
   if (totalSent >= 200000) return "sponsor";
@@ -1528,8 +1536,12 @@ export async function registerRoutes(
   /** 음원 스트리밍 (더 구체적인 경로이므로 api.music.get보다 먼저 등록) */
   app.get("/api/music/:id/stream", async (req, res) => {
     try {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const music = await storage.getMusicById(Number(id));
+      const raw = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const id = parsePositiveIntParam(raw);
+      if (id == null) {
+        return res.status(400).json({ error: "잘못된 음원 ID입니다" });
+      }
+      const music = await storage.getMusicById(id);
       if (!music) {
         return res.status(404).json({ error: "Music not found" });
       }
@@ -1671,7 +1683,11 @@ export async function registerRoutes(
 
   app.get(api.music.get.path, async (req, res) => {
     try {
-      const music = await storage.getMusicById(Number(req.params.id));
+      const id = parsePositiveIntParam(req.params.id);
+      if (id == null) {
+        return res.status(400).json({ message: "잘못된 음원 ID입니다" });
+      }
+      const music = await storage.getMusicById(id);
       if (!music) {
         return res.status(404).json({ message: "Music not found" });
       }
@@ -1694,9 +1710,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/music/:id/similar", async (req, res) => {
-    const id = Number(req.params.id);
+    const id = parsePositiveIntParam(req.params.id);
     const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit), 10) || 8));
     try {
+      if (id == null) return res.json([]);
       const base = await storage.getMusicById(id);
       if (!base) return res.json([]);
       const data = await storage.getSimilarMusic(id, limit);
