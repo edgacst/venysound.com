@@ -261,6 +261,10 @@ export default function Admin() {
   });
 
   const [analyticsTrendDays, setAnalyticsTrendDays] = useState(7);
+  const ACCESS_LOG_PAGE_SIZE = 50;
+  const [accessLogUserIdInput, setAccessLogUserIdInput] = useState("");
+  const [accessLogSearchUserId, setAccessLogSearchUserId] = useState("");
+  const [accessLogPage, setAccessLogPage] = useState(0);
   const { data: analyticsTrend } = useQuery<{ date: string; uniqueVisitors: number; pageViews: number }[]>({
     queryKey: ["/api/admin/analytics/trend", analyticsTrendDays],
     queryFn: async () => {
@@ -271,6 +275,24 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 60000,
+  });
+
+  const { data: accessLogsData, isLoading: loadingAccessLogs, isFetching: fetchingAccessLogs } = useQuery<{
+    total: number;
+    logs: { id: number; path: string; deviceType: string | null; visitedAt: string }[];
+  }>({
+    queryKey: ["/api/admin/access-logs", accessLogSearchUserId, accessLogPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        userId: accessLogSearchUserId,
+        limit: String(ACCESS_LOG_PAGE_SIZE),
+        offset: String(accessLogPage * ACCESS_LOG_PAGE_SIZE),
+      });
+      const res = await fetch(`/api/admin/access-logs?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("access logs");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true && accessLogSearchUserId.length > 0,
   });
 
   const { data: statsBySource } = useQuery<{ source: string; count: number }[]>({
@@ -1138,6 +1160,118 @@ export default function Admin() {
               )}
             </Card>
           </div>
+
+          <Card className="p-4 mt-6 overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-3">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <History size={16} className="shrink-0" />
+                  {t("admin.userAccessLogs", "회원별 접속 로그")}
+                </h3>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {t(
+                    "admin.userAccessLogsHint",
+                    "로그인한 상태에서 이동한 페이지만 기록됩니다. 회원 ID(users.id)를 입력하세요.",
+                  )}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    className="max-w-md"
+                    placeholder="user id (UUID)"
+                    value={accessLogUserIdInput}
+                    onChange={(e) => setAccessLogUserIdInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        setAccessLogPage(0);
+                        setAccessLogSearchUserId(accessLogUserIdInput.trim());
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      setAccessLogPage(0);
+                      setAccessLogSearchUserId(accessLogUserIdInput.trim());
+                    }}
+                    disabled={!accessLogUserIdInput.trim()}
+                  >
+                    {t("admin.search", "조회")}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {accessLogSearchUserId ? (
+              loadingAccessLogs || fetchingAccessLogs ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {t("admin.userAccessLogsTotal", "총 {{n}}건", { n: accessLogsData?.total ?? 0 })}
+                  </p>
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/30">
+                          <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.accessTime", "접속 시각")}</th>
+                          <th className="text-left p-2 font-medium">{t("admin.accessPath", "경로")}</th>
+                          <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.device", "디바이스")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(accessLogsData?.logs?.length ?? 0) > 0 ? (
+                          accessLogsData!.logs.map((row) => (
+                            <tr key={row.id} className="border-b border-border/50">
+                              <td className="p-2 text-muted-foreground whitespace-nowrap tabular-nums">
+                                {formatDateTime(row.visitedAt)}
+                              </td>
+                              <td className="p-2 font-mono text-xs break-all max-w-[280px]">{row.path}</td>
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">{row.deviceType ?? "—"}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="p-6 text-center text-muted-foreground">
+                              {t("admin.noAccessLogs", "기록이 없습니다.")}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {(accessLogsData?.total ?? 0) > ACCESS_LOG_PAGE_SIZE && (
+                    <div className="flex items-center justify-between gap-2 mt-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={accessLogPage <= 0}
+                        onClick={() => setAccessLogPage((p) => Math.max(0, p - 1))}
+                      >
+                        {t("admin.prev", "이전")}
+                      </Button>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {accessLogPage + 1} / {Math.max(1, Math.ceil((accessLogsData?.total ?? 0) / ACCESS_LOG_PAGE_SIZE))}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={(accessLogPage + 1) * ACCESS_LOG_PAGE_SIZE >= (accessLogsData?.total ?? 0)}
+                        onClick={() => setAccessLogPage((p) => p + 1)}
+                      >
+                        {t("admin.next", "다음")}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )
+            ) : (
+              <p className="text-muted-foreground text-sm py-4">{t("admin.userAccessLogsEmpty", "회원 ID를 입력한 뒤 조회하세요.")}</p>
+            )}
+          </Card>
         </section>
             </TabsContent>
             <TabsContent value="posts">

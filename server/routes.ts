@@ -2642,8 +2642,21 @@ export async function registerRoutes(
         }
       } catch (_) {}
     }
+    const r = req as Request & { isAuthenticated?: () => boolean; user?: { claims?: { sub?: string } } };
+    const sessionUserId =
+      typeof r.isAuthenticated === "function" && r.isAuthenticated() && r.user?.claims?.sub
+        ? String(r.user.claims.sub)
+        : undefined;
     try {
-      await storage.recordVisit(visitorKey, path, { ipHash, deviceType, refererDomain: refererDomainVal ?? undefined, utmSource, countryCode, region });
+      await storage.recordVisit(visitorKey, path, {
+        userId: sessionUserId,
+        ipHash,
+        deviceType,
+        refererDomain: refererDomainVal ?? undefined,
+        utmSource,
+        countryCode,
+        region,
+      });
     } catch (e) {
       console.error("[analytics/visit] recordVisit failed (table may be missing – run db:push):", e);
     }
@@ -2751,6 +2764,31 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/analytics/trend]", e);
       res.json([]);
+    }
+  });
+
+  /** 로그인한 회원의 페이지 이동 기록 (회원 ID = users.id, 세션과 동일) */
+  app.get("/api/admin/access-logs", isAuthenticated, isAdmin, async (req, res) => {
+    const userId = typeof req.query.userId === "string" ? req.query.userId.trim() : "";
+    if (!userId) {
+      return res.status(400).json({ message: "userId가 필요합니다." });
+    }
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit), 10) || 50));
+    const offset = Math.max(0, parseInt(String(req.query.offset), 10) || 0);
+    try {
+      const { logs, total } = await storage.getAdminUserAccessLogs(userId, limit, offset);
+      res.json({
+        total,
+        logs: logs.map((row) => ({
+          id: row.id,
+          path: row.path,
+          deviceType: row.deviceType,
+          visitedAt: row.visitedAt instanceof Date ? row.visitedAt.toISOString() : String(row.visitedAt),
+        })),
+      });
+    } catch (e) {
+      console.error("[admin/access-logs]", e);
+      res.status(500).json({ message: "조회에 실패했습니다." });
     }
   });
 

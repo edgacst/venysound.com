@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS analytics_visits (
   visited_at TIMESTAMP NOT NULL DEFAULT NOW(),
   visitor_key TEXT NOT NULL,
   path TEXT NOT NULL,
+  user_id TEXT REFERENCES users(id),
   ip_hash TEXT,
   country_code TEXT,
   region TEXT,

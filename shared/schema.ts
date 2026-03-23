@@ -231,6 +231,8 @@ export const analyticsVisits = pgTable("analytics_visits", {
   visitedAt: timestamp("visited_at").defaultNow().notNull(),
   visitorKey: text("visitor_key").notNull(),
   path: text("path").notNull(),
+  /** 로그인 세션이 있을 때만 기록 (익명 방문은 null) */
+  userId: text("user_id").references(() => users.id),
   ipHash: text("ip_hash"),
   countryCode: text("country_code"),
   region: text("region"),

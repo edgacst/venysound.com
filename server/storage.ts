@@ -96,7 +96,8 @@ export interface IStorage {
     totalLikes: number;
     totalComments: number;
   }>;
-  recordVisit(visitorKey: string, path: string, extra?: { ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
+  recordVisit(visitorKey: string, path: string, extra?: { userId?: string; ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
+  getAdminUserAccessLogs(userId: string, limit: number, offset: number): Promise<{ logs: { id: number; visitedAt: Date; path: string; deviceType: string | null }[]; total: number }>;
   checkAnalyticsTableExists(): Promise<boolean>;
   getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
@@ -1157,10 +1158,11 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async recordVisit(visitorKey: string, path: string, extra?: { ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void> {
+  async recordVisit(visitorKey: string, path: string, extra?: { userId?: string; ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void> {
     await db.insert(analyticsVisits).values({
       visitorKey,
       path,
+      userId: extra?.userId ?? null,
       ipHash: extra?.ipHash ?? null,
       countryCode: extra?.countryCode ?? null,
       region: extra?.region ?? null,
@@ -1168,6 +1170,33 @@ export class DatabaseStorage implements IStorage {
       refererDomain: extra?.refererDomain ?? null,
       utmSource: extra?.utmSource ?? null,
     });
+  }
+
+  async getAdminUserAccessLogs(userId: string, limit: number, offset: number): Promise<{ logs: { id: number; visitedAt: Date; path: string; deviceType: string | null }[]; total: number }> {
+    const safeLimit = Math.min(200, Math.max(1, Math.floor(limit)));
+    const safeOffset = Math.max(0, Math.floor(offset));
+    try {
+      const [countRow] = await db
+        .select({ total: sql<number>`count(*)::int` })
+        .from(analyticsVisits)
+        .where(eq(analyticsVisits.userId, userId));
+      const total = countRow?.total ?? 0;
+      const rows = await db
+        .select({
+          id: analyticsVisits.id,
+          visitedAt: analyticsVisits.visitedAt,
+          path: analyticsVisits.path,
+          deviceType: analyticsVisits.deviceType,
+        })
+        .from(analyticsVisits)
+        .where(eq(analyticsVisits.userId, userId))
+        .orderBy(desc(analyticsVisits.visitedAt))
+        .limit(safeLimit)
+        .offset(safeOffset);
+      return { logs: rows, total };
+    } catch {
+      return { logs: [], total: 0 };
+    }
   }
 
   async checkAnalyticsTableExists(): Promise<boolean> {
