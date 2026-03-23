@@ -1502,14 +1502,49 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(distributionReleases)
       .set({
-        status: "live",
-        externalReleaseRef: `${input.distributor}:${Date.now()}`,
+        status: "delivered",
+        // 웹훅에서 외부 릴리즈를 매핑하기 위한 고정 ref
+        externalReleaseRef: `${input.distributor}:${input.releaseId}`,
         updatedAt: new Date(),
       })
       .where(eq(distributionReleases.id, input.releaseId))
       .returning();
 
     return updated;
+  }
+
+  async getDistributionReleaseByExternalRef(externalReleaseRef: string): Promise<DistributionRelease | undefined> {
+    const [row] = await db
+      .select()
+      .from(distributionReleases)
+      .where(eq(distributionReleases.externalReleaseRef, externalReleaseRef))
+      .limit(1);
+    return row;
+  }
+
+  async setDistributionReleaseStatusByExternalRef(input: {
+    externalReleaseRef: string;
+    status: "delivered" | "live";
+  }): Promise<DistributionRelease | undefined> {
+    const [updated] = await db
+      .update(distributionReleases)
+      .set({
+        status: input.status,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.externalReleaseRef, input.externalReleaseRef))
+      .returning();
+    return updated;
+  }
+
+  async hasPaidDistributionPayout(input: { releaseId: number; periodMonth: string }): Promise<boolean> {
+    const noteKey = `distribution_earnings:${input.releaseId}:${input.periodMonth}`;
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(distributionPayouts)
+      .where(and(eq(distributionPayouts.note, noteKey), eq(distributionPayouts.status, "paid")))
+      .limit(1);
+    return (row?.count ?? 0) > 0;
   }
 
   async addDistributionEarning(input: {

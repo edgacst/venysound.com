@@ -1239,6 +1239,7 @@ export default function Admin() {
                   <option value="submitted">submitted</option>
                   <option value="approved">approved</option>
                   <option value="rejected">rejected</option>
+                  <option value="delivered">delivered</option>
                   <option value="live">live</option>
                 </select>
                 <span className="text-xs text-muted-foreground ml-2">배포사</span>
@@ -1294,6 +1295,12 @@ export default function Admin() {
                               <Badge className="bg-green-500/20 text-green-600 dark:text-green-400">
                                 승인됨
                               </Badge>
+                            ) : r.status === "delivered" ? (
+                              <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                배포됨
+                              </Badge>
+                            ) : r.status === "live" ? (
+                              <Badge variant="default">라이브</Badge>
                             ) : (
                               r.status
                             )}

@@ -3666,6 +3666,75 @@ export async function registerRoutes(
     }
   });
 
+  // === Distributor Webhooks (status / payouts) ===
+  // 보안: 헤더 `x-distribution-webhook-secret` 값이 ENV와 일치해야 합니다.
+  function requireDistributionWebhookSecret(req: any, res: any, next: any) {
+    const expected = process.env.DISTRIBUTION_WEBHOOK_SECRET;
+    const provided = String(req.headers["x-distribution-webhook-secret"] ?? "");
+    if (!expected) {
+      return res.status(500).json({ message: "DISTRIBUTION_WEBHOOK_SECRET is not configured" });
+    }
+    if (!provided || provided !== expected) {
+      return res.status(401).json({ message: "Invalid webhook secret" });
+    }
+    next();
+  }
+
+  app.post("/api/distribution/webhooks/:distributor/status", requireDistributionWebhookSecret, async (req, res) => {
+    try {
+      const externalReleaseRef = typeof req.body?.externalReleaseRef === "string" ? req.body.externalReleaseRef.trim() : "";
+      const statusRaw = req.body?.status;
+      const status = statusRaw === "live" ? "live" : statusRaw === "delivered" ? "delivered" : null;
+      if (!externalReleaseRef || !status) {
+        return res.status(400).json({ message: "externalReleaseRef/status 값이 유효하지 않습니다." });
+      }
+      const updated = await storage.setDistributionReleaseStatusByExternalRef({ externalReleaseRef, status });
+      if (!updated) return res.status(404).json({ message: "유통 릴리즈를 찾을 수 없습니다." });
+      res.json({ success: true, releaseId: updated.id, status: updated.status });
+    } catch (e: any) {
+      console.error("[distribution webhook status POST]", e);
+      res.status(500).json({ message: e?.message ?? "상태 웹훅 처리에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/distribution/webhooks/:distributor/payouts", requireDistributionWebhookSecret, async (req, res) => {
+    try {
+      const externalReleaseRef = typeof req.body?.externalReleaseRef === "string" ? req.body.externalReleaseRef.trim() : "";
+      const periodMonth = typeof req.body?.periodMonth === "string" ? req.body.periodMonth.trim() : "";
+      const grossAmount = Number(req.body?.grossAmount);
+      const platformFeeAmount = req.body?.platformFeeAmount == null ? undefined : Number(req.body.platformFeeAmount);
+
+      if (!externalReleaseRef || !periodMonth || !Number.isFinite(grossAmount)) {
+        return res.status(400).json({ message: "externalReleaseRef/periodMonth/grossAmount 값이 유효하지 않습니다." });
+      }
+      if (!/^\d{4}-\d{2}$/.test(periodMonth)) {
+        return res.status(400).json({ message: "periodMonth must be YYYY-MM" });
+      }
+
+      const release = await storage.getDistributionReleaseByExternalRef(externalReleaseRef);
+      if (!release) return res.status(404).json({ message: "유통 릴리즈를 찾을 수 없습니다." });
+
+      const already = await storage.hasPaidDistributionPayout({ releaseId: release.id, periodMonth });
+      if (already) {
+        return res.json({ success: true, skipped: true, releaseId: release.id, periodMonth });
+      }
+
+      await storage.addDistributionEarning({
+        releaseId: release.id,
+        periodMonth,
+        grossAmount,
+        platformFeeAmount: platformFeeAmount == null ? undefined : platformFeeAmount,
+        source: "distributor_webhook",
+        externalRef: `${externalReleaseRef}:${periodMonth}`,
+      });
+
+      res.json({ success: true, releaseId: release.id, periodMonth });
+    } catch (e: any) {
+      console.error("[distribution webhook payouts POST]", e);
+      res.status(500).json({ message: e?.message ?? "수익 웹훅 처리에 실패했습니다." });
+    }
+  });
+
   app.post("/api/admin/distribution/releases/:id/earnings", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const releaseId = Number(req.params.id);
