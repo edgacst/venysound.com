@@ -77,33 +77,39 @@ function AnalyticsVisit() {
   const { user, isLoading: authLoading } = useAuth();
   useEffect(() => {
     if (authLoading) return;
-    const path = pathname || "/";
-    let visitorKey: string | null = null;
-    try {
-      visitorKey = localStorage.getItem(VISITOR_KEY);
-    } catch {}
-    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-    const utmSource = params?.get("utm_source") || undefined;
-    fetch("/api/analytics/visit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        path,
-        visitorKey,
-        utmSource,
-        authUserId: user?.id ?? undefined,
-      }),
-    })
-      .then((r) => r.ok && r.json())
-      .then((data) => {
-        if (data?.visitorKey) {
-          try {
-            localStorage.setItem(VISITOR_KEY, data.visitorKey);
-          } catch {}
-        }
+    const sendVisit = () => {
+      const path = pathname || "/";
+      let visitorKey: string | null = null;
+      try {
+        visitorKey = localStorage.getItem(VISITOR_KEY);
+      } catch {}
+      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const utmSource = params?.get("utm_source") || undefined;
+      fetch("/api/analytics/visit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          path,
+          visitorKey,
+          utmSource,
+          authUserId: user?.id ?? undefined,
+        }),
       })
-      .catch(() => {});
+        .then((r) => r.ok && r.json())
+        .then((data) => {
+          if (data?.visitorKey) {
+            try {
+              localStorage.setItem(VISITOR_KEY, data.visitorKey);
+            } catch {}
+          }
+        })
+        .catch(() => {});
+    };
+
+    sendVisit();
+    const heartbeat = window.setInterval(sendVisit, 60_000);
+    return () => window.clearInterval(heartbeat);
   }, [pathname, user?.id, authLoading]);
   return null;
 }
