@@ -1290,10 +1290,17 @@ export default function Admin() {
                                     반려
                                   </Button>
                                 </>
-                              ) : (
-                                <Button type="button" size="sm" variant="outline" onClick={() => setDistributionSelectedReleaseId(r.id)}>
+                              ) : r.status === "approved" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setDistributionSelectedReleaseId(r.id)}
+                                >
                                   정산 입력
                                 </Button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </div>
                             {r.status === "submitted" && (

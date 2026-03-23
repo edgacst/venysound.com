@@ -1500,6 +1500,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(distributionReleases.id, input.releaseId))
       .limit(1);
     if (!release) throw new Error("release not found");
+    if (release.status !== "approved") throw new Error("release not approved");
 
     const splits = await db
       .select({ userId: distributionSplits.userId, splitBps: distributionSplits.splitBps })

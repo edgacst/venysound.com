@@ -3438,7 +3438,14 @@ export async function registerRoutes(
       res.json({ success: true, ...result });
     } catch (e: any) {
       const msg = String(e?.message ?? "");
-      const status = msg.includes("not found") || msg.includes("split") || msg.includes("periodMonth") ? 400 : 500;
+      const status =
+        msg.includes("not found") ||
+        msg.includes("split") ||
+        msg.includes("periodMonth") ||
+        msg.includes("approved") ||
+        msg.includes("release not approved")
+          ? 400
+          : 500;
       console.error("[admin/distribution/releases/:id/earnings POST]", e);
       res.status(status).json({ message: e?.message ?? "유통 정산 입력에 실패했습니다." });
     }
