@@ -2785,6 +2785,218 @@ export async function registerRoutes(
     }
   });
 
+  // === Distribution package export (metadata.json + metadata.csv + zip) ===
+  app.get("/api/distribution/releases/:id/package-download", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const ownerUserId = req.user.claims.sub as string;
+      const releaseId = parsePositiveIntParam(req.params.id);
+      if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
+
+      const distributorRaw = typeof req.query?.distributor === "string" ? req.query.distributor : "generic";
+      const distributor = distributorRaw.trim().toLowerCase();
+      const allowed = new Set(["distrokid", "tuneCore".toLowerCase(), "cdbaby", "ditto", "onerpm", "generic"]);
+      const distributorFinal = allowed.has(distributor) ? distributor : "generic";
+
+      const myReleases = await storage.listMyDistributionReleases(ownerUserId);
+      const release = myReleases.find((r: any) => r.id === releaseId);
+      if (!release) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
+
+      if (release.status !== "approved") {
+        return res.status(400).json({ message: "승인된 릴리즈만 유통 패키지를 다운로드할 수 있습니다." });
+      }
+
+      const music = await storage.getMusicById(release.musicId);
+      if (!music) return res.status(404).json({ message: "음원을 찾을 수 없습니다." });
+
+      function resolveLocalAudioPath(fileRef: string): string | null {
+        const fn = fileRef || "";
+        if (/^https?:\/\//i.test(fn)) return null;
+
+        let fileId = "";
+        const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+        if (objMatch) {
+          fileId = objMatch[1];
+        } else if (fn.startsWith("uploads/")) {
+          fileId = fn.replace(/^uploads\//, "");
+        } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+          fileId = fn.trim();
+        } else if (fn.includes("/")) {
+          fileId = fn.split("/").pop() || "";
+        } else {
+          fileId = fn;
+        }
+
+        fileId = fileId.replace(/^\//, "");
+        if (!fileId) return null;
+
+        const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+        const candidates = [
+          path.join(uploadsDir, fileId),
+          path.join(uploadsDir, `${baseId}.mp3`),
+          path.join(uploadsDir, `${baseId}.wav`),
+          path.join(uploadsDir, `${baseId}.ogg`),
+        ];
+        return candidates.find((p) => existsSync(p)) ?? null;
+      }
+
+      function resolveLocalCoverPath(imageRef: string | null | undefined): { path: string; ext: string } | null {
+        if (!imageRef) return null;
+        const fn = imageRef || "";
+        if (/^https?:\/\//i.test(fn)) return null;
+
+        let fileId = "";
+        const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+        if (objMatch) {
+          fileId = objMatch[1];
+        } else if (fn.startsWith("uploads/")) {
+          fileId = fn.replace(/^uploads\//, "");
+        } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+          fileId = fn.trim();
+        } else if (fn.includes("/")) {
+          fileId = fn.split("/").pop() || "";
+        } else {
+          fileId = fn;
+        }
+
+        fileId = fileId.replace(/^\//, "");
+        if (!fileId) return null;
+
+        const baseId = fileId.replace(/\.(png|jpe?g|webp)$/i, "");
+        const candidates = [
+          { p: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
+          { p: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
+          { p: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
+          { p: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
+        ];
+        const found = candidates.find((c) => existsSync(c.p));
+        if (!found) return null;
+        return { path: found.p, ext: found.ext };
+      }
+
+      const localAudioPath = resolveLocalAudioPath(music.filename);
+      const localCover = resolveLocalCoverPath(music.imageFilename);
+
+      const releaseDate = release.releaseDate ? new Date(release.releaseDate) : null;
+      const releaseDateStr = releaseDate && !isNaN(releaseDate.getTime()) ? releaseDate.toISOString().slice(0, 10) : "";
+
+      const metadataJson = {
+        distributor: distributorFinal,
+        release: {
+          title: release.releaseTitle,
+          artist: release.artistName,
+          releaseDate: releaseDateStr || null,
+          genre: music.genre ?? null,
+          tags: music.tags ?? null,
+        },
+        track: {
+          title: music.title,
+          artist: music.artist,
+          isrc: null,
+        },
+        audio: {
+          included: !!localAudioPath,
+          originalRef: music.filename,
+          includedFileName: localAudioPath ? `track.${path.extname(localAudioPath).replace(".", "")}` : "track.wav",
+        },
+        artwork: {
+          included: !!localCover,
+          originalRef: music.imageFilename ?? null,
+          includedFileName: localCover
+            ? localCover.ext.toLowerCase().replace(".", "") === "jpg" || localCover.ext.toLowerCase() === ".jpeg"
+              ? "cover.jpg"
+              : `cover${localCover.ext.toLowerCase()}`
+            : "cover.jpg",
+        },
+        credits: {
+          composer: null,
+          lyricist: null,
+          performer: null,
+          masterOwner: null,
+        },
+        note: "This is a platform-export template for distributor submission. Add/replace missing ISRC/credits/proof details as required by each distributor.",
+      };
+
+      // Generic CSV template (starter)
+      const metadataCsv = [
+        [
+          "Title",
+          "Artist",
+          "Genre",
+          "Release Date",
+          "ISRC",
+          "Composer",
+          "Lyricist",
+          "Performer",
+          "Master Owner",
+          "Artwork File",
+          "Audio File",
+          "Distributor",
+        ].join(","),
+        [
+          JSON.stringify(metadataJson.track.title),
+          JSON.stringify(metadataJson.track.artist),
+          JSON.stringify(metadataJson.release.genre ?? ""),
+          JSON.stringify(metadataJson.release.releaseDate ?? ""),
+          JSON.stringify(metadataJson.track.isrc ?? ""),
+          JSON.stringify(metadataJson.credits.composer ?? ""),
+          JSON.stringify(metadataJson.credits.lyricist ?? ""),
+          JSON.stringify(metadataJson.credits.performer ?? ""),
+          JSON.stringify(metadataJson.credits.masterOwner ?? ""),
+          JSON.stringify(metadataJson.artwork.includedFileName),
+          JSON.stringify(metadataJson.audio.includedFileName),
+          JSON.stringify(distributorFinal),
+        ].join(","),
+      ].join("\n");
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const filename = `venysound_distribution_${releaseId}_${timestamp}.zip`;
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+
+      const archive = archiver("zip", { zlib: { level: 6 } });
+      archive.on("error", (err: any) => {
+        console.error("Distribution package archive error:", err);
+        if (!res.headersSent) res.status(500).end();
+      });
+      archive.pipe(res);
+
+      archive.append(JSON.stringify(metadataJson, null, 2), { name: "metadata.json" });
+      archive.append(metadataCsv, { name: "metadata.csv" });
+
+      // Artwork
+      if (localCover) {
+        const lc = localCover.ext.toLowerCase();
+        const coverEntryName = lc === ".jpg" || lc === ".jpeg" ? "cover.jpg" : `cover${lc}`;
+        archive.file(localCover.path, { name: coverEntryName });
+      } else {
+        archive.append("cover.jpg not found on server. Please add cover art manually if your distributor requires it.", { name: "cover.jpg" });
+      }
+
+      // Track
+      if (localAudioPath) {
+        const ext = path.extname(localAudioPath).toLowerCase(); // .mp3/.wav/.ogg
+        const audioEntryName = ext ? `track${ext}` : "track.wav";
+        archive.file(localAudioPath, { name: audioEntryName.replace(/^\./, ".") });
+
+        if (ext !== ".wav") {
+          archive.append(
+            "WAV export is not available in this template build. Add/convert WAV/FLAC master files manually if required by your distributor.",
+            { name: "track.wav" }
+          );
+        }
+      } else {
+        archive.append("track.wav not found on server. Please add master audio files manually.", { name: "track.wav" });
+      }
+
+      archive.finalize();
+    } catch (e: any) {
+      console.error("[distribution package-download GET]", e);
+      res.status(500).json({ message: e?.message ?? "유통 패키지 생성에 실패했습니다." });
+    }
+  });
+
   // === Admin Routes ===
   app.get("/api/admin/visitor-count", isAuthenticated, isAdmin, (_req, res) => {
     res.json({ count: visitorCount });

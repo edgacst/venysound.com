@@ -39,6 +39,8 @@ export default function Dashboard() {
   const [distributionArtist, setDistributionArtist] = useState("");
   const [distributionReleaseDate, setDistributionReleaseDate] = useState("");
   const [distributionRightsConfirmed, setDistributionRightsConfirmed] = useState(false);
+  const [distributionDistributor, setDistributionDistributor] = useState("distrokid");
+  const [downloadingDistributionReleaseId, setDownloadingDistributionReleaseId] = useState<number | null>(null);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/dashboard/my-music-stats"],
@@ -167,6 +169,35 @@ export default function Dashboard() {
       toast({ title: e?.message || "유통 신청 제출에 실패했습니다.", variant: "destructive" });
     },
   });
+
+  const downloadDistributionPackage = async (releaseId: number) => {
+    if (downloadingDistributionReleaseId === releaseId) return;
+    setDownloadingDistributionReleaseId(releaseId);
+    try {
+      const res = await fetch(
+        `/api/distribution/releases/${releaseId}/package-download?distributor=${encodeURIComponent(distributionDistributor)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "유통 패키지 다운로드에 실패했습니다.");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `venysound_distribution_${releaseId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "유통 패키지 다운로드를 시작했습니다." });
+    } catch (e: any) {
+      toast({ title: e?.message || "유통 패키지 다운로드 실패", variant: "destructive" });
+    } finally {
+      setDownloadingDistributionReleaseId(null);
+    }
+  };
 
   if (authLoading) {
     return (
@@ -502,6 +533,21 @@ export default function Dashboard() {
                     />
                     본인은 유통 권리를 보유하며 플랫폼 배포에 동의합니다.
                   </label>
+                  <div>
+                    <Label>유통사 템플릿</Label>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={distributionDistributor}
+                      onChange={(e) => setDistributionDistributor(e.target.value)}
+                    >
+                      <option value="distrokid">DistroKid</option>
+                      <option value="tuneCore">TuneCore</option>
+                      <option value="cdbaby">CD Baby</option>
+                      <option value="ditto">Ditto</option>
+                      <option value="onerpm">ONErpm</option>
+                      <option value="generic">Generic</option>
+                    </select>
+                  </div>
                   <Button
                     className="w-full"
                     disabled={
@@ -548,6 +594,19 @@ export default function Dashboard() {
                               <td className="p-2">
                                 <div className="font-medium">{r.releaseTitle}</div>
                                 <div className="text-xs text-muted-foreground">{r.artistName}</div>
+                                {r.status === "approved" && (
+                                  <div className="mt-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="w-full text-xs"
+                                      disabled={downloadingDistributionReleaseId === r.id}
+                                      onClick={() => downloadDistributionPackage(r.id)}
+                                    >
+                                      {downloadingDistributionReleaseId === r.id ? "패키지 생성 중..." : "유통 패키지 다운로드"}
+                                    </Button>
+                                  </div>
+                                )}
                               </td>
                               <td className="p-2">
                                 {r.status === "approved" ? (
