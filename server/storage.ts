@@ -2,13 +2,15 @@ import { db } from "./db";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
   analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
+  distributionReleases, distributionSplits, distributionEarningsLedger, distributionPayouts,
   radioChannels, radioChatMessages, radioSongRequests, radioChannelStaff,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
   pushSubscriptions,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
-  type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest
+  type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest,
+  type DistributionRelease
 } from "@shared/schema";
 import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNotNull } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
@@ -123,6 +125,13 @@ export interface IStorage {
   getAdminStatsBySource(): Promise<{ source: string; count: number }[]>;
   getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
+  createDistributionRelease(input: { ownerUserId: string; musicId: number; releaseTitle: string; artistName: string; rightsConfirmed: boolean; releaseDate?: Date | null }): Promise<DistributionRelease>;
+  listMyDistributionReleases(ownerUserId: string): Promise<DistributionRelease[]>;
+  submitDistributionRelease(ownerUserId: string, releaseId: number): Promise<void>;
+  listAdminDistributionReleases(status?: string): Promise<DistributionRelease[]>;
+  reviewDistributionRelease(input: { adminUserId: string; releaseId: number; action: "approved" | "rejected"; reason?: string | null }): Promise<DistributionRelease | undefined>;
+  addDistributionEarning(input: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string | null; externalRef?: string | null }): Promise<{ ledgerRows: number; netAmount: number; platformAmount: number; distributedAmount: number }>;
+  getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
   getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
   saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
@@ -1386,6 +1395,180 @@ export class DatabaseStorage implements IStorage {
       and(eq(creditTransactions.type, "charge"), sql`${creditTransactions.amount} > 0`)
     );
     return row?.total ?? 0;
+  }
+
+  async createDistributionRelease(input: {
+    ownerUserId: string;
+    musicId: number;
+    releaseTitle: string;
+    artistName: string;
+    rightsConfirmed: boolean;
+    releaseDate?: Date | null;
+  }): Promise<DistributionRelease> {
+    const [inserted] = await db.insert(distributionReleases).values({
+      ownerUserId: input.ownerUserId,
+      musicId: input.musicId,
+      releaseTitle: input.releaseTitle,
+      artistName: input.artistName,
+      rightsConfirmed: input.rightsConfirmed,
+      releaseDate: input.releaseDate ?? null,
+      status: "draft",
+      updatedAt: new Date(),
+    }).returning();
+    if (!inserted) throw new Error("distribution release create failed");
+    await db
+      .insert(distributionSplits)
+      .values({ releaseId: inserted.id, userId: input.ownerUserId, splitBps: 10000 })
+      .onConflictDoNothing();
+    return inserted;
+  }
+
+  async listMyDistributionReleases(ownerUserId: string): Promise<DistributionRelease[]> {
+    return await db
+      .select()
+      .from(distributionReleases)
+      .where(eq(distributionReleases.ownerUserId, ownerUserId))
+      .orderBy(desc(distributionReleases.createdAt));
+  }
+
+  async submitDistributionRelease(ownerUserId: string, releaseId: number): Promise<void> {
+    const [row] = await db
+      .select()
+      .from(distributionReleases)
+      .where(and(eq(distributionReleases.id, releaseId), eq(distributionReleases.ownerUserId, ownerUserId)))
+      .limit(1);
+    if (!row) throw new Error("release not found");
+    if (!row.rightsConfirmed) throw new Error("rights not confirmed");
+    if (!["draft", "rejected"].includes(row.status)) throw new Error("release cannot be submitted");
+    await db
+      .update(distributionReleases)
+      .set({
+        status: "submitted",
+        submittedAt: new Date(),
+        rejectionReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.id, releaseId));
+  }
+
+  async listAdminDistributionReleases(status?: string): Promise<DistributionRelease[]> {
+    const where = status && status !== "all" ? eq(distributionReleases.status, status) : undefined;
+    return await db
+      .select()
+      .from(distributionReleases)
+      .where(where)
+      .orderBy(desc(distributionReleases.createdAt));
+  }
+
+  async reviewDistributionRelease(input: {
+    adminUserId: string;
+    releaseId: number;
+    action: "approved" | "rejected";
+    reason?: string | null;
+  }): Promise<DistributionRelease | undefined> {
+    const status = input.action === "approved" ? "approved" : "rejected";
+    const [updated] = await db
+      .update(distributionReleases)
+      .set({
+        status,
+        approvedAt: input.action === "approved" ? new Date() : null,
+        approvedByUserId: input.action === "approved" ? input.adminUserId : null,
+        rejectionReason: input.action === "rejected" ? (input.reason ?? "관리자 반려") : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.id, input.releaseId))
+      .returning();
+    return updated;
+  }
+
+  async addDistributionEarning(input: {
+    releaseId: number;
+    periodMonth: string;
+    grossAmount: number;
+    platformFeeAmount?: number;
+    source?: string | null;
+    externalRef?: string | null;
+  }): Promise<{ ledgerRows: number; netAmount: number; platformAmount: number; distributedAmount: number }> {
+    if (!/^\d{4}-\d{2}$/.test(input.periodMonth)) throw new Error("periodMonth must be YYYY-MM");
+    const gross = Math.max(0, Math.floor(input.grossAmount));
+    const platformFee = Math.max(0, Math.floor(input.platformFeeAmount ?? 0));
+    const net = Math.max(0, gross - platformFee);
+
+    const [release] = await db
+      .select()
+      .from(distributionReleases)
+      .where(eq(distributionReleases.id, input.releaseId))
+      .limit(1);
+    if (!release) throw new Error("release not found");
+
+    const splits = await db
+      .select({ userId: distributionSplits.userId, splitBps: distributionSplits.splitBps })
+      .from(distributionSplits)
+      .where(eq(distributionSplits.releaseId, input.releaseId));
+    if (splits.length === 0) throw new Error("split not configured");
+
+    const totalBps = splits.reduce((acc, s) => acc + Math.max(0, s.splitBps), 0);
+    if (totalBps <= 0) throw new Error("invalid split bps");
+
+    const rows = splits.map((s, idx) => {
+      const isLast = idx === splits.length - 1;
+      const allocated = isLast
+        ? 0
+        : Math.floor((net * Math.max(0, s.splitBps)) / totalBps);
+      return { userId: s.userId, allocated };
+    });
+    const allocatedSoFar = rows.reduce((acc, s) => acc + s.allocated, 0);
+    const finalRows = rows.map((r, idx) => (
+      idx === rows.length - 1 ? { ...r, allocated: Math.max(0, net - allocatedSoFar) } : r
+    ));
+    const distributedAmount = finalRows.reduce((acc, r) => acc + r.allocated, 0);
+    const platformAmount = Math.max(0, gross - distributedAmount);
+
+    await db.transaction(async (tx) => {
+      for (const r of finalRows) {
+        const ext =
+          input.externalRef && finalRows.length > 1
+            ? `${input.externalRef}:${r.userId}`
+            : input.externalRef ?? null;
+        await tx.insert(distributionEarningsLedger).values({
+          releaseId: input.releaseId,
+          userId: r.userId,
+          periodMonth: input.periodMonth,
+          grossAmount: gross,
+          platformFeeAmount: platformFee,
+          netAmount: net,
+          userAmount: r.allocated,
+          platformAmount,
+          source: input.source ?? null,
+          externalRef: ext,
+        });
+      }
+    });
+
+    return {
+      ledgerRows: finalRows.length,
+      netAmount: net,
+      platformAmount,
+      distributedAmount,
+    };
+  }
+
+  async getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }> {
+    const [earned] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${distributionEarningsLedger.userAmount}), 0)::int` })
+      .from(distributionEarningsLedger)
+      .where(eq(distributionEarningsLedger.userId, userId));
+    const [paid] = await db
+      .select({ total: sql<number>`COALESCE(SUM(${distributionPayouts.amount}), 0)::int` })
+      .from(distributionPayouts)
+      .where(and(eq(distributionPayouts.userId, userId), eq(distributionPayouts.status, "paid")));
+    const totalEarned = earned?.total ?? 0;
+    const totalPaid = paid?.total ?? 0;
+    return {
+      totalEarned,
+      totalPaid,
+      available: Math.max(0, totalEarned - totalPaid),
+    };
   }
 
   /** 최근 N분 이내 페이지뷰를 기록한 고유 방문자 수 (실시간 접속자 수) */

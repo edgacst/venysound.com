@@ -6,6 +6,9 @@ import { useWs } from "@/contexts/WsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { redirectToLogin } from "@/lib/queryClient";
+import { ToastAction } from "@/components/ui/toast";
 import { Link } from "wouter";
 
 const REFETCH_INTERVAL_MS = 8000;
@@ -16,6 +19,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const queryClient = useQueryClient();
   const { subscribe } = useWs();
   const { toast } = useToast();
+  const { user, isLoading: authLoading } = useAuth();
+  const isAuthenticated = !!user;
   const audioARef = useRef<HTMLAudioElement | null>(null);
   const audioBRef = useRef<HTMLAudioElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -44,7 +49,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
   useEffect(() => {
-    if (!slug || !channelName) return;
+    if (!slug) return;
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
@@ -61,15 +66,31 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (!newStreamUrl) { clear(); return; }
         const currentUrl = useRadioPlayerStore.getState().streamUrl;
         if (newStreamUrl !== currentUrl) {
-          setStream(slug, (data?.name ?? channelName) ?? "", newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
+          // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
+          if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
+          const resolvedName = String(data?.name ?? channelName ?? "라디오").trim() || "라디오";
+          setStream(slug, resolvedName, newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
         }
       } catch { /* ignore */ }
     }, REFETCH_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [slug, channelName, clear, setStream]);
+  }, [slug, channelName, clear, setStream, isAuthenticated, authLoading]);
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
+
+  // 비로그인은 채널에서 첫 곡 1회만 재생하고 정지
+  const unauthFirstEndedCountRef = useRef(0);
+  const limitSlugRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (limitSlugRef.current !== slug) {
+      limitSlugRef.current = slug;
+      unauthFirstEndedCountRef.current = 0;
+    }
+  }, [slug]);
+  useEffect(() => {
+    if (isAuthenticated) unauthFirstEndedCountRef.current = 0;
+  }, [isAuthenticated]);
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -111,7 +132,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             // URL이 같더라도 오디오 src가 비어있으면(트랙 종료 후) 다시 로드
             const needsReload = !activeEl?.src || activeEl.src === window.location.href;
             if (newStreamUrl !== current || needsReload) {
-              setStream(slug, channelName ?? "", newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
+              // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
+              if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
+              const resolvedName = String(channelName ?? "라디오").trim() || "라디오";
+              setStream(slug, resolvedName, newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
             }
           }
         }
@@ -124,7 +148,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
     });
     return unsub;
-  }, [slug, channelName, subscribe, clear, setStream]);
+  }, [slug, channelName, subscribe, clear, setStream, isAuthenticated, authLoading]);
 
   const handleUnmute = useCallback(() => {
     const el = getActiveAudio();
@@ -348,14 +372,22 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     el.removeAttribute("src");
     el.load();
     setPlaying(false);
-    setUserStopped(false);
+    const shouldLimit = !authLoading && !isAuthenticated;
+    const unauthFirstEnd = shouldLimit && unauthFirstEndedCountRef.current === 0;
+    const shouldAutoAdvance = !shouldLimit;
+    if (shouldLimit) {
+      if (unauthFirstEnd) unauthFirstEndedCountRef.current = 1;
+      setUserStopped(true);
+    } else {
+      setUserStopped(false);
+    }
     const state = useRadioPlayerStore.getState();
     const currentSlug = state.slug;
     // streamUrl을 null로 초기화: 같은 곡이 루프될 때도 WS radio_now_playing이 setStream()을 호출하도록
     useRadioPlayerStore.setState({ streamUrl: null });
     // 방금 끝난 곡의 ID를 el.src에서 추출 (state.streamUrl 사용 시 이미 다음 곡 ID가 들어있어 곡 건너뜀 버그 발생)
     const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
-    if (currentSlug && match) {
+    if (currentSlug && match && shouldAutoAdvance) {
       const musicId = parseInt(match[1], 10);
       fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
         method: "POST",
@@ -364,12 +396,25 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         body: JSON.stringify({ currentMusicId: musicId }),
       }).catch(() => {});
     }
+    if (unauthFirstEnd && currentSlug) {
+      toast({
+        title: "음악을 연속해서 들을려면 로그인 하세요",
+        description: "로그인 후에는 다음 곡으로 자동 재생됩니다.",
+        variant: "default",
+        action: (
+          <ToastAction altText="확인" onClick={() => redirectToLogin()}>
+            확인
+          </ToastAction>
+        ),
+      });
+    }
     if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
-  }, [getActiveAudio, setPlaying, setUserStopped, slug, queryClient]);
+  }, [getActiveAudio, setPlaying, setUserStopped, slug, queryClient, isAuthenticated, authLoading, toast]);
 
-  if (!slug || !channelName) return null;
+  if (!slug) return null;
 
   const listenerText = listenerCount != null ? ` · 청취자 ${listenerCount}명` : "";
+  const resolvedChannelName = (channelName ?? "").trim() || "라디오";
 
   return (
     <>
@@ -408,7 +453,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             ) : (
               <>
                 <span className="font-medium">현재 </span>
-                <span className="font-semibold text-primary">{channelName}</span>
+                <span className="font-semibold text-primary">{resolvedChannelName}</span>
                 <span className="font-medium"> 방송 청취중</span>
                 {listenerText && (
                   <span className="text-muted-foreground text-xs">{listenerText}</span>

@@ -225,6 +225,64 @@ export const purchases = pgTable("purchases", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Distribution releases (platform-managed global distribution)
+export const distributionReleases = pgTable("distribution_releases", {
+  id: serial("id").primaryKey(),
+  ownerUserId: text("owner_user_id").references(() => users.id).notNull(),
+  musicId: integer("music_id").references(() => music.id).notNull(),
+  releaseTitle: text("release_title").notNull(),
+  artistName: text("artist_name").notNull(),
+  status: text("status").default("draft").notNull(), // draft | submitted | approved | rejected | delivered | live | hold | takedown
+  rightsConfirmed: boolean("rights_confirmed").default(false).notNull(),
+  releaseDate: timestamp("release_date"),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedByUserId: text("approved_by_user_id").references(() => users.id),
+  rejectionReason: text("rejection_reason"),
+  externalReleaseRef: text("external_release_ref"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("distribution_releases_music_unique").on(t.musicId),
+]);
+
+export const distributionSplits = pgTable("distribution_splits", {
+  id: serial("id").primaryKey(),
+  releaseId: integer("release_id").references(() => distributionReleases.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  splitBps: integer("split_bps").notNull(), // 10000 = 100%
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("distribution_splits_release_user_unique").on(t.releaseId, t.userId),
+]);
+
+export const distributionEarningsLedger = pgTable("distribution_earnings_ledger", {
+  id: serial("id").primaryKey(),
+  releaseId: integer("release_id").references(() => distributionReleases.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  periodMonth: text("period_month").notNull(), // YYYY-MM
+  grossAmount: integer("gross_amount").notNull().default(0),
+  platformFeeAmount: integer("platform_fee_amount").notNull().default(0),
+  netAmount: integer("net_amount").notNull().default(0),
+  userAmount: integer("user_amount").notNull().default(0),
+  platformAmount: integer("platform_amount").notNull().default(0),
+  source: text("source"),
+  externalRef: text("external_ref"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("distribution_earnings_external_ref_unique").on(t.externalRef),
+]);
+
+export const distributionPayouts = pgTable("distribution_payouts", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  amount: integer("amount").notNull(),
+  status: text("status").default("requested").notNull(), // requested | paid | failed
+  note: text("note"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow(),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+});
+
 // Analytics visits (일일/누적 방문자, 페이지뷰, 광고용 지역·디바이스 집계)
 export const analyticsVisits = pgTable("analytics_visits", {
   id: serial("id").primaryKey(),
@@ -646,6 +704,10 @@ export type Tip = typeof tips.$inferSelect;
 export type CreateTipRequest = z.infer<typeof insertTipSchema>;
 export type Purchase = typeof purchases.$inferSelect;
 export type CreatePurchaseRequest = z.infer<typeof insertPurchaseSchema>;
+export type DistributionRelease = typeof distributionReleases.$inferSelect;
+export type DistributionSplit = typeof distributionSplits.$inferSelect;
+export type DistributionEarningLedger = typeof distributionEarningsLedger.$inferSelect;
+export type DistributionPayout = typeof distributionPayouts.$inferSelect;
 
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type Withdrawal = typeof withdrawals.$inferSelect;

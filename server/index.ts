@@ -91,6 +91,65 @@ CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_user ON ai_music_generation_log
 CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_task ON ai_music_generation_logs(task_id);
 CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_created ON ai_music_generation_logs(created_at);`,
   },
+  {
+    name: "011-distribution-core",
+    sql: `CREATE TABLE IF NOT EXISTS distribution_releases (
+  id SERIAL PRIMARY KEY,
+  owner_user_id TEXT NOT NULL REFERENCES users(id),
+  music_id INTEGER NOT NULL REFERENCES music(id),
+  release_title TEXT NOT NULL,
+  artist_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  rights_confirmed BOOLEAN NOT NULL DEFAULT false,
+  release_date TIMESTAMP,
+  submitted_at TIMESTAMPTZ,
+  approved_at TIMESTAMPTZ,
+  approved_by_user_id TEXT REFERENCES users(id),
+  rejection_reason TEXT,
+  external_release_ref TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_releases_music_unique ON distribution_releases(music_id);
+CREATE INDEX IF NOT EXISTS idx_distribution_releases_owner_status ON distribution_releases(owner_user_id, status);
+
+CREATE TABLE IF NOT EXISTS distribution_splits (
+  id SERIAL PRIMARY KEY,
+  release_id INTEGER NOT NULL REFERENCES distribution_releases(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  split_bps INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_splits_release_user_unique ON distribution_splits(release_id, user_id);
+
+CREATE TABLE IF NOT EXISTS distribution_earnings_ledger (
+  id SERIAL PRIMARY KEY,
+  release_id INTEGER NOT NULL REFERENCES distribution_releases(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  period_month TEXT NOT NULL,
+  gross_amount INTEGER NOT NULL DEFAULT 0,
+  platform_fee_amount INTEGER NOT NULL DEFAULT 0,
+  net_amount INTEGER NOT NULL DEFAULT 0,
+  user_amount INTEGER NOT NULL DEFAULT 0,
+  platform_amount INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
+  external_ref TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS distribution_earnings_external_ref_unique ON distribution_earnings_ledger(external_ref);
+CREATE INDEX IF NOT EXISTS idx_distribution_earnings_user_month ON distribution_earnings_ledger(user_id, period_month);
+
+CREATE TABLE IF NOT EXISTS distribution_payouts (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  amount INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'requested',
+  note TEXT,
+  requested_at TIMESTAMPTZ DEFAULT NOW(),
+  paid_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_distribution_payouts_user_status ON distribution_payouts(user_id, status);`,
+  },
 ];
 
 async function runAutoMigrations() {

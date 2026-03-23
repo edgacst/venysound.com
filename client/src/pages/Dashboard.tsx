@@ -34,6 +34,11 @@ export default function Dashboard() {
   const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [annoTitle, setAnnoTitle] = useState("");
   const [annoContent, setAnnoContent] = useState("");
+  const [distributionMusicId, setDistributionMusicId] = useState("");
+  const [distributionTitle, setDistributionTitle] = useState("");
+  const [distributionArtist, setDistributionArtist] = useState("");
+  const [distributionReleaseDate, setDistributionReleaseDate] = useState("");
+  const [distributionRightsConfirmed, setDistributionRightsConfirmed] = useState(false);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/dashboard/my-music-stats"],
@@ -70,6 +75,32 @@ export default function Dashboard() {
     enabled: !!user?.id,
   });
 
+  const { data: myMusicSimple } = useQuery<Array<{ id: number; title: string; artist: string }>>({
+    queryKey: ["/api/distribution/music/my"],
+    enabled: !!user,
+  });
+
+  const { data: myDistributionReleases } = useQuery<Array<{
+    id: number;
+    musicId: number;
+    releaseTitle: string;
+    artistName: string;
+    status: string;
+    rightsConfirmed: boolean;
+    submittedAt: string | null;
+    approvedAt: string | null;
+    rejectionReason: string | null;
+    createdAt: string;
+  }>>({
+    queryKey: ["/api/distribution/releases/my"],
+    enabled: !!user,
+  });
+
+  const { data: distributionBalance } = useQuery<{ totalEarned: number; totalPaid: number; available: number }>({
+    queryKey: ["/api/distribution/balance"],
+    enabled: !!user,
+  });
+
   const createAnnouncement = useMutation({
     mutationFn: async (data: { title: string; content: string }) => {
       const res = await apiRequest("POST", "/api/announcements", data);
@@ -94,6 +125,46 @@ export default function Dashboard() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/announcements/my"] });
       toast({ title: t('dashboard.announcementDeleted', '공지가 삭제되었습니다') });
+    },
+  });
+
+  const createDistributionRelease = useMutation({
+    mutationFn: async () => {
+      const musicId = Number(distributionMusicId);
+      const payload = {
+        musicId,
+        releaseTitle: distributionTitle.trim(),
+        artistName: distributionArtist.trim(),
+        rightsConfirmed: distributionRightsConfirmed,
+        releaseDate: distributionReleaseDate ? new Date(`${distributionReleaseDate}T00:00:00+09:00`).toISOString() : undefined,
+      };
+      const res = await apiRequest("POST", "/api/distribution/releases", payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "유통 초안이 생성되었습니다." });
+      qc.invalidateQueries({ queryKey: ["/api/distribution/releases/my"] });
+      setDistributionMusicId("");
+      setDistributionTitle("");
+      setDistributionArtist("");
+      setDistributionReleaseDate("");
+      setDistributionRightsConfirmed(false);
+    },
+    onError: (e: any) => {
+      toast({ title: e?.message || "유통 초안 생성에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
+  const submitDistributionRelease = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("POST", `/api/distribution/releases/${id}/submit`);
+    },
+    onSuccess: () => {
+      toast({ title: "유통 신청이 제출되었습니다." });
+      qc.invalidateQueries({ queryKey: ["/api/distribution/releases/my"] });
+    },
+    onError: (e: any) => {
+      toast({ title: e?.message || "유통 신청 제출에 실패했습니다.", variant: "destructive" });
     },
   });
 
@@ -384,6 +455,129 @@ export default function Dashboard() {
                 )}
               </Card>
             </div>
+
+            <Card className="p-5 mb-8">
+              <h3 className="font-semibold mb-4 flex items-center gap-2">
+                <DollarSign size={18} className="text-primary" />
+                글로벌 유통 관리 (베타)
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1 space-y-3">
+                  <Label>내 음원 선택</Label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    value={distributionMusicId}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setDistributionMusicId(next);
+                      const picked = (myMusicSimple ?? []).find((m) => String(m.id) === next);
+                      if (picked) {
+                        setDistributionTitle(picked.title);
+                        setDistributionArtist(picked.artist);
+                      }
+                    }}
+                  >
+                    <option value="">음원을 선택하세요</option>
+                    {(myMusicSimple ?? []).map((m) => (
+                      <option key={m.id} value={String(m.id)}>{m.title} · {m.artist}</option>
+                    ))}
+                  </select>
+                  <div>
+                    <Label>릴리즈 제목</Label>
+                    <Input value={distributionTitle} onChange={(e) => setDistributionTitle(e.target.value)} placeholder="릴리즈 제목" />
+                  </div>
+                  <div>
+                    <Label>아티스트명</Label>
+                    <Input value={distributionArtist} onChange={(e) => setDistributionArtist(e.target.value)} placeholder="아티스트명" />
+                  </div>
+                  <div>
+                    <Label>발매일(선택)</Label>
+                    <Input type="date" value={distributionReleaseDate} onChange={(e) => setDistributionReleaseDate(e.target.value)} />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={distributionRightsConfirmed}
+                      onChange={(e) => setDistributionRightsConfirmed(e.target.checked)}
+                    />
+                    본인은 유통 권리를 보유하며 플랫폼 배포에 동의합니다.
+                  </label>
+                  <Button
+                    className="w-full"
+                    disabled={
+                      createDistributionRelease.isPending ||
+                      !distributionMusicId ||
+                      !distributionTitle.trim() ||
+                      !distributionArtist.trim() ||
+                      !distributionRightsConfirmed
+                    }
+                    onClick={() => createDistributionRelease.mutate()}
+                  >
+                    {createDistributionRelease.isPending ? "생성 중..." : "유통 초안 생성"}
+                  </Button>
+                </div>
+                <div className="lg:col-span-2 space-y-3">
+                  <div className="grid grid-cols-3 gap-2 text-sm">
+                    <div className="rounded-md border p-3">
+                      <p className="text-muted-foreground text-xs">누적 정산</p>
+                      <p className="font-semibold">{(distributionBalance?.totalEarned ?? 0).toLocaleString()}원</p>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="text-muted-foreground text-xs">지급 완료</p>
+                      <p className="font-semibold">{(distributionBalance?.totalPaid ?? 0).toLocaleString()}원</p>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="text-muted-foreground text-xs">출금 가능</p>
+                      <p className="font-semibold text-primary">{(distributionBalance?.available ?? 0).toLocaleString()}원</p>
+                    </div>
+                  </div>
+                  <div className="rounded-md border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/30">
+                        <tr>
+                          <th className="text-left p-2">릴리즈</th>
+                          <th className="text-left p-2">상태</th>
+                          <th className="text-left p-2">사유</th>
+                          <th className="text-right p-2">액션</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(myDistributionReleases ?? []).length > 0 ? (
+                          (myDistributionReleases ?? []).map((r) => (
+                            <tr key={r.id} className="border-t border-border/50">
+                              <td className="p-2">
+                                <div className="font-medium">{r.releaseTitle}</div>
+                                <div className="text-xs text-muted-foreground">{r.artistName}</div>
+                              </td>
+                              <td className="p-2">{r.status}</td>
+                              <td className="p-2 text-xs text-muted-foreground">{r.rejectionReason || "-"}</td>
+                              <td className="p-2 text-right">
+                                {(r.status === "draft" || r.status === "rejected") ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={submitDistributionRelease.isPending}
+                                    onClick={() => submitDistributionRelease.mutate(r.id)}
+                                  >
+                                    제출
+                                  </Button>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="p-6 text-center text-muted-foreground">유통 초안이 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </>
         )}
 

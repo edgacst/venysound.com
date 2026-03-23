@@ -2694,6 +2694,97 @@ export async function registerRoutes(
     next();
   };
 
+  // === Distribution (platform-managed global release) ===
+  app.post("/api/distribution/releases", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const ownerUserId = req.user.claims.sub as string;
+      const musicId = Number(req.body?.musicId);
+      const releaseTitle = String(req.body?.releaseTitle ?? "").trim();
+      const artistName = String(req.body?.artistName ?? "").trim();
+      const rightsConfirmed = Boolean(req.body?.rightsConfirmed);
+      const releaseDateRaw = req.body?.releaseDate;
+      const releaseDate = releaseDateRaw ? new Date(releaseDateRaw) : null;
+      if (!musicId || !releaseTitle || !artistName) {
+        return res.status(400).json({ message: "musicId, releaseTitle, artistName은 필수입니다." });
+      }
+      if (!rightsConfirmed) {
+        return res.status(400).json({ message: "권리 확인 동의가 필요합니다." });
+      }
+      const m = await storage.getMusicById(musicId);
+      if (!m) return res.status(404).json({ message: "음원을 찾을 수 없습니다." });
+      if (m.userId !== ownerUserId) return res.status(403).json({ message: "본인 음원만 유통 신청할 수 있습니다." });
+      const row = await storage.createDistributionRelease({
+        ownerUserId,
+        musicId,
+        releaseTitle,
+        artistName,
+        rightsConfirmed,
+        releaseDate: releaseDate && !isNaN(releaseDate.getTime()) ? releaseDate : null,
+      });
+      res.status(201).json(row);
+    } catch (e: any) {
+      console.error("[distribution/releases POST]", e);
+      res.status(500).json({ message: e?.message ?? "유통 신청 초안 생성에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/distribution/releases/my", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const ownerUserId = req.user.claims.sub as string;
+      const rows = await storage.listMyDistributionReleases(ownerUserId);
+      res.json(rows);
+    } catch (e: any) {
+      console.error("[distribution/releases/my GET]", e);
+      res.status(500).json({ message: e?.message ?? "내 유통 목록을 불러올 수 없습니다." });
+    }
+  });
+
+  app.get("/api/distribution/music/my", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const ownerUserId = req.user.claims.sub as string;
+      const rows = await storage.getMusicByUser(ownerUserId);
+      res.json(rows.map((m) => ({
+        id: m.id,
+        title: m.title,
+        artist: m.artist,
+      })));
+    } catch (e: any) {
+      console.error("[distribution/music/my GET]", e);
+      res.status(500).json({ message: e?.message ?? "내 음원 목록을 불러올 수 없습니다." });
+    }
+  });
+
+  app.post("/api/distribution/releases/:id/submit", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const ownerUserId = req.user.claims.sub as string;
+      const releaseId = Number(req.params.id);
+      if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
+      await storage.submitDistributionRelease(ownerUserId, releaseId);
+      res.json({ success: true });
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      const status = msg.includes("not found") ? 404 : msg.includes("cannot") || msg.includes("rights") ? 400 : 500;
+      console.error("[distribution/releases/:id/submit POST]", e);
+      res.status(status).json({ message: e?.message ?? "유통 신청 제출에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/distribution/balance", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const summary = await storage.getDistributionBalanceSummary(userId);
+      res.json(summary);
+    } catch (e: any) {
+      console.error("[distribution/balance GET]", e);
+      res.status(500).json({ message: e?.message ?? "유통 정산 요약을 불러올 수 없습니다." });
+    }
+  });
+
   // === Admin Routes ===
   app.get("/api/admin/visitor-count", isAuthenticated, isAdmin, (_req, res) => {
     res.json({ count: visitorCount });
@@ -3284,6 +3375,73 @@ export async function registerRoutes(
     // @ts-ignore
     const role = await storage.getUserRole(req.user.claims.sub);
     res.json({ isAdmin: role === "admin" });
+  });
+
+  app.get("/api/admin/distribution/releases", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const rows = await storage.listAdminDistributionReleases(status);
+      res.json(rows);
+    } catch (e: any) {
+      console.error("[admin/distribution/releases GET]", e);
+      res.status(500).json({ message: e?.message ?? "유통 신청 목록을 불러올 수 없습니다." });
+    }
+  });
+
+  app.post("/api/admin/distribution/releases/:id/review", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // @ts-ignore
+      const adminUserId = req.user.claims.sub as string;
+      const releaseId = Number(req.params.id);
+      const action = req.body?.action === "approved" ? "approved" : req.body?.action === "rejected" ? "rejected" : null;
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : null;
+      if (!releaseId || !action) {
+        return res.status(400).json({ message: "releaseId/action 값이 유효하지 않습니다." });
+      }
+      const updated = await storage.reviewDistributionRelease({ adminUserId, releaseId, action, reason });
+      if (!updated) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
+      if (updated.ownerUserId) {
+        await storage.createNotification({
+          userId: updated.ownerUserId,
+          type: "system",
+          message: action === "approved" ? "유통 신청이 승인되었습니다." : "유통 신청이 반려되었습니다.",
+          payload: { releaseId: updated.id, reason: updated.rejectionReason ?? undefined },
+          url: "/dashboard",
+        });
+      }
+      res.json(updated);
+    } catch (e: any) {
+      console.error("[admin/distribution/releases/:id/review POST]", e);
+      res.status(500).json({ message: e?.message ?? "유통 신청 검토 처리에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/admin/distribution/releases/:id/earnings", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const releaseId = Number(req.params.id);
+      const periodMonth = String(req.body?.periodMonth ?? "").trim();
+      const grossAmount = Number(req.body?.grossAmount);
+      const platformFeeAmount = req.body?.platformFeeAmount == null ? undefined : Number(req.body.platformFeeAmount);
+      const source = typeof req.body?.source === "string" ? req.body.source.trim() : undefined;
+      const externalRef = typeof req.body?.externalRef === "string" ? req.body.externalRef.trim() : undefined;
+      if (!releaseId || !periodMonth || !Number.isFinite(grossAmount)) {
+        return res.status(400).json({ message: "releaseId/periodMonth/grossAmount 값이 유효하지 않습니다." });
+      }
+      const result = await storage.addDistributionEarning({
+        releaseId,
+        periodMonth,
+        grossAmount,
+        platformFeeAmount,
+        source,
+        externalRef,
+      });
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      const msg = String(e?.message ?? "");
+      const status = msg.includes("not found") || msg.includes("split") || msg.includes("periodMonth") ? 400 : 500;
+      console.error("[admin/distribution/releases/:id/earnings POST]", e);
+      res.status(status).json({ message: e?.message ?? "유통 정산 입력에 실패했습니다." });
+    }
   });
 
   app.get("/api/admin/radio/channels", isAuthenticated, isAdmin, async (_req, res) => {

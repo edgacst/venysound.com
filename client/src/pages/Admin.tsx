@@ -169,6 +169,18 @@ export default function Admin() {
   const [krwAmountWonInput, setKrwAmountWonInput] = useState("");
   const [krwNoteInput, setKrwNoteInput] = useState("");
   const [auditRefundId, setAuditRefundId] = useState<number | null>(null);
+  const [distributionStatusFilter, setDistributionStatusFilter] = useState("submitted");
+  const [distributionReviewReason, setDistributionReviewReason] = useState<Record<number, string>>({});
+  const [distributionPeriodMonth, setDistributionPeriodMonth] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${d.getFullYear()}-${m}`;
+  });
+  const [distributionGrossAmount, setDistributionGrossAmount] = useState("");
+  const [distributionPlatformFeeAmount, setDistributionPlatformFeeAmount] = useState("");
+  const [distributionSource, setDistributionSource] = useState("");
+  const [distributionExternalRef, setDistributionExternalRef] = useState("");
+  const [distributionSelectedReleaseId, setDistributionSelectedReleaseId] = useState<number | null>(null);
   const REFUND_ADMIN_PAGE_SIZE = 100;
   const [creditRefundPage, setCreditRefundPage] = useState(1);
 
@@ -184,6 +196,29 @@ export default function Admin() {
     totalComments: number;
   }>({
     queryKey: ["/api/admin/stats"],
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const { data: adminDistributionReleases, isLoading: loadingAdminDistributionReleases } = useQuery<Array<{
+    id: number;
+    ownerUserId: string;
+    musicId: number;
+    releaseTitle: string;
+    artistName: string;
+    status: string;
+    createdAt: string;
+    submittedAt: string | null;
+    approvedAt: string | null;
+    rejectionReason: string | null;
+  }>>({
+    queryKey: ["/api/admin/distribution/releases", distributionStatusFilter],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      if (distributionStatusFilter && distributionStatusFilter !== "all") p.set("status", distributionStatusFilter);
+      const res = await fetch(`/api/admin/distribution/releases?${p.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
     enabled: adminCheck?.isAdmin === true,
   });
 
@@ -675,6 +710,35 @@ export default function Admin() {
     },
   });
 
+  const reviewDistributionMutation = useMutation({
+    mutationFn: async ({ releaseId, action, reason }: { releaseId: number; action: "approved" | "rejected"; reason?: string }) => {
+      await apiRequest("POST", `/api/admin/distribution/releases/${releaseId}/review`, { action, reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      toast({ title: "유통 신청 상태를 업데이트했습니다." });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "유통 신청 상태 업데이트에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
+  const addDistributionEarningMutation = useMutation({
+    mutationFn: async (payload: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string; externalRef?: string }) => {
+      await apiRequest("POST", `/api/admin/distribution/releases/${payload.releaseId}/earnings`, payload);
+    },
+    onSuccess: () => {
+      toast({ title: "정산 원장 입력이 완료되었습니다." });
+      setDistributionGrossAmount("");
+      setDistributionPlatformFeeAmount("");
+      setDistributionSource("");
+      setDistributionExternalRef("");
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "정산 원장 입력에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
   const { data: copyrightReports, isLoading: loadingReports } = useQuery<any[]>({
     queryKey: ["/api/admin/copyright-reports", reportStatusFilter],
     queryFn: async () => {
@@ -1146,6 +1210,135 @@ export default function Admin() {
               </div>
             </Card>
           </div>
+
+          <Card className="p-4 mt-4 overflow-hidden">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <h3 className="text-sm font-semibold">글로벌 유통 신청 관리</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">상태</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  value={distributionStatusFilter}
+                  onChange={(e) => setDistributionStatusFilter(e.target.value)}
+                >
+                  <option value="all">all</option>
+                  <option value="submitted">submitted</option>
+                  <option value="approved">approved</option>
+                  <option value="rejected">rejected</option>
+                  <option value="live">live</option>
+                </select>
+              </div>
+            </div>
+
+            {loadingAdminDistributionReleases ? (
+              <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+            ) : (
+              <div className="overflow-x-auto rounded-md border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left p-2">릴리즈</th>
+                      <th className="text-left p-2">소유자</th>
+                      <th className="text-left p-2">상태</th>
+                      <th className="text-left p-2">반려 사유</th>
+                      <th className="text-right p-2">검토</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(adminDistributionReleases ?? []).length > 0 ? (
+                      (adminDistributionReleases ?? []).map((r) => (
+                        <tr key={r.id} className="border-b border-border/50">
+                          <td className="p-2">
+                            <div className="font-medium">{r.releaseTitle}</div>
+                            <div className="text-xs text-muted-foreground">{r.artistName}</div>
+                          </td>
+                          <td className="p-2 text-xs">{r.ownerUserId}</td>
+                          <td className="p-2">{r.status}</td>
+                          <td className="p-2 text-xs text-muted-foreground">{r.rejectionReason || "-"}</td>
+                          <td className="p-2 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {r.status === "submitted" ? (
+                                <>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => reviewDistributionMutation.mutate({ releaseId: r.id, action: "approved" })}
+                                  >
+                                    승인
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => reviewDistributionMutation.mutate({
+                                      releaseId: r.id,
+                                      action: "rejected",
+                                      reason: distributionReviewReason[r.id] || "관리자 반려",
+                                    })}
+                                  >
+                                    반려
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button type="button" size="sm" variant="outline" onClick={() => setDistributionSelectedReleaseId(r.id)}>
+                                  정산 입력
+                                </Button>
+                              )}
+                            </div>
+                            {r.status === "submitted" && (
+                              <Input
+                                className="mt-2 w-[220px] ml-auto"
+                                placeholder="반려 사유(반려 시 사용)"
+                                value={distributionReviewReason[r.id] || ""}
+                                onChange={(e) => setDistributionReviewReason((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-6 text-center text-muted-foreground">조건에 맞는 유통 신청이 없습니다.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {distributionSelectedReleaseId && (
+              <div className="mt-4 rounded-md border border-border p-3 space-y-3">
+                <p className="text-sm font-medium">정산 원장 입력 (Release #{distributionSelectedReleaseId})</p>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                  <Input value={distributionPeriodMonth} onChange={(e) => setDistributionPeriodMonth(e.target.value)} placeholder="YYYY-MM" />
+                  <Input value={distributionGrossAmount} onChange={(e) => setDistributionGrossAmount(e.target.value)} placeholder="총매출(원)" />
+                  <Input value={distributionPlatformFeeAmount} onChange={(e) => setDistributionPlatformFeeAmount(e.target.value)} placeholder="플랫폼/파트너 수수료" />
+                  <Input value={distributionSource} onChange={(e) => setDistributionSource(e.target.value)} placeholder="source(선택)" />
+                  <Input value={distributionExternalRef} onChange={(e) => setDistributionExternalRef(e.target.value)} placeholder="externalRef(선택)" />
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setDistributionSelectedReleaseId(null)}>닫기</Button>
+                  <Button
+                    type="button"
+                    disabled={addDistributionEarningMutation.isPending || !distributionPeriodMonth || !distributionGrossAmount}
+                    onClick={() => {
+                      addDistributionEarningMutation.mutate({
+                        releaseId: distributionSelectedReleaseId,
+                        periodMonth: distributionPeriodMonth,
+                        grossAmount: Number(distributionGrossAmount || "0"),
+                        platformFeeAmount: distributionPlatformFeeAmount ? Number(distributionPlatformFeeAmount) : undefined,
+                        source: distributionSource || undefined,
+                        externalRef: distributionExternalRef || undefined,
+                      });
+                    }}
+                  >
+                    {addDistributionEarningMutation.isPending ? "입력 중..." : "정산 저장"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             <Card className="p-4 overflow-hidden">
