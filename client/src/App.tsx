@@ -15,6 +15,7 @@ import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 
 const VISITOR_KEY = "vkey";
+const VISIT_HEARTBEAT_MS = 15_000;
 
 function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -108,8 +109,42 @@ function AnalyticsVisit() {
     };
 
     sendVisit();
-    const heartbeat = window.setInterval(sendVisit, 60_000);
-    return () => window.clearInterval(heartbeat);
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      sendVisit();
+    }, VISIT_HEARTBEAT_MS);
+
+    const sendVisitBeacon = () => {
+      if (typeof navigator === "undefined") return;
+      const path = pathname || "/";
+      let visitorKey: string | null = null;
+      try {
+        visitorKey = localStorage.getItem(VISITOR_KEY);
+      } catch {}
+      const payload = JSON.stringify({
+        path,
+        visitorKey,
+        authUserId: user?.id ?? undefined,
+      });
+      if (typeof navigator.sendBeacon === "function") {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon("/api/analytics/visit", blob);
+      } else {
+        sendVisit();
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sendVisitBeacon();
+    };
+
+    window.addEventListener("beforeunload", sendVisitBeacon);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("beforeunload", sendVisitBeacon);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [pathname, user?.id, authLoading]);
   return null;
 }
