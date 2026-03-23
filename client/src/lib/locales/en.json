@@ -1362,11 +1362,26 @@
     "copy": "Copy",
     "copied": "Copied",
     "steps": [
-      { "title": "Log in to the site", "desc": "After logging in, you can use AI music creation on the Create Music page." },
-      { "title": "Open the Create Music page", "desc": "Click 'Create Music' in the top menu to open the music creation screen." },
-      { "title": "Enter a prompt", "desc": "Enter your desired music style, mood, and genre in English. Refer to the examples below!" },
-      { "title": "Adjust title, lyrics & style", "desc": "You can write the title, lyrics, and style yourself. Korean lyrics are also supported!" },
-      { "title": "Generate & Download", "desc": "Press the generate button to create music. Play or download your favorite track." }
+      {
+        "title": "Log in",
+        "desc": "Use Log in on the top right (sign up first if you don’t have an account).\nAfter login, you’ll see your AI quota or credits (free monthly song limit vs. paid monthly AI credits).\nFree and paid plans have different limits; check the numbers on the Create Music page."
+      },
+      {
+        "title": "Open Create Music",
+        "desc": "In the top menu, click Create Music to open `/create-music`.\nOn mobile, open the hamburger (☰) menu and tap the same item.\nYou can also jump there from the Create Music button at the bottom of this guide page."
+      },
+      {
+        "title": "Choose a mode · style & prompt",
+        "desc": "On the left, choose Generate from description or Enter lyrics.\n• Generate from description: describe mood, genre, and theme in sentences. Korean is OK.\n• Enter lyrics: structure with [Verse], [Chorus], etc. so the model follows your sections.\nIn the Style field, be specific: genre, vocal (male/female), instruments, BPM, mood.\nEnglish often works best; copy and edit the genre examples below."
+      },
+      {
+        "title": "Title, lyrics & description",
+        "desc": "Title is optional but helps you find tracks in the list later.\nLyrics mode: the lyrics field is required. For instrumental-only, add instrumental / no lyrics in style or description.\nDescription mode: the music description is required—explain the vibe and genre.\nReview once before generating."
+      },
+      {
+        "title": "Generate · download · publish",
+        "desc": "Click Generate; it may take about 1–2 minutes.\nFinished tracks appear in Generated tracks on the right—play, download, or Publish as a new release.\nIf you don’t like the result, tweak the prompt or style and try again.\nAfter download, you can complete cover art and metadata on the upload flow to share with others."
+      }
     ],
     "examples": [
       { "category": "K-POP Style", "result": "A bright and upbeat K-pop female vocal track with an addictive chorus themed around summer love", "tip": "Inputting genre + vocal gender + mood + BPM + theme together gives more accurate results." },

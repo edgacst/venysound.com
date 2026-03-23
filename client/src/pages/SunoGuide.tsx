@@ -111,7 +111,7 @@ export default function SunoGuide() {
                     <span className="text-xs text-primary font-mono font-bold">STEP {String(i + 1).padStart(2, "0")}</span>
                     <h3 className="font-semibold">{step.title}</h3>
                   </div>
-                  <p className="text-sm text-muted-foreground">{step.desc}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line leading-relaxed">{step.desc}</p>
                 </div>
               </div>
             ))}
