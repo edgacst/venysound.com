@@ -2786,10 +2786,8 @@ export async function registerRoutes(
   });
 
   // === Distribution package export (metadata.json + metadata.csv + zip) ===
-  app.get("/api/distribution/releases/:id/package-download", isAuthenticated, async (req, res) => {
+  app.get("/api/distribution/releases/:id/package-download", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      // @ts-ignore
-      const ownerUserId = req.user.claims.sub as string;
       const releaseId = parsePositiveIntParam(req.params.id);
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
@@ -2798,8 +2796,8 @@ export async function registerRoutes(
       const allowed = new Set(["distrokid", "tuneCore".toLowerCase(), "cdbaby", "ditto", "onerpm", "generic"]);
       const distributorFinal = allowed.has(distributor) ? distributor : "generic";
 
-      const myReleases = await storage.listMyDistributionReleases(ownerUserId);
-      const release = myReleases.find((r: any) => r.id === releaseId);
+      const approvedReleases = await storage.listAdminDistributionReleases("approved");
+      const release = approvedReleases.find((r: any) => r.id === releaseId);
       if (!release) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
 
       if (release.status !== "approved") {
@@ -3628,6 +3626,46 @@ export async function registerRoutes(
     }
   });
 
+  // === Admin: Company batch publish (API integration placeholder) ===
+  // 현재 버전에서는 Distributor API 실제 호출 대신, approved 릴리즈를 'live'로 전환합니다.
+  app.post("/api/admin/distribution/batch-submit", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // @ts-ignore
+      const adminUserId = req.user.claims.sub as string;
+
+      const rawDistributor = typeof req.body?.distributor === "string" ? req.body.distributor : "distrokid";
+      const distributor = rawDistributor.trim().toLowerCase();
+      const allowed = new Set(["distrokid", "tuneCore".toLowerCase(), "cdbaby", "ditto", "onerpm", "generic"]);
+      const distributorFinal = allowed.has(distributor) ? distributor : "distrokid";
+
+      const approvedReleases = await storage.listAdminDistributionReleases("approved");
+      let updatedCount = 0;
+
+      for (const r of approvedReleases) {
+        const updated = await storage.publishDistributionRelease({
+          adminUserId,
+          releaseId: r.id,
+          distributor: distributorFinal,
+        });
+        if (updated?.ownerUserId) {
+          await storage.createNotification({
+            userId: updated.ownerUserId,
+            type: "system",
+            message: "유통이 시작되었습니다.",
+            payload: { releaseId: updated.id, distributor: distributorFinal },
+            url: "/dashboard",
+          });
+          updatedCount += 1;
+        }
+      }
+
+      res.json({ success: true, updatedCount, distributor: distributorFinal });
+    } catch (e: any) {
+      console.error("[admin/distribution/batch-submit POST]", e);
+      res.status(500).json({ message: e?.message ?? "유통 일괄 배포에 실패했습니다." });
+    }
+  });
+
   app.post("/api/admin/distribution/releases/:id/earnings", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const releaseId = Number(req.params.id);
@@ -3654,8 +3692,9 @@ export async function registerRoutes(
         msg.includes("not found") ||
         msg.includes("split") ||
         msg.includes("periodMonth") ||
-        msg.includes("approved") ||
-        msg.includes("release not approved")
+        msg.includes("cannot accept earnings") ||
+        msg.includes("release cannot accept earnings") ||
+        msg.includes("approved") // 과거 오류 메시지 호환
           ? 400
           : 500;
       console.error("[admin/distribution/releases/:id/earnings POST]", e);

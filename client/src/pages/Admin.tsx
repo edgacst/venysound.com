@@ -181,6 +181,7 @@ export default function Admin() {
   const [distributionSource, setDistributionSource] = useState("");
   const [distributionExternalRef, setDistributionExternalRef] = useState("");
   const [distributionSelectedReleaseId, setDistributionSelectedReleaseId] = useState<number | null>(null);
+  const [distributionBatchDistributor, setDistributionBatchDistributor] = useState("distrokid");
   const REFUND_ADMIN_PAGE_SIZE = 100;
   const [creditRefundPage, setCreditRefundPage] = useState(1);
 
@@ -723,6 +724,19 @@ export default function Admin() {
     },
   });
 
+  const batchPublishDistributionMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/admin/distribution/batch-submit", { distributor: distributionBatchDistributor });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      toast({ title: `일괄 유통 배포 완료 (${data?.updatedCount ?? 0}개)` });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "일괄 유통 배포에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
   const addDistributionEarningMutation = useMutation({
     mutationFn: async (payload: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string; externalRef?: string }) => {
       await apiRequest("POST", `/api/admin/distribution/releases/${payload.releaseId}/earnings`, payload);
@@ -1227,6 +1241,28 @@ export default function Admin() {
                   <option value="rejected">rejected</option>
                   <option value="live">live</option>
                 </select>
+                <span className="text-xs text-muted-foreground ml-2">배포사</span>
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  value={distributionBatchDistributor}
+                  onChange={(e) => setDistributionBatchDistributor(e.target.value)}
+                >
+                  <option value="distrokid">DistroKid</option>
+                  <option value="tuneCore">TuneCore</option>
+                  <option value="cdbaby">CD Baby</option>
+                  <option value="ditto">Ditto</option>
+                  <option value="onerpm">ONErpm</option>
+                  <option value="generic">Generic</option>
+                </select>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={batchPublishDistributionMutation.isPending}
+                  onClick={() => batchPublishDistributionMutation.mutate()}
+                  className="ml-1"
+                >
+                  일괄 배포
+                </Button>
               </div>
             </div>
 
@@ -1290,7 +1326,7 @@ export default function Admin() {
                                     반려
                                   </Button>
                                 </>
-                              ) : r.status === "approved" ? (
+                              ) : ["approved", "delivered", "live"].includes(r.status) ? (
                                 <Button
                                   type="button"
                                   size="sm"

@@ -1416,10 +1416,23 @@ export class DatabaseStorage implements IStorage {
       updatedAt: new Date(),
     }).returning();
     if (!inserted) throw new Error("distribution release create failed");
-    await db
-      .insert(distributionSplits)
-      .values({ releaseId: inserted.id, userId: input.ownerUserId, splitBps: 10000 })
-      .onConflictDoNothing();
+
+    // 기본 수익 배분: 유저 70% / 회사 30%
+    const ownerSplitBps = 7000;
+    const companySplitBps = 3000;
+    const companyEmail = process.env.DISTRIBUTION_COMPANY_EMAIL || "freecompr20@gmail.com";
+    const companyUserId = await this.getUserIdByUsername(companyEmail);
+
+    const splitsToInsert: Array<{ releaseId: number; userId: string; splitBps: number }> = [];
+    if (companyUserId && companyUserId !== input.ownerUserId) {
+      splitsToInsert.push({ releaseId: inserted.id, userId: input.ownerUserId, splitBps: ownerSplitBps });
+      splitsToInsert.push({ releaseId: inserted.id, userId: companyUserId, splitBps: companySplitBps });
+    } else {
+      // 회사 계정이 없거나 소유자와 동일 계정이면 기존과 동일하게 유저 100%로 폴백
+      splitsToInsert.push({ releaseId: inserted.id, userId: input.ownerUserId, splitBps: 10000 });
+    }
+
+    await db.insert(distributionSplits).values(splitsToInsert).onConflictDoNothing();
     return inserted;
   }
 
@@ -1481,6 +1494,24 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async publishDistributionRelease(input: {
+    adminUserId: string;
+    releaseId: number;
+    distributor: string;
+  }): Promise<DistributionRelease | undefined> {
+    const [updated] = await db
+      .update(distributionReleases)
+      .set({
+        status: "live",
+        externalReleaseRef: `${input.distributor}:${Date.now()}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.id, input.releaseId))
+      .returning();
+
+    return updated;
+  }
+
   async addDistributionEarning(input: {
     releaseId: number;
     periodMonth: string;
@@ -1500,7 +1531,9 @@ export class DatabaseStorage implements IStorage {
       .where(eq(distributionReleases.id, input.releaseId))
       .limit(1);
     if (!release) throw new Error("release not found");
-    if (release.status !== "approved") throw new Error("release not approved");
+    if (!["approved", "delivered", "live"].includes(release.status)) {
+      throw new Error(`release cannot accept earnings in status: ${release.status}`);
+    }
 
     const splits = await db
       .select({ userId: distributionSplits.userId, splitBps: distributionSplits.splitBps })
@@ -1545,6 +1578,52 @@ export class DatabaseStorage implements IStorage {
         });
       }
     });
+
+    // 'delivered'/'live' 상태일 때는, earnings ledger를 기반으로 payout을 즉시 생성합니다.
+    // (배치 지급/정산은 추후 확장 가능. 현재는 밸런스 UI 반영을 위해 paid로 기록합니다.)
+    if (release.status === "approved" || release.status === "delivered" || release.status === "live") {
+      const noteKey = `distribution_earnings:${input.releaseId}:${input.periodMonth}`;
+      const ledgerSums = await db
+        .select({
+          userId: distributionEarningsLedger.userId,
+          amount: sql<number>`COALESCE(SUM(${distributionEarningsLedger.userAmount}), 0)::int`,
+        })
+        .from(distributionEarningsLedger)
+        .where(
+          and(
+            eq(distributionEarningsLedger.releaseId, input.releaseId),
+            eq(distributionEarningsLedger.periodMonth, input.periodMonth),
+          ),
+        )
+        .groupBy(distributionEarningsLedger.userId);
+
+      const userIds = ledgerSums.map((r) => r.userId);
+      const existing = await db
+        .select({ userId: distributionPayouts.userId })
+        .from(distributionPayouts)
+        .where(
+          and(
+            inArray(distributionPayouts.userId, userIds),
+            eq(distributionPayouts.note, noteKey),
+            eq(distributionPayouts.status, "paid"),
+          ),
+        );
+      const existingSet = new Set(existing.map((e) => e.userId));
+
+      const payoutsToInsert = ledgerSums
+        .filter((r) => r.amount > 0 && !existingSet.has(r.userId))
+        .map((r) => ({
+          userId: r.userId,
+          amount: r.amount,
+          status: "paid",
+          note: noteKey,
+          paidAt: new Date(),
+        }));
+
+      if (payoutsToInsert.length > 0) {
+        await db.insert(distributionPayouts).values(payoutsToInsert);
+      }
+    }
 
     return {
       ledgerRows: finalRows.length,
