@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { existsSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
 import archiver from "archiver";
 import { storage } from "./storage";
+import { submitDistributionReleaseToDistributor } from "./distribution/submitDistributor";
 import { translateAnnouncementContent } from "./translate";
 import { api, errorSchemas } from "@shared/routes";
 import { z } from "zod";
@@ -3664,17 +3665,20 @@ export async function registerRoutes(
       let updatedCount = 0;
 
       for (const r of approvedReleases) {
-        const updated = await storage.publishDistributionRelease({
+        const submitResult = await submitDistributionReleaseToDistributor({
           adminUserId,
-          releaseId: r.id,
+          release: r,
           distributor: distributorFinal,
         });
-        if (updated?.ownerUserId) {
+
+        // publishDistributionRelease가 delivered 상태 + externalReleaseRef를 세팅하므로,
+        // 여기서는 결과로부터 ownerUserId 기반 notification만 남깁니다.
+        if (r.ownerUserId) {
           await storage.createNotification({
-            userId: updated.ownerUserId,
+            userId: r.ownerUserId,
             type: "system",
             message: "유통이 시작되었습니다.",
-            payload: { releaseId: updated.id, distributor: distributorFinal },
+            payload: { releaseId: r.id, distributor: distributorFinal, externalReleaseRef: submitResult.externalReleaseRef },
             url: "/dashboard",
           });
           updatedCount += 1;
