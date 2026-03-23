@@ -2867,6 +2867,7 @@ export async function registerRoutes(
           { p: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
           { p: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
           { p: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
+        { p: path.join(uploadsDir, `${baseId}.webp`), ext: ".webp" },
           { p: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
         ];
         const found = candidates.find((c) => existsSync(c.p));
