@@ -3669,8 +3669,8 @@ export async function registerRoutes(
   // === Distributor Webhooks (status / payouts) ===
   // 보안: 헤더 `x-distribution-webhook-secret` 값이 ENV와 일치해야 합니다.
   function requireDistributionWebhookSecret(req: any, res: any, next: any) {
-    const expected = process.env.DISTRIBUTION_WEBHOOK_SECRET;
-    const provided = String(req.headers["x-distribution-webhook-secret"] ?? "");
+    const expected = String(process.env.DISTRIBUTION_WEBHOOK_SECRET ?? "").trim();
+    const provided = String(req.headers["x-distribution-webhook-secret"] ?? "").trim();
     if (!expected) {
       return res.status(500).json({ message: "DISTRIBUTION_WEBHOOK_SECRET is not configured" });
     }
