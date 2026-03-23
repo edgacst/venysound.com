@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { Router, Switch, Route, useLocation, Redirect } from "wouter";
 import { LOGIN_PATH, REGISTER_PATH, ADMIN_PATH } from "@/lib/site-paths";
@@ -12,7 +13,6 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import { LoginModal } from "@/components/LoginModal";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
-import { useAuth } from "@/hooks/use-auth";
 
 const VISITOR_KEY = "vkey";
 
@@ -74,7 +74,9 @@ function PageTitle() {
 /** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
 function AnalyticsVisit() {
   const [pathname] = useLocation();
+  const { user, isLoading: authLoading } = useAuth();
   useEffect(() => {
+    if (authLoading) return;
     const path = pathname || "/";
     let visitorKey: string | null = null;
     try {
@@ -97,7 +99,7 @@ function AnalyticsVisit() {
         }
       })
       .catch(() => {});
-  }, [pathname]);
+  }, [pathname, user?.id, authLoading]);
   return null;
 }
 import Home from "@/pages/Home";

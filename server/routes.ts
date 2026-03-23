@@ -2642,11 +2642,13 @@ export async function registerRoutes(
         }
       } catch (_) {}
     }
-    const r = req as Request & { isAuthenticated?: () => boolean; user?: { claims?: { sub?: string } } };
-    const sessionUserId =
-      typeof r.isAuthenticated === "function" && r.isAuthenticated() && r.user?.claims?.sub
-        ? String(r.user.claims.sub)
-        : undefined;
+    // Passport 세션만 신뢰. isAuthenticated()는 환경에 따라 불일치할 수 있어 claims.sub만 본다.
+    const r = req as Request & { user?: { claims?: { sub?: string } }; session?: { passport?: { user?: { claims?: { sub?: string } } } } };
+    let sessionUserId: string | undefined;
+    const sub = r.user?.claims?.sub ?? r.session?.passport?.user?.claims?.sub;
+    if (sub != null && String(sub).length > 0) {
+      sessionUserId = String(sub);
+    }
     try {
       await storage.recordVisit(visitorKey, path, {
         userId: sessionUserId,
