@@ -467,6 +467,26 @@ export function GlobalAudioPlayer() {
     }
   }, [toast]);
   const tracker = useStreamingTracker(activeMusicId, handleStreamingLimit);
+  const unauthEndedToastShownRef = useRef(false);
+  const unauthStoppedRef = useRef(false);
+
+  useEffect(() => {
+    // 곡이 바뀌거나 로그인 상태가 바뀌면 토스트 플래그 초기화
+    unauthEndedToastShownRef.current = false;
+    unauthStoppedRef.current = false;
+  }, [activeMusicId, activeExternalTrack, user?.id]);
+
+  useEffect(() => {
+    // 비로그인 상태에서 1곡 종료로 멈춘 뒤 로그인하면,
+    // "이제 연속으로 들을 수 있음" 안내를 띄운다.
+    if (user && unauthStoppedRef.current) {
+      unauthStoppedRef.current = false;
+      toast({
+        title: "로그인 후에는 연속 재생됩니다",
+        variant: "default",
+      });
+    }
+  }, [user, toast]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -699,6 +719,14 @@ export function GlobalAudioPlayer() {
         playNext();
       } else {
         tracker.onEnded();
+        if (!unauthEndedToastShownRef.current) {
+          unauthEndedToastShownRef.current = true;
+          unauthStoppedRef.current = true;
+          toast({
+            title: "음악 연속 듣기를 하실려면 로그인 하세요",
+            variant: "default",
+          });
+        }
       }
     };
     const onError = () => {
