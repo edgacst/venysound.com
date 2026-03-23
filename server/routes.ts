@@ -2876,7 +2876,26 @@ export async function registerRoutes(
       }
 
       const localAudioPath = resolveLocalAudioPath(music.filename);
-      const localCover = resolveLocalCoverPath(music.imageFilename);
+      let localCover = resolveLocalCoverPath(music.imageFilename);
+      // QC용으로 통과시킬 뿐 아니라 zip에 실제 커버를 넣기 위해 원격 cover URL이면 다운로드를 시도합니다.
+      if (!localCover && music.imageFilename && /^https?:\/\//i.test(String(music.imageFilename))) {
+        try {
+          const coverUrl = String(music.imageFilename);
+          const u = new URL(coverUrl);
+          const extCandidate = path.extname(u.pathname).toLowerCase();
+          const ext =
+            [".jpg", ".jpeg", ".png", ".webp"].includes(extCandidate) ? extCandidate : ".jpg";
+          const targetPath = path.join(uploadsDir, `remote_cover_${releaseId}${ext}`);
+          const response = await fetch(coverUrl);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            writeFileSync(targetPath, Buffer.from(arrayBuffer));
+            localCover = { path: targetPath, ext };
+          }
+        } catch (e) {
+          // ignore: QC에서는 원격 커버도 통과시키지만, 다운로드 실패 시 템플릿에서 placeholder를 넣습니다.
+        }
+      }
 
       const releaseDate = release.releaseDate ? new Date(release.releaseDate) : null;
       const releaseDateStr = releaseDate && !isNaN(releaseDate.getTime()) ? releaseDate.toISOString().slice(0, 10) : "";

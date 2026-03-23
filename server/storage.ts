@@ -1566,6 +1566,18 @@ export class DatabaseStorage implements IStorage {
 
     const localAudioPath = musicItem.filename ? resolveLocalAudioPath(musicItem.filename) : null;
     const localCover = resolveLocalCoverPath(musicItem.imageFilename);
+    const coverRef = musicItem.imageFilename;
+    const isRemoteCover = !!coverRef && /^https?:\/\//i.test(String(coverRef));
+    let remoteCoverExt: string | null = null;
+    if (isRemoteCover) {
+      try {
+        const u = new URL(String(coverRef));
+        const ext = path.extname(u.pathname).toLowerCase();
+        if ([".jpg", ".jpeg", ".png", ".webp"].includes(ext)) remoteCoverExt = ext;
+      } catch {
+        // ignore
+      }
+    }
 
     const audioExt = localAudioPath ? path.extname(localAudioPath).toLowerCase() : "";
     const allowedAudioExt = new Set([".mp3", ".wav", ".ogg"]);
@@ -1576,7 +1588,7 @@ export class DatabaseStorage implements IStorage {
       artistPresent: !!release.artistName?.trim(),
       audioFileFound: !!localAudioPath,
       audioFormatAllowed: allowedAudioExt.has(audioExt),
-      coverFileFound: !!localCover,
+      coverFileFound: !!localCover || isRemoteCover,
     };
 
     const failed = Object.entries(checklist).filter(([, v]) => !v).map(([k]) => k);
@@ -1587,7 +1599,11 @@ export class DatabaseStorage implements IStorage {
       failedChecks: failed,
       files: {
         audio: { included: !!localAudioPath, ext: audioExt || null, resolvedPath: localAudioPath || null },
-        cover: { included: !!localCover, ext: localCover?.ext || null, resolvedPath: localCover?.path || null },
+        cover: {
+          included: !!localCover || isRemoteCover,
+          ext: localCover?.ext || remoteCoverExt || (isRemoteCover ? ".jpg" : null),
+          resolvedPath: localCover?.path || (isRemoteCover ? String(coverRef) : null),
+        },
       },
       checkedAt: new Date().toISOString(),
     };
