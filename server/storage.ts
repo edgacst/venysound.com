@@ -98,6 +98,22 @@ export interface IStorage {
   }>;
   recordVisit(visitorKey: string, path: string, extra?: { userId?: string; ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
   getAdminUserAccessLogs(userId: string, limit: number, offset: number): Promise<{ logs: { id: number; visitedAt: Date; path: string; deviceType: string | null }[]; total: number }>;
+  /** 일자(Asia/Seoul)별 방문자 단위: 첫·마지막 페이지뷰 시각 및 그 간격(초), 페이지뷰 수 */
+  getAdminVisitorSessionsByDate(dateStr: string, limit: number, offset: number): Promise<{
+    rows: {
+      userId: string | null;
+      visitorKey: string;
+      firstAt: Date;
+      lastAt: Date;
+      durationSeconds: number;
+      pageViews: number;
+      email: string | null;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+    }[];
+    total: number;
+  }>;
   checkAnalyticsTableExists(): Promise<boolean>;
   getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
@@ -1196,6 +1212,85 @@ export class DatabaseStorage implements IStorage {
       return { logs: rows, total };
     } catch {
       return { logs: [], total: 0 };
+    }
+  }
+
+  async getAdminVisitorSessionsByDate(dateStr: string, limit: number, offset: number): Promise<{
+    rows: {
+      userId: string | null;
+      visitorKey: string;
+      firstAt: Date;
+      lastAt: Date;
+      durationSeconds: number;
+      pageViews: number;
+      email: string | null;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+    }[];
+    total: number;
+  }> {
+    const safeLimit = Math.min(200, Math.max(1, Math.floor(limit)));
+    const safeOffset = Math.max(0, Math.floor(offset));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { rows: [], total: 0 };
+    }
+    const start = new Date(`${dateStr}T00:00:00+09:00`);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+    try {
+      const countResult = await db.execute(sql`
+        SELECT count(*)::int AS c FROM (
+          SELECT 1 FROM analytics_visits
+          WHERE visited_at >= ${start} AND visited_at < ${end}
+          GROUP BY (CASE WHEN user_id IS NOT NULL THEN 'u:' || user_id ELSE 'v:' || visitor_key END)
+        ) t
+      `);
+      const total = Number((countResult.rows[0] as { c: number })?.c ?? 0);
+
+      const rowsResult = await db.execute(sql`
+        SELECT
+          s.user_id AS user_id,
+          s.visitor_key AS visitor_key,
+          s.first_at AS first_at,
+          s.last_at AS last_at,
+          s.duration_seconds AS duration_seconds,
+          s.page_views AS page_views,
+          u.email AS email,
+          u.username AS username,
+          u.first_name AS first_name,
+          u.last_name AS last_name
+        FROM (
+          SELECT
+            max(v.user_id) AS user_id,
+            max(v.visitor_key) AS visitor_key,
+            min(v.visited_at) AS first_at,
+            max(v.visited_at) AS last_at,
+            (extract(epoch FROM max(v.visited_at) - min(v.visited_at)))::int AS duration_seconds,
+            count(*)::int AS page_views
+          FROM analytics_visits v
+          WHERE v.visited_at >= ${start} AND v.visited_at < ${end}
+          GROUP BY (CASE WHEN v.user_id IS NOT NULL THEN 'u:' || v.user_id ELSE 'v:' || v.visitor_key END)
+        ) s
+        LEFT JOIN users u ON u.id = s.user_id
+        ORDER BY s.first_at DESC
+        LIMIT ${safeLimit} OFFSET ${safeOffset}
+      `);
+
+      const rows = (rowsResult.rows as Record<string, unknown>[]).map((r) => ({
+        userId: (r.user_id as string | null) ?? null,
+        visitorKey: String(r.visitor_key ?? ""),
+        firstAt: r.first_at instanceof Date ? r.first_at : new Date(String(r.first_at)),
+        lastAt: r.last_at instanceof Date ? r.last_at : new Date(String(r.last_at)),
+        durationSeconds: Number(r.duration_seconds ?? 0),
+        pageViews: Number(r.page_views ?? 0),
+        email: (r.email as string | null) ?? null,
+        username: (r.username as string | null) ?? null,
+        firstName: (r.first_name as string | null) ?? null,
+        lastName: (r.last_name as string | null) ?? null,
+      }));
+      return { rows, total };
+    } catch {
+      return { rows: [], total: 0 };
     }
   }
 

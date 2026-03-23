@@ -2767,6 +2767,38 @@ export async function registerRoutes(
     }
   });
 
+  /** 일자(Asia/Seoul)별 방문자 요약: 첫·마지막 페이지뷰, 간격(체류 추정), 페이지뷰 수 */
+  app.get("/api/admin/visitor-sessions", isAuthenticated, isAdmin, async (req, res) => {
+    const dateStr = typeof req.query.date === "string" ? req.query.date.trim() : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({ message: "date=YYYY-MM-DD 형식이 필요합니다." });
+    }
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit), 10) || 50));
+    const offset = Math.max(0, parseInt(String(req.query.offset), 10) || 0);
+    try {
+      const { rows, total } = await storage.getAdminVisitorSessionsByDate(dateStr, limit, offset);
+      res.json({
+        total,
+        date: dateStr,
+        rows: rows.map((r) => ({
+          userId: r.userId,
+          visitorKey: r.visitorKey,
+          firstAt: r.firstAt instanceof Date ? r.firstAt.toISOString() : String(r.firstAt),
+          lastAt: r.lastAt instanceof Date ? r.lastAt.toISOString() : String(r.lastAt),
+          durationSeconds: r.durationSeconds,
+          pageViews: r.pageViews,
+          email: r.email,
+          username: r.username,
+          firstName: r.firstName,
+          lastName: r.lastName,
+        })),
+      });
+    } catch (e) {
+      console.error("[admin/visitor-sessions]", e);
+      res.status(500).json({ message: "조회에 실패했습니다." });
+    }
+  });
+
   /** 로그인한 회원의 페이지 이동 기록 (회원 ID = users.id, 세션과 동일) */
   app.get("/api/admin/access-logs", isAuthenticated, isAdmin, async (req, res) => {
     const userId = typeof req.query.userId === "string" ? req.query.userId.trim() : "";

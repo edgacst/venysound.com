@@ -262,6 +262,10 @@ export default function Admin() {
 
   const [analyticsTrendDays, setAnalyticsTrendDays] = useState(7);
   const ACCESS_LOG_PAGE_SIZE = 50;
+  const [visitorSessionDate, setVisitorSessionDate] = useState(() =>
+    new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
+  );
+  const [visitorSessionPage, setVisitorSessionPage] = useState(0);
   const [accessLogUserIdInput, setAccessLogUserIdInput] = useState("");
   const [accessLogSearchUserId, setAccessLogSearchUserId] = useState("");
   const [accessLogPage, setAccessLogPage] = useState(0);
@@ -275,6 +279,36 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 60000,
+  });
+
+  const { data: visitorSessionsData, isLoading: loadingVisitorSessions, isFetching: fetchingVisitorSessions } = useQuery<{
+    total: number;
+    date: string;
+    rows: {
+      userId: string | null;
+      visitorKey: string;
+      firstAt: string;
+      lastAt: string;
+      durationSeconds: number;
+      pageViews: number;
+      email: string | null;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+    }[];
+  }>({
+    queryKey: ["/api/admin/visitor-sessions", visitorSessionDate, visitorSessionPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        date: visitorSessionDate,
+        limit: String(ACCESS_LOG_PAGE_SIZE),
+        offset: String(visitorSessionPage * ACCESS_LOG_PAGE_SIZE),
+      });
+      const res = await fetch(`/api/admin/visitor-sessions?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("visitor sessions");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true && /^\d{4}-\d{2}-\d{2}$/.test(visitorSessionDate),
   });
 
   const { data: accessLogsData, isLoading: loadingAccessLogs, isFetching: fetchingAccessLogs } = useQuery<{
@@ -882,6 +916,33 @@ export default function Admin() {
     return `${formatDate(dateStr)} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
 
+  const formatDurationSec = (sec: number) => {
+    if (sec < 60) return `${sec}${t("admin.secondsShort", "초")}`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s
+      ? `${m}${t("admin.minutesShort", "분")} ${s}${t("admin.secondsShort", "초")}`
+      : `${m}${t("admin.minutesShort", "분")}`;
+  };
+
+  const formatVisitorSessionLabel = (row: {
+    userId: string | null;
+    visitorKey: string;
+    email: string | null;
+    username: string | null;
+    firstName: string | null;
+    lastName: string | null;
+  }) => {
+    if (row.email) return row.email;
+    if (row.username) return `@${row.username}`;
+    if (row.userId) {
+      const name = [row.firstName, row.lastName].filter(Boolean).join(" ").trim();
+      return name || `${row.userId.slice(0, 8)}…`;
+    }
+    const vk = row.visitorKey || "";
+    return `${t("admin.guestVisitor", "비로그인")} · ${vk.slice(0, 8)}…`;
+  };
+
   const refundEventTypeLabel = (type: string) => {
     switch (type) {
       case "request_created":
@@ -1162,44 +1223,138 @@ export default function Admin() {
           </div>
 
           <Card className="p-4 mt-6 overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-3 mb-3">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
-                  <History size={16} className="shrink-0" />
-                  {t("admin.userAccessLogs", "회원별 접속 로그")}
-                </h3>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {t(
-                    "admin.userAccessLogsHint",
-                    "로그인한 상태에서 이동한 페이지만 기록됩니다. 회원 ID(users.id)를 입력하세요.",
-                  )}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    className="max-w-md"
-                    placeholder="user id (UUID)"
-                    value={accessLogUserIdInput}
-                    onChange={(e) => setAccessLogUserIdInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        setAccessLogPage(0);
-                        setAccessLogSearchUserId(accessLogUserIdInput.trim());
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => {
-                      setAccessLogPage(0);
-                      setAccessLogSearchUserId(accessLogUserIdInput.trim());
-                    }}
-                    disabled={!accessLogUserIdInput.trim()}
-                  >
-                    {t("admin.search", "조회")}
-                  </Button>
-                </div>
+            <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+              <History size={16} className="shrink-0" />
+              {t("admin.visitorSessionsByDate", "일자별 방문 요약")}
+            </h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t(
+                "admin.visitorSessionsHint",
+                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류는 해당 날짜 안 첫·마지막 페이지뷰 사이 간격이며, 실제 이탈 시각과 다를 수 있습니다.",
+              )}
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              <label className="text-sm text-muted-foreground shrink-0">{t("admin.pickDate", "날짜")}</label>
+              <Input
+                type="date"
+                className="w-auto max-w-[200px]"
+                value={visitorSessionDate}
+                onChange={(e) => {
+                  setVisitorSessionPage(0);
+                  setVisitorSessionDate(e.target.value);
+                }}
+              />
+            </div>
+            {loadingVisitorSessions || fetchingVisitorSessions ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {t("admin.visitorSessionsTotal", "{{date}} · 방문자 {{n}}명(고유)", {
+                    date: visitorSessionsData?.date ?? visitorSessionDate,
+                    n: visitorSessionsData?.total ?? 0,
+                  })}
+                </p>
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30">
+                        <th className="text-left p-2 font-medium">{t("admin.visitorWho", "방문자")}</th>
+                        <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.firstActivity", "첫 활동")}</th>
+                        <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.lastActivity", "마지막 활동")}</th>
+                        <th className="text-left p-2 font-medium whitespace-nowrap">{t("admin.stayDuration", "체류(추정)")}</th>
+                        <th className="text-right p-2 font-medium whitespace-nowrap">{t("admin.pageViews", "페이지뷰")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(visitorSessionsData?.rows?.length ?? 0) > 0 ? (
+                        visitorSessionsData!.rows.map((row, idx) => (
+                          <tr key={`${row.visitorKey}-${row.firstAt}-${idx}`} className="border-b border-border/50">
+                            <td className="p-2 max-w-[220px] break-words">{formatVisitorSessionLabel(row)}</td>
+                            <td className="p-2 text-muted-foreground whitespace-nowrap tabular-nums text-xs">
+                              {formatDateTime(row.firstAt)}
+                            </td>
+                            <td className="p-2 text-muted-foreground whitespace-nowrap tabular-nums text-xs">
+                              {formatDateTime(row.lastAt)}
+                            </td>
+                            <td className="p-2 whitespace-nowrap">{formatDurationSec(row.durationSeconds)}</td>
+                            <td className="p-2 text-right tabular-nums">{row.pageViews}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                            {t("admin.noVisitorSessions", "해당 날짜 기록이 없습니다.")}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {(visitorSessionsData?.total ?? 0) > ACCESS_LOG_PAGE_SIZE && (
+                  <div className="flex items-center justify-between gap-2 mt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={visitorSessionPage <= 0}
+                      onClick={() => setVisitorSessionPage((p) => Math.max(0, p - 1))}
+                    >
+                      {t("admin.prev", "이전")}
+                    </Button>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {visitorSessionPage + 1} /{" "}
+                      {Math.max(1, Math.ceil((visitorSessionsData?.total ?? 0) / ACCESS_LOG_PAGE_SIZE))}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={(visitorSessionPage + 1) * ACCESS_LOG_PAGE_SIZE >= (visitorSessionsData?.total ?? 0)}
+                      onClick={() => setVisitorSessionPage((p) => p + 1)}
+                    >
+                      {t("admin.next", "다음")}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
+          <Card className="p-4 mt-4 overflow-hidden">
+            <h3 className="text-sm font-semibold mb-1">{t("admin.userAccessLogsDetail", "회원별 페이지 이동 상세")}</h3>
+            <p className="text-xs text-muted-foreground mb-2">
+              {t(
+                "admin.userAccessLogsHint",
+                "로그인한 상태에서 이동한 페이지만 기록됩니다. 회원 ID(users.id)를 입력하세요.",
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <Input
+                className="max-w-md"
+                placeholder="user id (UUID)"
+                value={accessLogUserIdInput}
+                onChange={(e) => setAccessLogUserIdInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    setAccessLogPage(0);
+                    setAccessLogSearchUserId(accessLogUserIdInput.trim());
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setAccessLogPage(0);
+                  setAccessLogSearchUserId(accessLogUserIdInput.trim());
+                }}
+                disabled={!accessLogUserIdInput.trim()}
+              >
+                {t("admin.search", "조회")}
+              </Button>
             </div>
             {accessLogSearchUserId ? (
               loadingAccessLogs || fetchingAccessLogs ? (
@@ -1269,7 +1424,7 @@ export default function Admin() {
                 </>
               )
             ) : (
-              <p className="text-muted-foreground text-sm py-4">{t("admin.userAccessLogsEmpty", "회원 ID를 입력한 뒤 조회하세요.")}</p>
+              <p className="text-muted-foreground text-sm py-2">{t("admin.userAccessLogsEmpty", "회원 ID를 입력한 뒤 조회하세요.")}</p>
             )}
           </Card>
         </section>
