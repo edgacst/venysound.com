@@ -14,3 +14,14 @@ export function creditsTotalWithVatWon(credits: number): number {
 export function creditsFromTotalVatInclusiveWon(totalWon: number): number {
   return Math.round(totalWon / (CREDIT_TO_WON * 1.1));
 }
+
+/** 패키지 정의(선택 공급가). 없으면 1크레딧 7.5원 기준 */
+export type CreditPackagePricing = { amount: number; supplyWon?: number };
+
+export function creditPackageSupplyWon(pkg: CreditPackagePricing): number {
+  return pkg.supplyWon ?? creditsSupplyWon(pkg.amount);
+}
+
+export function creditPackageTotalVatWon(pkg: CreditPackagePricing): number {
+  return Math.round(creditPackageSupplyWon(pkg) * 1.1);
+}

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 import { useNotifications } from "@/hooks/use-user-profile";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
@@ -186,9 +187,22 @@ export function Navigation() {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none flex items-center gap-1.5 flex-wrap">
                         {user.firstName || t('nav.user')}{t('nav.userSuffix')}
-                        {((user as any).subscriptionTier === "pro" || (user as any).subscriptionTier === "premium") && (
-                          <span className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded ${(user as any).subscriptionTier === "premium" ? "bg-yellow-600/20 text-yellow-400" : "bg-primary/20 text-primary"}`}>
-                            {(user as any).subscriptionTier === "premium" ? <><Crown size={10} className="mr-0.5" />Premium</> : <>Pro</>}
+                        {isPaidSubscriptionTierId((user as any).subscriptionTier) && (
+                          <span
+                            className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded ${
+                              (user as any).subscriptionTier === "premium"
+                                ? "bg-yellow-600/20 text-yellow-400"
+                                : "bg-primary/20 text-primary"
+                            }`}
+                          >
+                            {(user as any).subscriptionTier === "premium" ? (
+                              <>
+                                <Crown size={10} className="mr-0.5" />
+                                Premium
+                              </>
+                            ) : (
+                              <>{String((user as any).subscriptionTier || "").toUpperCase()}</>
+                            )}
                           </span>
                         )}
                       </p>

@@ -57,10 +57,10 @@ import {
   Sparkles,
   Undo2,
   History,
-  Banknote,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
+import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 
 const reasonLabels: Record<string, string> = {
   unauthorized_use: "무단 사용",
@@ -1462,7 +1462,7 @@ export default function Admin() {
                   adminUsers.map((u: any) => {
                     const isSelf = u.id === user?.id;
                     const isUserAdmin = u.role === "admin";
-                    const isPremium = u.subscriptionTier === "pro" || u.subscriptionTier === "premium";
+                    const isPremium = isPaidSubscriptionTierId(u.subscriptionTier);
                     return (
                       <tr key={u.id} className="border-b border-border/50" data-testid={`row-user-${u.id}`}>
                         <td className="p-3 font-mono text-xs max-w-[100px] truncate align-middle" title={u.firstName || u.id}>{u.firstName || u.id}</td>

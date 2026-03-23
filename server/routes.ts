@@ -38,6 +38,24 @@ import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
+import {
+  normalizeSubscriptionPlanPrices,
+  subscriptionTotalVatInclusiveWon,
+  SUBSCRIPTION_PLAN_FALLBACK,
+  isPaidSubscriptionTierId,
+  type PaidSubscriptionTierId,
+} from "@shared/subscription-plan-pricing";
+
+/** starter/basic/pro/premium 중 하나이고 구독 기간이 유효하면 true */
+function isActivePaidSubscription(
+  user: { subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null } | undefined,
+  now: Date,
+): boolean {
+  if (!user) return false;
+  const t = user.subscriptionTier ?? "free";
+  if (!isPaidSubscriptionTierId(t)) return false;
+  return !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now;
+}
 
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
@@ -131,15 +149,18 @@ export async function registerRoutes(
     })();
   }
 
-  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 유료(Pro/Premium 또는 admin)인지 반환 */
+  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 유료(유료 플랜 또는 admin)인지 반환 */
   async function ensureExpiredSubscriptionDowngrade(userId: string): Promise<{ isPremium: boolean }> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user) return { isPremium: false };
     if (user.role === "admin") return { isPremium: true };
     const now = new Date();
-    const paidTiers = ["pro", "premium"];
-    const isPaid = paidTiers.includes(user.subscriptionTier ?? "") && (!user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now);
-    if ((user.subscriptionTier === "pro" || user.subscriptionTier === "premium") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
+    const isPaid = isActivePaidSubscription(user, now);
+    if (
+      isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
+      user.subscriptionExpiresAt &&
+      new Date(user.subscriptionExpiresAt) <= now
+    ) {
       await db.update(users).set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null }).where(eq(users.id, userId));
       return { isPremium: false };
     }
@@ -641,15 +662,6 @@ export async function registerRoutes(
 
   // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI 우선, 없으면 AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
-    if (limit >= 0 && used >= FREE_AI_MUSIC_LIMIT_PER_MONTH && (user?.subscriptionTier ?? "free") === "free") {
-      return res.status(403).json({
-        message: `Free 플랜은 월 ${FREE_AI_MUSIC_LIMIT_PER_MONTH}곡까지 AI 음악 생성이 가능합니다. Pro로 업그레이드하면 월 2,000 크레딧을 사용할 수 있습니다.`,
-        code: "AI_MUSIC_LIMIT_REACHED",
-        limit: FREE_AI_MUSIC_LIMIT_PER_MONTH,
-        usedThisMonth: used,
-      });
-    }
-
     if (SUNOAPI_KEY) {
       try {
         const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, {
@@ -696,14 +708,18 @@ export async function registerRoutes(
   });
 
   const FREE_AI_MUSIC_LIMIT_PER_MONTH = 2;
-  const PRO_AI_MUSIC_CREDITS_PER_MONTH = 2000;
-  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 4000;
+  const STARTER_AI_MUSIC_CREDITS_PER_MONTH = 500;
+  const BASIC_AI_MUSIC_CREDITS_PER_MONTH = 1000;
+  const PRO_AI_MUSIC_CREDITS_PER_MONTH = 1500;
+  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 2000;
   const AI_MUSIC_CREDITS_PER_TRACK = 20;
 
   function getAiMusicLimit(tier: string | null, role: string | null): number {
     if (role === "admin") return -1;
     if (tier === "premium") return PREMIUM_AI_MUSIC_CREDITS_PER_MONTH;
     if (tier === "pro") return PRO_AI_MUSIC_CREDITS_PER_MONTH;
+    if (tier === "basic") return BASIC_AI_MUSIC_CREDITS_PER_MONTH;
+    if (tier === "starter") return STARTER_AI_MUSIC_CREDITS_PER_MONTH;
     return FREE_AI_MUSIC_LIMIT_PER_MONTH;
   }
 
@@ -724,7 +740,7 @@ export async function registerRoutes(
       const tier = user?.subscriptionTier ?? "free";
       const nowLog = new Date();
       const subscriptionActive =
-        (tier === "pro" || tier === "premium") &&
+        isPaidSubscriptionTierId(tier) &&
         (user == null || !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > nowLog);
       const billingKind =
         user?.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
@@ -759,21 +775,16 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub as string;
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       const now = new Date();
-      const isPaidTier = user?.role === "admin" || (
-        (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
-        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
-      );
+      const isPaidTier = user?.role === "admin" || isActivePaidSubscription(user, now);
       const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
       const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
       const usedThisMonth = usage?.count ?? 0;
       const tier = user?.subscriptionTier ?? "free";
-      const subActive =
-        (tier === "pro" || tier === "premium") &&
-        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now);
-      /** 유효 Pro/Premium: 지갑 미차감. 만료된 pro/premium만 지갑 차감 경로와 동일하게 UI에 표시. */
+      const subActive = isActivePaidSubscription(user, now);
+      /** 유효 유료 플랜: 지갑 미차감. 만료된 유료 플랜만 지갑 차감 경로와 동일하게 UI에 표시. */
       const deductsCreditsPerCreate =
-        user?.role !== "admin" && (tier === "pro" || tier === "premium") && !subActive;
+        user?.role !== "admin" && isPaidSubscriptionTierId(tier) && !subActive;
       const walletCredits = user?.credits ?? 0;
       const quotaKind: "songs" | "subscription_credits" | "unlimited" =
         user?.role === "admin" ? "unlimited" : tier === "free" ? "songs" : "subscription_credits";
@@ -841,10 +852,7 @@ export async function registerRoutes(
     }
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     const now = new Date();
-    const isPaidTier = user?.role === "admin" || (
-      (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
-      (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
-    );
+    const isPaidTier = user?.role === "admin" || isActivePaidSubscription(user, now);
     const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
     const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
@@ -857,7 +865,7 @@ export async function registerRoutes(
     if (usageWouldExceed) {
       return res.status(403).json({
         message: limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
-          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. Pro로 업그레이드하면 월 2,000 크레딧을 사용할 수 있습니다.`
+          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 500~2,000 크레딧을 사용할 수 있습니다.`
           : `이번 달 AI 음악 생성 한도(${limit} 크레딧)를 모두 사용했습니다.`,
         code: "AI_MUSIC_LIMIT_REACHED",
         limit,
@@ -890,7 +898,7 @@ export async function registerRoutes(
         `);
         return 0;
       }
-      // 유효 Pro/Premium: 요금제에 포함된 월 2,000(또는 4,000) 크레딧 한도만 사용 — 크레딧 충전 잔액과 무관
+      // 유효 유료 플랜: 요금제에 포함된 월 AI 크레딧 한도만 사용 — 크레딧 충전 잔액과 무관
       if (isPaidTier) {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
@@ -1181,10 +1189,7 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub as string;
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       const now = new Date();
-      const isPaidTier = user?.role === "admin" || (
-        (user?.subscriptionTier === "pro" || user?.subscriptionTier === "premium") &&
-        (!user?.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now)
-      );
+      const isPaidTier = user?.role === "admin" || isActivePaidSubscription(user, now);
 
       const { audioUrl, imageUrl, title, tags, genre, prompt, taskId: publishTaskId, clipId: publishClipId, generationProvider } = req.body as {
         audioUrl: string;
@@ -1464,7 +1469,8 @@ export async function registerRoutes(
       const rows = (result.rows as any[]).map(r => {
         const tier = r.uploader_subscription_tier;
         const expiresAt = r.uploader_subscription_expires_at;
-        const subscriptionPremium = (tier === "pro" || tier === "premium") && (expiresAt == null || new Date(expiresAt) > now);
+        const subscriptionPremium =
+          isPaidSubscriptionTierId(tier) && (expiresAt == null || new Date(expiresAt) > now);
         const isPremium = r.uploader_role === "admin" || subscriptionPremium;
         return {
           id: Number(r.id),
@@ -1671,7 +1677,9 @@ export async function registerRoutes(
       }
       const uploader = await storage.getUserById(music.userId);
       const now = new Date();
-      const subscriptionPremium = (uploader?.subscriptionTier === "pro" || uploader?.subscriptionTier === "premium") && (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
+      const subscriptionPremium =
+        isPaidSubscriptionTierId(uploader?.subscriptionTier ?? "") &&
+        (uploader?.subscriptionExpiresAt == null || new Date(uploader.subscriptionExpiresAt) > now);
       const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
       res.json({
         ...music,
@@ -3131,20 +3139,30 @@ export async function registerRoutes(
     try {
       const targetId = req.params.id as string;
       const { tier } = req.body;
-      if (!tier || !["free", "pro", "premium"].includes(tier)) {
+      if (!tier || !["free", "starter", "basic", "pro", "premium"].includes(tier)) {
         return res.status(400).json({ message: "유효하지 않은 구독 플랜입니다" });
       }
       let expiresAt: Date | null = null;
-      if (tier === "pro" || tier === "premium") {
+      if (tier !== "free") {
         expiresAt = new Date();
         expiresAt.setFullYear(expiresAt.getFullYear() + 99);
       }
       await storage.updateUserSubscription(targetId, tier, expiresAt);
-      if (tier === "pro" || tier === "premium") {
+      if (tier !== "free") {
+        const label =
+          tier === "premium"
+            ? "프리미엄"
+            : tier === "pro"
+              ? "Pro"
+              : tier === "basic"
+                ? "Basic"
+                : tier === "starter"
+                  ? "Starter"
+                  : tier;
         await storage.createNotification({
           userId: targetId,
           type: "system",
-          message: tier === "premium" ? "관리자에 의해 프리미엄 회원으로 적용되었습니다." : "관리자에 의해 Pro 회원으로 적용되었습니다.",
+          message: `관리자에 의해 ${label} 회원으로 적용되었습니다.`,
           url: "/pricing",
         });
       }
@@ -3306,8 +3324,10 @@ export async function registerRoutes(
       }
 
       const now = new Date();
-      const paidTiers = ["pro", "premium"];
-      const isPaid = paidTiers.includes(user.subscriptionTier ?? "") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > now;
+      const isPaid =
+        isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
+        user.subscriptionExpiresAt &&
+        new Date(user.subscriptionExpiresAt) > now;
       if (isPaid && user.subscriptionTier) {
         return res.json({
           tier: user.subscriptionTier,
@@ -3317,7 +3337,11 @@ export async function registerRoutes(
         });
       }
 
-      if ((user.subscriptionTier === "pro" || user.subscriptionTier === "premium") && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= now) {
+      if (
+        isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
+        user.subscriptionExpiresAt &&
+        new Date(user.subscriptionExpiresAt) <= now
+      ) {
         await db.update(users).set({
           subscriptionTier: "free",
           subscriptionPlan: null,
@@ -3402,7 +3426,9 @@ export async function registerRoutes(
       const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, 'pro'));
       if (!plan) return res.status(500).json({ message: "플랜 정보를 찾을 수 없습니다" });
 
-      const amount = billingPeriod === 'monthly' ? plan.monthlyPrice : plan.yearlyPrice;
+      const n = normalizeSubscriptionPlanPrices("pro", plan.monthlyPrice, plan.yearlyPrice);
+      const supply = billingPeriod === "monthly" ? n.monthly : n.yearly;
+      const amount = subscriptionTotalVatInclusiveWon(supply);
       const orderName = billingPeriod === 'monthly' ? 'Veny Sound Pro 월간 구독' : 'Veny Sound Pro 연간 구독';
       const orderId = `SW_${userId.substring(0, 8)}_${Date.now()}`;
 
@@ -3520,19 +3546,31 @@ export async function registerRoutes(
     const bankName = process.env.BANK_NAME || "입력된 은행명 없음";
     const bankAccount = process.env.BANK_ACCOUNT || "";
     const bankHolder = process.env.BANK_HOLDER || "";
-    const plans = await db.select().from(subscriptionPlans).where(inArray(subscriptionPlans.id, ["pro", "premium"]));
-    const proPlan = plans.find((p) => p.id === "pro");
-    const premiumPlan = plans.find((p) => p.id === "premium");
+    const planIds: PaidSubscriptionTierId[] = ["starter", "basic", "pro", "premium"];
+    const plans = await db.select().from(subscriptionPlans).where(inArray(subscriptionPlans.id, planIds));
+    const plansOut = planIds.map((id) => {
+      const row = plans.find((p) => p.id === id);
+      const n = normalizeSubscriptionPlanPrices(id, row?.monthlyPrice, row?.yearlyPrice);
+      const defaultName = id === "starter" ? "Starter" : id === "basic" ? "Basic" : id === "pro" ? "Pro" : "Premium";
+      return {
+        id,
+        name: row?.name ?? defaultName,
+        monthlyPrice: n.monthly,
+        yearlyPrice: n.yearly,
+      };
+    });
+    const proN = normalizeSubscriptionPlanPrices(
+      "pro",
+      plans.find((p) => p.id === "pro")?.monthlyPrice,
+      plans.find((p) => p.id === "pro")?.yearlyPrice,
+    );
     res.json({
       bankName,
       bankAccount,
       bankHolder,
-      plans: [
-        { id: "pro", name: proPlan?.name ?? "Pro", monthlyPrice: proPlan?.monthlyPrice ?? 16500, yearlyPrice: proPlan?.yearlyPrice ?? 166320 },
-        { id: "premium", name: premiumPlan?.name ?? "Premium", monthlyPrice: premiumPlan?.monthlyPrice ?? 33000, yearlyPrice: premiumPlan?.yearlyPrice ?? 356400 },
-      ],
-      amountMonthly: proPlan?.monthlyPrice ?? 16500,
-      amountYearly: proPlan?.yearlyPrice ?? 166320,
+      plans: plansOut,
+      amountMonthly: proN.monthly,
+      amountYearly: proN.yearly,
     });
   });
 
@@ -3544,16 +3582,29 @@ export async function registerRoutes(
       if (!billingPeriod || !["monthly", "yearly"].includes(billingPeriod)) {
         return res.status(400).json({ message: "결제 주기를 선택해주세요" });
       }
-      const plan = planId === "premium" ? "premium" : "pro";
+      if (!planId || !isPaidSubscriptionTierId(String(planId))) {
+        return res.status(400).json({ message: "유효하지 않은 플랜입니다" });
+      }
+      const plan = planId as PaidSubscriptionTierId;
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
       let amount: number;
       try {
         const [planRow] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, plan)).limit(1);
-        amount = planRow ? (billingPeriod === "monthly" ? planRow.monthlyPrice : planRow.yearlyPrice) : (plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : billingPeriod === "monthly" ? 16500 : 166320);
+        const fb = SUBSCRIPTION_PLAN_FALLBACK[plan];
+        if (!planRow) {
+          const supply = billingPeriod === "monthly" ? fb.monthly : fb.yearly;
+          amount = subscriptionTotalVatInclusiveWon(supply);
+        } else {
+          const n = normalizeSubscriptionPlanPrices(plan, planRow.monthlyPrice, planRow.yearlyPrice);
+          const supply = billingPeriod === "monthly" ? n.monthly : n.yearly;
+          amount = subscriptionTotalVatInclusiveWon(supply);
+        }
       } catch {
-        amount = plan === "premium" ? (billingPeriod === "monthly" ? 33000 : 356400) : (billingPeriod === "monthly" ? 16500 : 166320);
+        const fb = SUBSCRIPTION_PLAN_FALLBACK[plan];
+        const supply = billingPeriod === "monthly" ? fb.monthly : fb.yearly;
+        amount = subscriptionTotalVatInclusiveWon(supply);
       }
       const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
 
@@ -3577,7 +3628,7 @@ export async function registerRoutes(
         amount,
         billingPeriod,
         planId: plan,
-        message: `입금 신청이 등록되었습니다. ${amount.toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 즉시 ${plan === "premium" ? "프리미엄" : "Pro"}이 적용됩니다.`,
+        message: `입금 신청이 등록되었습니다. ${amount.toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 즉시 ${plan === "premium" ? "프리미엄" : plan === "pro" ? "Pro" : plan === "basic" ? "Basic" : plan === "starter" ? "Starter" : plan}이 적용됩니다.`,
       });
     } catch (err: any) {
       console.error("Request bank subscription error:", err);
@@ -3626,7 +3677,7 @@ export async function registerRoutes(
       } else {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       }
-      const tier = payment.plan === "premium" || payment.plan === "pro" ? payment.plan : "pro";
+      const tier = isPaidSubscriptionTierId(payment.plan ?? "") ? (payment.plan as string) : "pro";
       await db.update(users).set({
         subscriptionTier: tier,
         subscriptionPlan: payment.billingPeriod,
