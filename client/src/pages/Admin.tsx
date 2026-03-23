@@ -182,6 +182,7 @@ export default function Admin() {
   const [distributionExternalRef, setDistributionExternalRef] = useState("");
   const [distributionSelectedReleaseId, setDistributionSelectedReleaseId] = useState<number | null>(null);
   const [distributionBatchDistributor, setDistributionBatchDistributor] = useState("distrokid");
+  const [downloadingDistributionReleaseId, setDownloadingDistributionReleaseId] = useState<number | null>(null);
   const REFUND_ADMIN_PAGE_SIZE = 100;
   const [creditRefundPage, setCreditRefundPage] = useState(1);
 
@@ -211,6 +212,8 @@ export default function Admin() {
     submittedAt: string | null;
     approvedAt: string | null;
     rejectionReason: string | null;
+    qcStatus?: string;
+    qcCheckedAt?: string | null;
   }>>({
     queryKey: ["/api/admin/distribution/releases", distributionStatusFilter],
     queryFn: async () => {
@@ -724,6 +727,19 @@ export default function Admin() {
     },
   });
 
+  const runDistributionQcMutation = useMutation({
+    mutationFn: async (releaseId: number) => {
+      await apiRequest("POST", `/api/admin/distribution/releases/${releaseId}/qc-run`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      toast({ title: "유통 QC 실행을 완료했습니다." });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "유통 QC 실행에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
   const batchPublishDistributionMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/admin/distribution/batch-submit", { distributor: distributionBatchDistributor });
@@ -752,6 +768,35 @@ export default function Admin() {
       toast({ title: err?.message || "정산 원장 입력에 실패했습니다.", variant: "destructive" });
     },
   });
+
+  const downloadDistributionPackage = async (releaseId: number) => {
+    if (downloadingDistributionReleaseId === releaseId) return;
+    setDownloadingDistributionReleaseId(releaseId);
+    try {
+      const res = await fetch(
+        `/api/distribution/releases/${releaseId}/package-download?distributor=${encodeURIComponent(distributionBatchDistributor)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || "유통 패키지 다운로드에 실패했습니다.");
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `venysound_distribution_${releaseId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: "유통 패키지 다운로드를 시작했습니다." });
+    } catch (e: any) {
+      toast({ title: e?.message || "유통 패키지 다운로드 실패", variant: "destructive" });
+    } finally {
+      setDownloadingDistributionReleaseId(null);
+    }
+  };
 
   const { data: copyrightReports, isLoading: loadingReports } = useQuery<any[]>({
     queryKey: ["/api/admin/copyright-reports", reportStatusFilter],
@@ -1291,19 +1336,31 @@ export default function Admin() {
                           </td>
                           <td className="p-2 text-xs">{r.ownerUserId}</td>
                           <td className="p-2">
-                            {r.status === "approved" ? (
-                              <Badge className="bg-green-500/20 text-green-600 dark:text-green-400">
-                                승인됨
-                              </Badge>
-                            ) : r.status === "delivered" ? (
-                              <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                                배포됨
-                              </Badge>
-                            ) : r.status === "live" ? (
-                              <Badge variant="default">라이브</Badge>
-                            ) : (
-                              r.status
-                            )}
+                            <div className="flex items-center flex-wrap gap-2">
+                              {r.status === "approved" ? (
+                                <Badge className="bg-green-500/20 text-green-600 dark:text-green-400">
+                                  승인됨
+                                </Badge>
+                              ) : r.status === "delivered" ? (
+                                <Badge className="bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                  배포됨
+                                </Badge>
+                              ) : r.status === "live" ? (
+                                <Badge variant="default">라이브</Badge>
+                              ) : (
+                                r.status
+                              )}
+
+                              {r.qcStatus === "passed" ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">QC 통과</Badge>
+                              ) : r.qcStatus === "failed" ? (
+                                <Badge variant="destructive" className="bg-red-500/10 text-red-700 dark:text-red-300 border border-red-500/20">
+                                  QC 실패
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">QC 필요</Badge>
+                              )}
+                            </div>
                           </td>
                           <td className="p-2 text-xs text-muted-foreground">
                             {r.status === "rejected" ? (r.rejectionReason || "-") : "-"}
@@ -1333,7 +1390,40 @@ export default function Admin() {
                                     반려
                                   </Button>
                                 </>
-                              ) : ["approved", "delivered", "live"].includes(r.status) ? (
+                              ) : r.status === "approved" ? (
+                                <>
+                                  {r.qcStatus === "passed" ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="default"
+                                      disabled={downloadingDistributionReleaseId === r.id}
+                                      onClick={() => downloadDistributionPackage(r.id)}
+                                    >
+                                      패키지 다운로드
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={runDistributionQcMutation.isPending}
+                                      onClick={() => runDistributionQcMutation.mutate(r.id)}
+                                    >
+                                      QC 실행
+                                    </Button>
+                                  )}
+
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setDistributionSelectedReleaseId(r.id)}
+                                  >
+                                    정산 입력
+                                  </Button>
+                                </>
+                              ) : ["delivered", "live"].includes(r.status) ? (
                                 <Button
                                   type="button"
                                   size="sm"

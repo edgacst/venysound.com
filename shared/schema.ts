@@ -234,6 +234,11 @@ export const distributionReleases = pgTable("distribution_releases", {
   artistName: text("artist_name").notNull(),
   status: text("status").default("draft").notNull(), // draft | submitted | approved | rejected | delivered | live | hold | takedown
   rightsConfirmed: boolean("rights_confirmed").default(false).notNull(),
+  // Platform Readiness mode (QC + checklist)
+  qcStatus: text("qc_status").default("not_checked").notNull(), // not_checked | running | passed | failed
+  qcCheckedAt: timestamp("qc_checked_at", { withTimezone: true }),
+  qcChecklist: jsonb("qc_checklist").default({}).notNull(),
+  qcResults: jsonb("qc_results").default({}).notNull(),
   releaseDate: timestamp("release_date"),
   submittedAt: timestamp("submitted_at", { withTimezone: true }),
   approvedAt: timestamp("approved_at", { withTimezone: true }),

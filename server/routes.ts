@@ -3666,6 +3666,23 @@ export async function registerRoutes(
     }
   });
 
+  // === Admin: Platform Readiness mode (QC + checklist) ===
+  app.post("/api/admin/distribution/releases/:id/qc-run", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      // @ts-ignore
+      const adminUserId = req.user.claims.sub as string;
+      const releaseId = parsePositiveIntParam(req.params.id);
+      if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
+
+      const updated = await storage.runDistributionQc({ adminUserId, releaseId });
+      if (!updated) return res.status(404).json({ message: "유통 신청을 찾을 수 없습니다." });
+
+      res.json({ success: true, qcStatus: updated.qcStatus, releaseId: updated.id });
+    } catch (e: any) {
+      res.status(400).json({ message: e?.message ?? "유통 QC 실행에 실패했습니다." });
+    }
+  });
+
   // === Distributor Webhooks (status / payouts) ===
   // 보안: 헤더 `x-distribution-webhook-secret` 값이 ENV와 일치해야 합니다.
   function requireDistributionWebhookSecret(req: any, res: any, next: any) {

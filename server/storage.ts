@@ -1,4 +1,6 @@
 import { db } from "./db";
+import path from "path";
+import { existsSync } from "fs";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
   analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
@@ -130,6 +132,8 @@ export interface IStorage {
   submitDistributionRelease(ownerUserId: string, releaseId: number): Promise<void>;
   listAdminDistributionReleases(status?: string): Promise<DistributionRelease[]>;
   reviewDistributionRelease(input: { adminUserId: string; releaseId: number; action: "approved" | "rejected"; reason?: string | null }): Promise<DistributionRelease | undefined>;
+  /** Platform Readiness mode: release 오디오/커버 로컬 존재 및 기본 포맷 규격 체크 */
+  runDistributionQc(input: { adminUserId: string; releaseId: number }): Promise<DistributionRelease | undefined>;
   addDistributionEarning(input: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string | null; externalRef?: string | null }): Promise<{ ledgerRows: number; netAmount: number; platformAmount: number; distributedAmount: number }>;
   getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
@@ -1471,6 +1475,135 @@ export class DatabaseStorage implements IStorage {
       .from(distributionReleases)
       .where(where)
       .orderBy(desc(distributionReleases.createdAt));
+  }
+
+  async runDistributionQc(input: { adminUserId: string; releaseId: number }): Promise<DistributionRelease | undefined> {
+    const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+
+    function resolveLocalAudioPath(fileRef: string): string | null {
+      const fn = fileRef || "";
+      if (/^https?:\/\//i.test(fn)) return null;
+
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) {
+        fileId = objMatch[1];
+      } else if (fn.startsWith("uploads/")) {
+        fileId = fn.replace(/^uploads\//, "");
+      } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+        fileId = fn.trim();
+      } else if (fn.includes("/")) {
+        fileId = fn.split("/").pop() || "";
+      } else {
+        fileId = fn;
+      }
+
+      fileId = fileId.replace(/^\//, "");
+      if (!fileId) return null;
+
+      const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+      const candidates = [
+        path.join(uploadsDir, fileId),
+        path.join(uploadsDir, `${baseId}.mp3`),
+        path.join(uploadsDir, `${baseId}.wav`),
+        path.join(uploadsDir, `${baseId}.ogg`),
+      ];
+
+      return candidates.find((p) => existsSync(p)) ?? null;
+    }
+
+    function resolveLocalCoverPath(imageRef: string | null | undefined): { path: string; ext: string } | null {
+      if (!imageRef) return null;
+      const fn = imageRef || "";
+      if (/^https?:\/\//i.test(fn)) return null;
+
+      let fileId = "";
+      const objMatch = fn.match(/\/objects\/uploads\/(.+)$/);
+      if (objMatch) {
+        fileId = objMatch[1];
+      } else if (fn.startsWith("uploads/")) {
+        fileId = fn.replace(/^uploads\//, "");
+      } else if (/^[a-f0-9-]{36}(\.[a-z]+)?$/i.test(fn.trim())) {
+        fileId = fn.trim();
+      } else if (fn.includes("/")) {
+        fileId = fn.split("/").pop() || "";
+      } else {
+        fileId = fn;
+      }
+
+      fileId = fileId.replace(/^\//, "");
+      if (!fileId) return null;
+
+      const baseId = fileId.replace(/\.(png|jpe?g|webp)$/i, "");
+      const candidates = [
+        { p: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
+        { p: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
+        { p: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
+        { p: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
+      ];
+
+      const found = candidates.find((c) => existsSync(c.p));
+      return found ?? null;
+    }
+
+    const [release] = await db
+      .select()
+      .from(distributionReleases)
+      .where(eq(distributionReleases.id, input.releaseId))
+      .limit(1);
+
+    if (!release) return undefined;
+
+    // QC는 승인(approved) 이후 유통 패키지 준비 단계에서만 실행하도록 제한
+    if (release.status !== "approved") {
+      // 실패로 마킹해도 되지만, 운영에서 원인 파악이 어려워서 명확히 에러로 처리
+      throw new Error(`release qc only allowed in approved status (current: ${release.status})`);
+    }
+
+    const musicItem = await this.getMusicById(release.musicId);
+    if (!musicItem) throw new Error("music not found for qc");
+
+    const localAudioPath = musicItem.filename ? resolveLocalAudioPath(musicItem.filename) : null;
+    const localCover = resolveLocalCoverPath(musicItem.imageFilename);
+
+    const audioExt = localAudioPath ? path.extname(localAudioPath).toLowerCase() : "";
+    const allowedAudioExt = new Set([".mp3", ".wav", ".ogg"]);
+
+    const checklist = {
+      rightsConfirmed: release.rightsConfirmed === true,
+      titlePresent: !!release.releaseTitle?.trim(),
+      artistPresent: !!release.artistName?.trim(),
+      audioFileFound: !!localAudioPath,
+      audioFormatAllowed: allowedAudioExt.has(audioExt),
+      coverFileFound: !!localCover,
+    };
+
+    const failed = Object.entries(checklist).filter(([, v]) => !v).map(([k]) => k);
+    const passed = failed.length === 0;
+
+    const qcResults = {
+      passed,
+      failedChecks: failed,
+      files: {
+        audio: { included: !!localAudioPath, ext: audioExt || null, resolvedPath: localAudioPath || null },
+        cover: { included: !!localCover, ext: localCover?.ext || null, resolvedPath: localCover?.path || null },
+      },
+      checkedAt: new Date().toISOString(),
+    };
+
+    const [updated] = await db
+      .update(distributionReleases)
+      .set({
+        qcStatus: passed ? "passed" : "failed",
+        qcCheckedAt: new Date(),
+        qcChecklist: checklist,
+        qcResults,
+        updatedAt: new Date(),
+      })
+      .where(eq(distributionReleases.id, input.releaseId))
+      .returning();
+
+    return updated;
   }
 
   async reviewDistributionRelease(input: {
