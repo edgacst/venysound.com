@@ -2622,6 +2622,29 @@ export async function registerRoutes(
       return null;
     }
   }
+
+  /** Passport 세션에서 사용자 ID 추출 (전략·세션 저장 형태 차이 대비) */
+  function getVisitorSessionUserId(req: Request): string | undefined {
+    const r = req as Request & {
+      user?: unknown;
+      session?: { passport?: { user?: unknown } };
+    };
+    const pick = (u: unknown): string | undefined => {
+      if (typeof u === "string" && u.trim().length > 0) return u.trim();
+      if (u && typeof u === "object") {
+        const o = u as { claims?: { sub?: unknown }; id?: unknown };
+        const sub = o.claims?.sub;
+        if (sub != null && String(sub).trim().length > 0) return String(sub).trim();
+        if (typeof o.id === "string" && o.id.length > 0) return o.id;
+        if (typeof o.id === "number" && Number.isFinite(o.id)) return String(o.id);
+      }
+      return undefined;
+    };
+    const fromUser = pick(r.user);
+    if (fromUser) return fromUser;
+    return pick(r.session?.passport?.user);
+  }
+
   app.post("/api/analytics/visit", async (req, res) => {
     const path = typeof req.body?.path === "string" ? req.body.path : "/";
     let visitorKey = typeof req.body?.visitorKey === "string" ? req.body.visitorKey : null;
@@ -2642,13 +2665,7 @@ export async function registerRoutes(
         }
       } catch (_) {}
     }
-    // Passport 세션만 신뢰. isAuthenticated()는 환경에 따라 불일치할 수 있어 claims.sub만 본다.
-    const r = req as Request & { user?: { claims?: { sub?: string } }; session?: { passport?: { user?: { claims?: { sub?: string } } } } };
-    let sessionUserId: string | undefined;
-    const sub = r.user?.claims?.sub ?? r.session?.passport?.user?.claims?.sub;
-    if (sub != null && String(sub).length > 0) {
-      sessionUserId = String(sub);
-    }
+    const sessionUserId = getVisitorSessionUserId(req);
     try {
       await storage.recordVisit(visitorKey, path, {
         userId: sessionUserId,

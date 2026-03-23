@@ -88,7 +88,12 @@ function AnalyticsVisit() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ path, visitorKey, utmSource }),
+      body: JSON.stringify({
+        path,
+        visitorKey,
+        utmSource,
+        authUserId: user?.id ?? undefined,
+      }),
     })
       .then((r) => r.ok && r.json())
       .then((data) => {
