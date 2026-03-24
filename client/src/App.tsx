@@ -59,6 +59,7 @@ function PageTitle() {
       credits: "크레딧 | VenySound",
       "create-music": "AI 음악 생성 | VenySound",
       "suno-guide": "음악 만들기 가이드 | VenySound",
+      "global-distribution-guide": "글로벌 음원출시로 수익방법 | VenySound",
     };
     let title = DEFAULT_TITLE;
     if (path.startsWith("music/")) title = "음원 상세 | VenySound";
@@ -184,6 +185,7 @@ import RadioCreate from "@/pages/RadioCreate";
 import RadioChannel from "@/pages/RadioChannel";
 import RadioStudio from "@/pages/RadioStudio";
 import RadioChannels from "@/pages/RadioChannels";
+import GlobalDistributionGuide from "@/pages/GlobalDistributionGuide";
 
 function Routes() {
   return (
@@ -238,6 +240,7 @@ function Routes() {
       <Route path="/messages" component={Messages} />
       <Route path="/messages/:userId" component={Messages} />
       <Route path="/suno-guide" component={SunoGuide} />
+      <Route path="/global-distribution-guide" component={GlobalDistributionGuide} />
       <Route path="/create-music" component={CreateMusic} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />

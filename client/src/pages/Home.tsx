@@ -351,6 +351,22 @@ export default function Home() {
               </Button>
             </Link>
           </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.24 }}
+            className="mt-3 flex justify-center"
+          >
+            <Link href="/global-distribution-guide">
+              <Button
+                size="lg"
+                variant="outline"
+                className="rounded-full px-8 border-cyan-300/40 text-cyan-200 bg-cyan-500/10 backdrop-blur-sm hover:bg-cyan-500/20"
+              >
+                글로벌 음원출시로 수익방법
+              </Button>
+            </Link>
+          </motion.div>
         </div>
       </section>
 
