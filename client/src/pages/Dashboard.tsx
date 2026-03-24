@@ -5,7 +5,7 @@ import { LOGIN_PATH } from "@/lib/site-paths";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useLocation, Link } from "wouter";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,20 @@ export default function Dashboard() {
   const [distributionArtist, setDistributionArtist] = useState("");
   const [distributionReleaseDate, setDistributionReleaseDate] = useState("");
   const [distributionRightsConfirmed, setDistributionRightsConfirmed] = useState(false);
+
+  useEffect(() => {
+    const scrollToDistributionSection = () => {
+      if (typeof window === "undefined") return;
+      if (window.location.hash !== "#global-distribution-management") return;
+      const section = document.getElementById("global-distribution-management");
+      if (!section) return;
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    scrollToDistributionSection();
+    window.addEventListener("hashchange", scrollToDistributionSection);
+    return () => window.removeEventListener("hashchange", scrollToDistributionSection);
+  }, []);
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/dashboard/my-music-stats"],
@@ -456,7 +470,7 @@ export default function Dashboard() {
               </Card>
             </div>
 
-            <Card className="p-5 mb-8">
+            <Card id="global-distribution-management" className="p-5 mb-8 scroll-mt-24">
               <h3 className="font-semibold mb-4 flex items-center gap-2">
                 <DollarSign size={18} className="text-primary" />
                 {t("dashboard.distributionGlobalSectionTitle")}

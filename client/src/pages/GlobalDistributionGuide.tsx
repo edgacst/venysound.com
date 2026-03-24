@@ -19,7 +19,7 @@ export default function GlobalDistributionGuide() {
           <section className="rounded-xl border border-border/70 p-5 space-y-2">
             <h2 className="text-xl font-semibold">1) 배포 가능한 플랫폼</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              글로벌 음원 배포는 DistroKid를 포함한 다양한 파트너 플랫폼을 통해 진행됩니다. 실제 반영 스토어와 노출 시점은
+              글로벌 음원 배포는 DistroKid를 포함한(약20여개) 해외 음원 파트너 플랫폼을 통해 진행됩니다. 실제 반영 스토어와 노출 시점은
               각 플랫폼의 심사/정책/지역 지원 여부에 따라 달라질 수 있습니다.
             </p>
           </section>
@@ -66,7 +66,7 @@ export default function GlobalDistributionGuide() {
           </section>
 
           <div className="pt-2">
-            <Link href="/dashboard" className="text-sm text-primary underline underline-offset-2">
+            <Link href="/dashboard#global-distribution-management" className="text-sm text-primary underline underline-offset-2">
               대시보드에서 글로벌 출시 신청하기
             </Link>
           </div>
