@@ -12,25 +12,25 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 2) pro plan (13,500/mo 공급가, 연간 = 월×12×90%)
+-- 2) pro plan (15,000/mo 공급가, 연간 = 월×12×90%)
 INSERT INTO subscription_plans (id, name, description, monthly_price, yearly_price)
 VALUES (
   'pro',
   'Pro',
-  'AI 음악 생성 1,500 크레딧/월, 광고 없음',
-  13500,
-  145800
+  'AI 음악 생성 1,500 크레딧/월, 광고 없음, DistroKid 등 글로벌 유통',
+  15000,
+  162000
 )
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, monthly_price = EXCLUDED.monthly_price, yearly_price = EXCLUDED.yearly_price;
 
--- 3) premium plan (19,000/mo 공급가, 연간 = 월×12×90%)
+-- 3) premium plan (22,000/mo 공급가, 연간 = 월×12×90%)
 INSERT INTO subscription_plans (id, name, description, monthly_price, yearly_price)
 VALUES (
   'premium',
   'Premium',
-  'AI 음악 생성 2,000 크레딧/월, 프리미엄 배지',
-  19000,
-  205200
+  'AI 음악 생성 2,000 크레딧/월, 프리미엄 배지, DistroKid 등 글로벌 유통',
+  22000,
+  237600
 )
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, monthly_price = EXCLUDED.monthly_price, yearly_price = EXCLUDED.yearly_price;
 

@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -459,11 +459,11 @@ export default function Dashboard() {
             <Card className="p-5 mb-8">
               <h3 className="font-semibold mb-4 flex items-center gap-2">
                 <DollarSign size={18} className="text-primary" />
-                글로벌 유통 관리 (베타)
+                {t("dashboard.distributionGlobalSectionTitle")}
               </h3>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 space-y-3">
-                  <Label>내 음원 선택</Label>
+                  <Label>{t("dashboard.distributionPickMusic")}</Label>
                   <select
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                     value={distributionMusicId}
@@ -477,30 +477,36 @@ export default function Dashboard() {
                       }
                     }}
                   >
-                    <option value="">음원을 선택하세요</option>
+                    <option value="">{t("dashboard.distributionPickMusicPlaceholder")}</option>
                     {(myMusicSimple ?? []).map((m) => (
                       <option key={m.id} value={String(m.id)}>{m.title} · {m.artist}</option>
                     ))}
                   </select>
                   <div>
-                    <Label>릴리즈 제목</Label>
-                    <Input value={distributionTitle} onChange={(e) => setDistributionTitle(e.target.value)} placeholder="릴리즈 제목" />
+                    <Label>{t("dashboard.distributionReleaseTitleLabel")}</Label>
+                    <Input value={distributionTitle} onChange={(e) => setDistributionTitle(e.target.value)} placeholder={t("dashboard.distributionReleaseTitlePlaceholder")} />
                   </div>
                   <div>
-                    <Label>아티스트명</Label>
-                    <Input value={distributionArtist} onChange={(e) => setDistributionArtist(e.target.value)} placeholder="아티스트명" />
+                    <Label>{t("dashboard.distributionArtistLabel")}</Label>
+                    <Input value={distributionArtist} onChange={(e) => setDistributionArtist(e.target.value)} placeholder={t("dashboard.distributionArtistPlaceholder")} />
                   </div>
                   <div>
-                    <Label>발매일(선택)</Label>
+                    <Label>{t("dashboard.distributionReleaseDateLabel")}</Label>
                     <Input type="date" value={distributionReleaseDate} onChange={(e) => setDistributionReleaseDate(e.target.value)} />
                   </div>
-                  <label className="flex items-center gap-2 text-sm">
+                  <label className="flex items-start gap-2 text-sm">
                     <input
                       type="checkbox"
+                      className="mt-1 shrink-0"
                       checked={distributionRightsConfirmed}
                       onChange={(e) => setDistributionRightsConfirmed(e.target.checked)}
                     />
-                    본인은 유통 권리를 보유하며 회사에 글로벌 유통을 위임하는 것에 동의합니다.
+                    <span className="min-w-0 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span>{t("dashboard.distributionRightsAgreement")}</span>
+                      <Link href="/legal#distribution-delegation" className="text-primary underline hover:opacity-80 whitespace-nowrap shrink-0">
+                        {t("dashboard.distributionRightsLearnMore")} →
+                      </Link>
+                    </span>
                   </label>
                   <Button
                     className="w-full"
@@ -513,32 +519,32 @@ export default function Dashboard() {
                     }
                     onClick={() => createDistributionRelease.mutate()}
                   >
-                    {createDistributionRelease.isPending ? "생성 중..." : "유통 초안 생성"}
+                    {createDistributionRelease.isPending ? t("dashboard.distributionCreating") : t("dashboard.distributionCreateDraft")}
                   </Button>
                 </div>
                 <div className="lg:col-span-2 space-y-3">
                   <div className="grid grid-cols-3 gap-2 text-sm">
                     <div className="rounded-md border p-3">
-                      <p className="text-muted-foreground text-xs">누적 정산</p>
-                      <p className="font-semibold">{(distributionBalance?.totalEarned ?? 0).toLocaleString()}원</p>
+                      <p className="text-muted-foreground text-xs">{t("dashboard.distributionTotalEarnedLabel")}</p>
+                      <p className="font-semibold">{(distributionBalance?.totalEarned ?? 0).toLocaleString()}{t("dashboard.won")}</p>
                     </div>
                     <div className="rounded-md border p-3">
-                      <p className="text-muted-foreground text-xs">지급 완료</p>
-                      <p className="font-semibold">{(distributionBalance?.totalPaid ?? 0).toLocaleString()}원</p>
+                      <p className="text-muted-foreground text-xs">{t("dashboard.distributionTotalPaidLabel")}</p>
+                      <p className="font-semibold">{(distributionBalance?.totalPaid ?? 0).toLocaleString()}{t("dashboard.won")}</p>
                     </div>
                     <div className="rounded-md border p-3">
-                      <p className="text-muted-foreground text-xs">출금 가능</p>
-                      <p className="font-semibold text-primary">{(distributionBalance?.available ?? 0).toLocaleString()}원</p>
+                      <p className="text-muted-foreground text-xs">{t("dashboard.distributionAvailableLabel")}</p>
+                      <p className="font-semibold text-primary">{(distributionBalance?.available ?? 0).toLocaleString()}{t("dashboard.won")}</p>
                     </div>
                   </div>
-                  <div className="rounded-md border overflow-hidden">
+                  <div className="rounded-md border max-h-[min(60vh,28rem)] overflow-auto overscroll-contain">
                     <table className="w-full text-sm">
-                      <thead className="bg-muted/30">
+                      <thead className="sticky top-0 z-[1] border-b border-border bg-muted/95 backdrop-blur-sm">
                         <tr>
-                          <th className="text-left p-2">릴리즈</th>
-                          <th className="text-left p-2">상태</th>
-                          <th className="text-left p-2">사유</th>
-                          <th className="text-right p-2">액션</th>
+                          <th className="text-left p-2">{t("dashboard.distributionTableRelease")}</th>
+                          <th className="text-left p-2">{t("dashboard.distributionTableStatus")}</th>
+                          <th className="text-left p-2">{t("dashboard.distributionTableReason")}</th>
+                          <th className="text-right p-2">{t("dashboard.distributionTableAction")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -552,7 +558,7 @@ export default function Dashboard() {
                               <td className="p-2">
                                 {r.status === "approved" ? (
                                   <span className="inline-flex items-center rounded-md bg-green-500/10 px-2 py-1 text-xs font-medium text-green-700 dark:text-green-400">
-                                    승인됨
+                                    {t("dashboard.distributionStatusApproved")}
                                   </span>
                                 ) : (
                                   r.status
@@ -569,7 +575,7 @@ export default function Dashboard() {
                                     disabled={submitDistributionRelease.isPending}
                                     onClick={() => submitDistributionRelease.mutate(r.id)}
                                   >
-                                    제출
+                                    {t("dashboard.distributionSubmit")}
                                   </Button>
                                 ) : (
                                   <span className="text-xs text-muted-foreground">-</span>
@@ -579,7 +585,7 @@ export default function Dashboard() {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={4} className="p-6 text-center text-muted-foreground">유통 초안이 없습니다.</td>
+                            <td colSpan={4} className="p-6 text-center text-muted-foreground">{t("dashboard.distributionNoDrafts")}</td>
                           </tr>
                         )}
                       </tbody>

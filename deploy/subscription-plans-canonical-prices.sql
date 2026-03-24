@@ -18,16 +18,16 @@ WHERE id = 'basic';
 
 UPDATE subscription_plans
 SET
-  monthly_price = 13500,
-  yearly_price = 145800,
+  monthly_price = 15000,
+  yearly_price = 162000,
   name = COALESCE(NULLIF(TRIM(name), ''), 'Pro'),
-  description = 'AI 음악 생성 1,500 크레딧/월, 광고 없음'
+  description = 'AI 음악 생성 1,500 크레딧/월, 광고 없음, DistroKid 등 글로벌 유통'
 WHERE id = 'pro';
 
 UPDATE subscription_plans
 SET
-  monthly_price = 19000,
-  yearly_price = 205200,
+  monthly_price = 22000,
+  yearly_price = 237600,
   name = COALESCE(NULLIF(TRIM(name), ''), 'Premium'),
-  description = 'AI 음악 생성 2,000 크레딧/월, 프리미엄 배지'
+  description = 'AI 음악 생성 2,000 크레딧/월, 프리미엄 배지, DistroKid 등 글로벌 유통'
 WHERE id = 'premium';

@@ -8,7 +8,7 @@ export default function Legal() {
   const { t } = useTranslation();
   useEffect(() => { window.scrollTo(0, 0); }, []);
 
-  const articles = [
+  const articles: { key: string; title: string; anchor?: string }[] = [
     { key: "article1", title: t('legal.article1') },
     { key: "article2", title: t('legal.article2') },
     { key: "article3", title: t('legal.article3') },
@@ -32,6 +32,7 @@ export default function Legal() {
     { key: "article21", title: t('legal.article21') },
     { key: "article22", title: t('legal.article22') },
     { key: "article23", title: t('legal.article23') },
+    { key: "article24", title: t('legal.article24'), anchor: "distribution-delegation" },
   ];
 
   return (
@@ -63,7 +64,7 @@ export default function Legal() {
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-muted-foreground">
               {articles.map((a) => (
                 <li key={a.key}>
-                  <a href={`#${a.key}`} className="hover:text-foreground transition-colors">
+                  <a href={`#${a.anchor ?? a.key}`} className="hover:text-foreground transition-colors">
                     {a.title}
                   </a>
                 </li>
@@ -74,7 +75,7 @@ export default function Legal() {
           {/* 조항 본문 */}
           <div className="space-y-10 text-muted-foreground">
             {articles.map((a) => (
-              <section key={a.key} id={a.key}>
+              <section key={a.key} id={a.anchor ?? a.key}>
                 <h2 className="text-lg font-bold text-foreground mb-3">{a.title}</h2>
                 <div className="text-sm leading-relaxed whitespace-pre-line">
                   {t(`legal.${a.key}Content`)}

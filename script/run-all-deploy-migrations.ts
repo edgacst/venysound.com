@@ -41,6 +41,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "posts-view-count.sql", name: "posts view_count" },
   { file: "subscription-plans-canonical-prices.sql", name: "subscription_plans 4종 공급가·연간 정정" },
   { file: "subscription-plans-starter-basic.sql", name: "subscription_plans Starter/Basic 플랜" },
+  { file: "subscription-plans-pro-premium-15k-22k.sql", name: "subscription_plans Pro 15k / Premium 22k 공급가" },
 ];
 
 async function main() {

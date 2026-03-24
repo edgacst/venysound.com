@@ -13,26 +13,21 @@ export const SUBSCRIPTION_PLAN_FALLBACK: Record<
 > = {
   starter: { monthly: 5000, yearly: 54000 },
   basic: { monthly: 9000, yearly: 97200 },
-  pro: { monthly: 13500, yearly: 145800 },
-  premium: { monthly: 19000, yearly: 205200 },
+  pro: { monthly: 15000, yearly: 162000 },
+  premium: { monthly: 22000, yearly: 237600 },
 };
 
 /**
- * 월 금액이 비정상적으로 낮으면(로컬 DB 테스트 행 등) 표준 가격으로 대체합니다.
+ * 요금제 화면·계좌이체·Toss Pro 구독 청구에 쓰는 **공급가(월/연)**.
+ * DB `subscription_plans` 금액과 어긋나면 옛 가격이 노출되므로, **이 표(SUBSCRIPTION_PLAN_FALLBACK)를 단일 기준**으로 항상 사용합니다.
+ * DB 행은 관리·마이그레이션용으로 맞춰 두는 것을 권장합니다.
  */
 export function normalizeSubscriptionPlanPrices(
   planId: PaidSubscriptionTierId,
-  monthly: number | null | undefined,
-  yearly: number | null | undefined,
+  _monthly?: number | null,
+  _yearly?: number | null,
 ): { monthly: number; yearly: number } {
-  const fb = SUBSCRIPTION_PLAN_FALLBACK[planId];
-  const m = monthly ?? fb.monthly;
-  const y = yearly ?? fb.yearly;
-  if (planId === "starter" && m < 4500) return { ...fb };
-  if (planId === "basic" && m < 8000) return { ...fb };
-  if (planId === "pro" && m < 12000) return { ...fb };
-  if (planId === "premium" && m < 17000) return { ...fb };
-  return { monthly: m, yearly: y };
+  return { ...SUBSCRIPTION_PLAN_FALLBACK[planId] };
 }
 
 /** 공급가(원)에 부가세 10%를 더한 입금·결제 총액(원, 반올림). DB·payments.amount·안내 문구와 동일하게 사용 */

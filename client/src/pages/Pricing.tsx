@@ -25,6 +25,7 @@ import {
   Calendar,
   Star,
   Layers,
+  Globe,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
@@ -75,6 +76,13 @@ export default function Pricing() {
     { icon: Crown, text: t("pricing.proFeatureAllFree", "Free 모든 기능") },
     { icon: Sparkles, text: t("pricing.proFeatureAiMusic", "AI 음악 생성 1,500 크레딧/월") },
     { icon: Shield, text: t("pricing.proFeatureNoAds", "광고 없음") },
+    {
+      icon: Globe,
+      text: t(
+        "pricing.proPremiumGlobalDistribution",
+        "✓ DistroKid 연동 포함, 다수 스토어 글로벌 유통 무료 배포",
+      ),
+    },
   ];
 
   const PREMIUM_FEATURES = [
@@ -82,6 +90,13 @@ export default function Pricing() {
     { icon: Sparkles, text: t("pricing.premiumFeatureCredits", "AI 음악 생성 2,000 크레딧/월") },
     { icon: Crown, text: t("pricing.premiumFeature6", "프리미엄 배지") },
     { icon: Shield, text: t("pricing.premiumFeatureSupport", "우선 지원") },
+    {
+      icon: Globe,
+      text: t(
+        "pricing.proPremiumGlobalDistribution",
+        "✓ DistroKid 연동 포함, 다수 스토어 글로벌 유통 무료 배포",
+      ),
+    },
   ];
 
   const [bankModalOpen, setBankModalOpen] = useState(false);
