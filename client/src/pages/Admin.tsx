@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import {
   Users,
@@ -183,6 +184,13 @@ export default function Admin() {
   const [distributionSelectedReleaseId, setDistributionSelectedReleaseId] = useState<number | null>(null);
   const [distributionBatchDistributor, setDistributionBatchDistributor] = useState("distrokid");
   const [downloadingDistributionReleaseId, setDownloadingDistributionReleaseId] = useState<number | null>(null);
+  /** DistroKid UPC 등 — 웹훅 externalReleaseRef 와 동일 문자열로 저장 */
+  const [distributionLinkDialog, setDistributionLinkDialog] = useState<{
+    releaseId: number;
+    releaseTitle: string;
+    value: string;
+    prependDistributorPrefix: boolean;
+  } | null>(null);
   const REFUND_ADMIN_PAGE_SIZE = 100;
   const [creditRefundPage, setCreditRefundPage] = useState(1);
 
@@ -750,6 +758,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      setDistributionLinkDialog(null);
       toast({ title: "외부 릴리즈 ref 연결을 완료했습니다." });
     },
     onError: (err: any) => {
@@ -1339,13 +1348,17 @@ export default function Admin() {
                       <th className="text-left p-2">릴리즈</th>
                       <th className="text-left p-2">소유자</th>
                       <th className="text-left p-2">상태</th>
+                      <th className="text-left p-2 min-w-[120px] max-w-[200px]">외부 ref</th>
                       <th className="text-left p-2">반려 사유</th>
                       <th className="text-right p-2">검토</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(adminDistributionReleases ?? []).length > 0 ? (
-                      (adminDistributionReleases ?? []).map((r) => (
+                      (adminDistributionReleases ?? []).map((r) => {
+                        const placeholderRef = `${distributionBatchDistributor}:${r.id}`;
+                        const hasLinkedExternalRef = !!r.externalReleaseRef && r.externalReleaseRef !== placeholderRef;
+                        return (
                         <tr key={r.id} className="border-b border-border/50">
                           <td className="p-2">
                             <div className="font-medium">{r.releaseTitle}</div>
@@ -1378,6 +1391,22 @@ export default function Admin() {
                                 <Badge variant="secondary">QC 필요</Badge>
                               )}
                             </div>
+                          </td>
+                          <td className="p-2 text-xs align-top">
+                            <span
+                              className="font-mono text-[11px] leading-snug break-all line-clamp-3 text-muted-foreground"
+                              title={r.externalReleaseRef || undefined}
+                            >
+                              {r.externalReleaseRef ? (
+                                hasLinkedExternalRef ? (
+                                  r.externalReleaseRef
+                                ) : (
+                                  <span className="text-amber-700 dark:text-amber-400">{r.externalReleaseRef} (임시)</span>
+                                )
+                              ) : (
+                                "—"
+                              )}
+                            </span>
                           </td>
                           <td className="p-2 text-xs text-muted-foreground">
                             {r.status === "rejected" ? (r.rejectionReason || "-") : "-"}
@@ -1431,20 +1460,22 @@ export default function Admin() {
                                     </Button>
                                   )}
 
-                                  {r.qcStatus === "passed" &&
-                                    (!r.externalReleaseRef || r.externalReleaseRef === `${distributionBatchDistributor}:${r.id}`) && (
+                                  {r.qcStatus === "passed" && ["approved", "delivered", "live"].includes(r.status) && (
                                     <Button
                                       type="button"
                                       size="sm"
                                       variant="outline"
                                       disabled={linkExternalReleaseRefMutation.isPending}
-                                      onClick={() => {
-                                        const v = window.prompt("DistroKid(또는 배포사)에서 받은 externalReleaseRef(Release ID/Ref)를 입력하세요.");
-                                        if (!v) return;
-                                        linkExternalReleaseRefMutation.mutate({ releaseId: r.id, externalReleaseRef: v });
-                                      }}
+                                      onClick={() =>
+                                        setDistributionLinkDialog({
+                                          releaseId: r.id,
+                                          releaseTitle: r.releaseTitle,
+                                          value: hasLinkedExternalRef ? (r.externalReleaseRef ?? "") : "",
+                                          prependDistributorPrefix: true,
+                                        })
+                                      }
                                     >
-                                      외부 ref 연결
+                                      {hasLinkedExternalRef ? "외부 ref 수정" : "외부 ref 연결"}
                                     </Button>
                                   )}
 
@@ -1471,16 +1502,99 @@ export default function Admin() {
                             )}
                           </td>
                         </tr>
-                      ))
+                      );
+                      })
                     ) : (
                       <tr>
-                        <td colSpan={5} className="p-6 text-center text-muted-foreground">조건에 맞는 유통 신청이 없습니다.</td>
+                        <td colSpan={6} className="p-6 text-center text-muted-foreground">조건에 맞는 유통 신청이 없습니다.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
             )}
+
+            <Dialog
+              open={distributionLinkDialog != null}
+              onOpenChange={(open) => {
+                if (!open) setDistributionLinkDialog(null);
+              }}
+            >
+              <DialogContent className="sm:max-w-md" data-testid="dialog-distribution-link-external-ref">
+                <DialogHeader>
+                  <DialogTitle>외부 릴리즈 ref 연결</DialogTitle>
+                </DialogHeader>
+                {distributionLinkDialog && (
+                  <div className="space-y-4 py-1">
+                    <p className="text-sm text-muted-foreground">
+                      Release #{distributionLinkDialog.releaseId}{" "}
+                      <span className="font-medium text-foreground">{distributionLinkDialog.releaseTitle}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      DistroKid에서 확인한 <strong>UPC</strong> 또는 <strong>릴리즈 ID</strong>를 입력하세요. 웹훅{" "}
+                      <code className="text-[11px]">externalReleaseRef</code>와 <strong>완전히 같은 문자열</strong>이어야
+                      매칭됩니다. 숫자만 넣으면 아래 옵션으로{" "}
+                      <code className="text-[11px]">{distributionBatchDistributor}:숫자</code> 형태로 저장할 수 있습니다.
+                    </p>
+                    <div className="space-y-2">
+                      <Label htmlFor="distribution-external-ref-input">externalReleaseRef</Label>
+                      <Input
+                        id="distribution-external-ref-input"
+                        placeholder={distributionBatchDistributor === "distrokid" ? "예: 1960082834567 또는 distrokid:1960082834567" : "배포사에서 받은 고유 ID"}
+                        value={distributionLinkDialog.value}
+                        onChange={(e) =>
+                          setDistributionLinkDialog((prev) =>
+                            prev ? { ...prev, value: e.target.value } : prev,
+                          )
+                        }
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="distribution-prepend-prefix"
+                        checked={distributionLinkDialog.prependDistributorPrefix}
+                        onCheckedChange={(checked) =>
+                          setDistributionLinkDialog((prev) =>
+                            prev ? { ...prev, prependDistributorPrefix: checked === true } : prev,
+                          )
+                        }
+                      />
+                      <label
+                        htmlFor="distribution-prepend-prefix"
+                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        값에 <code className="text-xs">:</code>가 없으면 앞에{" "}
+                        <span className="font-mono text-xs">{distributionBatchDistributor}:</span> 붙이기
+                      </label>
+                    </div>
+                  </div>
+                )}
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button type="button" variant="outline" onClick={() => setDistributionLinkDialog(null)}>
+                    취소
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={linkExternalReleaseRefMutation.isPending || !distributionLinkDialog?.value.trim()}
+                    onClick={() => {
+                      if (!distributionLinkDialog) return;
+                      const raw = distributionLinkDialog.value.trim();
+                      let externalReleaseRef = raw;
+                      if (distributionLinkDialog.prependDistributorPrefix && !raw.includes(":")) {
+                        externalReleaseRef = `${distributionBatchDistributor}:${raw}`;
+                      }
+                      linkExternalReleaseRefMutation.mutate({
+                        releaseId: distributionLinkDialog.releaseId,
+                        externalReleaseRef,
+                      });
+                    }}
+                  >
+                    {linkExternalReleaseRefMutation.isPending ? "저장 중…" : "저장"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             {distributionSelectedReleaseId && (
               <div className="mt-4 rounded-md border border-border p-3 space-y-3">
