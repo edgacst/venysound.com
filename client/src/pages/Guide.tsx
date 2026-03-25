@@ -1,7 +1,7 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
@@ -31,10 +31,20 @@ import { useQuery } from "@tanstack/react-query";
 export default function Guide() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<"artist" | "listener" | "video">("listener");
+  const guideTabPanelRef = useRef<HTMLDivElement>(null);
+  const skipFirstTabScroll = useRef(true);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  useEffect(() => {
+    if (skipFirstTabScroll.current) {
+      skipFirstTabScroll.current = false;
+      return;
+    }
+    guideTabPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [activeTab]);
 
   const container = {
     hidden: { opacity: 0 },
@@ -132,6 +142,7 @@ export default function Guide() {
             </Button>
           </div>
 
+          <div ref={guideTabPanelRef} className="scroll-mt-24">
           {activeTab === "listener" && (
             <motion.div
               variants={container}
@@ -468,6 +479,7 @@ export default function Guide() {
               </motion.div>
             </motion.div>
           )}
+          </div>
         </div>
         <Footer />
       </div>

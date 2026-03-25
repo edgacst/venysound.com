@@ -66,6 +66,45 @@ function parsePositiveIntParam(raw: string | undefined): number | null {
   return n;
 }
 
+/** 관리자 일괄 정산: 스프레드시트에서 복사한 CSV (externalRef, 금액[, 수수료]) */
+function parseDistributionImportCsv(
+  csvText: string,
+): Array<{ ref: string; grossAmount: number; platformFeeAmount?: number }> {
+  const lines = csvText
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  let start = 0;
+  const head = lines[0].toLowerCase();
+  if (
+    (head.includes("ref") || head.includes("upc") || head.includes("external")) &&
+    (head.includes("amount") || head.includes("gross") || head.includes("royalty") || head.includes("원") || head.includes("earned"))
+  ) {
+    start = 1;
+  }
+  const out: Array<{ ref: string; grossAmount: number; platformFeeAmount?: number }> = [];
+  for (let i = start; i < lines.length; i++) {
+    const parts = lines[i].split(",").map((p) => p.trim().replace(/^"|"$/g, ""));
+    if (parts.length < 2) continue;
+    const ref = parts[0];
+    const amtRaw = parts[1].replace(/,/g, "").replace(/원/g, "").trim();
+    const amt = Number(amtRaw);
+    const feeRaw = parts[2];
+    const feeNum =
+      feeRaw !== undefined && feeRaw !== ""
+        ? Number(String(feeRaw).replace(/,/g, "").replace(/원/g, "").trim())
+        : NaN;
+    if (!ref || !Number.isFinite(amt) || amt < 0) continue;
+    out.push({
+      ref,
+      grossAmount: Math.floor(amt),
+      platformFeeAmount: Number.isFinite(feeNum) && feeNum >= 0 ? Math.floor(feeNum) : undefined,
+    });
+  }
+  return out;
+}
+
 // 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
 function calculateDonationBadge(totalSent: number): string | null {
   if (totalSent >= 200000) return "sponsor";
@@ -2647,8 +2686,11 @@ export async function registerRoutes(
   }
 
   app.post("/api/analytics/visit", async (req, res) => {
-    const path = typeof req.body?.path === "string" ? req.body.path : "/";
-    let visitorKey = typeof req.body?.visitorKey === "string" ? req.body.visitorKey : null;
+    const path = typeof req.body?.path === "string" && req.body.path.trim() ? req.body.path.trim() : "/";
+    let visitorKey =
+      typeof req.body?.visitorKey === "string" && req.body.visitorKey.trim().length > 0
+        ? req.body.visitorKey.trim()
+        : null;
     if (!visitorKey) visitorKey = crypto.randomUUID();
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
     const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
@@ -3764,6 +3806,7 @@ export async function registerRoutes(
       }
       const updated = await storage.setDistributionReleaseStatusByExternalRef({ externalReleaseRef, status });
       if (!updated) return res.status(404).json({ message: "유통 릴리즈를 찾을 수 없습니다." });
+      console.info("[distribution webhook status]", { externalReleaseRef, status, releaseId: updated.id });
       res.json({ success: true, releaseId: updated.id, status: updated.status });
     } catch (e: any) {
       console.error("[distribution webhook status POST]", e);
@@ -3802,6 +3845,7 @@ export async function registerRoutes(
         externalRef: `${externalReleaseRef}:${periodMonth}`,
       });
 
+      console.info("[distribution webhook payouts]", { externalReleaseRef, periodMonth, grossAmount, releaseId: release.id });
       res.json({ success: true, releaseId: release.id, periodMonth });
     } catch (e: any) {
       console.error("[distribution webhook payouts POST]", e);
@@ -3842,6 +3886,101 @@ export async function registerRoutes(
           : 500;
       console.error("[admin/distribution/releases/:id/earnings POST]", e);
       res.status(status).json({ message: e?.message ?? "유통 정산 입력에 실패했습니다." });
+    }
+  });
+
+  /** DistroKid 등에서 내려받은 수익 표를 붙여넣어 일괄 반입 (공식 API 없을 때) */
+  app.post("/api/admin/distribution/import-earnings", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const periodMonth = String(req.body?.periodMonth ?? "").trim();
+      if (!/^\d{4}-\d{2}$/.test(periodMonth)) {
+        return res.status(400).json({ message: "periodMonth는 YYYY-MM 형식이어야 합니다." });
+      }
+      const rawDistributor =
+        typeof req.body?.defaultDistributor === "string" ? req.body.defaultDistributor.trim().toLowerCase() : "distrokid";
+      const allowedDist = new Set(["distrokid", "tunecore", "cdbaby", "ditto", "onerpm", "generic"]);
+      const defaultDistributor = allowedDist.has(rawDistributor) ? rawDistributor : "distrokid";
+
+      type EntryRow = { externalReleaseRef: string; grossAmount: number; platformFeeAmount?: number };
+      const merged: EntryRow[] = [];
+
+      const rawEntries = req.body?.entries;
+      if (Array.isArray(rawEntries)) {
+        for (const e of rawEntries) {
+          const ref = typeof e?.externalReleaseRef === "string" ? e.externalReleaseRef.trim() : "";
+          const grossAmount = Number(e?.grossAmount);
+          const platformFeeAmount = e?.platformFeeAmount == null ? undefined : Number(e.platformFeeAmount);
+          if (!ref || !Number.isFinite(grossAmount)) continue;
+          merged.push({
+            externalReleaseRef: ref,
+            grossAmount: Math.floor(grossAmount),
+            platformFeeAmount:
+              platformFeeAmount != null && Number.isFinite(platformFeeAmount) ? Math.floor(platformFeeAmount) : undefined,
+          });
+        }
+      }
+
+      const csvText = typeof req.body?.csvText === "string" ? req.body.csvText : "";
+      if (csvText.trim()) {
+        for (const p of parseDistributionImportCsv(csvText)) {
+          merged.push({
+            externalReleaseRef: p.ref,
+            grossAmount: p.grossAmount,
+            platformFeeAmount: p.platformFeeAmount,
+          });
+        }
+      }
+
+      if (merged.length === 0) {
+        return res.status(400).json({ message: "entries 또는 csvText에 유효한 행이 없습니다." });
+      }
+
+      const skipped: { externalReleaseRef: string; reason: string }[] = [];
+      const errors: { externalReleaseRef: string; message: string }[] = [];
+      let applied = 0;
+
+      for (const row of merged) {
+        const rawRef = row.externalReleaseRef.trim();
+        let lookupRef = rawRef;
+        let rel = await storage.getDistributionReleaseByExternalRef(lookupRef);
+        if (!rel && !rawRef.includes(":")) {
+          lookupRef = `${defaultDistributor}:${rawRef}`;
+          rel = await storage.getDistributionReleaseByExternalRef(lookupRef);
+        }
+        if (!rel) {
+          errors.push({ externalReleaseRef: row.externalReleaseRef, message: "유통 릴리즈를 찾을 수 없습니다." });
+          continue;
+        }
+        const dup = await storage.hasDistributionLedgerForReleaseMonth(rel.id, periodMonth);
+        if (dup) {
+          skipped.push({ externalReleaseRef: row.externalReleaseRef, reason: "해당 월 정산 원장이 이미 있습니다." });
+          continue;
+        }
+        try {
+          await storage.addDistributionEarning({
+            releaseId: rel.id,
+            periodMonth,
+            grossAmount: row.grossAmount,
+            platformFeeAmount: row.platformFeeAmount,
+            source: "admin_csv_import",
+            externalRef: `admin_csv:${lookupRef}:${periodMonth}`,
+          });
+          applied += 1;
+        } catch (e: any) {
+          errors.push({ externalReleaseRef: row.externalReleaseRef, message: String(e?.message ?? "정산 반입 실패") });
+        }
+      }
+
+      res.json({
+        success: true,
+        periodMonth,
+        applied,
+        skipped,
+        errors,
+      });
+    } catch (e: any) {
+      console.error("[admin/distribution/import-earnings POST]", e);
+      res.status(500).json({ message: e?.message ?? "정산 일괄 반입에 실패했습니다." });
     }
   });
 

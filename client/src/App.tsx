@@ -10,12 +10,42 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
 import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
+import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 
 const VISITOR_KEY = "vkey";
 const VISIT_HEARTBEAT_MS = 15_000;
+
+function readVisitorKey(): string | null {
+  try {
+    const fromLocal = localStorage.getItem(VISITOR_KEY);
+    if (fromLocal && fromLocal.trim()) return fromLocal.trim();
+  } catch {
+    /* private mode / 스토리지 거부 */
+  }
+  try {
+    const fromSession = sessionStorage.getItem(VISITOR_KEY);
+    if (fromSession && fromSession.trim()) return fromSession.trim();
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeVisitorKey(v: string) {
+  try {
+    localStorage.setItem(VISITOR_KEY, v);
+  } catch {
+    /* ignore */
+  }
+  try {
+    sessionStorage.setItem(VISITOR_KEY, v);
+  } catch {
+    /* ignore */
+  }
+}
 
 function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -76,17 +106,20 @@ function PageTitle() {
 /** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
 function AnalyticsVisit() {
   const [pathname] = useLocation();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
+  const pathnameRef = useRef(pathname || "/");
+  pathnameRef.current = pathname || "/";
+
   useEffect(() => {
-    if (authLoading) return;
     const sendVisit = () => {
-      const path = pathname || "/";
-      let visitorKey: string | null = null;
+      const path = pathnameRef.current || "/";
+      const visitorKey = readVisitorKey();
+      let utmSource: string | undefined;
       try {
-        visitorKey = localStorage.getItem(VISITOR_KEY);
-      } catch {}
-      const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-      const utmSource = params?.get("utm_source") || undefined;
+        utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
+      } catch {
+        utmSource = undefined;
+      }
       fetch("/api/analytics/visit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,15 +128,12 @@ function AnalyticsVisit() {
           path,
           visitorKey,
           utmSource,
-          authUserId: user?.id ?? undefined,
         }),
       })
         .then((r) => r.ok && r.json())
         .then((data) => {
-          if (data?.visitorKey) {
-            try {
-              localStorage.setItem(VISITOR_KEY, data.visitorKey);
-            } catch {}
+          if (data?.visitorKey && typeof data.visitorKey === "string") {
+            writeVisitorKey(data.visitorKey);
           }
         })
         .catch(() => {});
@@ -115,21 +145,22 @@ function AnalyticsVisit() {
       sendVisit();
     }, VISIT_HEARTBEAT_MS);
 
+    /** iOS Safari 등: JSON Blob sendBeacon 이 빈 body 로 들어오는 경우가 있어 urlencoded 사용 */
     const sendVisitBeacon = () => {
       if (typeof navigator === "undefined") return;
-      const path = pathname || "/";
-      let visitorKey: string | null = null;
+      const path = pathnameRef.current || "/";
+      const visitorKey = readVisitorKey();
+      const params = new URLSearchParams();
+      params.set("path", path);
+      if (visitorKey) params.set("visitorKey", visitorKey);
       try {
-        visitorKey = localStorage.getItem(VISITOR_KEY);
-      } catch {}
-      const payload = JSON.stringify({
-        path,
-        visitorKey,
-        authUserId: user?.id ?? undefined,
-      });
+        const u = new URLSearchParams(window.location.search).get("utm_source");
+        if (u) params.set("utmSource", u);
+      } catch {
+        /* ignore */
+      }
       if (typeof navigator.sendBeacon === "function") {
-        const blob = new Blob([payload], { type: "application/json" });
-        navigator.sendBeacon("/api/analytics/visit", blob);
+        navigator.sendBeacon("/api/analytics/visit", params);
       } else {
         sendVisit();
       }
@@ -137,16 +168,19 @@ function AnalyticsVisit() {
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") sendVisitBeacon();
+      else if (document.visibilityState === "visible") sendVisit();
     };
 
     window.addEventListener("beforeunload", sendVisitBeacon);
     document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("pagehide", sendVisitBeacon);
     return () => {
       window.clearInterval(heartbeat);
       window.removeEventListener("beforeunload", sendVisitBeacon);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("pagehide", sendVisitBeacon);
     };
-  }, [pathname, user?.id, authLoading]);
+  }, [pathname, user?.id]);
   return null;
 }
 import Home from "@/pages/Home";
@@ -295,6 +329,7 @@ function App() {
                 <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
                   <PageTitle />
                   <AnalyticsVisit />
+                  <RouteSmoothScroll />
                   <Routes />
                   <GlobalAudioPlayer />
                   <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />

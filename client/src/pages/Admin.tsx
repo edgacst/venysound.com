@@ -183,6 +183,12 @@ export default function Admin() {
   const [distributionExternalRef, setDistributionExternalRef] = useState("");
   const [distributionSelectedReleaseId, setDistributionSelectedReleaseId] = useState<number | null>(null);
   const [distributionBatchDistributor, setDistributionBatchDistributor] = useState("distrokid");
+  const [distributionBulkPeriodMonth, setDistributionBulkPeriodMonth] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    return `${d.getFullYear()}-${m}`;
+  });
+  const [distributionBulkCsv, setDistributionBulkCsv] = useState("");
   const [downloadingDistributionReleaseId, setDownloadingDistributionReleaseId] = useState<number | null>(null);
   /** DistroKid UPC 등 — 웹훅 externalReleaseRef 와 동일 문자열로 저장 */
   const [distributionLinkDialog, setDistributionLinkDialog] = useState<{
@@ -792,6 +798,36 @@ export default function Admin() {
     },
     onError: (err: any) => {
       toast({ title: err?.message || "정산 원장 입력에 실패했습니다.", variant: "destructive" });
+    },
+  });
+
+  const importDistributionEarningsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/distribution/import-earnings", {
+        periodMonth: distributionBulkPeriodMonth,
+        defaultDistributor: distributionBatchDistributor,
+        csvText: distributionBulkCsv,
+      });
+      return res.json() as Promise<{
+        applied: number;
+        skipped: { externalReleaseRef: string; reason: string }[];
+        errors: { externalReleaseRef: string; message: string }[];
+      }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/distribution/releases"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/distribution/balance"] });
+      const desc = [
+        `반영 ${data.applied}건`,
+        data.skipped?.length ? `건너뜀 ${data.skipped.length}건` : null,
+        data.errors?.length ? `오류 ${data.errors.length}건` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      toast({ title: "정산 일괄 반입 결과", description: desc });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || "정산 일괄 반입에 실패했습니다.", variant: "destructive" });
     },
   });
 
@@ -1627,6 +1663,42 @@ export default function Admin() {
                 </div>
               </div>
             )}
+          </Card>
+
+          <Card className="p-4 mt-4 overflow-hidden">
+            <h3 className="text-sm font-semibold mb-2">유통 정산 일괄 반입 (CSV)</h3>
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+              DistroKid 등에서 공식 API로 수익을 가져올 수 없을 때, 스프레드시트에서 복사한 표를 붙여넣습니다.
+              각 행: <span className="font-mono text-[11px]">externalReleaseRef,총매출원[,수수료]</span>
+              — 관리자에 저장한 ref와 동일해야 하며, 숫자만 있으면 위에서 고른 배포사 접두(
+              <span className="font-mono text-[11px]">{distributionBatchDistributor}:</span>)를 붙여 매칭합니다.
+              같은 릴리즈·같은 정산월(YYYY-MM)은 한 번만 반영됩니다.
+            </p>
+            <div className="flex flex-wrap items-end gap-2 mb-2">
+              <div className="space-y-1">
+                <Label className="text-xs">정산월</Label>
+                <Input
+                  className="h-9 w-36"
+                  value={distributionBulkPeriodMonth}
+                  onChange={(e) => setDistributionBulkPeriodMonth(e.target.value)}
+                  placeholder="YYYY-MM"
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                disabled={importDistributionEarningsMutation.isPending || !distributionBulkCsv.trim()}
+                onClick={() => importDistributionEarningsMutation.mutate()}
+              >
+                {importDistributionEarningsMutation.isPending ? "반입 중…" : "일괄 반입 실행"}
+              </Button>
+            </div>
+            <Textarea
+              className="min-h-[140px] font-mono text-xs"
+              value={distributionBulkCsv}
+              onChange={(e) => setDistributionBulkCsv(e.target.value)}
+              placeholder={`externalReleaseRef,grossAmount\n825682413258,125000\ndistrokid:825682413258,98000,5000`}
+            />
           </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">

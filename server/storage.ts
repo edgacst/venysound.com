@@ -142,6 +142,8 @@ export interface IStorage {
     status: "delivered" | "live";
   }): Promise<DistributionRelease | undefined>;
   addDistributionEarning(input: { releaseId: number; periodMonth: string; grossAmount: number; platformFeeAmount?: number; source?: string | null; externalRef?: string | null }): Promise<{ ledgerRows: number; netAmount: number; platformAmount: number; distributedAmount: number }>;
+  /** 해당 릴리즈·정산월에 원장이 이미 있으면 true (일괄 반입 중복 방지) */
+  hasDistributionLedgerForReleaseMonth(releaseId: number, periodMonth: string): Promise<boolean>;
   getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
   getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
@@ -1699,6 +1701,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(distributionReleases.externalReleaseRef, externalReleaseRef))
       .limit(1);
     return row;
+  }
+
+  async hasDistributionLedgerForReleaseMonth(releaseId: number, periodMonth: string): Promise<boolean> {
+    const [row] = await db
+      .select({ id: distributionEarningsLedger.id })
+      .from(distributionEarningsLedger)
+      .where(
+        and(
+          eq(distributionEarningsLedger.releaseId, releaseId),
+          eq(distributionEarningsLedger.periodMonth, periodMonth),
+        ),
+      )
+      .limit(1);
+    return row != null;
   }
 
   async setDistributionReleaseStatusByExternalRef(input: {

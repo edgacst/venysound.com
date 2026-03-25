@@ -3,7 +3,29 @@ import * as TabsPrimitive from "@radix-ui/react-tabs"
 
 import { cn } from "@/lib/utils"
 
-const Tabs = TabsPrimitive.Root
+type TabsRootProps = React.ComponentPropsWithoutRef<typeof TabsPrimitive.Root>
+
+const Tabs = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Root>,
+  TabsRootProps
+>(({ onValueChange, ...props }, ref) => (
+  <TabsPrimitive.Root
+    ref={ref}
+    {...props}
+    onValueChange={(value) => {
+      onValueChange?.(value)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const panel = document.querySelector<HTMLElement>(
+            '[role="tabpanel"][data-state="active"]'
+          )
+          panel?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+        })
+      })
+    }}
+  />
+))
+Tabs.displayName = "Tabs"
 
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
