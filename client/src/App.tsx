@@ -323,7 +323,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Router>
         <div className="app-root">
-          <div className={`app-main${radioSlug ? " pb-14" : ""}`}>
+          <div
+            id="app-main-scroll"
+            className={`app-main scroll-mt-24${radioSlug ? " pb-14" : ""}`}
+          >
             <TooltipProvider>
               <WsProviderWithAuth>
                 <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
