@@ -764,7 +764,8 @@
     "refundPolicy": "Refund Policy",
     "support": "Support",
     "address": "457 Sangdong, Bucheon-si, Gyeonggi-do",
-    "address2": "Biz Reg. No. 2026-Bucheonwonmi-0446"
+    "address2": "Biz Reg. No. 2026-Bucheonwonmi-0446",
+    "devInquiry": "Software development, API development, customization, computer program development — contact 010-8447-9973"
   },
   "donationBadge": {
     "seed": "Seed",

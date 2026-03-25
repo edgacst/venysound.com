@@ -1,12 +1,8 @@
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import logoImage from "@assets/image_3fb5572f_1771157735033.png";
-import { useAuth } from "@/hooks/use-auth";
-
 export function Footer() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isOwner = user?.email === "freecompr20@gmail.com";
   return (
     <footer className="border-t border-white/5 bg-card mt-auto text-[11px] text-muted-foreground leading-4">
       <div className="container px-4 py-5">
@@ -40,7 +36,7 @@ export function Footer() {
             <ul className="space-y-0">
               <li><Link href="/faq"><span className="hover:text-foreground cursor-pointer">FAQ</span></Link></li>
               <li>freecompr@naver.com</li>
-              <li>010-8447-9973</li>
+              <li className="whitespace-normal break-words">{t("footer.devInquiry")}</li>
               <li>{t('footer.address')} {t('footer.address2')}</li>
             </ul>
           </div>

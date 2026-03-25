@@ -785,7 +785,8 @@
     "refundPolicy": "환불 정책",
     "support": "고객센터",
     "address": "경기도 부천시 상동457",
-    "address2": "제 2026-부천원미-0446 호"
+    "address2": "제 2026-부천원미-0446 호",
+    "devInquiry": "프로그램개발, api개발,커스터마이징,컴퓨터프로그램 개발  문의 010-8447-9973"
   },
   "donationBadge": {
     "seed": "씨앗",
