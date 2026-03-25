@@ -251,6 +251,40 @@ function Routes() {
 function App() {
   const radioWaveformRef = useRef<Uint8Array | null>(null);
   const radioSlug = useRadioPlayerStore((s) => s.slug);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const root = document.querySelector(".app-root") as HTMLElement | null;
+    if (!root) return;
+
+    const getAngle = (): number | null => {
+      try {
+        const orientation: any = (window.screen as any)?.orientation;
+        const angle = typeof orientation?.angle === "number" ? orientation.angle : null;
+        return angle;
+      } catch {
+        return null;
+      }
+    };
+
+    const sync = () => {
+      const angle = getAngle();
+      // Some mobile browsers flip the UI by 180deg in landscape.
+      root.classList.toggle("app-flipped", angle === 180);
+    };
+
+    sync();
+    window.addEventListener("orientationchange", sync);
+
+    const orientation: any = (window.screen as any)?.orientation;
+    orientation?.addEventListener?.("change", sync);
+
+    return () => {
+      window.removeEventListener("orientationchange", sync);
+      orientation?.removeEventListener?.("change", sync);
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Router>

@@ -158,6 +158,13 @@
   @apply bg-background/80 backdrop-blur-md border border-white/5;
 }
 
+/* 일부 모바일 브라우저에서 가로 전환 시 180도 거꾸로 표시되는 경우가 있어 보정용.
+   화면 레이아웃 자체는 그대로 두고 콘텐츠만 회전 처리합니다. */
+.app-flipped {
+  transform: rotate(180deg);
+  transform-origin: center center;
+}
+
 /* 예전: 모바일 가로 모드 차단 오버레이
    지금은 사용자 경험을 위해 실제로는 사용하지 않음 (메시지만 남겨둠) */
 .landscape-blocker {

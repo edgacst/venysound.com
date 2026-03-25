@@ -10,7 +10,9 @@ export default function GlobalDistributionGuide() {
         <Navigation />
         <main className="container max-w-4xl px-4 py-10 space-y-8">
           <header className="space-y-3">
-            <h1 className="text-3xl md:text-4xl font-bold">글로벌 음원출시로 수익방법</h1>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold leading-tight break-words">
+              글로벌 음원출시로 수익방법
+            </h1>
             <p className="text-sm text-muted-foreground">
               글로벌 배포의 기본 구조, 구독 조건, 수익 분배, 신청 절차, 법적 고지사항을 한 번에 확인할 수 있는 안내 페이지입니다.
             </p>

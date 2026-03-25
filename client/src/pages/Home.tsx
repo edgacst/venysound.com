@@ -246,7 +246,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
       <Navigation />
-      <section className="relative h-[500px] flex items-center justify-center overflow-hidden hero-section">
+      <section className="relative min-h-[500px] flex items-center justify-center overflow-hidden pt-16 md:pt-0">
         <div className="absolute inset-0">
           <img 
             src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80" 
@@ -361,7 +361,7 @@ export default function Home() {
               <Button
                 size="lg"
                 variant="outline"
-                className="rounded-full px-8 border-cyan-300/40 text-cyan-200 bg-cyan-500/10 backdrop-blur-sm hover:bg-cyan-500/20"
+                className="rounded-full px-4 sm:px-8 border-cyan-300/40 text-cyan-200 bg-cyan-500/10 backdrop-blur-sm hover:bg-cyan-500/20 whitespace-normal leading-tight max-w-[90vw]"
               >
                 글로벌 음원출시로 수익방법
               </Button>
