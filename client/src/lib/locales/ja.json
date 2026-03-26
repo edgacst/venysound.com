@@ -24,7 +24,6 @@
   "home": {
     "heroSubtitle": "音楽でつながる私たちだけの空間",
     "shareNow": "今すぐあなたの音楽を世界中に共有してみましょう。",
-    "musicCount": "現在 <bold>{{count}}</bold> 曲の素晴らしい音楽が登録されています。",
     "searchPlaceholder": "聴きたい音楽やアーティストを検索してみてください",
     "listenMusic": "音楽を聴く",
     "uploadTrack": "楽曲アップロード",

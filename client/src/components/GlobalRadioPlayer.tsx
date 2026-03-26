@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { redirectToLogin } from "@/lib/queryClient";
 import { ToastAction } from "@/components/ui/toast";
 import { Link } from "wouter";
+import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 
 const REFETCH_INTERVAL_MS = 8000;
 const CROSSFADE_DURATION_MS = 1500;
@@ -78,6 +79,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
+
+  useResumeAudioWhenForeground(getActiveAudio, () => {
+    const s = useRadioPlayerStore.getState();
+    return !s.userStopped && !!s.streamUrl && !!s.slug;
+  });
 
   // 비로그인은 채널에서 첫 곡 1회만 재생하고 정지
   const unauthFirstEndedCountRef = useRef(0);
@@ -303,10 +309,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     if (!streamUrl || !channelName) return;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
     navigator.mediaSession.metadata = new MediaMetadata({
       title: channelName,
       artist: "라디오 청취 중",
-      album: "venysound",
+      album: "VenySound",
+      artwork: origin
+        ? [{ src: `${origin}/favicon.png`, sizes: "192x192", type: "image/png" }]
+        : [],
     });
     navigator.mediaSession.setActionHandler("play", () => {
       const el = getActiveAudio();

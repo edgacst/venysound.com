@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import { resolveStorageUrl } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
@@ -29,7 +29,6 @@ export default function Home() {
   const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
   const musicList = musicResult?.data;
-  const totalCount = musicResult?.total || 0;
 
   const { data: weeklyTop } = useQuery<any[]>({
     queryKey: ["/api/music/top-weekly", 16],
@@ -293,16 +292,6 @@ export default function Home() {
           >
             {t('home.shareNow')}
           </motion.p>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 }}
-            className="text-lg text-white/80 mb-8 drop-shadow-sm"
-            data-testid="text-music-count"
-          >
-            <Trans i18nKey="home.musicCount" values={{ count: totalCount }} components={{ bold: <span className="font-bold text-yellow-400" /> }} />
-          </motion.p>
-          
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

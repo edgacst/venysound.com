@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
 import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
+import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -489,6 +490,14 @@ export function GlobalAudioPlayer() {
   }, [user, toast]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useResumeAudioWhenForeground(
+    () => audioRef.current,
+    () => {
+      const st = usePlayerStore.getState();
+      return !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
+    },
+  );
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
@@ -890,6 +899,16 @@ export function GlobalAudioPlayer() {
   }, [displayMusic, imageUrl, playNext, playPrev]);
 
   useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const playing = isPlaying && !pauseRequested;
+    try {
+      navigator.mediaSession.playbackState = playing ? "playing" : "paused";
+    } catch {
+      /* ignore */
+    }
+  }, [isPlaying, pauseRequested]);
+
+  useEffect(() => {
     if (!('mediaSession' in navigator) || !audioRef.current) return;
     const audio = audioRef.current;
     const updatePositionState = () => {
@@ -935,7 +954,7 @@ export function GlobalAudioPlayer() {
 
   return (
     <>
-      <audio ref={audioRef} preload="auto" crossOrigin="anonymous" />
+      <audio ref={audioRef} preload="auto" crossOrigin="anonymous" playsInline />
       {((activeMusicId && displayMusic) || activeExternalTrack) && <AnimatePresence>
         <motion.div
           initial={{ y: 100, opacity: 0 }}

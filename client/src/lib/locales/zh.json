@@ -27,7 +27,6 @@
   "home": {
     "heroSubtitle": "通过音乐连接的我们的空间",
     "shareNow": "现在就把您的音乐分享给全世界。",
-    "musicCount": "目前已注册 <bold>{{count}}</bold> 首精彩音乐。",
     "searchPlaceholder": "搜索您想听的音乐或艺术家",
     "listenMusic": "立即收听",
     "uploadTrack": "上传音乐",
