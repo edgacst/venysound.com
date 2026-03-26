@@ -2646,11 +2646,26 @@ export async function registerRoutes(
   });
 
   // === Analytics (public: 방문 기록) ===
-  function getDeviceType(ua: string | undefined): string {
-    if (!ua) return "unknown";
-    const u = ua.toLowerCase();
-    if (/mobile|android|iphone|ipod|webos|blackberry|iemobile/i.test(u) && !/ipad|tablet/i.test(u)) return "mobile";
-    if (/ipad|tablet|playbook|silk/i.test(u)) return "tablet";
+  /** PC/모바일/태블릿. Sec-CH-UA-Mobile(크롬·엣지 등) 우선, 없으면 User-Agent 휴리스틱 */
+  function getDeviceTypeFromRequest(req: Request): string {
+    const ch = String(req.headers["sec-ch-ua-mobile"] ?? "").trim();
+    if (ch === "?0") return "desktop";
+    if (ch === "?1") return "mobile";
+
+    const uaRaw = req.headers["user-agent"];
+    if (!uaRaw || typeof uaRaw !== "string") return "unknown";
+    const u = uaRaw.toLowerCase();
+
+    if (/ipad|ipados/i.test(uaRaw) || /tablet(?! pc)/i.test(u) || /playbook|silk|kindle\b|nexus 7|nexus 9|sm-t[0-9]{2,}|gt-(p|n)[0-9]/i.test(u)) {
+      return "tablet";
+    }
+    if (/iphone|ipod|windows phone|iemobile|blackberry|bb10|webos/i.test(u)) return "mobile";
+    if (/android/i.test(u)) {
+      if (/\bmobile\b|\bmobi\b/i.test(u)) return "mobile";
+      return "tablet";
+    }
+    if (/\bopera mini\b/i.test(u)) return "mobile";
+    if (/\bmobile\b/i.test(u)) return "mobile";
     return "desktop";
   }
   function refererDomain(referer: string | undefined): string | null {
@@ -2694,7 +2709,7 @@ export async function registerRoutes(
     if (!visitorKey) visitorKey = crypto.randomUUID();
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
     const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
-    const deviceType = getDeviceType(req.headers["user-agent"]);
+    const deviceType = getDeviceTypeFromRequest(req);
     const refererDomainVal = refererDomain(req.headers["referer"]);
     const utmSource = typeof req.body?.utmSource === "string" ? req.body.utmSource : (typeof req.query?.utm_source === "string" ? req.query.utm_source : undefined);
     let countryCode: string | undefined;

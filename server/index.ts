@@ -179,6 +179,12 @@ const httpServer = createServer(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+/** 이후 요청에서 Sec-CH-UA-Mobile 등이 붙도록(디바이스 집계 정확도) */
+app.use((_req, res, next) => {
+  res.setHeader("Accept-CH", "Sec-CH-UA-Mobile, Sec-CH-UA-Platform");
+  next();
+});
+
 /** SITE_URL 호스트를 선호 호스트로 두고, www ↔ apex 혼용 시 301 통일 (검색엔진 중복 URL 완화) */
 function getPreferredHostnameFromSiteUrl(): string | null {
   const raw = (process.env.SITE_URL || "").trim();

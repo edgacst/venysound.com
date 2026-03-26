@@ -78,6 +78,16 @@ const statusLabels: Record<string, string> = {
   rejected: "반려",
 };
 
+function formatAnalyticsDeviceType(deviceType: string | null | undefined, t: (key: string, defaultValue: string) => string): string {
+  const d = deviceType?.trim() ?? "";
+  if (!d) return "—";
+  if (d === "desktop") return t("admin.deviceDesktop", "PC");
+  if (d === "mobile") return t("admin.deviceMobile", "모바일");
+  if (d === "tablet") return t("admin.deviceTablet", "태블릿");
+  if (d === "unknown") return t("admin.deviceUnknown", "미상");
+  return d;
+}
+
 type AdminCreditRefundRow = {
   id: number;
   userId: string;
@@ -1721,11 +1731,17 @@ export default function Admin() {
               )}
             </Card>
             <Card className="p-4 overflow-hidden">
-              <h3 className="text-sm font-semibold mb-3">{t('admin.byDevice', '디바이스별 방문')}</h3>
+              <h3 className="text-sm font-semibold mb-1">{t('admin.byDevice', '디바이스별 방문')}</h3>
+              <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
+                {t(
+                  "admin.byDeviceHint",
+                  "막대는 누적 페이지뷰 건수입니다. 디바이스는 접속 시 브라우저 힌트(Sec-CH-UA-Mobile)와 User-Agent로 분류합니다.",
+                )}
+              </p>
               {Array.isArray(statsByDevice) && statsByDevice.length > 0 ? (
                 <div className="h-48 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={statsByDevice.map((r) => ({ name: r.deviceType || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <BarChart data={statsByDevice.map((r) => ({ name: formatAnalyticsDeviceType(r.deviceType, t), count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} className="text-muted-foreground" />
                       <YAxis tick={{ fontSize: 11 }} className="text-muted-foreground" />
@@ -1958,7 +1974,7 @@ export default function Admin() {
                                 {formatDateTime(row.visitedAt)}
                               </td>
                               <td className="p-2 font-mono text-xs break-all max-w-[280px]">{row.path}</td>
-                              <td className="p-2 text-muted-foreground whitespace-nowrap">{row.deviceType ?? "—"}</td>
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">{formatAnalyticsDeviceType(row.deviceType, t)}</td>
                             </tr>
                           ))
                         ) : (
