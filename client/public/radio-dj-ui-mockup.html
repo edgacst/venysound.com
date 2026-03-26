@@ -483,7 +483,7 @@
           </div>
         </div>
         <div class="mic-setup" style="margin-top: 16px;">
-          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 녹음 파일에서는 음원 대비 마이크가 자동 보강되며, 아래 입력 레벨·멘트 설정도 반영됩니다. 선택한 마이크는 저장됩니다.</p>
+          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 녹음 파일에서는 음원 대비 마이크가 자동 보강되며, 아래 입력 레벨·멘트 설정도 반영됩니다. <strong>멘트</strong> 시 모니터로 듣는 음악도 함께 낮아집니다. 스피커로 모니터링하면 울림이 날 수 있으니 이어폰을 권장합니다. 선택한 마이크는 저장됩니다.</p>
           <div class="mic-controls">
             <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
             <button type="button" id="btnMicConnect" class="btn btn-secondary btn-sm">마이크 연결</button>
@@ -648,6 +648,15 @@
   var musicGainNode = null;
   var waveformAnimationId = null;
   var mentMode = false;
+  /** 실제로 듣는 모니터(djMonitorAudio)용 — 파형용 musicGainNode와 동일 비율 */
+  var MENT_MUSIC_MONITOR_GAIN = 0.3;
+  function getMonitorMusicGain() {
+    return mentMode ? MENT_MUSIC_MONITOR_GAIN : 1;
+  }
+  function applyVolumeBeforeMonitorPlay(el) {
+    if (!el || crossfadeRafId != null) return;
+    el.volume = getMonitorMusicGain();
+  }
   var listenerCount = 0;
   var scheduleInputsApplied = false;
   var lastLoadedLyricsMusicId = null;
@@ -688,8 +697,9 @@
       crossfadeRafId = null;
       var t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
       var ease = t * (2 - t);
-      active.volume = 1 - ease;
-      inactive.volume = ease;
+      var g = getMonitorMusicGain();
+      active.volume = (1 - ease) * g;
+      inactive.volume = ease * g;
       if (t < 1) {
         crossfadeRafId = requestAnimationFrame(step);
       } else {
@@ -1139,6 +1149,7 @@
       }
       var newActive = getActiveMonitorAudio();
       if (newActive) {
+        applyVolumeBeforeMonitorPlay(newActive);
         newActive.play().catch(function() {
           var hint = document.getElementById('monitorPlayHint');
           if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
@@ -1291,6 +1302,7 @@
         audioEl.setAttribute('data-current-id', String(nowId));
         audioEl.src = streamUrl;
         audioEl.load();
+        applyVolumeBeforeMonitorPlay(audioEl);
         audioEl.play().catch(function() {});
         if (waveformEl) {
           waveformEl.setAttribute('data-current-id', String(nowId));
@@ -1314,6 +1326,7 @@
         }
       } else {
         loadNowPlayingLyrics(nowId);
+        applyVolumeBeforeMonitorPlay(audioEl);
         audioEl.play().catch(function() {});
         if (waveformEl && !waveformSource && waveformEl.src) {
           waveformEl.src = streamUrl;
@@ -1528,6 +1541,7 @@
         if (isInactive) {
           runCrossfadeToInactive();
         } else {
+          applyVolumeBeforeMonitorPlay(audioEl);
           audioEl.play().catch(function() {
             var hint = document.getElementById('monitorPlayHint');
             if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
@@ -1623,6 +1637,7 @@
       audioEl.src = API_BASE + '/api/music/' + encodeURIComponent(musicIdNum) + '/stream';
       audioEl.oncanplaythrough = function onReady() {
         audioEl.oncanplaythrough = null;
+        applyVolumeBeforeMonitorPlay(audioEl);
         audioEl.play().catch(function() {
           var hint = document.getElementById('monitorPlayHint');
           if (hint) { hint.style.display = 'inline'; hint.removeAttribute('aria-hidden'); }
@@ -1688,6 +1703,7 @@
       audioEl.setAttribute('data-local-id', item.localId);
       audioEl.src = currentLocalObjectUrl;
       audioEl.load();
+      applyVolumeBeforeMonitorPlay(audioEl);
       audioEl.play().catch(function() {});
     }
     if (waveformEl) {
@@ -1724,6 +1740,7 @@
       audioEl.setAttribute('data-local-id', item.localId);
       audioEl.src = currentLocalObjectUrl;
       audioEl.load();
+      applyVolumeBeforeMonitorPlay(audioEl);
       audioEl.play().catch(function() {});
     }
     if (waveformEl) {
@@ -2303,6 +2320,7 @@
       }
       var audio = getActiveMonitorAudio();
       if (!audio || !audio.src) return;
+      applyVolumeBeforeMonitorPlay(audio);
       audio.play().catch(function() {});
       var hint = document.getElementById('monitorPlayHint');
       if (hint) { hint.style.display = 'none'; hint.setAttribute('aria-hidden', 'true'); }
@@ -2376,6 +2394,9 @@
     }
     function onMonitorPlaying(e) {
       if (e.target !== getActiveMonitorAudio()) return;
+      if (crossfadeRafId == null) {
+        e.target.volume = getMonitorMusicGain();
+      }
       var h = document.getElementById('monitorPlayHint');
       if (h) { h.style.display = 'none'; h.setAttribute('aria-hidden', 'true'); }
       var curId = e.target.getAttribute('data-current-id');
@@ -2521,6 +2542,12 @@
         if (micGainNode) micGainNode.gain.value = 0;
         if (musicGainNode) musicGainNode.gain.value = 1;
         this.textContent = '멘트';
+      }
+      if (crossfadeRafId == null && monitorAudios) {
+        monitorAudios.forEach(function(el) {
+          if (!el || el.paused || !el.src) return;
+          el.volume = getMonitorMusicGain();
+        });
       }
     });
     document.getElementById('btnRecordStart').addEventListener('click', startRecording);

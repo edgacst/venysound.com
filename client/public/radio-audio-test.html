@@ -548,7 +548,7 @@
       <div class="sep"></div>
 
       <h1 style="margin-top:0;">마이크</h1>
-      <p style="margin-bottom:8px;">마이크를 연결해 모니터링할 수 있습니다. (에코 방지를 위해 이어폰/헤드셋 권장)</p>
+      <p style="margin-bottom:6px;font-size:0.82rem;color:#94a3b8;line-height:1.45;">울림·소리가 두 겹: 스피커로 듣는 음악이 마이크로 다시 들어가거나, 윈도우 <strong>설정 → 소리 → 마이크 → 장치 속성</strong>의 <strong>이 마이크 장치의 오디오 듣기</strong>가 켜져 있으면 브라우저 경로와 겹칠 수 있습니다. 이어폰 사용 또는 듣기 끄기를 권장합니다.</p>
       <div class="row" style="margin-bottom:8px;">
         <button id="btnMic">마이크 연결</button>
         <span id="micState" class="pill">OFF</span>
@@ -557,10 +557,18 @@
           <span class="meter" aria-hidden="true"><div id="micLevelBar"></div></span>
         </span>
       </div>
+      <label class="row" style="margin-bottom:8px;align-items:center;gap:8px;font-size:0.85rem;color:#e2e8f0;cursor:pointer;">
+        <input type="checkbox" id="micBrowserMonitor" />
+        브라우저로 내 목소리 듣기 (끄면 레벨 막대만, 울림 예방)
+      </label>
       <div class="row" style="margin-bottom:8px;">
         <label for="micVol" style="margin:0;color:#9ca3af;">모니터 볼륨</label>
         <input id="micVol" type="range" min="0" max="1" step="0.01" value="0" />
         <span id="micVolTxt" class="pill">0%</span>
+      </div>
+      <div class="row" style="margin-bottom:8px;">
+        <button type="button" id="btnMentStudio" style="background:#4f46e5;">멘트 (음악 줄이기)</button>
+        <span style="font-size:0.78rem;color:#94a3b8;">멘트 중 송출 곡 재생 볼륨만 약 30%로 낮춥니다. 외부 콘솔 없이 사용 가능합니다.</span>
       </div>
       <div class="row">
         <button id="btnRec" style="background:#dc2626;">녹음 시작</button>
@@ -632,11 +640,11 @@
           <li>강퇴는 <strong>방장/스텝/CJ</strong>만 가능하며, 자기 자신은 강퇴할 수 없습니다.</li>
         </ul>
 
-        <h3>6) 마이크 연결 방법</h3>
+        <h3>6) 마이크 · 멘트</h3>
         <ul>
-          <li>가운데 카드의 <strong>마이크 연결</strong>을 누르면 브라우저가 마이크 권한을 요청합니다.</li>
-          <li>에코 방지를 위해 <strong>이어폰/헤드셋</strong> 사용을 권장합니다.</li>
-          <li><strong>모니터 볼륨</strong>은 기본 0%이며, 필요할 때만 올려서 모니터링하세요.</li>
+          <li><strong>마이크 연결</strong> 후 레벨 막대로 입력만 확인할 수 있습니다. 스피커로 내 목소리까지 듣려면 <strong>브라우저로 내 목소리 듣기</strong>를 켜고 모니터 볼륨을 올리세요.</li>
+          <li>울림·이중으로 들림은 대개 <strong>스피커 + 마이크</strong> 또는 윈도우 <strong>이 마이크 장치의 오디오 듣기</strong>가 브라우저와 겹쳐서 생깁니다. 이어폰을 쓰거나 듣기를 끄세요.</li>
+          <li><strong>멘트 (음악 줄이기)</strong>는 송출 곡 재생 볼륨만 잠시 약 30%로 낮춥니다. 외부 오디오 콘솔 없이도 사용할 수 있습니다.</li>
         </ul>
 
         <h3>7) 송출하는 방법</h3>
@@ -751,6 +759,35 @@
     var micGain = null;
     var micAnalyser = null;
     var micLevelRaf = 0;
+    var micBrowserMonitorChk = document.getElementById('micBrowserMonitor');
+    var studioMentMode = false;
+    var audioVolumeBeforeMent = 1;
+
+    function updateMicMonitorRouting() {
+      if (!micGain || !micCtx) return;
+      try { micGain.disconnect(micCtx.destination); } catch (_) {}
+      var useBrowser = micBrowserMonitorChk && micBrowserMonitorChk.checked;
+      var v = micVol ? Number(micVol.value || 0) : 0;
+      micGain.gain.value = v;
+      if (useBrowser && v > 0.0001) {
+        try { micGain.connect(micCtx.destination); } catch (_) {}
+      }
+    }
+
+    function setStudioMentDucking(on) {
+      if (studioMentMode === on) return;
+      var btnMentStudio = document.getElementById('btnMentStudio');
+      if (on) {
+        audioVolumeBeforeMent = typeof audio.volume === 'number' ? audio.volume : 1;
+        audio.volume = Math.max(0.08, audioVolumeBeforeMent * 0.3);
+        studioMentMode = true;
+        if (btnMentStudio) btnMentStudio.textContent = '멘트 끝 (음악 복귀)';
+      } else {
+        audio.volume = audioVolumeBeforeMent;
+        studioMentMode = false;
+        if (btnMentStudio) btnMentStudio.textContent = '멘트 (음악 줄이기)';
+      }
+    }
 
     // 재생 큐/현재 송출 곡 (연속 재생용)
     var playlistIds = [];
@@ -1261,10 +1298,10 @@
           micAnalyser = micCtx.createAnalyser();
           micAnalyser.fftSize = 1024;
 
-          // 입력 -> gain -> (스피커로 모니터) + analyser
+          // 입력 -> gain -> (선택 시에만 스피커) + 병렬로 analyser(레벨 미터)
           micSource.connect(micGain);
-          micGain.connect(micCtx.destination);
           micSource.connect(micAnalyser);
+          updateMicMonitorRouting();
 
           setMicUi(true);
 
@@ -1298,9 +1335,21 @@
     micVol.oninput = function() {
       var v = Number(micVol.value || 0);
       micVolTxt.textContent = Math.round(v * 100) + '%';
-      if (micGain) micGain.gain.value = v;
+      updateMicMonitorRouting();
     };
     micVol.oninput();
+
+    if (micBrowserMonitorChk) {
+      micBrowserMonitorChk.addEventListener('change', function() {
+        updateMicMonitorRouting();
+      });
+    }
+    var btnMentStudio = document.getElementById('btnMentStudio');
+    if (btnMentStudio) {
+      btnMentStudio.onclick = function() {
+        setStudioMentDucking(!studioMentMode);
+      };
+    }
 
     
 
