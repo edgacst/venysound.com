@@ -1244,12 +1244,11 @@
       }
       micStream = null;
       setMicUi(false);
-      addSystemMessage('마이크가 해제되었습니다.');
     }
 
     function startMic() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        addSystemMessage('이 브라우저는 마이크를 지원하지 않습니다.');
+        show('이 브라우저는 마이크를 지원하지 않습니다.', true);
         return;
       }
       navigator.mediaDevices.getUserMedia({ audio: true })
@@ -1268,7 +1267,6 @@
           micSource.connect(micAnalyser);
 
           setMicUi(true);
-          addSystemMessage('마이크가 연결되었습니다. (모니터 볼륨을 올리면 스피커로 들립니다)');
 
           var data = new Uint8Array(micAnalyser.fftSize);
           function tick() {
@@ -1287,7 +1285,7 @@
           tick();
         })
         .catch(function(err) {
-          addSystemMessage('마이크 권한이 거부되었거나 실패했습니다: ' + (err && err.message ? err.message : String(err)));
+          show('마이크 권한이 거부되었거나 실패했습니다: ' + (err && err.message ? err.message : String(err)), true);
           stopMic();
         });
     }
@@ -1923,7 +1921,10 @@
     var recDestination = null;
     var recAudioCtx = null;
     var recMicSource = null;
+    var recMicGainNode = null;
     var recAudioSource = null;
+    /** 녹음 믹스: 캡처된 음원 대비 마이크 레벨 보강 (모니터 볼륨 슬라이더와 별도 계산) */
+    var REC_MIC_MIX_BOOST = 2.75;
 
     function fmtRecTime(ms) {
       var sec = Math.floor(ms / 1000);
@@ -1944,8 +1945,10 @@
       recTimer.style.display = 'none';
       btnRec.textContent = '녹음 시작';
       btnRec.style.background = '#dc2626';
+      try { if (recMicGainNode) recMicGainNode.disconnect(); } catch(_){}
       try { if (recMicSource) recMicSource.disconnect(); } catch(_){}
       try { if (recAudioSource) recAudioSource.disconnect(); } catch(_){}
+      recMicGainNode = null;
       recMicSource = null;
       recAudioSource = null;
     }
@@ -1988,12 +1991,17 @@
       micPromise.then(function(mStream) {
         if (mStream) {
           recMicSource = recAudioCtx.createMediaStreamSource(mStream);
-          recMicSource.connect(recDestination);
+          recMicGainNode = recAudioCtx.createGain();
+          var monitorVol = micVol ? Number(micVol.value) : 0;
+          var userScale = monitorVol > 0.02 ? monitorVol : 1;
+          recMicGainNode.gain.value = Math.min(4, userScale * REC_MIC_MIX_BOOST);
+          recMicSource.connect(recMicGainNode);
+          recMicGainNode.connect(recDestination);
         }
 
         var combinedStream = recDestination.stream;
         if (combinedStream.getAudioTracks().length === 0) {
-          addSystemMessage('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생해 주세요.');
+          show('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생해 주세요.', true);
           return;
         }
 
@@ -2011,7 +2019,6 @@
         };
         recMediaRecorder.onstop = function() {
           if (recChunks.length === 0) return;
-          addSystemMessage('녹음 종료. MP3로 변환 중...');
           var webmBlob = new Blob(recChunks, { type: recMediaRecorder.mimeType || 'audio/webm' });
           recChunks = [];
 
@@ -2063,10 +2070,9 @@
               document.body.appendChild(a);
               a.click();
               setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-              addSystemMessage('MP3 녹음 파일 다운로드: ' + fname);
               decCtx.close();
             }).catch(function(e) {
-              addSystemMessage('MP3 변환 실패, WebM으로 다운로드합니다: ' + e.message);
+              show('MP3 변환 실패, WebM으로 다운로드합니다: ' + e.message, true);
               var url = URL.createObjectURL(webmBlob);
               var a = document.createElement('a');
               a.href = url;
@@ -2091,8 +2097,6 @@
         recTimerInterval = setInterval(function() {
           recTimer.textContent = fmtRecTime(Date.now() - recStartTime);
         }, 500);
-
-        addSystemMessage('방송 녹음이 시작되었습니다.');
       });
     }
 

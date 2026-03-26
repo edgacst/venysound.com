@@ -483,7 +483,7 @@
           </div>
         </div>
         <div class="mic-setup" style="margin-top: 16px;">
-          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 선택한 마이크는 저장됩니다.</p>
+          <p class="mic-hint">녹음 시 마이크와 송출 곡이 함께 녹음됩니다. 녹음 파일에서는 음원 대비 마이크가 자동 보강되며, 아래 입력 레벨·멘트 설정도 반영됩니다. 선택한 마이크는 저장됩니다.</p>
           <div class="mic-controls">
             <select id="micSelect" class="mic-select"><option value="">마이크 선택...</option></select>
             <button type="button" id="btnMicConnect" class="btn btn-secondary btn-sm">마이크 연결</button>
@@ -624,6 +624,9 @@
   var mediaRecorder = null;
   var recordChunks = [];
   var recordStartTime = null;
+  var recordMicSourceNode = null;
+  var recordMicGainNode = null;
+  var recordStreamDestination = null;
   var waveformCtx = null;
   var waveformSource = null;
   var waveformAnalyser = null;
@@ -704,6 +707,8 @@
     API_BASE = window.location.protocol + '//' + window.location.hostname + ':5000';
   }
   var MIC_STORAGE_KEY = 'radio_dj_mic_device_id';
+  /** 녹음 믹스 전용: 마스터링된 음원 대비 마이크 입력 레벨 보강(모니터링용 micGainNode와 별도) */
+  var RECORD_MIC_MIX_BOOST = 2.75;
 
   function api(path, options) {
     options = options || {};
@@ -2525,13 +2530,46 @@
     document.getElementById('btnSaveSchedule').addEventListener('click', saveSchedule);
   }
 
+  function getEffectiveMicGainForRecordingMix() {
+    if (micMuted) return 0;
+    var gainSlider = document.getElementById('micGainSlider');
+    var v = gainSlider ? parseInt(gainSlider.value, 10) / 100 : 1;
+    var linear = mentMode ? Math.min(2, v * 1.5) : v;
+    return Math.min(4, linear * RECORD_MIC_MIX_BOOST);
+  }
+
+  function teardownRecordingAudioGraph() {
+    try {
+      if (recordMicGainNode && recordStreamDestination) {
+        recordMicGainNode.disconnect(recordStreamDestination);
+      }
+    } catch (e) {}
+    try {
+      if (recordMicSourceNode && recordMicGainNode) {
+        recordMicSourceNode.disconnect(recordMicGainNode);
+      } else if (recordMicSourceNode) {
+        recordMicSourceNode.disconnect();
+      }
+    } catch (e) {}
+    try {
+      if (waveformSource && recordStreamDestination) {
+        waveformSource.disconnect(recordStreamDestination);
+      }
+    } catch (e) {}
+    recordMicSourceNode = null;
+    recordMicGainNode = null;
+    recordStreamDestination = null;
+  }
+
   function startRecording() {
     if (mediaRecorder && mediaRecorder.state === 'recording') return;
+    teardownRecordingAudioGraph();
     var audioEl = getActiveMonitorAudio();
     var hasTrack = false;
     var dest = null;
     if (waveformCtx && waveformSource && audioEl && audioEl.src) {
       dest = waveformCtx.createMediaStreamDestination();
+      recordStreamDestination = dest;
       waveformSource.connect(dest);
       hasTrack = true;
       recordContext = waveformCtx;
@@ -2545,13 +2583,22 @@
     }
     if (micStream && dest) {
       var micSource = recordContext.createMediaStreamSource(micStream);
-      micSource.connect(dest);
+      recordMicSourceNode = micSource;
+      recordMicGainNode = recordContext.createGain();
+      recordMicGainNode.gain.value = getEffectiveMicGainForRecordingMix();
+      micSource.connect(recordMicGainNode);
+      recordMicGainNode.connect(dest);
       hasTrack = true;
     } else if (micStream) {
       if (!recordContext) recordContext = new (window.AudioContext || window.webkitAudioContext)();
       dest = recordContext.createMediaStreamDestination();
-      var micSource = recordContext.createMediaStreamSource(micStream);
-      micSource.connect(dest);
+      recordStreamDestination = dest;
+      var micSource2 = recordContext.createMediaStreamSource(micStream);
+      recordMicSourceNode = micSource2;
+      recordMicGainNode = recordContext.createGain();
+      recordMicGainNode.gain.value = getEffectiveMicGainForRecordingMix();
+      micSource2.connect(recordMicGainNode);
+      recordMicGainNode.connect(dest);
       hasTrack = true;
     }
     if (!hasTrack || !dest) {
@@ -2569,6 +2616,7 @@
       var blob = new Blob(recordChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
       var filenameBase = 'radio-recording-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-');
       function finishUi() {
+        teardownRecordingAudioGraph();
         document.getElementById('recordStatus').textContent = '';
         document.getElementById('btnRecordStart').style.display = 'inline-flex';
         document.getElementById('btnRecordStop').style.display = 'none';
