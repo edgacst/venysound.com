@@ -399,12 +399,53 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
     if (currentSlug && match && shouldAutoAdvance) {
       const musicId = parseInt(match[1], 10);
+      const chName = (state.channelName ?? "라디오").trim() || "라디오";
+      // 응답으로 바로 다음 곡 URL을 적용 — 화면 꺼짐 시 setInterval/WS가 지연돼도 전환 유지
       fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
+        keepalive: true,
         body: JSON.stringify({ currentMusicId: musicId }),
-      }).catch(() => {});
+      })
+        .then(async (r) => (r.ok ? r.json() : null))
+        .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+          if (data?.ok && data.nextMusicId != null) {
+            const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
+            const s = useRadioPlayerStore.getState();
+            if (!s.userStopped && s.slug === currentSlug) {
+              s.setStream(currentSlug, chName, nextUrl);
+            }
+            return;
+          }
+          if (data?.reason !== "already_advanced") return;
+          const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+          if (!r2.ok) return;
+          const channelData = await r2.json();
+          if (channelData?.status !== "live") return;
+          const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+          const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+          if (nowPlayingId == null && !nowPlayingObjectPath) return;
+          const newStreamUrl =
+            nowPlayingObjectPath != null
+              ? nowPlayingObjectPath
+              : nowPlayingId != null
+                ? `/api/music/${nowPlayingId}/stream`
+                : null;
+          if (!newStreamUrl) return;
+          const s = useRadioPlayerStore.getState();
+          if (s.userStopped || s.slug !== currentSlug) return;
+          const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
+          s.setStream(
+            currentSlug,
+            resolvedName,
+            newStreamUrl,
+            typeof channelData?.nowPlayingElapsedSeconds === "number"
+              ? channelData.nowPlayingElapsedSeconds
+              : undefined,
+          );
+        })
+        .catch(() => {});
     }
     if (unauthFirstEnd && currentSlug) {
       toast({
