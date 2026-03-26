@@ -7,6 +7,15 @@
   <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
   <style>
     * { box-sizing: border-box; }
+    /* 임베드(React /radio/.../studio iframe): 부모 높이에 맞춤 — 100vh만 쓰면 뷰포트 기준이라 이중 스크롤·잘림 발생 */
+    html.studio-embed,
+    html.studio-embed body {
+      height: 100%;
+      max-height: 100%;
+    }
+    html.studio-embed body {
+      overflow: auto;
+    }
     body {
       margin: 0;
       font-family: system-ui, sans-serif;
@@ -117,6 +126,14 @@
       grid-template-columns: minmax(260px, 0.9fr) minmax(300px, 1fr) minmax(360px, 1.35fr);
       gap: 16px;
     }
+    .shell > .card {
+      min-height: 0; /* 그리드 셀 안에서 스크롤·flex 자식이 줄어들 수 있게 */
+    }
+    html.studio-embed .hero {
+      height: 140px;
+      margin-bottom: 10px;
+    }
+    html.studio-embed .hero-title { font-size: 1.35rem; }
     @media (max-width: 1024px) {
       body {
         height: auto;
@@ -155,7 +172,8 @@
       display: flex;
       flex-direction: column;
     }
-    .card-main { overflow: hidden; }
+    /* 마이크·멘트 블록 추가 후에도 가운데 열이 잘리지 않도록 내부 스크롤 */
+    .card-main { min-height: 0; overflow-x: hidden; overflow-y: auto; }
     .card-chat { overflow: hidden; }
     .card-search { overflow: hidden; }
     h1 { margin: 0 0 4px; font-size: 1.1rem; color: #a5b4fc; }
@@ -547,8 +565,6 @@
 
       <div class="sep"></div>
 
-      <h1 style="margin-top:0;">마이크</h1>
-      <p style="margin-bottom:6px;font-size:0.82rem;color:#94a3b8;line-height:1.45;">울림·소리가 두 겹: 스피커로 듣는 음악이 마이크로 다시 들어가거나, 윈도우 <strong>설정 → 소리 → 마이크 → 장치 속성</strong>의 <strong>이 마이크 장치의 오디오 듣기</strong>가 켜져 있으면 브라우저 경로와 겹칠 수 있습니다. 이어폰 사용 또는 듣기 끄기를 권장합니다.</p>
       <div class="row" style="margin-bottom:8px;">
         <button id="btnMic">마이크 연결</button>
         <span id="micState" class="pill">OFF</span>
@@ -557,18 +573,10 @@
           <span class="meter" aria-hidden="true"><div id="micLevelBar"></div></span>
         </span>
       </div>
-      <label class="row" style="margin-bottom:8px;align-items:center;gap:8px;font-size:0.85rem;color:#e2e8f0;cursor:pointer;">
-        <input type="checkbox" id="micBrowserMonitor" />
-        브라우저로 내 목소리 듣기 (끄면 레벨 막대만, 울림 예방)
-      </label>
-      <div class="row" style="margin-bottom:8px;">
+      <div class="row" style="margin-bottom:4px;">
         <label for="micVol" style="margin:0;color:#9ca3af;">모니터 볼륨</label>
         <input id="micVol" type="range" min="0" max="1" step="0.01" value="0" />
         <span id="micVolTxt" class="pill">0%</span>
-      </div>
-      <div class="row" style="margin-bottom:8px;">
-        <button type="button" id="btnMentStudio" style="background:#4f46e5;">멘트 (음악 줄이기)</button>
-        <span style="font-size:0.78rem;color:#94a3b8;">멘트 중 송출 곡 재생 볼륨만 약 30%로 낮춥니다. 외부 콘솔 없이 사용 가능합니다.</span>
       </div>
       <div class="row">
         <button id="btnRec" style="background:#dc2626;">녹음 시작</button>
@@ -640,14 +648,7 @@
           <li>강퇴는 <strong>방장/스텝/CJ</strong>만 가능하며, 자기 자신은 강퇴할 수 없습니다.</li>
         </ul>
 
-        <h3>6) 마이크 · 멘트</h3>
-        <ul>
-          <li><strong>마이크 연결</strong> 후 레벨 막대로 입력만 확인할 수 있습니다. 스피커로 내 목소리까지 듣려면 <strong>브라우저로 내 목소리 듣기</strong>를 켜고 모니터 볼륨을 올리세요.</li>
-          <li>울림·이중으로 들림은 대개 <strong>스피커 + 마이크</strong> 또는 윈도우 <strong>이 마이크 장치의 오디오 듣기</strong>가 브라우저와 겹쳐서 생깁니다. 이어폰을 쓰거나 듣기를 끄세요.</li>
-          <li><strong>멘트 (음악 줄이기)</strong>는 송출 곡 재생 볼륨만 잠시 약 30%로 낮춥니다. 외부 오디오 콘솔 없이도 사용할 수 있습니다.</li>
-        </ul>
-
-        <h3>7) 송출하는 방법</h3>
+        <h3>6) 송출하는 방법</h3>
         <ul>
           <li>곡을 선택한 뒤 <span class="kbd">채널에 지금 송출</span>을 누르면 <strong>해당 채널</strong>의 현재 곡(now playing)이 갱신됩니다.</li>
           <li>청취자는 채널 페이지(<code>/radio/채널슬러그</code>)에서 현재 곡을 바로 들을 수 있습니다.</li>
@@ -670,6 +671,13 @@
 
   <script>
   (function() {
+    try {
+      var _embedP = new URLSearchParams(window.location.search || '');
+      if (_embedP.get('embed') === '1') {
+        document.documentElement.classList.add('studio-embed');
+      }
+    } catch (e0) {}
+
     // iframe(상위 프레임 안에서 열릴 때)은 이 페이지 헤더를 숨기고, 상위 React 헤더만 사용
     try {
       if (window.top !== window.self) {
@@ -754,40 +762,70 @@
     var micLevelBar = document.getElementById('micLevelBar');
 
     var micStream = null;
+    /** 마이크 + 송출 음원(<audio>) 모니터 믹스용 단일 AudioContext */
     var micCtx = null;
     var micSource = null;
     var micGain = null;
     var micAnalyser = null;
     var micLevelRaf = 0;
-    var micBrowserMonitorChk = document.getElementById('micBrowserMonitor');
-    var studioMentMode = false;
-    var audioVolumeBeforeMent = 1;
+    var monitorMusicElSource = null;
+    var monitorMusicGain = null;
+    /** 마이크 켤 때 송출 음량 덕킹: 끄기 전까지 복구용 */
+    var savedAudioVolForMic = null;
+    var musicVolRampRaf = 0;
+    var MIC_DUCK_TARGET = 0.1;
+    var MIC_DUCK_DOWN_MS = 300;
+    var MIC_DUCK_UP_MS = 500;
 
-    function updateMicMonitorRouting() {
-      if (!micGain || !micCtx) return;
-      try { micGain.disconnect(micCtx.destination); } catch (_) {}
-      var useBrowser = micBrowserMonitorChk && micBrowserMonitorChk.checked;
-      var v = micVol ? Number(micVol.value || 0) : 0;
-      micGain.gain.value = v;
-      if (useBrowser && v > 0.0001) {
-        try { micGain.connect(micCtx.destination); } catch (_) {}
+    function cancelMusicVolRamp() {
+      if (musicVolRampRaf) cancelAnimationFrame(musicVolRampRaf);
+      musicVolRampRaf = 0;
+    }
+
+    function rampAudioElementVolume(toVol, durationMs) {
+      cancelMusicVolRamp();
+      if (!audio || durationMs <= 0) {
+        if (audio) audio.volume = Math.max(0, Math.min(1, toVol));
+        return;
+      }
+      var fromVol = typeof audio.volume === 'number' ? audio.volume : 1;
+      toVol = Math.max(0, Math.min(1, toVol));
+      var t0 = performance.now();
+      function step(now) {
+        if (!audio) {
+          musicVolRampRaf = 0;
+          return;
+        }
+        var t = Math.min(1, (now - t0) / durationMs);
+        audio.volume = fromVol + (toVol - fromVol) * t;
+        if (t < 1) musicVolRampRaf = requestAnimationFrame(step);
+        else musicVolRampRaf = 0;
+      }
+      musicVolRampRaf = requestAnimationFrame(step);
+    }
+
+    function attachMusicElementToMonitorMix() {
+      if (!micCtx || micCtx.state === 'closed') return;
+      if (monitorMusicElSource) return;
+      if (!audio) return;
+      var src = String(audio.currentSrc || audio.src || '').trim();
+      if (!src) return;
+      try {
+        monitorMusicElSource = micCtx.createMediaElementSource(audio);
+        monitorMusicGain = micCtx.createGain();
+        monitorMusicGain.gain.value = 1;
+        monitorMusicElSource.connect(monitorMusicGain);
+        monitorMusicGain.connect(micCtx.destination);
+        if (micCtx.state === 'suspended') micCtx.resume().catch(function() {});
+      } catch (_) {
+        monitorMusicElSource = null;
+        monitorMusicGain = null;
       }
     }
 
-    function setStudioMentDucking(on) {
-      if (studioMentMode === on) return;
-      var btnMentStudio = document.getElementById('btnMentStudio');
-      if (on) {
-        audioVolumeBeforeMent = typeof audio.volume === 'number' ? audio.volume : 1;
-        audio.volume = Math.max(0.08, audioVolumeBeforeMent * 0.3);
-        studioMentMode = true;
-        if (btnMentStudio) btnMentStudio.textContent = '멘트 끝 (음악 복귀)';
-      } else {
-        audio.volume = audioVolumeBeforeMent;
-        studioMentMode = false;
-        if (btnMentStudio) btnMentStudio.textContent = '멘트 (음악 줄이기)';
-      }
-    }
+    audio.addEventListener('play', function() {
+      if (micStream && micCtx && micCtx.state !== 'closed') attachMusicElementToMonitorMix();
+    });
 
     // 재생 큐/현재 송출 곡 (연속 재생용)
     var playlistIds = [];
@@ -1270,8 +1308,15 @@
       micLevelRaf = 0;
       micLevelBar.style.width = '0%';
 
-      try { if (micCtx) micCtx.close(); } catch (_) {}
-      micCtx = null;
+      if (savedAudioVolForMic != null) {
+        var restoreVol = savedAudioVolForMic;
+        savedAudioVolForMic = null;
+        rampAudioElementVolume(restoreVol, MIC_DUCK_UP_MS);
+      }
+
+      try { if (micSource) micSource.disconnect(); } catch (_) {}
+      try { if (micGain) micGain.disconnect(); } catch (_) {}
+      try { if (micAnalyser) micAnalyser.disconnect(); } catch (_) {}
       micSource = null;
       micGain = null;
       micAnalyser = null;
@@ -1280,7 +1325,33 @@
         try { micStream.getTracks().forEach(function(t){ t.stop(); }); } catch (_) {}
       }
       micStream = null;
+
+      var keepCtx = monitorMusicElSource != null;
+      if (!keepCtx && micCtx) {
+        try { micCtx.close(); } catch (_) {}
+        micCtx = null;
+        monitorMusicElSource = null;
+        monitorMusicGain = null;
+      }
       setMicUi(false);
+    }
+
+    function micErrorUserHint(err) {
+      var name = err && err.name ? String(err.name) : '';
+      var msg = err && err.message ? String(err.message) : String(err || '');
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError' || /not found/i.test(msg)) {
+        return ' 사용 가능한 입력 장치(마이크)가 없습니다. 이어폰·USB 마이크 연결, 윈도우 설정 → 시스템 → 소리 → 입력에서 기본 마이크 지정, 장치 관리자·드라이버를 확인하세요. (가상 케이블만 있을 때도 이 메시지가 날 수 있습니다.)';
+      }
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        return ' 브라우저 주소창의 마이크(자물쇠) 아이콘에서 허용했는지, 윈도우 개인 정보 보호 → 마이크에서 브라우저 사용이 켜져 있는지 확인하세요.';
+      }
+      if (name === 'NotReadableError' || name === 'TrackStartError' || /Could not start/i.test(msg)) {
+        return ' 다른 앱이 마이크를 쓰는 중이거나 장치 오류일 수 있습니다. 통화·녹음 프로그램을 닫고 다시 시도하세요.';
+      }
+      if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+        return ' 요청한 오디오 설정을 만족하는 장치가 없습니다.';
+      }
+      return '';
     }
 
     function startMic() {
@@ -1288,20 +1359,39 @@
         show('이 브라우저는 마이크를 지원하지 않습니다.', true);
         return;
       }
+      if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        show('마이크는 HTTPS 또는 localhost 에서만 동작합니다. 주소가 https 인지 확인하세요.', true);
+        return;
+      }
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(function(stream) {
           micStream = stream;
-          micCtx = new (window.AudioContext || window.webkitAudioContext)();
+          if (!micCtx || micCtx.state === 'closed') {
+            micCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
           micSource = micCtx.createMediaStreamSource(stream);
           micGain = micCtx.createGain();
           micGain.gain.value = Number(micVol.value || 0);
           micAnalyser = micCtx.createAnalyser();
           micAnalyser.fftSize = 1024;
 
-          // 입력 -> gain -> (선택 시에만 스피커) + 병렬로 analyser(레벨 미터)
+          // 마이크 → 모니터 게인 → 출력 (레벨 미터는 게인과 병렬)
           micSource.connect(micGain);
+          micGain.connect(micCtx.destination);
           micSource.connect(micAnalyser);
-          updateMicMonitorRouting();
+
+          // 송출 음원(<audio>)을 같은 AudioContext destination 으로 — 이어폰에서 곡+목소리 믹스
+          attachMusicElementToMonitorMix();
+
+          // 크롬 등: AudioContext 가 suspended 면 이어폰 출력이 안 나올 수 있음(클릭 직후 resume)
+          if (micCtx.state === 'suspended') {
+            micCtx.resume().catch(function() {});
+          }
+
+          if (savedAudioVolForMic == null && audio) {
+            savedAudioVolForMic = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
+          }
+          rampAudioElementVolume(MIC_DUCK_TARGET, MIC_DUCK_DOWN_MS);
 
           setMicUi(true);
 
@@ -1322,7 +1412,9 @@
           tick();
         })
         .catch(function(err) {
-          show('마이크 권한이 거부되었거나 실패했습니다: ' + (err && err.message ? err.message : String(err)), true);
+          var raw = err && err.message ? err.message : String(err || '');
+          var extra = micErrorUserHint(err);
+          show('마이크를 열 수 없습니다: ' + raw + (extra ? ' —' + extra : ''), true);
           stopMic();
         });
     }
@@ -1335,21 +1427,10 @@
     micVol.oninput = function() {
       var v = Number(micVol.value || 0);
       micVolTxt.textContent = Math.round(v * 100) + '%';
-      updateMicMonitorRouting();
+      if (micGain) micGain.gain.value = v;
+      if (micCtx && micCtx.state === 'suspended') micCtx.resume().catch(function() {});
     };
     micVol.oninput();
-
-    if (micBrowserMonitorChk) {
-      micBrowserMonitorChk.addEventListener('change', function() {
-        updateMicMonitorRouting();
-      });
-    }
-    var btnMentStudio = document.getElementById('btnMentStudio');
-    if (btnMentStudio) {
-      btnMentStudio.onclick = function() {
-        setStudioMentDucking(!studioMentMode);
-      };
-    }
 
     
 

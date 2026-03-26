@@ -5,7 +5,7 @@ import crypto from "crypto";
 import { execSync } from "child_process";
 import { existsSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
 import archiver from "archiver";
-import { storage } from "./storage";
+import { storage, getCanonicalMusicGenreLabels } from "./storage";
 import { submitDistributionReleaseToDistributor } from "./distribution/submitDistributor";
 import { translateAnnouncementContent } from "./translate";
 import { api, errorSchemas } from "@shared/routes";
@@ -221,15 +221,26 @@ export async function registerRoutes(
   registerObjectStorageRoutes(app);
 
   // DJ 송출실 HTML: 비로그인 직링크(/radio-audio-test.html?slug=…) 차단 — 세션 없으면 로그인으로
-  const radioAudioTestHtmlPaths = [
+  // dist 와 client/public 둘 다 있으면 예전엔 dist만 써서, 소스만 고치고 빌드 안 하면 변경이 안 보였음 → 수정 시각이 더 최근인 쪽 사용
+  const radioAudioTestHtmlCandidates = [
     path.resolve(process.cwd(), "dist/public/radio-audio-test.html"),
     path.resolve(process.cwd(), "client/public/radio-audio-test.html"),
   ];
   function resolveRadioAudioTestHtmlPath(): string | null {
-    for (const p of radioAudioTestHtmlPaths) {
-      if (existsSync(p)) return p;
+    const existing = radioAudioTestHtmlCandidates.filter((p) => existsSync(p));
+    if (existing.length === 0) return null;
+    if (existing.length === 1) return existing[0];
+    let best = existing[0];
+    let bestM = statSync(best).mtimeMs;
+    for (let i = 1; i < existing.length; i++) {
+      const p = existing[i];
+      const m = statSync(p).mtimeMs;
+      if (m > bestM) {
+        best = p;
+        bestM = m;
+      }
     }
-    return null;
+    return best;
   }
   app.get("/radio-audio-test.html", (req, res) => {
     const r = req as Request & { isAuthenticated(): boolean; user?: { claims?: { sub?: string } } };
@@ -1414,6 +1425,7 @@ export async function registerRoutes(
 
   app.get("/api/music/genres", async (_req, res) => {
     try {
+      const canonical = getCanonicalMusicGenreLabels();
       const [distinctMusic, curatedList] = await Promise.all([
         db.execute(sql`SELECT DISTINCT genre FROM music WHERE genre IS NOT NULL AND trim(genre) != '' ORDER BY genre`),
         storage.getCuratedPlaylists(),
@@ -1424,7 +1436,9 @@ export async function registerRoutes(
         if (pl.genreMain && pl.genreMain.trim()) fromCurated.push(pl.genreMain.trim());
         if (pl.genreSub && pl.genreSub.trim()) fromCurated.push(pl.genreSub.trim());
       }
-      const combined = Array.from(new Set([...fromMusic, ...fromCurated])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+      const combined = Array.from(new Set([...canonical, ...fromMusic, ...fromCurated]))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "ko"));
       res.json(combined);
     } catch (e) {
       console.error("[music/genres]", e);

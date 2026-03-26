@@ -68,8 +68,8 @@ export default function RadioStudio() {
     <PageTransition>
       <div className="min-h-screen flex flex-col bg-background">
         <Navigation />
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 pt-3 pb-2">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 px-4 pt-3 pb-2">
             <div className="max-w-6xl mx-auto flex justify-start pl-2">
               <Link href={`/radio/${encodeURIComponent(slug)}`} className="inline-block">
                 <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
@@ -82,10 +82,8 @@ export default function RadioStudio() {
           <iframe
             src={studioUrl}
             title="Radio Studio"
-            className="w-full border-0"
+            className="min-h-0 w-full flex-1 border-0"
             style={{
-              flex: 1,
-              height: "calc(100vh - 64px - 40px)", // 헤더(~64px) + 위 여백(~40px) 정도를 제외하고 나머지 전체
               background: "radial-gradient(circle at top, #1d2333 0, #020617 55%)",
             }}
           />

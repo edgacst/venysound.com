@@ -18,6 +18,31 @@ import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNot
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users } from "@shared/models/auth";
 
+/**
+ * 곡 목록 장르 필터·업로드 UI·송출실 곡검색과 동일한 기준.
+ * 대분류 키를 선택하면 이 배열에 포함된 music.genre 값이 모두 매칭됩니다.
+ */
+export const MUSIC_GENRE_GROUPS: Record<string, string[]> = {
+  "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
+  "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
+  "월드뮤직": ["월드뮤직", "라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
+  "경음악": ["경음악", "재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "힐링"],
+  "찬양": ["찬양", "CCM", "워십", "복음성가"],
+  "기타": ["기타"],
+};
+
+/** API `/api/music/genres`·UI 드롭다운용: 대분류+세부 전체 라벨 */
+export function getCanonicalMusicGenreLabels(): string[] {
+  const s = new Set<string>();
+  for (const [, subs] of Object.entries(MUSIC_GENRE_GROUPS)) {
+    for (const g of subs) s.add(g);
+  }
+  for (const main of Object.keys(MUSIC_GENRE_GROUPS)) {
+    s.add(main);
+  }
+  return Array.from(s).sort((a, b) => a.localeCompare(b, "ko"));
+}
+
 export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
@@ -287,17 +312,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMusicList(genre?: string, search?: string, tag?: string, page: number = 1, limit: number = 30): Promise<{ data: Music[]; total: number }> {
-    const genreGroups: Record<string, string[]> = {
-      "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
-      "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
-      "월드뮤직": ["월드뮤직", "라틴음악", "아프로비트", "레게", "플라멩코", "켈틱", "인도음악", "중동음악"],
-      "경음악": ["경음악", "재즈", "클래식", "뉴에이지", "태교음악", "카페음악", "힐링"],
-    };
-
     const conditions = [];
     if (genre) {
-      if (genreGroups[genre]) {
-        conditions.push(inArray(music.genre, genreGroups[genre]));
+      if (MUSIC_GENRE_GROUPS[genre]) {
+        conditions.push(inArray(music.genre, MUSIC_GENRE_GROUPS[genre]));
       } else {
         conditions.push(eq(music.genre, genre));
       }
