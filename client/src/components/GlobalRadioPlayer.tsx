@@ -190,7 +190,80 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (!el?.src) return false;
         try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
       };
-      if (matchSrc(active) || matchSrc(inactive)) return;
+      const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
+      const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const tryPlay = (el: HTMLAudioElement) => {
+        el.muted = false;
+        el.play().then(() => {
+          setNeedsTap(false);
+          setIsMuted(false);
+        }).catch(() => {
+          el.muted = true;
+          el.play().then(() => {
+            setIsMuted(true);
+            setNeedsTap(false);
+          }).catch(() => {
+            setNeedsTap(true);
+          });
+        });
+      };
+      /** 비활성 버퍼에 이미 올바른 src가 있을 때(이전 effect 취소 등)에도 반드시 핸드오프·재생 */
+      const handoffToInactive = (inactiveEl: HTMLAudioElement) => {
+        if (userStoppedNow()) return;
+        const seek = pendingSeekRef.current ?? useRadioPlayerStore.getState().initialSeekSeconds ?? null;
+        if (seek != null && seek > 0) {
+          try {
+            inactiveEl.currentTime = Math.max(0, seek);
+          } catch { /* ignore */ }
+          pendingSeekRef.current = null;
+          useRadioPlayerStore.setState({ initialSeekSeconds: null });
+        }
+        const fadeFrom = getActiveAudio();
+        if (isMobile) {
+          const oldActive = getActiveAudio();
+          activeIndexRef.current = 1 - activeIndexRef.current;
+          setActiveIndex(activeIndexRef.current);
+          if (oldActive) { oldActive.pause(); oldActive.currentTime = 0; }
+          tryPlay(inactiveEl);
+          return;
+        }
+        if (!fadeFrom?.src || fadeFrom.paused) {
+          activeIndexRef.current = 1 - activeIndexRef.current;
+          setActiveIndex(activeIndexRef.current);
+          tryPlay(inactiveEl);
+          return;
+        }
+        inactiveEl.volume = 0;
+        tryPlay(inactiveEl);
+        const start = performance.now();
+        const run = () => {
+          const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
+          const ease = t * (2 - t);
+          if (fadeFrom) fadeFrom.volume = (1 - ease);
+          inactiveEl.volume = ease;
+          if (t < 1) {
+            crossfadeRafRef.current = requestAnimationFrame(run);
+          } else {
+            crossfadeRafRef.current = null;
+            if (fadeFrom) { fadeFrom.pause(); fadeFrom.currentTime = 0; fadeFrom.removeAttribute("src"); fadeFrom.load(); }
+            activeIndexRef.current = 1 - activeIndexRef.current;
+            setActiveIndex(activeIndexRef.current);
+          }
+        };
+        crossfadeRafRef.current = requestAnimationFrame(run);
+      };
+
+      if (matchSrc(active)) {
+        if (userStoppedNow()) return;
+        if (active && !active.paused && !active.ended) return;
+        if (active) tryPlay(active);
+        return;
+      }
+      if (matchSrc(inactive) && inactive && inactive.readyState >= 2) {
+        handoffToInactive(inactive);
+        return;
+      }
+
       if (!inactive || typeof inactive.pause !== "function") return;
       inactive.pause();
       inactive.currentTime = 0;
@@ -199,63 +272,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       pendingSeekRef.current = useRadioPlayerStore.getState().initialSeekSeconds ?? null;
       inactive.src = streamUrl;
       const onReady = () => {
-        const seek = pendingSeekRef.current;
-        if (seek != null && seek > 0) {
-          inactive.currentTime = Math.max(0, seek);
-          pendingSeekRef.current = null;
-          useRadioPlayerStore.setState({ initialSeekSeconds: null });
-        }
-        const active = getActiveAudio();
-        const userStoppedNow = useRadioPlayerStore.getState().userStopped;
-        if (userStoppedNow) return;
-        const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        const tryPlay = (el: HTMLAudioElement) => {
-          el.muted = false;
-          el.play().then(() => {
-            setNeedsTap(false);
-            setIsMuted(false);
-          }).catch(() => {
-            el.muted = true;
-            el.play().then(() => {
-              setIsMuted(true);
-              setNeedsTap(false);
-            }).catch(() => {
-              setNeedsTap(true);
-            });
-          });
-        };
-        if (isMobile) {
-          const oldActive = getActiveAudio();
-          activeIndexRef.current = 1 - activeIndexRef.current;
-          setActiveIndex(activeIndexRef.current);
-          if (oldActive) { oldActive.pause(); oldActive.currentTime = 0; }
-          tryPlay(inactive);
-          return;
-        }
-        if (!active?.src || active.paused) {
-          activeIndexRef.current = 1 - activeIndexRef.current;
-          setActiveIndex(activeIndexRef.current);
-          tryPlay(inactive);
-          return;
-        }
-        inactive.volume = 0;
-        tryPlay(inactive);
-        const start = performance.now();
-        const run = () => {
-          const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
-          const ease = t * (2 - t);
-          if (active) active.volume = (1 - ease);
-          inactive.volume = ease;
-          if (t < 1) {
-            crossfadeRafRef.current = requestAnimationFrame(run);
-          } else {
-            crossfadeRafRef.current = null;
-            if (active) { active.pause(); active.currentTime = 0; active.removeAttribute("src"); active.load(); }
-            activeIndexRef.current = 1 - activeIndexRef.current;
-            setActiveIndex(activeIndexRef.current);
-          }
-        };
-        crossfadeRafRef.current = requestAnimationFrame(run);
+        handoffToInactive(inactive);
       };
       // iOS Safari는 스트리밍에서 canplaythrough 미발생 → canplay 병행 등록
       let readyCalled = false;
@@ -410,6 +427,31 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       })
         .then(async (r) => (r.ok ? r.json() : null))
         .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+          const applyChannelPayload = (channelData: Record<string, unknown>) => {
+            if (channelData?.status !== "live") return;
+            const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+            const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+            if (nowPlayingId == null && !nowPlayingObjectPath) return;
+            const newStreamUrl =
+              nowPlayingObjectPath != null
+                ? String(nowPlayingObjectPath)
+                : nowPlayingId != null
+                  ? `/api/music/${Number(nowPlayingId)}/stream`
+                  : null;
+            if (!newStreamUrl) return;
+            const s = useRadioPlayerStore.getState();
+            if (s.userStopped || s.slug !== currentSlug) return;
+            const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
+            s.setStream(
+              currentSlug,
+              resolvedName,
+              newStreamUrl,
+              typeof channelData?.nowPlayingElapsedSeconds === "number"
+                ? (channelData.nowPlayingElapsedSeconds as number)
+                : undefined,
+            );
+          };
+
           if (data?.ok && data.nextMusicId != null) {
             const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
             const s = useRadioPlayerStore.getState();
@@ -418,32 +460,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             }
             return;
           }
-          if (data?.reason !== "already_advanced") return;
-          const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
-          if (!r2.ok) return;
-          const channelData = await r2.json();
-          if (channelData?.status !== "live") return;
-          const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
-          const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
-          if (nowPlayingId == null && !nowPlayingObjectPath) return;
-          const newStreamUrl =
-            nowPlayingObjectPath != null
-              ? nowPlayingObjectPath
-              : nowPlayingId != null
-                ? `/api/music/${nowPlayingId}/stream`
-                : null;
-          if (!newStreamUrl) return;
-          const s = useRadioPlayerStore.getState();
-          if (s.userStopped || s.slug !== currentSlug) return;
-          const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
-          s.setStream(
-            currentSlug,
-            resolvedName,
-            newStreamUrl,
-            typeof channelData?.nowPlayingElapsedSeconds === "number"
-              ? channelData.nowPlayingElapsedSeconds
-              : undefined,
-          );
+          // studio_active / already_advanced / 네트워크 오류 등 — 채널 GET으로 현재 곡 복구
+          if (data?.reason === "not_live") return;
+          try {
+            const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+            if (!r2.ok) return;
+            const channelData = await r2.json();
+            applyChannelPayload(channelData);
+          } catch { /* ignore */ }
         })
         .catch(() => {});
     }
