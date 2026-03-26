@@ -768,8 +768,6 @@
     var micGain = null;
     var micAnalyser = null;
     var micLevelRaf = 0;
-    var monitorMusicElSource = null;
-    var monitorMusicGain = null;
     /** 마이크 켤 때 송출 음량 덕킹: 끄기 전까지 복구용 */
     var savedAudioVolForMic = null;
     var musicVolRampRaf = 0;
@@ -804,28 +802,23 @@
       musicVolRampRaf = requestAnimationFrame(step);
     }
 
-    function attachMusicElementToMonitorMix() {
-      if (!micCtx || micCtx.state === 'closed') return;
-      if (monitorMusicElSource) return;
-      if (!audio) return;
-      var src = String(audio.currentSrc || audio.src || '').trim();
-      if (!src) return;
-      try {
-        monitorMusicElSource = micCtx.createMediaElementSource(audio);
-        monitorMusicGain = micCtx.createGain();
-        monitorMusicGain.gain.value = 1;
-        monitorMusicElSource.connect(monitorMusicGain);
-        monitorMusicGain.connect(micCtx.destination);
-        if (micCtx.state === 'suspended') micCtx.resume().catch(function() {});
-      } catch (_) {
-        monitorMusicElSource = null;
-        monitorMusicGain = null;
-      }
-    }
+    /*
+     * 송출 <audio>에는 createMediaElementSource 를 붙이지 않음.
+     * (붙이면 같은 요소의 captureStream() 녹음 믹스가 비거나 깨지는 경우가 많음.)
+     * 마이크는 Web Audio → 이어폰, 곡은 <audio> 기본 출력 → OS/브라우저가 동일 출력에 합성.
+     */
 
-    audio.addEventListener('play', function() {
-      if (micStream && micCtx && micCtx.state !== 'closed') attachMusicElementToMonitorMix();
-    });
+    var MIC_GUM_AUDIO = {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    };
+
+    function getMicUserMedia() {
+      return navigator.mediaDevices.getUserMedia({ audio: MIC_GUM_AUDIO }).catch(function() {
+        return navigator.mediaDevices.getUserMedia({ audio: true });
+      });
+    }
 
     // 재생 큐/현재 송출 곡 (연속 재생용)
     var playlistIds = [];
@@ -1326,12 +1319,9 @@
       }
       micStream = null;
 
-      var keepCtx = monitorMusicElSource != null;
-      if (!keepCtx && micCtx) {
+      if (micCtx) {
         try { micCtx.close(); } catch (_) {}
         micCtx = null;
-        monitorMusicElSource = null;
-        monitorMusicGain = null;
       }
       setMicUi(false);
     }
@@ -1363,7 +1353,7 @@
         show('마이크는 HTTPS 또는 localhost 에서만 동작합니다. 주소가 https 인지 확인하세요.', true);
         return;
       }
-      navigator.mediaDevices.getUserMedia({ audio: true })
+      getMicUserMedia()
         .then(function(stream) {
           micStream = stream;
           if (!micCtx || micCtx.state === 'closed') {
@@ -1375,13 +1365,10 @@
           micAnalyser = micCtx.createAnalyser();
           micAnalyser.fftSize = 1024;
 
-          // 마이크 → 모니터 게인 → 출력 (레벨 미터는 게인과 병렬)
+          // 마이크 → 모니터 게인 → 출력 (레벨 미터는 게인과 병렬). 음원은 <audio> 그대로 재생되어 동일 출력에 합쳐짐.
           micSource.connect(micGain);
           micGain.connect(micCtx.destination);
           micSource.connect(micAnalyser);
-
-          // 송출 음원(<audio>)을 같은 AudioContext destination 으로 — 이어폰에서 곡+목소리 믹스
-          attachMusicElementToMonitorMix();
 
           // 크롬 등: AudioContext 가 suspended 면 이어폰 출력이 안 나올 수 있음(클릭 직후 resume)
           if (micCtx.state === 'suspended') {
@@ -2115,7 +2102,7 @@
       if (micStream) {
         micPromise = Promise.resolve(micStream);
       } else {
-        micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).catch(function() { return null; });
+        micPromise = getMicUserMedia().catch(function() { return null; });
       }
 
       micPromise.then(function(mStream) {
@@ -2131,8 +2118,21 @@
 
         var combinedStream = recDestination.stream;
         if (combinedStream.getAudioTracks().length === 0) {
-          show('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생해 주세요.', true);
+          try { if (recMicGainNode) recMicGainNode.disconnect(); } catch(_){}
+          try { if (recMicSource) recMicSource.disconnect(); } catch(_){}
+          try { if (recAudioSource) recAudioSource.disconnect(); } catch(_){}
+          recMicGainNode = null;
+          recMicSource = null;
+          recAudioSource = null;
+          try { if (recAudioCtx) recAudioCtx.close(); } catch(_){}
+          recAudioCtx = null;
+          recDestination = null;
+          show('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생(재생 중)해 주세요.', true);
           return;
+        }
+
+        if (recAudioCtx.state === 'suspended') {
+          recAudioCtx.resume().catch(function() {});
         }
 
         var mimeType = 'audio/webm;codecs=opus';
