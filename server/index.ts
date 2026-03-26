@@ -179,6 +179,32 @@ const httpServer = createServer(app);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+/** SITE_URL 호스트를 선호 호스트로 두고, www ↔ apex 혼용 시 301 통일 (검색엔진 중복 URL 완화) */
+function getPreferredHostnameFromSiteUrl(): string | null {
+  const raw = (process.env.SITE_URL || "").trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    const h = u.hostname.toLowerCase();
+    return h || null;
+  } catch {
+    return null;
+  }
+}
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (process.env.NODE_ENV !== "production") return next();
+  const preferred = getPreferredHostnameFromSiteUrl();
+  if (!preferred) return next();
+  const rawHost = (req.get("x-forwarded-host") || req.get("host") || "").split(":")[0].toLowerCase();
+  if (!rawHost || rawHost === preferred) return next();
+  const stripWww = (h: string) => h.replace(/^www\./i, "");
+  if (stripWww(rawHost) !== stripWww(preferred)) return next();
+  const protoHeader = (req.get("x-forwarded-proto") || "https").split(",")[0].trim().toLowerCase();
+  const proto = protoHeader === "http" || protoHeader === "https" ? protoHeader : "https";
+  return res.redirect(301, `${proto}://${preferred}${req.originalUrl}`);
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
