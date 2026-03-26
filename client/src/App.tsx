@@ -145,24 +145,44 @@ function AnalyticsVisit() {
       sendVisit();
     }, VISIT_HEARTBEAT_MS);
 
-    /** iOS Safari 등: JSON Blob sendBeacon 이 빈 body 로 들어오는 경우가 있어 urlencoded 사용 */
+    /**
+     * 탭 종료·백그라운드 전환 시 전송. sendBeacon 은 모바일 Safari 등에서 세션 쿠키가 안 붙어
+     * 관리자 방문 로그가 전부 비로그인으로 찍히는 경우가 있음 → keepalive fetch + credentials 로 통일.
+     */
     const sendVisitBeacon = () => {
       if (typeof navigator === "undefined") return;
       const path = pathnameRef.current || "/";
       const visitorKey = readVisitorKey();
-      const params = new URLSearchParams();
-      params.set("path", path);
-      if (visitorKey) params.set("visitorKey", visitorKey);
+      let utmSource: string | undefined;
       try {
-        const u = new URLSearchParams(window.location.search).get("utm_source");
-        if (u) params.set("utmSource", u);
+        utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
       } catch {
-        /* ignore */
+        utmSource = undefined;
       }
-      if (typeof navigator.sendBeacon === "function") {
-        navigator.sendBeacon("/api/analytics/visit", params);
-      } else {
-        sendVisit();
+      const body = JSON.stringify({
+        path,
+        visitorKey: visitorKey || undefined,
+        utmSource,
+      });
+      try {
+        const p = fetch("/api/analytics/visit", {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        void p.catch(() => {});
+      } catch {
+        if (typeof navigator.sendBeacon === "function") {
+          const params = new URLSearchParams();
+          params.set("path", path);
+          if (visitorKey) params.set("visitorKey", visitorKey);
+          if (utmSource) params.set("utmSource", utmSource);
+          navigator.sendBeacon("/api/analytics/visit", params);
+        } else {
+          sendVisit();
+        }
       }
     };
 
