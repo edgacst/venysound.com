@@ -11,6 +11,7 @@ import { redirectToLogin } from "@/lib/queryClient";
 import { ToastAction } from "@/components/ui/toast";
 import { Link } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
+import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 const REFETCH_INTERVAL_MS = 8000;
 const CROSSFADE_DURATION_MS = 1500;
@@ -84,6 +85,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const s = useRadioPlayerStore.getState();
     return !s.userStopped && !!s.streamUrl && !!s.slug;
   });
+
+  useScreenWakeLockWhilePlaying(isPlaying && !!slug && !!streamUrl && !userStopped);
 
   // 비로그인은 채널에서 첫 곡 1회만 재생하고 정지
   const unauthFirstEndedCountRef = useRef(0);
@@ -177,12 +180,16 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setUserStopped(true);
   }, [setUserStopped, getActiveAudio]);
 
+  /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
+  const trackEndLockRef = useRef(false);
+
   // streamUrl 변경 시 에러 상태 초기화 + 오디오 로드 및 크로스페이드
+  // 백그라운드에선 rAF 가 사실상 멈춰 곡 전환이 씹힘 → setTimeout(0) 으로 태스크 큐에만 맡김
   useEffect(() => {
     if (!streamUrl) return;
     setPlayError(false);
     let cancelled = false;
-    const rafId = requestAnimationFrame(() => {
+    const tId = window.setTimeout(() => {
       if (cancelled) return;
       const active = getActiveAudio();
       const inactive = getInactiveAudio();
@@ -286,10 +293,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       inactive.oncanplaythrough = onReadyOnce;
       inactive.oncanplay = onReadyOnce;
       inactive.load();
-    });
+    }, 0);
     return () => {
       cancelled = true;
-      cancelAnimationFrame(rafId);
+      clearTimeout(tId);
       if (crossfadeRafRef.current != null) {
         cancelAnimationFrame(crossfadeRafRef.current);
         crossfadeRafRef.current = null;
@@ -361,18 +368,140 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [isPlaying]);
 
   const onAudioPlay = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
-    if (e.target === getActiveAudio()) setPlaying(true);
+    if (e.target === getActiveAudio()) {
+      trackEndLockRef.current = false;
+      setPlaying(true);
+    }
   }, [getActiveAudio, setPlaying]);
 
   const onAudioPause = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target === getActiveAudio()) setPlaying(false);
   }, [getActiveAudio, setPlaying]);
 
-  const onAudioTimeUpdate = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
-    const el = e.target as HTMLAudioElement;
-    if (el !== getActiveAudio()) return;
-    useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
-  }, [getActiveAudio]);
+  const processActiveTrackEnded = useCallback(
+    (el: HTMLAudioElement) => {
+      if (trackEndLockRef.current) return;
+      if (el !== getActiveAudio()) return;
+      trackEndLockRef.current = true;
+
+      const endedSrc = el.src;
+      el.pause();
+      el.currentTime = 0;
+      el.removeAttribute("src");
+      el.load();
+      setPlaying(false);
+      const shouldLimit = !authLoading && !isAuthenticated;
+      const unauthFirstEnd = shouldLimit && unauthFirstEndedCountRef.current === 0;
+      const shouldAutoAdvance = !shouldLimit;
+      if (shouldLimit) {
+        if (unauthFirstEnd) unauthFirstEndedCountRef.current = 1;
+        setUserStopped(true);
+      } else {
+        setUserStopped(false);
+      }
+      const state = useRadioPlayerStore.getState();
+      const currentSlug = state.slug;
+      useRadioPlayerStore.setState({ streamUrl: null });
+      const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
+      const musicId = match ? parseInt(match[1], 10) : NaN;
+      const advanceBody =
+        match && Number.isFinite(musicId) ? JSON.stringify({ currentMusicId: musicId }) : JSON.stringify({});
+      if (currentSlug && shouldAutoAdvance) {
+        const chName = (state.channelName ?? "라디오").trim() || "라디오";
+        fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          keepalive: true,
+          body: advanceBody,
+        })
+          .then(async (r) => (r.ok ? r.json() : null))
+          .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+            const applyChannelPayload = (channelData: Record<string, unknown>) => {
+              if (channelData?.status !== "live") return;
+              const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+              const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+              if (nowPlayingId == null && !nowPlayingObjectPath) return;
+              const newStreamUrl =
+                nowPlayingObjectPath != null
+                  ? String(nowPlayingObjectPath)
+                  : nowPlayingId != null
+                    ? `/api/music/${Number(nowPlayingId)}/stream`
+                    : null;
+              if (!newStreamUrl) return;
+              const s = useRadioPlayerStore.getState();
+              if (s.userStopped || s.slug !== currentSlug) return;
+              const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
+              s.setStream(
+                currentSlug,
+                resolvedName,
+                newStreamUrl,
+                typeof channelData?.nowPlayingElapsedSeconds === "number"
+                  ? (channelData.nowPlayingElapsedSeconds as number)
+                  : undefined,
+              );
+            };
+
+            if (data?.ok && data.nextMusicId != null) {
+              const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
+              const s = useRadioPlayerStore.getState();
+              if (!s.userStopped && s.slug === currentSlug) {
+                s.setStream(currentSlug, chName, nextUrl);
+              }
+              return;
+            }
+            if (data?.reason === "not_live") return;
+            try {
+              const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+              if (!r2.ok) return;
+              const channelData = await r2.json();
+              applyChannelPayload(channelData);
+            } catch {
+              /* ignore */
+            }
+          })
+          .catch(() => {});
+      }
+      if (unauthFirstEnd && currentSlug) {
+        toast({
+          title: "음악을 연속해서 들을려면 로그인 하세요",
+          description: "로그인 후에는 다음 곡으로 자동 재생됩니다.",
+          variant: "default",
+          action: (
+            <ToastAction altText="확인" onClick={() => redirectToLogin()}>
+              확인
+            </ToastAction>
+          ),
+        });
+      }
+      if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+    },
+    [
+      getActiveAudio,
+      setPlaying,
+      setUserStopped,
+      slug,
+      queryClient,
+      isAuthenticated,
+      authLoading,
+      toast,
+    ],
+  );
+
+  const onAudioTimeUpdate = useCallback(
+    (e: React.SyntheticEvent<HTMLAudioElement>) => {
+      const el = e.target as HTMLAudioElement;
+      if (el !== getActiveAudio()) return;
+      useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
+      if (trackEndLockRef.current) return;
+      const d = el.duration;
+      if (!Number.isFinite(d) || d < 2) return;
+      if (el.currentTime < d - 0.5) return;
+      if (el.ended) return;
+      processActiveTrackEnded(el);
+    },
+    [getActiveAudio, processActiveTrackEnded],
+  );
 
   const onAudioError = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     // 비활성 오디오 엘리먼트(src 없음)의 오류는 무시
@@ -389,102 +518,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     });
   }, [getActiveAudio, setPlaying, toast, t]);
 
-  const onAudioEnded = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
-    const el = e.target as HTMLAudioElement;
-    if (el !== getActiveAudio()) return;
-    // 오디오 엘리먼트의 실제 src에서 musicId 추출 (스토어는 이미 다음 곡으로 바뀌어 있을 수 있음)
-    const endedSrc = el.src;
-    el.pause();
-    el.currentTime = 0;
-    el.removeAttribute("src");
-    el.load();
-    setPlaying(false);
-    const shouldLimit = !authLoading && !isAuthenticated;
-    const unauthFirstEnd = shouldLimit && unauthFirstEndedCountRef.current === 0;
-    const shouldAutoAdvance = !shouldLimit;
-    if (shouldLimit) {
-      if (unauthFirstEnd) unauthFirstEndedCountRef.current = 1;
-      setUserStopped(true);
-    } else {
-      setUserStopped(false);
-    }
-    const state = useRadioPlayerStore.getState();
-    const currentSlug = state.slug;
-    // streamUrl을 null로 초기화: 같은 곡이 루프될 때도 WS radio_now_playing이 setStream()을 호출하도록
-    useRadioPlayerStore.setState({ streamUrl: null });
-    // 방금 끝난 곡의 ID를 el.src에서 추출 (state.streamUrl 사용 시 이미 다음 곡 ID가 들어있어 곡 건너뜀 버그 발생)
-    const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
-    if (currentSlug && match && shouldAutoAdvance) {
-      const musicId = parseInt(match[1], 10);
-      const chName = (state.channelName ?? "라디오").trim() || "라디오";
-      // 응답으로 바로 다음 곡 URL을 적용 — 화면 꺼짐 시 setInterval/WS가 지연돼도 전환 유지
-      fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        keepalive: true,
-        body: JSON.stringify({ currentMusicId: musicId }),
-      })
-        .then(async (r) => (r.ok ? r.json() : null))
-        .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
-          const applyChannelPayload = (channelData: Record<string, unknown>) => {
-            if (channelData?.status !== "live") return;
-            const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
-            const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
-            if (nowPlayingId == null && !nowPlayingObjectPath) return;
-            const newStreamUrl =
-              nowPlayingObjectPath != null
-                ? String(nowPlayingObjectPath)
-                : nowPlayingId != null
-                  ? `/api/music/${Number(nowPlayingId)}/stream`
-                  : null;
-            if (!newStreamUrl) return;
-            const s = useRadioPlayerStore.getState();
-            if (s.userStopped || s.slug !== currentSlug) return;
-            const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
-            s.setStream(
-              currentSlug,
-              resolvedName,
-              newStreamUrl,
-              typeof channelData?.nowPlayingElapsedSeconds === "number"
-                ? (channelData.nowPlayingElapsedSeconds as number)
-                : undefined,
-            );
-          };
-
-          if (data?.ok && data.nextMusicId != null) {
-            const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
-            const s = useRadioPlayerStore.getState();
-            if (!s.userStopped && s.slug === currentSlug) {
-              s.setStream(currentSlug, chName, nextUrl);
-            }
-            return;
-          }
-          // studio_active / already_advanced / 네트워크 오류 등 — 채널 GET으로 현재 곡 복구
-          if (data?.reason === "not_live") return;
-          try {
-            const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
-            if (!r2.ok) return;
-            const channelData = await r2.json();
-            applyChannelPayload(channelData);
-          } catch { /* ignore */ }
-        })
-        .catch(() => {});
-    }
-    if (unauthFirstEnd && currentSlug) {
-      toast({
-        title: "음악을 연속해서 들을려면 로그인 하세요",
-        description: "로그인 후에는 다음 곡으로 자동 재생됩니다.",
-        variant: "default",
-        action: (
-          <ToastAction altText="확인" onClick={() => redirectToLogin()}>
-            확인
-          </ToastAction>
-        ),
-      });
-    }
-    if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
-  }, [getActiveAudio, setPlaying, setUserStopped, slug, queryClient, isAuthenticated, authLoading, toast]);
+  const onAudioEnded = useCallback(
+    (e: React.SyntheticEvent<HTMLAudioElement>) => {
+      const el = e.target as HTMLAudioElement;
+      if (el !== getActiveAudio()) return;
+      processActiveTrackEnded(el);
+    },
+    [getActiveAudio, processActiveTrackEnded],
+  );
 
   if (!slug) return null;
 

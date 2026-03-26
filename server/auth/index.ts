@@ -413,7 +413,14 @@ export async function setupAuth(app: Express) {
         redirect_uri: tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`,
         state,
       });
-      res.redirect(`${base}?${params.toString()}`);
+      // TikTok 리다이렉트 직전에 세션을 확실히 저장 (PG 스토어 지연 시 콜백에서 state 불일치 방지)
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error("TikTok session save error:", saveErr);
+          return res.redirect(`${getLoginPagePath()}?error=session`);
+        }
+        res.redirect(`${base}?${params.toString()}`);
+      });
     });
     app.get("/api/auth/tiktok/callback", async (req, res) => {
       const { code, state, error, error_description } = req.query;

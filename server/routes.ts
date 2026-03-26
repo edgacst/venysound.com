@@ -2714,18 +2714,21 @@ export async function registerRoutes(
     return pick(r.session?.passport?.user);
   }
 
-  app.post("/api/analytics/visit", async (req, res) => {
-    const path = typeof req.body?.path === "string" && req.body.path.trim() ? req.body.path.trim() : "/";
+  /** POST/GET 공통. 모바일에서 POST fetch 가 실패할 때 GET(쿠키 동일) 폴백용 */
+  async function recordAnalyticsVisitCore(
+    req: Request,
+    pathRaw: string,
+    visitorKeyIn: string | null,
+    utmSource: string | undefined
+  ): Promise<string> {
+    const path = typeof pathRaw === "string" && pathRaw.trim() ? pathRaw.trim() : "/";
     let visitorKey =
-      typeof req.body?.visitorKey === "string" && req.body.visitorKey.trim().length > 0
-        ? req.body.visitorKey.trim()
-        : null;
+      typeof visitorKeyIn === "string" && visitorKeyIn.trim().length > 0 ? visitorKeyIn.trim() : null;
     if (!visitorKey) visitorKey = crypto.randomUUID();
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
     const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
     const deviceType = getDeviceTypeFromRequest(req);
     const refererDomainVal = refererDomain(req.headers["referer"]);
-    const utmSource = typeof req.body?.utmSource === "string" ? req.body.utmSource : (typeof req.query?.utm_source === "string" ? req.query.utm_source : undefined);
     let countryCode: string | undefined;
     let region: string | undefined;
     if (ip && !/^127\.|^10\.|^172\.(1[6-9]|2[0-9]|3[01])\.|^192\.168\.|^::1$|^fc00:/i.test(ip)) {
@@ -2751,6 +2754,45 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[analytics/visit] recordVisit failed (table may be missing – run db:push):", e);
     }
+    return visitorKey;
+  }
+
+  app.post("/api/analytics/visit", async (req, res) => {
+    const path = typeof req.body?.path === "string" && req.body.path.trim() ? req.body.path.trim() : "/";
+    const visitorKeyBody =
+      typeof req.body?.visitorKey === "string" && req.body.visitorKey.trim().length > 0
+        ? req.body.visitorKey.trim()
+        : null;
+    const utmSource =
+      typeof req.body?.utmSource === "string"
+        ? req.body.utmSource
+        : typeof req.query?.utm_source === "string"
+          ? req.query.utm_source
+          : undefined;
+    const visitorKey = await recordAnalyticsVisitCore(req, path, visitorKeyBody, utmSource);
+    res.json({ ok: true, visitorKey });
+  });
+
+  /**
+   * 모바일 WebKit 등에서 JSON POST 가 막히는 경우 대비. 세션 쿠키는 GET 에도 붙는 경우가 많음.
+   * (CSRF 관점에서 이상적이지 않으나 공개 방문 집계 전용)
+   */
+  app.get("/api/analytics/visit", async (req, res) => {
+    const path =
+      typeof req.query.path === "string" && req.query.path.trim().length > 0 ? req.query.path.trim() : "/";
+    const visitorKeyQ =
+      typeof req.query.visitorKey === "string" && req.query.visitorKey.trim().length > 0
+        ? req.query.visitorKey.trim()
+        : null;
+    const utmSource =
+      typeof req.query.utmSource === "string"
+        ? req.query.utmSource
+        : typeof req.query.utm_source === "string"
+          ? req.query.utm_source
+          : undefined;
+    const visitorKey = await recordAnalyticsVisitCore(req, path, visitorKeyQ, utmSource);
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
     res.json({ ok: true, visitorKey });
   });
 

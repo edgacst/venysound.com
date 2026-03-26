@@ -11,6 +11,7 @@ import { Slider } from "@/components/ui/slider";
 import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
+import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -503,6 +504,9 @@ export function GlobalAudioPlayer() {
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  useScreenWakeLockWhilePlaying(
+    isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
+  );
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
