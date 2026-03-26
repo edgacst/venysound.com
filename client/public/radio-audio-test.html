@@ -775,6 +775,17 @@
     var MIC_DUCK_DOWN_MS = 300;
     var MIC_DUCK_UP_MS = 500;
 
+    /** 마이크 ON 직후 음원 덕킹: 복구용 레벨을 항상 저장한 뒤, 즉시 한 단계 낮추고 목표까지 램프 */
+    function applyMicDuckToMusic() {
+      if (!audio) return;
+      cancelMusicVolRamp();
+      var from = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
+      savedAudioVolForMic = from;
+      var mid = from * 0.35 + MIC_DUCK_TARGET * 0.65;
+      audio.volume = Math.max(MIC_DUCK_TARGET, mid);
+      rampAudioElementVolume(MIC_DUCK_TARGET, MIC_DUCK_DOWN_MS);
+    }
+
     function cancelMusicVolRamp() {
       if (musicVolRampRaf) cancelAnimationFrame(musicVolRampRaf);
       musicVolRampRaf = 0;
@@ -808,10 +819,12 @@
      * 마이크는 Web Audio → 이어폰, 곡은 <audio> 기본 출력 → OS/브라우저가 동일 출력에 합성.
      */
 
+    /* 이어폰 DJ: echoCancellation 켜면 음악+방 안에서 목소리가 뭉개지기 쉬움 → 끔 */
     var MIC_GUM_AUDIO = {
-      echoCancellation: true,
+      echoCancellation: false,
       noiseSuppression: true,
-      autoGainControl: true
+      autoGainControl: true,
+      channelCount: { ideal: 1 }
     };
 
     function getMicUserMedia() {
@@ -1375,10 +1388,7 @@
             micCtx.resume().catch(function() {});
           }
 
-          if (savedAudioVolForMic == null && audio) {
-            savedAudioVolForMic = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
-          }
-          rampAudioElementVolume(MIC_DUCK_TARGET, MIC_DUCK_DOWN_MS);
+          applyMicDuckToMusic();
 
           setMicUi(true);
 
@@ -2041,7 +2051,17 @@
     var recMicGainNode = null;
     var recAudioSource = null;
     /** 녹음 믹스: 캡처된 음원 대비 마이크 레벨 보강 (모니터 볼륨 슬라이더와 별도 계산) */
-    var REC_MIC_MIX_BOOST = 2.75;
+    var REC_MIC_MIX_BOOST = 3.35;
+    /** 마이크 덕킹으로 audio.volume 이 낮을 때 captureStream 레벨이 너무 작아짐 → 녹음 구간만 잠깐 복원 */
+    var recSavedAudioVolForCapture = null;
+
+    function restoreRecCaptureVolume() {
+      var el = document.getElementById('audio');
+      if (recSavedAudioVolForCapture != null && el) {
+        el.volume = recSavedAudioVolForCapture;
+        recSavedAudioVolForCapture = null;
+      }
+    }
 
     function fmtRecTime(ms) {
       var sec = Math.floor(ms / 1000);
@@ -2068,6 +2088,7 @@
       recMicGainNode = null;
       recMicSource = null;
       recAudioSource = null;
+      restoreRecCaptureVolume();
     }
 
     function startRecording() {
@@ -2076,6 +2097,13 @@
       recDestination = recAudioCtx.createMediaStreamDestination();
 
       var audioEl = document.getElementById('audio');
+      if (audioEl && audioEl.src) {
+        var volNow = typeof audioEl.volume === 'number' ? audioEl.volume : 1;
+        if (volNow < 0.22) {
+          recSavedAudioVolForCapture = volNow;
+          audioEl.volume = Math.min(1, Math.max(volNow, 0.58));
+        }
+      }
       if (audioEl && audioEl.src) {
         try {
           // captureStream()을 우선 사용: audio 요소의 ended/timeupdate 이벤트를 그대로 보존
@@ -2127,6 +2155,7 @@
           try { if (recAudioCtx) recAudioCtx.close(); } catch(_){}
           recAudioCtx = null;
           recDestination = null;
+          restoreRecCaptureVolume();
           show('녹음할 오디오 소스가 없습니다. 마이크를 연결하거나 곡을 재생(재생 중)해 주세요.', true);
           return;
         }
