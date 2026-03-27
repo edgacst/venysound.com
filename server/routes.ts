@@ -1,4 +1,4 @@
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
@@ -2720,6 +2720,42 @@ export async function registerRoutes(
     }
   }
 
+  /** analytics 방문자 키 — localStorage 없는 모바일/사설 모드에서 매 요청마다 새 UUID가 되던 문제 완화 */
+  const VISITOR_KEY_COOKIE = "vs_vkey";
+  const VISITOR_KEY_COOKIE_MAX_AGE_SEC = 365 * 24 * 60 * 60;
+  const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  function readCookie(req: Request, name: string): string | null {
+    const raw = req.headers.cookie;
+    if (!raw || typeof raw !== "string") return null;
+    const parts = raw.split(";").map((s) => s.trim());
+    const prefix = `${name}=`;
+    for (const p of parts) {
+      if (p.startsWith(prefix)) {
+        try {
+          return decodeURIComponent(p.slice(prefix.length));
+        } catch {
+          return p.slice(prefix.length);
+        }
+      }
+    }
+    return null;
+  }
+
+  function appendVisitorKeyCookie(res: Response, visitorKey: string) {
+    const isProd = process.env.NODE_ENV === "production";
+    const enc = encodeURIComponent(visitorKey);
+    const bits = [
+      `${VISITOR_KEY_COOKIE}=${enc}`,
+      "Path=/",
+      `Max-Age=${VISITOR_KEY_COOKIE_MAX_AGE_SEC}`,
+      "SameSite=Lax",
+      "HttpOnly",
+    ];
+    if (isProd) bits.push("Secure");
+    res.append("Set-Cookie", bits.join("; "));
+  }
+
   /** Passport 세션에서 사용자 ID 추출 (전략·세션 저장 형태·req._userProperty 대비) */
   function getVisitorSessionUserId(req: Request): string | undefined {
     const r = req as Request & {
@@ -2749,14 +2785,19 @@ export async function registerRoutes(
   /** POST/GET 공통. 모바일에서 POST fetch 가 실패할 때 GET(쿠키 동일) 폴백용 */
   async function recordAnalyticsVisitCore(
     req: Request,
+    res: Response,
     pathRaw: string,
     visitorKeyIn: string | null,
     utmSource: string | undefined
   ): Promise<string> {
     const path = typeof pathRaw === "string" && pathRaw.trim() ? pathRaw.trim() : "/";
-    let visitorKey =
+    const fromClient =
       typeof visitorKeyIn === "string" && visitorKeyIn.trim().length > 0 ? visitorKeyIn.trim() : null;
-    if (!visitorKey) visitorKey = crypto.randomUUID();
+    const fromClientOk = fromClient && UUID_V4_RE.test(fromClient) ? fromClient : null;
+    const fromCookieRaw = readCookie(req, VISITOR_KEY_COOKIE);
+    const fromCookieOk = fromCookieRaw && UUID_V4_RE.test(fromCookieRaw) ? fromCookieRaw : null;
+    const visitorKey = fromClientOk ?? fromCookieOk ?? crypto.randomUUID();
+    appendVisitorKeyCookie(res, visitorKey);
     const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
     const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
     const deviceType = getDeviceTypeFromRequest(req);
@@ -2801,7 +2842,7 @@ export async function registerRoutes(
         : typeof req.query?.utm_source === "string"
           ? req.query.utm_source
           : undefined;
-    const visitorKey = await recordAnalyticsVisitCore(req, path, visitorKeyBody, utmSource);
+    const visitorKey = await recordAnalyticsVisitCore(req, res, path, visitorKeyBody, utmSource);
     res.json({ ok: true, visitorKey });
   });
 
@@ -2822,7 +2863,7 @@ export async function registerRoutes(
         : typeof req.query.utm_source === "string"
           ? req.query.utm_source
           : undefined;
-    const visitorKey = await recordAnalyticsVisitCore(req, path, visitorKeyQ, utmSource);
+    const visitorKey = await recordAnalyticsVisitCore(req, res, path, visitorKeyQ, utmSource);
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.json({ ok: true, visitorKey });

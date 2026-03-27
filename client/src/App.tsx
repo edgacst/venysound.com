@@ -110,143 +110,151 @@ function AnalyticsVisit() {
   const pathnameRef = useRef(pathname || "/");
   pathnameRef.current = pathname || "/";
 
-  useEffect(() => {
-    /** /api/auth/me 결과가 나온 뒤에 기록 — 로그인 세션과 동일 쿠키로 user_id 가 누락되는 레이스 완화 */
-    if (authLoading) return undefined;
+  const applyVisitorKey = (data: unknown) => {
+    if (!data || typeof data !== "object" || !("visitorKey" in data)) return;
+    const vk = (data as { visitorKey?: string }).visitorKey;
+    if (typeof vk === "string" && vk.trim()) writeVisitorKey(vk.trim());
+  };
 
-    const applyVisitorKey = (data: unknown) => {
-      if (!data || typeof data !== "object" || !("visitorKey" in data)) return;
-      const vk = (data as { visitorKey?: string }).visitorKey;
-      if (typeof vk === "string" && vk.trim()) writeVisitorKey(vk.trim());
-    };
+  const buildVisitParams = () => {
+    const path = pathnameRef.current || "/";
+    const visitorKey = readVisitorKey();
+    let utmSource: string | undefined;
+    try {
+      utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
+    } catch {
+      utmSource = undefined;
+    }
+    return { path, visitorKey, utmSource };
+  };
 
-    const buildVisitParams = () => {
-      const path = pathnameRef.current || "/";
-      const visitorKey = readVisitorKey();
-      let utmSource: string | undefined;
-      try {
-        utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
-      } catch {
-        utmSource = undefined;
-      }
-      return { path, visitorKey, utmSource };
-    };
+  const sendVisitViaGet = (opts: { keepalive?: boolean }) => {
+    const { path, visitorKey, utmSource } = buildVisitParams();
+    const q = new URLSearchParams();
+    q.set("path", path);
+    if (visitorKey) q.set("visitorKey", visitorKey);
+    if (utmSource) q.set("utmSource", utmSource);
+    q.set("_", String(Date.now()));
+    return fetch(`/api/analytics/visit?${q.toString()}`, {
+      method: "GET",
+      credentials: "include",
+      keepalive: !!opts.keepalive,
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then(applyVisitorKey)
+      .catch(() => {});
+  };
 
-    /** POST 실패 시 모바일에서도 잘 도는 GET 폴백 (응답에 visitorKey 포함) */
-    const sendVisitViaGet = (opts: { keepalive?: boolean }) => {
-      const { path, visitorKey, utmSource } = buildVisitParams();
-      const q = new URLSearchParams();
-      q.set("path", path);
-      if (visitorKey) q.set("visitorKey", visitorKey);
-      if (utmSource) q.set("utmSource", utmSource);
-      q.set("_", String(Date.now()));
-      return fetch(`/api/analytics/visit?${q.toString()}`, {
-        method: "GET",
+  const sendVisit = () => {
+    const { path, visitorKey, utmSource } = buildVisitParams();
+    const body = JSON.stringify({
+      path,
+      visitorKey: visitorKey || undefined,
+      utmSource,
+    });
+
+    const tryPost = (attempt: number) => {
+      fetch("/api/analytics/visit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        keepalive: !!opts.keepalive,
+        body,
       })
         .then((r) => {
           if (!r.ok) throw new Error(String(r.status));
           return r.json();
         })
         .then(applyVisitorKey)
-        .catch(() => {});
+        .catch(() => {
+          if (attempt < 2) {
+            window.setTimeout(() => tryPost(attempt + 1), 350 * (attempt + 1));
+            return;
+          }
+          void sendVisitViaGet({ keepalive: false });
+        });
     };
 
-    const sendVisit = () => {
-      const { path, visitorKey, utmSource } = buildVisitParams();
-      const body = JSON.stringify({
-        path,
-        visitorKey: visitorKey || undefined,
-        utmSource,
-      });
+    tryPost(0);
+  };
 
-      const tryPost = (attempt: number) => {
-        fetch("/api/analytics/visit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body,
+  const sendVisitBeacon = () => {
+    if (typeof navigator === "undefined") return;
+    const { path, visitorKey, utmSource } = buildVisitParams();
+    const body = JSON.stringify({
+      path,
+      visitorKey: visitorKey || undefined,
+      utmSource,
+    });
+    try {
+      fetch("/api/analytics/visit", {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body,
+      })
+        .then((r) => {
+          if (r.ok) return r.json().then(applyVisitorKey);
+          return sendVisitViaGet({ keepalive: true });
         })
-          .then((r) => {
-            if (!r.ok) throw new Error(String(r.status));
-            return r.json();
-          })
-          .then(applyVisitorKey)
-          .catch(() => {
-            if (attempt < 2) {
-              window.setTimeout(() => tryPost(attempt + 1), 350 * (attempt + 1));
-              return;
-            }
-            void sendVisitViaGet({ keepalive: false });
-          });
-      };
+        .catch(() => void sendVisitViaGet({ keepalive: true }));
+    } catch {
+      void sendVisitViaGet({ keepalive: true });
+    }
+  };
 
-      tryPost(0);
-    };
+  const sendVisitRef = useRef(sendVisit);
+  const sendVisitBeaconRef = useRef(sendVisitBeacon);
+  sendVisitRef.current = sendVisit;
+  sendVisitBeaconRef.current = sendVisitBeacon;
 
+  /** /api/auth/me 이후·경로·로그인 전환 시 1회 (서버 vs_vkey 쿠키로 동일 방문자 유지) */
+  useEffect(() => {
+    if (authLoading) return undefined;
     sendVisit();
+  }, [pathname, user?.id, authLoading]);
+
+  /** 페이지 이동마다 인터벌을 갈아엎지 않음 → 15초 하트비트가 실제로 누적됨 */
+  useEffect(() => {
+    if (authLoading) return undefined;
+
     const heartbeat = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      sendVisit();
+      sendVisitRef.current();
     }, VISIT_HEARTBEAT_MS);
 
-    /**
-     * 탭 종료·백그라운드: keepalive POST → 실패 시 keepalive GET (쿠키·세션 연동)
-     */
-    const sendVisitBeacon = () => {
-      if (typeof navigator === "undefined") return;
-      const { path, visitorKey, utmSource } = buildVisitParams();
-      const body = JSON.stringify({
-        path,
-        visitorKey: visitorKey || undefined,
-        utmSource,
-      });
-      try {
-        fetch("/api/analytics/visit", {
-          method: "POST",
-          credentials: "include",
-          keepalive: true,
-          headers: { "Content-Type": "application/json" },
-          body,
-        })
-          .then((r) => {
-            if (r.ok) return r.json().then(applyVisitorKey);
-            return sendVisitViaGet({ keepalive: true });
-          })
-          .catch(() => void sendVisitViaGet({ keepalive: true }));
-      } catch {
-        void sendVisitViaGet({ keepalive: true });
-      }
-    };
-
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") sendVisitBeacon();
-      else if (document.visibilityState === "visible") sendVisit();
+      if (document.visibilityState === "hidden") sendVisitBeaconRef.current();
+      else if (document.visibilityState === "visible") sendVisitRef.current();
     };
 
     const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) sendVisit();
+      if (e.persisted) sendVisitRef.current();
     };
 
     const onFocus = () => {
-      if (document.visibilityState === "visible") sendVisit();
+      if (document.visibilityState === "visible") sendVisitRef.current();
     };
 
-    window.addEventListener("beforeunload", sendVisitBeacon);
+    const runBeacon = () => sendVisitBeaconRef.current();
+
+    window.addEventListener("beforeunload", runBeacon);
     window.addEventListener("pageshow", onPageShow);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
-    document.addEventListener("pagehide", sendVisitBeacon);
+    document.addEventListener("pagehide", runBeacon);
     return () => {
       window.clearInterval(heartbeat);
-      window.removeEventListener("beforeunload", sendVisitBeacon);
+      window.removeEventListener("beforeunload", runBeacon);
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      document.removeEventListener("pagehide", sendVisitBeacon);
+      document.removeEventListener("pagehide", runBeacon);
     };
-  }, [pathname, user?.id, authLoading]);
+  }, [authLoading]);
   return null;
 }
 import Home from "@/pages/Home";
