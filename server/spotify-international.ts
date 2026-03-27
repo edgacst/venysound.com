@@ -3,6 +3,8 @@
  * 공개 카탈로그만 조회; 사용자 로그인 불필요.
  */
 
+import crypto from "crypto";
+
 export type InternationalReleaseDto = {
   id: string;
   title: string;
@@ -14,8 +16,24 @@ export type InternationalReleaseDto = {
   releaseDate?: string | null;
 };
 
-type TokenCache = { token: string; expiresAt: number };
+type TokenCache = { token: string; expiresAt: number; credsFp: string };
 let tokenCache: TokenCache | null = null;
+
+function normalizeEnvValue(v: string | undefined): string {
+  if (v == null) return "";
+  return v.replace(/^\uFEFF/, "").trim();
+}
+
+/** Client ID/Secret 변경 시 캐시된 토큰이 옛 자격으로 나가지 않도록 */
+function spotifyCredentialsFingerprint(): string {
+  const id = normalizeEnvValue(process.env.SPOTIFY_CLIENT_ID);
+  const secret = normalizeEnvValue(process.env.SPOTIFY_CLIENT_SECRET);
+  return crypto.createHash("sha256").update(`${id}\n${secret}`, "utf8").digest("hex").slice(0, 24);
+}
+
+function clearSpotifyTokenCache(): void {
+  tokenCache = null;
+}
 
 type SpotifyImage = { url?: string };
 type SpotifyExternalUrls = { spotify?: string };
@@ -34,7 +52,7 @@ type SpotifyAlbumSimplified = {
 type SpotifyPaged<T> = { items: T[]; next: string | null };
 
 function getEnvArtistIds(): string[] {
-  const raw = (process.env.SPOTIFY_INTERNATIONAL_ARTIST_IDS || "").trim();
+  const raw = normalizeEnvValue(process.env.SPOTIFY_INTERNATIONAL_ARTIST_IDS);
   if (!raw) return [];
   return raw
     .split(/[,;\s]+/)
@@ -48,12 +66,17 @@ function getMarket(): string {
 }
 
 async function getClientCredentialsToken(): Promise<string | null> {
-  const id = (process.env.SPOTIFY_CLIENT_ID || "").trim();
-  const secret = (process.env.SPOTIFY_CLIENT_SECRET || "").trim();
+  const id = normalizeEnvValue(process.env.SPOTIFY_CLIENT_ID);
+  const secret = normalizeEnvValue(process.env.SPOTIFY_CLIENT_SECRET);
   if (!id || !secret) return null;
 
+  const credsFp = spotifyCredentialsFingerprint();
   const now = Date.now();
-  if (tokenCache && tokenCache.expiresAt > now + 60_000) {
+  if (
+    tokenCache &&
+    tokenCache.credsFp === credsFp &&
+    tokenCache.expiresAt > now + 60_000
+  ) {
     return tokenCache.token;
   }
 
@@ -80,25 +103,34 @@ async function getClientCredentialsToken(): Promise<string | null> {
   tokenCache = {
     token: j.access_token,
     expiresAt: now + Math.max(60, (j.expires_in ?? 3600)) * 1000,
+    credsFp,
   };
   return tokenCache.token;
 }
 
-async function fetchArtistAlbumsAll(token: string, artistId: string): Promise<SpotifyAlbumSimplified[]> {
+async function fetchArtistAlbumsAll(
+  token: string,
+  artistId: string,
+): Promise<{ albums: SpotifyAlbumSimplified[]; unauthorized: boolean }> {
   const market = getMarket();
   const out: SpotifyAlbumSimplified[] = [];
   const cap = Math.min(500, Math.max(50, parseInt(process.env.SPOTIFY_INTERNATIONAL_ALBUM_CAP || "200", 10) || 200));
 
+  // Spotify가 limit>10 에 대해 400 "Invalid limit" 를 반환하는 경우가 있어 10으로 페이지네이션
+  const pageLimit = "10";
   let url: string | null =
     `https://api.spotify.com/v1/artists/${encodeURIComponent(artistId)}/albums?` +
     new URLSearchParams({
       include_groups: "album,single",
       market,
-      limit: "50",
+      limit: pageLimit,
     }).toString();
 
   while (url && out.length < cap) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) {
+      return { albums: out, unauthorized: true };
+    }
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       console.error("[spotify-international] albums error", artistId, res.status, t.slice(0, 200));
@@ -112,7 +144,7 @@ async function fetchArtistAlbumsAll(token: string, artistId: string): Promise<Sp
     url = page.next;
   }
 
-  return out;
+  return { albums: out, unauthorized: false };
 }
 
 function albumToDto(a: SpotifyAlbumSimplified): InternationalReleaseDto | null {
@@ -143,23 +175,46 @@ function compareReleaseDateDesc(a: InternationalReleaseDto, b: InternationalRele
  * 설정된 Spotify 아티스트 ID들의 앨범·싱글을 모아 최신순으로 페이지네이션합니다.
  * 자격 증명·아티스트 ID 없으면 빈 목록.
  */
+async function collectAlbumsForArtists(
+  artistIds: string[],
+): Promise<{ byId: Map<string, SpotifyAlbumSimplified>; unauthorized: boolean }> {
+  const token = await getClientCredentialsToken();
+  if (!token) {
+    return { byId: new Map(), unauthorized: false };
+  }
+
+  const byId = new Map<string, SpotifyAlbumSimplified>();
+  for (const aid of artistIds) {
+    const { albums, unauthorized } = await fetchArtistAlbumsAll(token, aid);
+    for (const al of albums) {
+      if (!byId.has(al.id)) byId.set(al.id, al);
+    }
+    if (unauthorized) {
+      return { byId, unauthorized: true };
+    }
+  }
+  return { byId, unauthorized: false };
+}
+
 export async function fetchInternationalReleasesPage(
   page: number,
   limit: number,
 ): Promise<{ data: InternationalReleaseDto[]; total: number }> {
   const artistIds = getEnvArtistIds();
-  const token = await getClientCredentialsToken();
-
-  if (!token || artistIds.length === 0) {
+  if (artistIds.length === 0) {
     return { data: [], total: 0 };
   }
 
-  const byId = new Map<string, SpotifyAlbumSimplified>();
-  for (const aid of artistIds) {
-    const albums = await fetchArtistAlbumsAll(token, aid);
-    for (const al of albums) {
-      if (!byId.has(al.id)) byId.set(al.id, al);
-    }
+  let { byId, unauthorized } = await collectAlbumsForArtists(artistIds);
+  if (unauthorized) {
+    clearSpotifyTokenCache();
+    const second = await collectAlbumsForArtists(artistIds);
+    byId = second.byId;
+    unauthorized = second.unauthorized;
+  }
+
+  if (unauthorized) {
+    return { data: [], total: 0 };
   }
 
   const dtos: InternationalReleaseDto[] = [];
