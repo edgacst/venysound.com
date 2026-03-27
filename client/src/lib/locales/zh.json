@@ -53,10 +53,20 @@
     "heroImageAlt": "音乐背景",
     "radioBannerTitle": "贝尼电台",
     "radioBannerSubtitle": "创建您的广播频道，实时播放音乐",
-    "radioBannerButton": "进入电台"
+    "radioBannerButton": "进入电台",
+    "internationalReleasesCtaTitle": "海外发行曲目",
+    "internationalReleasesCtaSubtitle": "在音乐库中集中浏览全球平台发行的曲目。",
+    "internationalReleasesCtaButton": "前往查看 →"
   },
   "explore": {
     "title": "音乐库",
+    "catalogSite": "站内音乐",
+    "catalogInternational": "海外发行",
+    "internationalPageTitle": "海外发行曲目",
+    "internationalSubtitle": "在 Spotify 等全球平台发行的曲目。可能无法在本站直接播放。",
+    "internationalEmptyTitle": "暂无海外发行曲目",
+    "internationalEmptyDesc": "接入 Spotify 等功能后，全球发行曲目将显示在这里。",
+    "listenOnSpotify": "在 Spotify 收听",
     "totalCount": "共 {{count}} 首",
     "searchPlaceholder": "搜索音乐或艺术家...",
     "playAll": "全部播放",

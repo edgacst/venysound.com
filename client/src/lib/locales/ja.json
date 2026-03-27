@@ -50,7 +50,10 @@
     "heroImageAlt": "音楽の背景",
     "radioBannerTitle": "ベニー放送局",
     "radioBannerSubtitle": "自分の放送チャンネルを作って、リアルタイムで音楽を配信しましょう",
-    "radioBannerButton": "放送局へ"
+    "radioBannerButton": "放送局へ",
+    "internationalReleasesCtaTitle": "海外配信トラック",
+    "internationalReleasesCtaSubtitle": "グローバル配信の楽曲を音楽ライブラリでまとめて見られます。",
+    "internationalReleasesCtaButton": "見る →"
   },
   "radio": {
     "title": "ベニー放送局",
@@ -139,6 +142,13 @@
   },
   "explore": {
     "title": "音楽ライブラリ",
+    "catalogSite": "サイトの音源",
+    "catalogInternational": "海外配信",
+    "internationalPageTitle": "海外配信トラック",
+    "internationalSubtitle": "Spotify などのグローバル配信プラットフォームでリリースされたトラックです。このサイトでは直接ストリーミングされない場合があります。",
+    "internationalEmptyTitle": "表示できる海外配信トラックはまだありません",
+    "internationalEmptyDesc": "Spotify 連携が整い次第、ここにグローバルリリースが表示されます。",
+    "listenOnSpotify": "Spotify で聴く",
     "totalCount": "全{{count}}曲",
     "themedPlaylists": "テーマプレイリスト",
     "searchPlaceholder": "音楽やアーティストを検索...",

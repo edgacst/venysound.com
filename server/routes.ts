@@ -38,6 +38,7 @@ import { eq, sql, inArray, and, desc, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
+import { fetchInternationalReleasesPage } from "./spotify-international";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
 import {
   normalizeSubscriptionPlanPrices,
@@ -1398,6 +1399,19 @@ export async function registerRoutes(
     const limitNum = Math.min(500, Math.max(1, parseInt(limit || "30", 10)));
     const result = await storage.getMusicList(genre, search, tag, pageNum, limitNum);
     res.json(result);
+  });
+
+  /** Spotify 해외 배포 탭 — Client Credentials + SPOTIFY_INTERNATIONAL_ARTIST_IDS */
+  app.get("/api/music/international-releases", async (req, res) => {
+    try {
+      const pageNum = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
+      const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "30"), 10) || 30));
+      const { data, total } = await fetchInternationalReleasesPage(pageNum, limitNum);
+      res.json({ data, total, page: pageNum, limit: limitNum });
+    } catch (e) {
+      console.error("[international-releases]", e);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
   });
 
   app.get("/api/music/tags", async (_req, res) => {

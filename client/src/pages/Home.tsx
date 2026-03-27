@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2 } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -465,6 +465,33 @@ export default function Home() {
             ))}
           </div>
         </div>
+      </section>
+
+      <section className="container px-4 pt-6 pb-2" data-testid="section-international-cta">
+        <Link
+          href="/music?catalog=international"
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-xl border border-cyan-500/20 bg-gradient-to-r from-cyan-950/40 to-purple-950/30 px-5 py-4 hover:border-cyan-400/35 transition-colors"
+        >
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex-shrink-0 w-11 h-11 rounded-full bg-cyan-500/15 flex items-center justify-center">
+              <Globe className="text-cyan-300" size={22} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-display font-bold text-lg text-foreground">
+                {t("home.internationalReleasesCtaTitle", "해외 배포 곡")}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                {t(
+                  "home.internationalReleasesCtaSubtitle",
+                  "글로벌 플랫폼 출시 트랙을 음원 목록에서 모아 볼 수 있어요.",
+                )}
+              </p>
+            </div>
+          </div>
+          <span className="text-sm font-medium text-cyan-300 shrink-0 sm:ml-4">
+            {t("home.internationalReleasesCtaButton", "보러 가기 →")}
+          </span>
+        </Link>
       </section>
 
       {Array.isArray(weeklyTop) && weeklyTop.length > 0 && (

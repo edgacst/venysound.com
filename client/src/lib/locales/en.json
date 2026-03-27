@@ -57,7 +57,10 @@
     "radioBannerCampaign": "I'll try being a DJ too",
     "radioBannerButton": "Go to Radio",
     "weeklyArtistLabel": "Weekly music creator",
-    "weeklyArtistDesc": "The music creator whose tracks were played the most in the last 7 days."
+    "weeklyArtistDesc": "The music creator whose tracks were played the most in the last 7 days.",
+    "internationalReleasesCtaTitle": "Global releases",
+    "internationalReleasesCtaSubtitle": "Browse tracks released on global platforms from the Music library.",
+    "internationalReleasesCtaButton": "View →"
   },
   "radio": {
     "title": "Veny Radio",
@@ -186,6 +189,13 @@
   },
   "explore": {
     "title": "Music Library",
+    "catalogSite": "On-site music",
+    "catalogInternational": "Global releases",
+    "internationalPageTitle": "Global releases",
+    "internationalSubtitle": "Tracks released on global platforms such as Spotify. They may not stream directly on this site.",
+    "internationalEmptyTitle": "No global releases to show yet",
+    "internationalEmptyDesc": "When Spotify (or similar) is connected, global releases will appear here.",
+    "listenOnSpotify": "Listen on Spotify",
     "totalCount": "{{count}} tracks total",
     "recommendedForYou": "Recommended for you",
     "tags": "Tags",

@@ -1,12 +1,13 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
+import { InternationalReleaseCard, type InternationalReleaseItem } from "@/components/InternationalReleaseCard";
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Tag } from "lucide-react";
-import { useState, useEffect } from "react";
-import { Link } from "wouter";
+import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Tag, Globe, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
@@ -30,6 +31,13 @@ const FALLBACK_GENRES = ["전체", "팝뮤직", "국내가요", "월드뮤직", 
 export default function Explore() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const catalogTab = useMemo(() => {
+    const p = new URLSearchParams(searchString);
+    return p.get("catalog") === "international" ? "international" as const : "site" as const;
+  }, [searchString]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | undefined>(undefined);
   const [selectedTag, setSelectedTag] = useState<string | undefined>(undefined);
@@ -41,16 +49,49 @@ export default function Explore() {
     setCurrentPage(1);
   }, [debouncedSearch, selectedGenre, selectedTag]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [catalogTab]);
+
+  const setCatalogTab = (next: "site" | "international") => {
+    if (next === "international") {
+      setLocation("/music?catalog=international");
+    } else {
+      setLocation("/music");
+    }
+  };
+
   const { data: musicResult, isLoading } = useMusicList({ 
     search: debouncedSearch,
     genre: selectedGenre,
     tag: selectedTag,
     page: currentPage,
     limit: ITEMS_PER_PAGE,
+    enabled: catalogTab === "site",
+  });
+
+  const { data: intlResult, isLoading: intlLoading } = useQuery<{
+    data: InternationalReleaseItem[];
+    total: number;
+  }>({
+    queryKey: ["/api/music/international-releases", currentPage, ITEMS_PER_PAGE],
+    queryFn: async () => {
+      const qs = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(ITEMS_PER_PAGE),
+      });
+      const res = await fetch(`/api/music/international-releases?${qs}`);
+      if (!res.ok) throw new Error("international-releases");
+      return res.json();
+    },
+    enabled: catalogTab === "international",
   });
 
   const musicList = musicResult?.data;
-  const totalCount = musicResult?.total || 0;
+  const siteTotalCount = musicResult?.total || 0;
+  const intlList = intlResult?.data;
+  const intlTotal = intlResult?.total ?? 0;
+  const totalCount = catalogTab === "international" ? intlTotal : siteTotalCount;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
   const { playMusic, setPlaylist } = usePlayerStore();
@@ -124,44 +165,87 @@ export default function Explore() {
         <Navigation />
       
         <div className="container px-4 py-8">
-        <div className="flex flex-col md:flex-row gap-4 mb-8 items-center justify-between flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">{t('explore.title')}</h1>
-            <span className="text-sm text-muted-foreground" data-testid="text-total-count">
-              {t('explore.totalCount', { count: totalCount })}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-              <Input 
-                placeholder={t('explore.searchPlaceholder')} 
-                className="pl-10 bg-secondary/50 border-white/5 focus:border-primary/50"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                data-testid="input-search"
-              />
+        <div className="flex flex-col md:flex-row gap-4 mb-4 items-center justify-between flex-wrap">
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">
+                {catalogTab === "international"
+                  ? t("explore.internationalPageTitle", "해외 배포 곡")
+                  : t("explore.title")}
+              </h1>
+              <span className="text-sm text-muted-foreground" data-testid="text-total-count">
+                {t("explore.totalCount", { count: totalCount })}
+              </span>
             </div>
-            {user && musicList && musicList.length > 0 && (
-              <Button 
-                variant="outline"
-                className="gap-2 border-white/10"
-                onClick={() => {
-                  const ids = musicList.map(m => m.id);
-                  setPlaylist(ids);
-                  if (musicList[0]) playMusic(musicList[0].id);
-                }}
-                data-testid="button-play-all"
-              >
-                <Play size={16} />
-                {t('explore.playAll')}
-              </Button>
-            )}
+            {catalogTab === "international" ? (
+              <p className="text-sm text-muted-foreground max-w-2xl">
+                {t(
+                  "explore.internationalSubtitle",
+                  "Spotify 등 글로벌 플랫폼에 출시된 트랙 목록입니다. 사이트에서 직접 스트리밍되지 않을 수 있습니다.",
+                )}
+              </p>
+            ) : null}
           </div>
+
+          {catalogTab === "site" ? (
+            <div className="flex items-center gap-3 flex-wrap w-full md:w-auto">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                <Input
+                  placeholder={t("explore.searchPlaceholder")}
+                  className="pl-10 bg-secondary/50 border-white/5 focus:border-primary/50"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  data-testid="input-search"
+                />
+              </div>
+              {user && musicList && musicList.length > 0 && (
+                <Button
+                  variant="outline"
+                  className="gap-2 border-white/10"
+                  onClick={() => {
+                    const ids = musicList.map((m) => m.id);
+                    setPlaylist(ids);
+                    if (musicList[0]) playMusic(musicList[0].id);
+                  }}
+                  data-testid="button-play-all"
+                >
+                  <Play size={16} />
+                  {t("explore.playAll")}
+                </Button>
+              )}
+            </div>
+          ) : null}
         </div>
 
-        {Array.isArray(popularTracks) && popularTracks.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide" data-testid="catalog-tabs">
+          <button
+            type="button"
+            onClick={() => setCatalogTab("site")}
+            data-testid="button-catalog-site"
+            className={`
+              px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2
+              ${catalogTab === "site" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "bg-secondary text-muted-foreground hover:bg-secondary/80"}
+            `}
+          >
+            <ListMusic size={16} />
+            {t("explore.catalogSite", "사이트 음원")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCatalogTab("international")}
+            data-testid="button-catalog-international"
+            className={`
+              px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-2
+              ${catalogTab === "international" ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20" : "bg-secondary text-muted-foreground hover:bg-secondary/80"}
+            `}
+          >
+            <Globe size={16} />
+            {t("explore.catalogInternational", "해외 배포")}
+          </button>
+        </div>
+
+        {catalogTab === "site" && Array.isArray(popularTracks) && popularTracks.length > 0 && (
           <section className="mb-8">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <TrendingUp size={20} className="text-primary" />
@@ -177,7 +261,7 @@ export default function Explore() {
           </section>
         )}
 
-        {Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
+        {catalogTab === "site" && Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
           <section className="mb-8">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <ListMusic size={20} className="text-primary" />
@@ -218,6 +302,7 @@ export default function Explore() {
           </section>
         )}
 
+        {catalogTab === "site" && (
         <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide">
           {genres.map((genre) => (
             <button
@@ -235,8 +320,9 @@ export default function Explore() {
             </button>
           ))}
         </div>
+        )}
 
-        {Array.isArray(popularTags) && popularTags.length > 0 && (
+        {catalogTab === "site" && Array.isArray(popularTags) && popularTags.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide items-center flex-wrap">
             <span className="text-sm text-muted-foreground flex items-center gap-1 shrink-0">
               <Tag size={14} />
@@ -260,18 +346,59 @@ export default function Explore() {
           </div>
         )}
 
-        <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {musicList?.map((music) => (
-            <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
-              <MusicCard music={music} />
+        {catalogTab === "site" && (
+          <>
+            <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+              {musicList?.map((music) => (
+                <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
+                  <MusicCard music={music} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {musicList?.length === 0 && !isLoading && (
-          <div className="text-center py-20 text-muted-foreground" data-testid="text-no-results">
-            {t('explore.noResults')}
-          </div>
+            {musicList?.length === 0 && !isLoading && (
+              <div className="text-center py-20 text-muted-foreground" data-testid="text-no-results">
+                {t("explore.noResults")}
+              </div>
+            )}
+          </>
+        )}
+
+        {catalogTab === "international" && (
+          <>
+            {intlLoading ? (
+              <div className="flex justify-center py-24" data-testid="intl-loading">
+                <Loader2 className="animate-spin text-primary" size={40} />
+              </div>
+            ) : (
+              <>
+                <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                  {intlList?.map((item) => (
+                    <div key={item.id} className="transform scale-90 md:scale-90 origin-top-left">
+                      <InternationalReleaseCard item={item} />
+                    </div>
+                  ))}
+                </div>
+                {intlList?.length === 0 && (
+                  <div
+                    className="flex flex-col items-center justify-center py-20 px-4 text-center rounded-xl border border-dashed border-white/10 bg-card/30"
+                    data-testid="text-intl-empty"
+                  >
+                    <Globe className="text-muted-foreground mb-4" size={48} strokeWidth={1.25} />
+                    <p className="text-lg font-medium text-foreground mb-2">
+                      {t("explore.internationalEmptyTitle", "아직 표시할 해외 배포 곡이 없습니다")}
+                    </p>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                      {t(
+                        "explore.internationalEmptyDesc",
+                        "Spotify 연동이 준비되면 이곳에서 글로벌 출시 곡을 확인할 수 있습니다.",
+                      )}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </>
         )}
 
         {totalPages > 1 && (

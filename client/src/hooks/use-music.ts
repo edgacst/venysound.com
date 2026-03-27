@@ -3,7 +3,14 @@ import { api, buildUrl } from "@shared/routes";
 import { useToast } from "@/hooks/use-toast";
 import type { CreateMusicRequest, Music } from "@shared/schema";
 
-export function useMusicList(params?: { search?: string; genre?: string; tag?: string; page?: number; limit?: number }) {
+export function useMusicList(params?: {
+  search?: string;
+  genre?: string;
+  tag?: string;
+  page?: number;
+  limit?: number;
+  enabled?: boolean;
+}) {
   const queryString = new URLSearchParams();
   if (params?.search) queryString.append("search", params.search);
   if (params?.genre && params.genre !== "All" && params.genre !== "전체") queryString.append("genre", params.genre);
@@ -19,6 +26,7 @@ export function useMusicList(params?: { search?: string; genre?: string; tag?: s
       if (!res.ok) throw new Error("Failed to fetch music");
       return res.json();
     },
+    enabled: params?.enabled !== false,
   });
 }
 
