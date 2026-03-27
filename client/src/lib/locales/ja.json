@@ -51,9 +51,9 @@
     "radioBannerTitle": "ベニー放送局",
     "radioBannerSubtitle": "自分の放送チャンネルを作って、リアルタイムで音楽を配信しましょう",
     "radioBannerButton": "放送局へ",
-    "internationalReleasesCtaTitle": "海外配信トラック",
-    "internationalReleasesCtaSubtitle": "グローバル配信の楽曲を音楽ライブラリでまとめて見られます。",
-    "internationalReleasesCtaButton": "見る →"
+    "internationalReleasesCtaTitle": "自作楽曲の海外リリース",
+    "internationalReleasesCtaSubtitle": "Veny Sound アーティストのグローバル配信曲を音楽ライブラリで一覧できます。",
+    "internationalReleasesCtaButton": "一覧へ →"
   },
   "radio": {
     "title": "ベニー放送局",
@@ -143,11 +143,11 @@
   "explore": {
     "title": "音楽ライブラリ",
     "catalogSite": "サイトの音源",
-    "catalogInternational": "海外配信",
-    "internationalPageTitle": "海外配信トラック",
-    "internationalSubtitle": "Spotify などのグローバル配信プラットフォームでリリースされたトラックです。このサイトでは直接ストリーミングされない場合があります。",
-    "internationalEmptyTitle": "表示できる海外配信トラックはまだありません",
-    "internationalEmptyDesc": "Spotify 連携が整い次第、ここにグローバルリリースが表示されます。",
+    "catalogInternational": "海外リリース",
+    "internationalPageTitle": "自作楽曲の海外リリース一覧",
+    "internationalSubtitle": "Veny Sound アーティストがグローバル配信（Spotify 等）した楽曲です。Spotify のメタデータを表示します。サイトにアップロードした音源とは異なる場合があり、ここでは直接再生できないことがあります。",
+    "internationalEmptyTitle": "表示できる海外リリースがありません",
+    "internationalEmptyDesc": "サーバーに Spotify 連携とリリース用アーティスト ID が設定されているか確認してください。",
     "listenOnSpotify": "Spotify で聴く",
     "totalCount": "全{{count}}曲",
     "themedPlaylists": "テーマプレイリスト",
@@ -916,6 +916,14 @@
     "statArtists": "アーティスト",
     "statTracks": "楽曲",
     "statListeners": "リスナー",
+    "oauthFailed": "Googleログインに失敗しました",
+    "oauthFailedHint": "Google Cloud ConsoleのリダイレクトURIと.envのSITE_URLが、ブラウザで開いているURLと一致するか確認してください。",
+    "tiktokOAuthFailed": "TikTokログインに失敗しました",
+    "tiktokOAuthHint": "TikTok開発者ポータルのRedirect URIが、サーバーが送るコールバックURLと完全に一致しているか確認してください。ローカルではlocalhostと127.0.0.1を混ぜないでください。",
+    "oauthInvalidState": "ログイン要求の有効期限切れまたは不一致",
+    "oauthInvalidStateHint": "ログイン開始時と同じサイトURLから再度お試しください。",
+    "oauthSessionError": "セッションを保存できませんでした",
+    "oauthSessionErrorHint": "しばらくしてから再度お試しください。",
     "tryAgain": "もう一度お試しください。"
   },
   "dashboard": {

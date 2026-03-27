@@ -58,9 +58,9 @@
     "radioBannerButton": "Go to Radio",
     "weeklyArtistLabel": "Weekly music creator",
     "weeklyArtistDesc": "The music creator whose tracks were played the most in the last 7 days.",
-    "internationalReleasesCtaTitle": "Global releases",
-    "internationalReleasesCtaSubtitle": "Browse tracks released on global platforms from the Music library.",
-    "internationalReleasesCtaButton": "View →"
+    "internationalReleasesCtaTitle": "Our music, released worldwide",
+    "internationalReleasesCtaSubtitle": "See Veny Sound artists’ releases on global streaming, listed in the Music library.",
+    "internationalReleasesCtaButton": "View list →"
   },
   "radio": {
     "title": "Veny Radio",
@@ -190,11 +190,11 @@
   "explore": {
     "title": "Music Library",
     "catalogSite": "On-site music",
-    "catalogInternational": "Global releases",
-    "internationalPageTitle": "Global releases",
-    "internationalSubtitle": "Tracks released on global platforms such as Spotify. They may not stream directly on this site.",
-    "internationalEmptyTitle": "No global releases to show yet",
-    "internationalEmptyDesc": "When Spotify (or similar) is connected, global releases will appear here.",
+    "catalogInternational": "Worldwide",
+    "internationalPageTitle": "Our tracks released worldwide",
+    "internationalSubtitle": "Music from Veny Sound artists released on global platforms (e.g. Spotify). Data comes from Spotify and may differ from tracks uploaded on this site; playback may open in Spotify.",
+    "internationalEmptyTitle": "No worldwide releases to show",
+    "internationalEmptyDesc": "Check that Spotify credentials and release artist IDs are set on the server.",
     "listenOnSpotify": "Listen on Spotify",
     "totalCount": "{{count}} tracks total",
     "recommendedForYou": "Recommended for you",
@@ -1074,6 +1074,14 @@
     "statArtists": "Artists",
     "statTracks": "Tracks",
     "statListeners": "Listeners",
+    "oauthFailed": "Google sign-in failed",
+    "oauthFailedHint": "Check that the redirect URI in Google Cloud Console and SITE_URL in .env match the URL you use in the browser.",
+    "tiktokOAuthFailed": "TikTok sign-in failed",
+    "tiktokOAuthHint": "Ensure the Redirect URI in the TikTok developer portal exactly matches the callback URL your server sends. Locally, do not mix localhost and 127.0.0.1; register both if needed.",
+    "oauthInvalidState": "Login request expired or did not match",
+    "oauthInvalidStateHint": "Start again from the same site URL you used to begin sign-in (e.g. stick to localhost or 127.0.0.1 consistently).",
+    "oauthSessionError": "Could not save your session",
+    "oauthSessionErrorHint": "Try again shortly, or disable strict third-party cookie blocking for this site.",
     "tryAgain": "Please try again."
   },
   "dashboard": {

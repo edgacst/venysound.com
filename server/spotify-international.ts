@@ -1,5 +1,5 @@
 /**
- * Spotify Web API (Client Credentials) — 해외 배포(글로벌 릴리즈) 목록용.
+ * Spotify Web API (Client Credentials) — 우리 아티스트의 글로벌(해외) 출시 목록용.
  * 공개 카탈로그만 조회; 사용자 로그인 불필요.
  */
 

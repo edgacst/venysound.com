@@ -5,7 +5,7 @@ import { Strategy as NaverStrategy } from "passport-naver-v2";
 import { Strategy as KakaoStrategy } from "passport-kakao";
 import { Strategy as FacebookStrategy } from "passport-facebook";
 import session from "express-session";
-import type { Express, RequestHandler } from "express";
+import type { Express, Request, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import { databaseConnectionString } from "../db";
@@ -22,6 +22,28 @@ import {
   verifyAccountEmailBind,
 } from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
+
+/**
+ * TikTok OAuth redirect_uri — authorize 요청과 token 교환에 동일한 문자열이어야 함.
+ * 개발: 실제 접속 호스트 사용 → localhost vs 127.0.0.1 세션 불일치 방지.
+ * 운영: SITE_URL 고정(프록시 뒤에서는 x-forwarded-* 반영).
+ * 필요 시 .env에 TIKTOK_REDIRECT_URI 로 전체 콜백 URL을 직접 지정.
+ */
+function getTikTokRedirectUri(req: Request): string {
+  const explicit = (process.env.TIKTOK_REDIRECT_URI || "").trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const site = (process.env.SITE_URL || "").trim().replace(/\/$/, "");
+  const isProd = process.env.NODE_ENV === "production";
+  if (isProd && site) {
+    return `${site}/api/auth/tiktok/callback`;
+  }
+
+  const xfProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = xfProto || req.protocol || "http";
+  const host = req.get("host") || "localhost:5000";
+  return `${proto}://${host}/api/auth/tiktok/callback`;
+}
 
 function buildUserSession(
   id: string,
@@ -400,18 +422,16 @@ export async function setupAuth(app: Express) {
   }
 
   if (hasTikTok) {
-    const tiktokCallbackUrl = process.env.SITE_URL
-      ? `${process.env.SITE_URL.replace(/\/$/, "")}/api/auth/tiktok/callback`
-      : "/api/auth/tiktok/callback";
     app.get("/api/auth/tiktok", (req, res) => {
       const state = crypto.randomBytes(24).toString("hex");
       (req.session as any).tiktokCsrfState = state;
+      const redirectUri = getTikTokRedirectUri(req);
       const base = "https://www.tiktok.com/v2/auth/authorize/";
       const params = new URLSearchParams({
         client_key: process.env.TIKTOK_CLIENT_KEY!,
         scope: "user.info.basic",
         response_type: "code",
-        redirect_uri: tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`,
+        redirect_uri: redirectUri,
         state,
       });
       // TikTok 리다이렉트 직전에 세션을 확실히 저장 (PG 스토어 지연 시 콜백에서 state 불일치 방지)
@@ -432,33 +452,46 @@ export async function setupAuth(app: Express) {
         return res.redirect(`${getLoginPagePath()}?error=tiktok`);
       }
       if (!savedState || state !== savedState || typeof code !== "string") {
+        console.error("[TikTok] invalid_state: session state missing or mismatch (check host: use same URL as started login, e.g. not mixing localhost and 127.0.0.1)");
         return res.redirect(`${getLoginPagePath()}?error=invalid_state`);
       }
-      const redirectUri = tiktokCallbackUrl.startsWith("http") ? tiktokCallbackUrl : `${process.env.SITE_URL || "http://localhost:5000"}${tiktokCallbackUrl}`;
+      const redirectUri = getTikTokRedirectUri(req);
+      const codeStr = code as string;
       try {
         const tokenRes = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cache-Control": "no-cache",
+          },
           body: new URLSearchParams({
             client_key: process.env.TIKTOK_CLIENT_KEY!,
             client_secret: process.env.TIKTOK_CLIENT_SECRET!,
-            code,
+            code: codeStr,
             grant_type: "authorization_code",
             redirect_uri: redirectUri,
           }),
         });
-        const tokenData = await tokenRes.json();
+        const tokenData = (await tokenRes.json()) as Record<string, unknown>;
         if (tokenData.error || !tokenData.access_token || !tokenData.open_id) {
-          console.error("TikTok token error:", tokenData);
+          console.error("[TikTok] token exchange failed:", tokenRes.status, tokenData, "redirect_uri used:", redirectUri);
           return res.redirect(`${getLoginPagePath()}?error=tiktok`);
         }
         const userRes = await fetch(
           "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url",
           {
-            headers: { Authorization: `Bearer ${tokenData.access_token}` },
+            headers: { Authorization: `Bearer ${String(tokenData.access_token)}` },
           }
         );
-        const userData = await userRes.json();
+        const userData = (await userRes.json()) as {
+          data?: { user?: { display_name?: string; avatar_url?: string } };
+          user?: { display_name?: string; avatar_url?: string };
+          error?: { code?: string; message?: string };
+        };
+        const errCode = userData?.error?.code;
+        if (!userRes.ok || (errCode && errCode !== "ok")) {
+          console.error("[TikTok] user/info:", userRes.status, userData);
+        }
         const userInfo = userData?.data?.user ?? userData?.user;
         const openId = tokenData.open_id as string;
         const displayName = userInfo?.display_name ?? openId;
@@ -472,7 +505,15 @@ export async function setupAuth(app: Express) {
           profileImageUrl: avatarUrl,
           registerSource: "tiktok",
         });
-        const sessionUser = buildUserSession(user.id, user.email ?? null, user.firstName ?? displayName, user.lastName ?? "", user.profileImageUrl ?? avatarUrl, tokenData.access_token, tokenData.refresh_token);
+        const sessionUser = buildUserSession(
+          user.id,
+          user.email ?? null,
+          user.firstName ?? displayName,
+          user.lastName ?? "",
+          user.profileImageUrl ?? avatarUrl,
+          String(tokenData.access_token),
+          tokenData.refresh_token != null ? String(tokenData.refresh_token) : undefined
+        );
         req.login(sessionUser, (err) => {
           if (err) {
             console.error("TikTok login session error:", err);

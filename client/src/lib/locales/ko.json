@@ -58,9 +58,9 @@
     "radioBannerButton": "방송국 가기",
     "weeklyArtistLabel": "이번주 뮤직크리에이터",
     "weeklyArtistDesc": "최근 7일 동안 가장 많이 재생된 뮤직크리에이터입니다.",
-    "internationalReleasesCtaTitle": "해외 배포 곡",
-    "internationalReleasesCtaSubtitle": "글로벌 플랫폼 출시 트랙을 음원 목록에서 모아 볼 수 있어요.",
-    "internationalReleasesCtaButton": "보러 가기 →"
+    "internationalReleasesCtaTitle": "우리가 만든 곡 · 해외 출시",
+    "internationalReleasesCtaSubtitle": "글로벌 스트리밍에 출시한 우리 아티스트 곡을 음원 목록에서 모아 볼 수 있어요.",
+    "internationalReleasesCtaButton": "목록 보기 →"
   },
   "radio": {
     "title": "베니방송국",
@@ -191,11 +191,11 @@
   "explore": {
     "title": "음원 목록",
     "catalogSite": "사이트 음원",
-    "catalogInternational": "해외 배포",
-    "internationalPageTitle": "해외 배포 곡",
-    "internationalSubtitle": "Spotify 등 글로벌 플랫폼에 출시된 트랙 목록입니다. 사이트에서 직접 스트리밍되지 않을 수 있습니다.",
-    "internationalEmptyTitle": "아직 표시할 해외 배포 곡이 없습니다",
-    "internationalEmptyDesc": "Spotify 연동이 준비되면 이곳에서 글로벌 출시 곡을 확인할 수 있습니다.",
+    "catalogInternational": "해외 출시",
+    "internationalPageTitle": "우리가 만든 곡 해외 출시 목록",
+    "internationalSubtitle": "베니사운드 아티스트가 글로벌 플랫폼(Spotify 등)에 출시한 곡입니다. Spotify 기준으로 표시되며, 사이트 업로드 음원과 다를 수 있고 여기서 직접 재생되지 않을 수 있습니다.",
+    "internationalEmptyTitle": "표시할 해외 출시 곡이 없습니다",
+    "internationalEmptyDesc": "서버에 Spotify 연동과 출시 아티스트 ID가 설정되어 있는지 확인해 주세요.",
     "listenOnSpotify": "Spotify에서 듣기",
     "totalCount": "총 {{count}}곡",
     "recommendedForYou": "이런 곡은 어때요",
@@ -1095,6 +1095,14 @@
     "statArtists": "아티스트",
     "statTracks": "음원",
     "statListeners": "리스너",
+    "oauthFailed": "Google 로그인 실패",
+    "oauthFailedHint": "Google Cloud Console의 redirect URI와 .env의 SITE_URL이 실제 접속 주소와 일치하는지 확인해 주세요.",
+    "tiktokOAuthFailed": "TikTok 로그인 실패",
+    "tiktokOAuthHint": "TikTok 개발자 포털의 Redirect URI가 서버가 보내는 콜백 URL과 정확히 일치하는지 확인하세요. 로컬에서는 localhost와 127.0.0.1을 섞지 말고, 필요하면 둘 다 포털에 등록하세요.",
+    "oauthInvalidState": "로그인 요청이 만료되었거나 일치하지 않습니다",
+    "oauthInvalidStateHint": "같은 주소로 시작한 뒤 다시 시도해 주세요. localhost로 열었다면 TikTok도 localhost 콜백으로 돌아와야 합니다.",
+    "oauthSessionError": "세션을 저장하지 못했습니다",
+    "oauthSessionErrorHint": "잠시 후 다시 시도하거나 다른 브라우저/시크릿 모드를 끄고 시도해 보세요.",
     "tryAgain": "다시 시도해주세요."
   },
   "dashboard": {

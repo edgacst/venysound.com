@@ -45,12 +45,28 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const err = params.get("error");
-    if (err === "google") {
-      toast({
-        title: t("login.oauthFailed", "Google 로그인 실패"),
-        description: t("login.oauthFailedHint", "redirect URI가 Google 콘솔과 일치하는지, .env의 SITE_URL이 실제 접속 주소인지 확인해 주세요."),
-        variant: "destructive",
-      });
+    if (!err) return;
+    const oauthToasts: Record<string, { title: string; description: string }> = {
+      google: {
+        title: t("login.oauthFailed"),
+        description: t("login.oauthFailedHint"),
+      },
+      tiktok: {
+        title: t("login.tiktokOAuthFailed"),
+        description: t("login.tiktokOAuthHint"),
+      },
+      invalid_state: {
+        title: t("login.oauthInvalidState"),
+        description: t("login.oauthInvalidStateHint"),
+      },
+      session: {
+        title: t("login.oauthSessionError"),
+        description: t("login.oauthSessionErrorHint"),
+      },
+    };
+    const msg = oauthToasts[err];
+    if (msg) {
+      toast({ title: msg.title, description: msg.description, variant: "destructive" });
       window.history.replaceState({}, "", LOGIN_PATH);
     }
   }, [toast, t]);

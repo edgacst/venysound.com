@@ -478,18 +478,18 @@ export default function Home() {
             </div>
             <div className="min-w-0">
               <h2 className="font-display font-bold text-lg text-foreground">
-                {t("home.internationalReleasesCtaTitle", "해외 배포 곡")}
+                {t("home.internationalReleasesCtaTitle", "우리가 만든 곡 · 해외 출시")}
               </h2>
               <p className="text-sm text-muted-foreground mt-0.5">
                 {t(
                   "home.internationalReleasesCtaSubtitle",
-                  "글로벌 플랫폼 출시 트랙을 음원 목록에서 모아 볼 수 있어요.",
+                  "글로벌 스트리밍에 출시한 우리 아티스트 곡을 음원 목록에서 모아 볼 수 있어요.",
                 )}
               </p>
             </div>
           </div>
           <span className="text-sm font-medium text-cyan-300 shrink-0 sm:ml-4">
-            {t("home.internationalReleasesCtaButton", "보러 가기 →")}
+            {t("home.internationalReleasesCtaButton", "목록 보기 →")}
           </span>
         </Link>
       </section>

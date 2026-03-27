@@ -170,7 +170,7 @@ export default function Explore() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">
                 {catalogTab === "international"
-                  ? t("explore.internationalPageTitle", "해외 배포 곡")
+                  ? t("explore.internationalPageTitle", "우리가 만든 곡 해외 출시 목록")
                   : t("explore.title")}
               </h1>
               <span className="text-sm text-muted-foreground" data-testid="text-total-count">
@@ -181,7 +181,7 @@ export default function Explore() {
               <p className="text-sm text-muted-foreground max-w-2xl">
                 {t(
                   "explore.internationalSubtitle",
-                  "Spotify 등 글로벌 플랫폼에 출시된 트랙 목록입니다. 사이트에서 직접 스트리밍되지 않을 수 있습니다.",
+                  "베니사운드 아티스트가 글로벌 플랫폼(Spotify 등)에 출시한 곡입니다. Spotify 기준으로 표시되며, 사이트 업로드 음원과 다를 수 있고 여기서 직접 재생되지 않을 수 있습니다.",
                 )}
               </p>
             ) : null}
@@ -241,7 +241,7 @@ export default function Explore() {
             `}
           >
             <Globe size={16} />
-            {t("explore.catalogInternational", "해외 배포")}
+            {t("explore.catalogInternational", "해외 출시")}
           </button>
         </div>
 
@@ -386,12 +386,12 @@ export default function Explore() {
                   >
                     <Globe className="text-muted-foreground mb-4" size={48} strokeWidth={1.25} />
                     <p className="text-lg font-medium text-foreground mb-2">
-                      {t("explore.internationalEmptyTitle", "아직 표시할 해외 배포 곡이 없습니다")}
+                      {t("explore.internationalEmptyTitle", "표시할 해외 출시 곡이 없습니다")}
                     </p>
                     <p className="text-sm text-muted-foreground max-w-md">
                       {t(
                         "explore.internationalEmptyDesc",
-                        "Spotify 연동이 준비되면 이곳에서 글로벌 출시 곡을 확인할 수 있습니다.",
+                        "서버에 Spotify 연동과 출시 아티스트 ID가 설정되어 있는지 확인해 주세요.",
                       )}
                     </p>
                   </div>

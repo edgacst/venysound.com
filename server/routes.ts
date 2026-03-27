@@ -1401,7 +1401,7 @@ export async function registerRoutes(
     res.json(result);
   });
 
-  /** Spotify 해외 배포 탭 — Client Credentials + SPOTIFY_INTERNATIONAL_ARTIST_IDS */
+  /** 우리 아티스트 해외(Spotify) 출시 목록 — Client Credentials + SPOTIFY_INTERNATIONAL_ARTIST_IDS */
   app.get("/api/music/international-releases", async (req, res) => {
     try {
       const pageNum = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
