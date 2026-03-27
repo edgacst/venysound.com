@@ -2662,15 +2662,29 @@ export async function registerRoutes(
   // === Analytics (public: 방문 기록) ===
   /** PC/모바일/태블릿. Sec-CH-UA-Mobile(크롬·엣지 등) 우선, 없으면 User-Agent 휴리스틱 */
   function getDeviceTypeFromRequest(req: Request): string {
-    const ch = String(req.headers["sec-ch-ua-mobile"] ?? "").trim();
+    const uaRaw = req.headers["user-agent"];
+    const uaStr = typeof uaRaw === "string" ? uaRaw : "";
+    const u = uaStr.toLowerCase();
+
+    const platformHint = String(req.headers["sec-ch-ua-platform"] ?? "")
+      .replace(/"/g, "")
+      .trim()
+      .toLowerCase();
+
+    // iPadOS "데스크톱용 웹사이트 요청": UA는 Macintosh처럼 보이지만 플랫폼 힌트는 iOS → PC로 오분류 방지
+    if (uaStr && /macintosh/i.test(uaStr) && platformHint.includes("ios")) {
+      return "tablet";
+    }
+
+    const ch = String(req.headers["sec-ch-ua-mobile"] ?? "")
+      .trim()
+      .replace(/^["']|["']$/g, "");
     if (ch === "?0") return "desktop";
     if (ch === "?1") return "mobile";
 
-    const uaRaw = req.headers["user-agent"];
-    if (!uaRaw || typeof uaRaw !== "string") return "unknown";
-    const u = uaRaw.toLowerCase();
+    if (!uaStr) return "unknown";
 
-    if (/ipad|ipados/i.test(uaRaw) || /tablet(?! pc)/i.test(u) || /playbook|silk|kindle\b|nexus 7|nexus 9|sm-t[0-9]{2,}|gt-(p|n)[0-9]/i.test(u)) {
+    if (/ipad|ipados/i.test(uaStr) || /tablet(?! pc)/i.test(u) || /playbook|silk|kindle\b|nexus 7|nexus 9|sm-t[0-9]{2,}|gt-(p|n)[0-9]/i.test(u)) {
       return "tablet";
     }
     if (/iphone|ipod|windows phone|iemobile|blackberry|bb10|webos/i.test(u)) return "mobile";
@@ -2692,10 +2706,11 @@ export async function registerRoutes(
     }
   }
 
-  /** Passport 세션에서 사용자 ID 추출 (전략·세션 저장 형태 차이 대비) */
+  /** Passport 세션에서 사용자 ID 추출 (전략·세션 저장 형태·req._userProperty 대비) */
   function getVisitorSessionUserId(req: Request): string | undefined {
     const r = req as Request & {
       user?: unknown;
+      _userProperty?: string;
       session?: { passport?: { user?: unknown } };
     };
     const pick = (u: unknown): string | undefined => {
@@ -2709,6 +2724,9 @@ export async function registerRoutes(
       }
       return undefined;
     };
+    const prop = typeof r._userProperty === "string" && r._userProperty.trim() ? r._userProperty.trim() : "user";
+    const fromProp = pick((r as unknown as Record<string, unknown>)[prop]);
+    if (fromProp) return fromProp;
     const fromUser = pick(r.user);
     if (fromUser) return fromUser;
     return pick(r.session?.passport?.user);

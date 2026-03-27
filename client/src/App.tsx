@@ -106,11 +106,14 @@ function PageTitle() {
 /** 방문/페이지뷰 기록 (일일·누적 방문자, 페이지뷰·디바이스·유입 경로 집계용) */
 function AnalyticsVisit() {
   const [pathname] = useLocation();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const pathnameRef = useRef(pathname || "/");
   pathnameRef.current = pathname || "/";
 
   useEffect(() => {
+    /** /api/auth/me 결과가 나온 뒤에 기록 — 로그인 세션과 동일 쿠키로 user_id 가 누락되는 레이스 완화 */
+    if (authLoading) return undefined;
+
     const applyVisitorKey = (data: unknown) => {
       if (!data || typeof data !== "object" || !("visitorKey" in data)) return;
       const vk = (data as { visitorKey?: string }).visitorKey;
@@ -243,7 +246,7 @@ function AnalyticsVisit() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       document.removeEventListener("pagehide", sendVisitBeacon);
     };
-  }, [pathname, user?.id]);
+  }, [pathname, user?.id, authLoading]);
   return null;
 }
 import Home from "@/pages/Home";

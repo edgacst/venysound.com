@@ -77,7 +77,8 @@ export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
   app.use(getSession());
   app.use(passport.initialize());
-  app.use(passport.session());
+  /** pauseStream: 바디 파서 이후에도 역직렬화 전 요청 스트림 이슈 방지(세션 복원·analytics 에서 req.user 누락 완화) */
+  app.use(passport.session({ pauseStream: true }));
 
   const hasGoogle = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   const hasNaver = !!(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET);
