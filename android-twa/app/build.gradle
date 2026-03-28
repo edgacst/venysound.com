@@ -47,7 +47,8 @@ def twaManifest = [
     // 'customtabs' and 'webview'.
     fallbackType: 'customtabs',
     enableSiteSettingsShortcut: 'true',
-    orientation: 'any',
+    // twa-manifest.json 과 동일하게 세로 고정 — 'any' 이면 갤럭시 등에서 살짝 기울여도 가로 전환됨
+    orientation: 'portrait',
 ]
 
 android {
@@ -57,8 +58,8 @@ android {
         applicationId "com.edgarcst.venysound"
         minSdkVersion 21
         targetSdkVersion 35
-        versionCode 1
-        versionName "1"
+        versionCode 2
+        versionName "1.0.1"
 
         // The name for the application
         resValue "string", "appName", twaManifest.name
