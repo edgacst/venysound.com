@@ -1,5 +1,6 @@
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 
 // 프로덕션(dist/index.cjs): 배너로 주입된 __APP_ROOT__ 사용.
 // 개발(tsx): __dirname(tsx가 제공) 또는 import.meta.url 기준으로 프로젝트 루트
@@ -10,8 +11,9 @@ const APP_ROOT =
       ? path.resolve(__dirname, "..")
       : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(APP_ROOT);
+// import "dotenv/config"는 번들 시 chdir보다 먼저 실행될 수 있어 PM2 등에서 .env 누락 → 절대 경로로만 로드
+dotenv.config({ path: path.join(APP_ROOT, ".env") });
 
-import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";

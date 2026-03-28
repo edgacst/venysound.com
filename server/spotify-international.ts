@@ -19,6 +19,10 @@ export type InternationalReleaseDto = {
 type TokenCache = { token: string; expiresAt: number; credsFp: string };
 let tokenCache: TokenCache | null = null;
 
+let warnedNoArtistIds = false;
+let warnedNoToken = false;
+let warnedUnauthorized = false;
+
 function normalizeEnvValue(v: string | undefined): string {
   if (v == null) return "";
   return v.replace(/^\uFEFF/, "").trim();
@@ -180,6 +184,16 @@ async function collectAlbumsForArtists(
 ): Promise<{ byId: Map<string, SpotifyAlbumSimplified>; unauthorized: boolean }> {
   const token = await getClientCredentialsToken();
   if (!token) {
+    if (!warnedNoToken) {
+      warnedNoToken = true;
+      const hasId = !!normalizeEnvValue(process.env.SPOTIFY_CLIENT_ID);
+      const hasSecret = !!normalizeEnvValue(process.env.SPOTIFY_CLIENT_SECRET);
+      console.warn(
+        "[spotify-international] no access token (check SPOTIFY_CLIENT_ID/SECRET and token API; creds present:",
+        hasId && hasSecret,
+        ")",
+      );
+    }
     return { byId: new Map(), unauthorized: false };
   }
 
@@ -202,6 +216,12 @@ export async function fetchInternationalReleasesPage(
 ): Promise<{ data: InternationalReleaseDto[]; total: number }> {
   const artistIds = getEnvArtistIds();
   if (artistIds.length === 0) {
+    if (!warnedNoArtistIds) {
+      warnedNoArtistIds = true;
+      console.warn(
+        "[spotify-international] SPOTIFY_INTERNATIONAL_ARTIST_IDS is empty — set comma-separated Spotify artist IDs in .env",
+      );
+    }
     return { data: [], total: 0 };
   }
 
@@ -214,6 +234,10 @@ export async function fetchInternationalReleasesPage(
   }
 
   if (unauthorized) {
+    if (!warnedUnauthorized) {
+      warnedUnauthorized = true;
+      console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
+    }
     return { data: [], total: 0 };
   }
 
