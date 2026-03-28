@@ -13,7 +13,7 @@ import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
-import { DeepLinkBackHistoryFix } from "@/components/DeepLinkBackHistoryFix";
+import { RadioBackNavigationRecovery } from "@/components/RadioBackNavigationRecovery";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 
@@ -411,7 +411,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <DeepLinkBackHistoryFix />
+        <RadioBackNavigationRecovery />
         <div className="app-root">
           <div
             id="app-main-scroll"
