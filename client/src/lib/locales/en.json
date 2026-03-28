@@ -1051,12 +1051,6 @@
     "errUsernameRepeat": "You cannot use the same character three or more times in a row.",
     "errPasswordWeak": "Use at least 8 characters combining three or more of: uppercase, lowercase, numbers, symbols."
   },
-  "exitApp": {
-    "title": "Exit the app?",
-    "description": "Tap Exit to close Veny Sound.",
-    "cancel": "Cancel",
-    "confirm": "Exit"
-  },
   "login": {
     "subtitle": "A space connected through music",
     "usernamePlaceholder": "Username or email",

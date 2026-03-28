@@ -4,7 +4,7 @@ import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Radio as RadioIcon, Mic2, Users } from "lucide-react";
+import { Radio as RadioIcon, Mic2, Users, ChevronLeft } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from "react-i18next";
@@ -51,8 +51,13 @@ export default function RadioChannels() {
         <div className="flex-1 flex flex-col min-h-0">
           <div className="container max-w-6xl px-4 py-6 mx-auto flex-1 flex flex-col gap-6 pb-24 lg:pb-12">
             <header className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center text-primary">
+              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground hover:text-foreground" asChild>
+                  <Link href="/radio" aria-label={t("radio.backToRadioHome", "방송국 홈")}>
+                    <ChevronLeft className="h-5 w-5" />
+                  </Link>
+                </Button>
+                <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center text-primary shrink-0">
                   <RadioIcon size={20} />
                 </div>
                 <div>

@@ -1072,12 +1072,6 @@
     "errUsernameRepeat": "같은 문자를 3번 이상 연속해서 사용할 수 없습니다.",
     "errPasswordWeak": "비밀번호는 영문 대소문자, 숫자, 특수문자 중 3종 이상을 조합해 8자 이상으로 설정해주세요."
   },
-  "exitApp": {
-    "title": "앱을 종료할까요?",
-    "description": "Veny Sound를 닫으려면 종료를 누르세요.",
-    "cancel": "취소",
-    "confirm": "종료"
-  },
   "login": {
     "subtitle": "음악으로 연결되는 우리만의 공간",
     "usernamePlaceholder": "아이디 또는 이메일",
