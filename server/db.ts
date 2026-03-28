@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
+import { existsSync, readFileSync } from "fs";
 import dotenv from "dotenv";
 import * as schema from "@shared/schema";
 
@@ -18,6 +19,23 @@ dotenv.config({ path: envPath, override: false });
 if (!process.env.DATABASE_URL?.startsWith("postgresql://") && !process.env.DATABASE_URL?.startsWith("postgres://")) {
   dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: false });
 }
+
+/** PM2 등이 SPOTIFY_* 를 빈 문자열로 넣으면 override:false 때문에 .env 값이 절대 안 들어감 → 파일에서 비어 있을 때만 채움 */
+function applySpotifyEnvFromFileIfEmpty(filePath: string) {
+  try {
+    if (!existsSync(filePath)) return;
+    const parsed = dotenv.parse(readFileSync(filePath, "utf8"));
+    for (const [k, val] of Object.entries(parsed)) {
+      if (!k.startsWith("SPOTIFY_")) continue;
+      const cur = process.env[k];
+      if (cur != null && String(cur).trim() !== "") continue;
+      process.env[k] = val;
+    }
+  } catch (e) {
+    console.error("[db] Spotify .env merge failed:", (e as Error)?.message);
+  }
+}
+applySpotifyEnvFromFileIfEmpty(envPath);
 
 const { Pool } = pg;
 

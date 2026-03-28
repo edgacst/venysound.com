@@ -12,7 +12,9 @@ const APP_ROOT =
       : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(APP_ROOT);
 // import "dotenv/config"는 번들 시 chdir보다 먼저 실행될 수 있어 PM2 등에서 .env 누락 → 절대 경로로만 로드
-dotenv.config({ path: path.join(APP_ROOT, ".env") });
+// dist 번들: 배너가 이미 override 로드함. 여기서는 프로덕션일 때 .env가 PM2 빈 값보다 우선하도록 override.
+const isBundledDist = (globalThis as any).__APP_ROOT__ != null;
+dotenv.config({ path: path.join(APP_ROOT, ".env"), override: isBundledDist });
 
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";

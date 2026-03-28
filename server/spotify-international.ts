@@ -22,6 +22,7 @@ let tokenCache: TokenCache | null = null;
 let warnedNoArtistIds = false;
 let warnedNoToken = false;
 let warnedUnauthorized = false;
+let warnedZeroAlbums = false;
 
 function normalizeEnvValue(v: string | undefined): string {
   if (v == null) return "";
@@ -98,7 +99,14 @@ function getInternationalMarkets(): string[] {
   }
   const legacy = normalizeEnvValue(process.env.SPOTIFY_MARKET);
   if (legacy.length === 2) return [legacy.toUpperCase()];
-  return ["US", "KR"];
+  return ["US", "KR", "GB", "JP"];
+}
+
+/** Web API 기본과 동일 — album,single 만 쓰면 일부 출시가 빠질 수 있음 */
+function getIncludeGroups(): string {
+  const raw = normalizeEnvValue(process.env.SPOTIFY_INTERNATIONAL_INCLUDE_GROUPS);
+  if (raw) return raw;
+  return "album,single,appears_on,compilation";
 }
 
 async function getClientCredentialsToken(): Promise<string | null> {
@@ -157,7 +165,7 @@ async function fetchArtistAlbumsForMarket(
   let url: string | null =
     `https://api.spotify.com/v1/artists/${encodeURIComponent(artistId)}/albums?` +
     new URLSearchParams({
-      include_groups: "album,single",
+      include_groups: getIncludeGroups(),
       market,
       limit: pageLimit,
     }).toString();
@@ -291,6 +299,17 @@ export async function fetchInternationalReleasesPage(
       console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
     }
     return { data: [], total: 0 };
+  }
+
+  if (byId.size === 0 && !warnedZeroAlbums) {
+    warnedZeroAlbums = true;
+    console.warn(
+      "[spotify-international] 0 albums for artists",
+      artistIds.join(","),
+      "markets",
+      getInternationalMarkets().join(","),
+      "— check artist IDs on open.spotify.com and SPOTIFY_INTERNATIONAL_MARKETS",
+    );
   }
 
   const dtos: InternationalReleaseDto[] = [];

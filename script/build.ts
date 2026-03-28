@@ -72,7 +72,7 @@ async function buildAll() {
     },
     // 번들 본문(의존성)보다 먼저 실행: PM2 cwd·ESM 호이스트와 무관하게 .env 로드
     banner: {
-      js: "const path=require('path');var _vsRoot=path.resolve(__dirname,'..');globalThis.__APP_ROOT__=_vsRoot;process.chdir(_vsRoot);try{require('dotenv').config({path:path.join(_vsRoot,'.env')});}catch(e){console.error('[startup] dotenv',e&&e.message);}",
+      js: "const path=require('path');var _vsRoot=path.resolve(__dirname,'..');globalThis.__APP_ROOT__=_vsRoot;process.chdir(_vsRoot);try{require('dotenv').config({path:path.join(_vsRoot,'.env'),override:true});}catch(e){console.error('[startup] dotenv',e&&e.message);}",
     },
     minify: true,
     external: externals,
