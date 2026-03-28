@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { Router, Switch, Route, useLocation, Redirect } from "wouter";
@@ -12,6 +13,7 @@ import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
+import { ExitAppConfirm } from "@/components/ExitAppConfirm";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 
@@ -57,9 +59,14 @@ const DEFAULT_TITLE = "VenySound - 음악공유, 음원업로드, 음원공유�
 /** 라우트별 document.title 설정 (SEO·탭 제목·공유 시 제목) */
 function PageTitle() {
   const [pathname] = useLocation();
+  const { t, i18n } = useTranslation();
   useEffect(() => {
     const path = (pathname || "/").replace(/^\//, "") || "home";
     const pa = pathname || "/";
+    if (pa === "/notices") {
+      document.title = t("noticesPage.documentTitle");
+      return;
+    }
     if (pa === LOGIN_PATH) {
       document.title = "로그인 | VenySound";
       return;
@@ -84,7 +91,7 @@ function PageTitle() {
       legal: "이용약관 | VenySound",
       privacy: "개인정보처리방침 | VenySound",
       faq: "자주 묻는 질문 | VenySound",
-      notices: "공지사항 | VenySound",
+      notices: t("noticesPage.documentTitle"),
       community: "커뮤니티 | VenySound",
       credits: "크레딧 | VenySound",
       "create-music": "AI 음악 생성 | VenySound",
@@ -99,7 +106,7 @@ function PageTitle() {
     else if (path.startsWith("community/")) title = "게시글 | VenySound";
     else title = titles[path] ?? DEFAULT_TITLE;
     document.title = title;
-  }, [pathname]);
+  }, [pathname, t, i18n.language]);
   return null;
 }
 
@@ -420,6 +427,7 @@ function App() {
                   <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
                   <ScrollToTop />
                   <LoginModal />
+                  <ExitAppConfirm />
                   <Toaster />
                 </RadioWaveformProvider>
               </WsProviderWithAuth>

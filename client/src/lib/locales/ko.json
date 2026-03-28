@@ -60,7 +60,9 @@
     "weeklyArtistDesc": "최근 7일 동안 가장 많이 재생된 뮤직크리에이터입니다.",
     "internationalReleasesCtaTitle": "우리가 만든 곡 · 해외 출시",
     "internationalReleasesCtaSubtitle": "글로벌 스트리밍에 출시한 우리 아티스트 곡을 음원 목록에서 모아 볼 수 있어요.",
-    "internationalReleasesCtaButton": "목록 보기 →"
+    "internationalReleasesCtaButton": "목록 보기 →",
+    "announcementTitle": "공지",
+    "announcementConfirm": "확인"
   },
   "radio": {
     "title": "베니방송국",
@@ -255,7 +257,10 @@
     "status": "상태",
     "statusActive": "진행 중",
     "statusEnded": "종료",
-    "exposurePeriod": "노출 기간"
+    "exposurePeriod": "노출 기간",
+    "viewCount": "조회수",
+    "documentTitle": "공지사항 | VenySound",
+    "contentImageAlt": "공지 첨부 이미지"
   },
   "popular": {
     "title": "인기 음원 TOP 20",
@@ -1041,7 +1046,7 @@
     "usernamePlaceholder": "사용할 아이디 입력 (3자 이상)",
     "emailLabel": "이메일",
     "emailPlaceholder": "이메일 주소 입력",
-    "passwordPlaceholder": "비밀번호 입력 (6자 이상)",
+    "passwordPlaceholder": "비밀번호 (8자 이상, 3종 조합)",
     "confirmPasswordLabel": "비밀번호 확인",
     "confirmPasswordPlaceholder": "비밀번호 다시 입력",
     "registering": "가입 중...",
@@ -1054,12 +1059,24 @@
     "errEmailRequired": "이메일을 입력해주세요.",
     "errEmailInvalid": "올바른 이메일 형식이 아닙니다.",
     "errPasswordRequired": "비밀번호를 입력해주세요.",
-    "errPasswordShort": "비밀번호는 6자 이상이어야 합니다.",
+    "errPasswordShort": "비밀번호는 8자 이상이어야 합니다.",
     "errConfirmRequired": "비밀번호를 한 번 더 입력해주세요.",
     "errPasswordMismatch": "비밀번호가 일치하지 않습니다.",
     "errAgreeTerms": "이용약관에 동의해 주세요.",
     "errAgreePrivacy": "개인정보처리방침에 동의해 주세요.",
-    "agreeRequired": "에 동의합니다 (필수)"
+    "agreeRequired": "에 동의합니다 (필수)",
+    "valueHint": "소셜은 한 번에 가입 · 이메일은 정보 입력 후 약관만 확인하면 끝나요.",
+    "nextStep": "다음 (약관 동의)",
+    "backToInfo": "이전 단계 (정보 수정)",
+    "step2Summary": "아이디",
+    "errUsernameRepeat": "같은 문자를 3번 이상 연속해서 사용할 수 없습니다.",
+    "errPasswordWeak": "비밀번호는 영문 대소문자, 숫자, 특수문자 중 3종 이상을 조합해 8자 이상으로 설정해주세요."
+  },
+  "exitApp": {
+    "title": "앱을 종료할까요?",
+    "description": "Veny Sound를 닫으려면 종료를 누르세요.",
+    "cancel": "취소",
+    "confirm": "종료"
   },
   "login": {
     "subtitle": "음악으로 연결되는 우리만의 공간",

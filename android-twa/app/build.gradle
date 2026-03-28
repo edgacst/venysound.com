@@ -20,6 +20,15 @@ plugins {
     id 'com.android.application'
 }
 
+// 기본: android-twa/keystore.properties — build-aab.ps1 가 대화형으로 임시 파일 경로를 넘기면 -PvenysoundKeystoreProperties
+def keystorePropertiesFile = project.hasProperty("venysoundKeystoreProperties")
+    ? file(project.property("venysoundKeystoreProperties").trim())
+    : rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 def twaManifest = [
     applicationId: 'com.edgarcst.venysound',
     hostName: 'venysound.com', // The domain being opened in the TWA.
@@ -151,9 +160,24 @@ android {
 
         
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                def storeRel = keystoreProperties.getProperty("storeFile", "android.keystore")
+                def sf = new File(storeRel).isAbsolute() ? file(storeRel) : rootProject.file(storeRel)
+                storeFile sf
+                storePassword keystoreProperties.getProperty("storePassword")
+                keyAlias keystoreProperties.getProperty("keyAlias", "android")
+                keyPassword keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled true
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
@@ -201,6 +225,19 @@ task generateShorcutsFile {
 }
 
 preBuild.dependsOn(generateShorcutsFile)
+
+afterEvaluate {
+    tasks.named("bundleRelease").configure {
+        doFirst {
+            if (!keystorePropertiesFile.exists()) {
+                throw new GradleException(
+                    "Signed release AAB required for Play Console.\n" +
+                    "Run .\\build-aab.ps1 (it will prompt for keystore passwords), or create android-twa/keystore.properties — see keystore.properties.example."
+                )
+            }
+        }
+    }
+}
 
 repositories {
     

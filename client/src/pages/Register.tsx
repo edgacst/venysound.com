@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { Music, Eye, EyeOff, User, Mail, Lock } from "lucide-react";
+import { Music, Eye, EyeOff, User, Mail, Lock, ChevronLeft } from "lucide-react";
 import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { LOGIN_PATH } from "@/lib/site-paths";
+import { LOGIN_PATH, REGISTER_PATH } from "@/lib/site-paths";
 
 export default function Register() {
   const { t, i18n } = useTranslation();
@@ -20,6 +20,7 @@ export default function Register() {
   const [showPw2, setShowPw2] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [step, setStep] = useState<1 | 2>(1);
 
   const { data: loginOptions } = useQuery({
     queryKey: ["/api/auth/login-options"],
@@ -31,7 +32,17 @@ export default function Register() {
     return null;
   }
 
-  const validate = () => {
+  useEffect(() => {
+    const norm = (p: string) => (p.replace(/\/$/, "") || "/") as string;
+    const onPop = () => {
+      if (norm(window.location.pathname) !== norm(REGISTER_PATH)) return;
+      setStep((s) => (s === 2 ? 1 : s));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const validateCredentials = () => {
     const e: Record<string, string> = {};
     if (!form.username) e.username = t("register.errUsernameRequired", "아이디를 입력해주세요.");
     else if (form.username.length < 3) e.username = t("register.errUsernameShort", "아이디는 3자 이상이어야 합니다.");
@@ -60,14 +71,32 @@ export default function Register() {
   	}
     if (!form.confirmPassword) e.confirmPassword = t("register.errConfirmRequired", "비밀번호를 한 번 더 입력해주세요.");
     else if (form.password !== form.confirmPassword) e.confirmPassword = t("register.errPasswordMismatch", "비밀번호가 일치하지 않습니다.");
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!validateCredentials()) {
+      return false;
+    }
     if (!agreeTerms) e.agreeTerms = t("register.errAgreeTerms", "이용약관에 동의해 주세요.");
     if (!agreePrivacy) e.agreePrivacy = t("register.errAgreePrivacy", "개인정보처리방침에 동의해 주세요.");
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const goToStep2 = () => {
+    if (!validateCredentials()) return;
+    setStep(2);
+    window.history.pushState({ registerStep: 2 }, "", window.location.pathname + window.location.search);
+  };
+
+  const goToStep1 = () => {
+    window.history.back();
+  };
+
+  const runRegister = async () => {
     if (!validate()) return;
     setLoading(true);
     try {
@@ -92,6 +121,15 @@ export default function Register() {
     }
   };
 
+  const onFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (step === 1) {
+      goToStep2();
+      return;
+    }
+    void runRegister();
+  };
+
   const inputClass = "w-full bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-purple-500 text-sm";
   const socialBtn = "w-full flex items-center justify-center gap-3 py-4 text-sm rounded-lg bg-zinc-800 border border-zinc-600 text-white hover:bg-zinc-700 transition-colors";
 
@@ -107,9 +145,16 @@ export default function Register() {
           </Link>
           <h1 className="text-2xl font-bold text-white">Veny Sound</h1>
           <p className="text-sm text-zinc-400 mt-1">{t("register.createAccount", "새 계정 만들기")}</p>
+          <p className="text-xs text-zinc-500 mt-2 max-w-sm mx-auto leading-relaxed">
+            {t(
+              "register.valueHint",
+              "소셜은 한 번에 가입 · 이메일은 정보 입력 후 약관만 확인하면 끝나요.",
+            )}
+          </p>
         </div>
 
-        {/* 소셜 로그인 */}
+        {step === 1 && (
+        <>
         <div className="space-y-3 mb-6">
           {loginOptions?.hasGoogle && (
             <a href="/api/auth/google" className="block">
@@ -169,7 +214,6 @@ export default function Register() {
           )}
         </div>
 
-        {/* 구분선 */}
         <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t border-zinc-700" />
@@ -178,9 +222,12 @@ export default function Register() {
             <span className="bg-zinc-950 px-3 text-xs text-zinc-500">{t("register.orSignUpWithEmail", "또는 이메일로 가입")}</span>
           </div>
         </div>
+        </>
+        )}
 
-        {/* 회원가입 폼 */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={onFormSubmit} className="space-y-4">
+          {step === 1 && (
+          <>
           {/* 아이디 */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1.5">{t("register.usernameLabel", "아이디")}</label>
@@ -220,7 +267,7 @@ export default function Register() {
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
               <input
                 type={showPw ? "text" : "password"}
-                placeholder={t("register.passwordPlaceholder", "비밀번호 입력 (6자 이상)")}
+                placeholder={t("register.passwordPlaceholder", "비밀번호 (8자 이상, 3종 조합)")}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className={`${inputClass} pl-9 pr-10`}
@@ -250,6 +297,31 @@ export default function Register() {
             </div>
             {errors.confirmPassword && <p className="text-red-400 text-xs mt-1">{errors.confirmPassword}</p>}
           </div>
+
+          <button
+            type="submit"
+            className="w-full bg-[#7c3aed] hover:bg-[#6d28d9] text-white font-semibold py-3 rounded-lg transition-colors mt-2"
+          >
+            {t("register.nextStep", "다음 (약관 동의)")}
+          </button>
+          </>
+          )}
+
+          {step === 2 && (
+          <>
+          <button
+            type="button"
+            onClick={goToStep1}
+            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-white mb-2 -mt-1"
+          >
+            <ChevronLeft size={18} />
+            {t("register.backToInfo", "이전 단계 (정보 수정)")}
+          </button>
+          <p className="text-xs text-zinc-500 mb-3">
+            {t("register.step2Summary", "아이디")}: <span className="text-zinc-300">{form.username}</span>
+            {" · "}
+            {t("register.emailLabel", "이메일")}: <span className="text-zinc-300">{form.email}</span>
+          </p>
 
           {/* 약관 동의 */}
           <div className="space-y-3 pt-1">
@@ -288,6 +360,8 @@ export default function Register() {
           >
             {loading ? t("register.registering", "가입 중...") : t("login.register", "회원가입")}
           </button>
+          </>
+          )}
         </form>
 
         {/* 로그인 링크 */}

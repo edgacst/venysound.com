@@ -53,7 +53,9 @@
     "radioBannerButton": "放送局へ",
     "internationalReleasesCtaTitle": "自作楽曲の海外リリース",
     "internationalReleasesCtaSubtitle": "Veny Sound アーティストのグローバル配信曲を音楽ライブラリで一覧できます。",
-    "internationalReleasesCtaButton": "一覧へ →"
+    "internationalReleasesCtaButton": "一覧へ →",
+    "announcementTitle": "お知らせ",
+    "announcementConfirm": "確認"
   },
   "radio": {
     "title": "ベニー放送局",
@@ -178,13 +180,16 @@
     "subtitle": "アップデートとお知らせをご確認ください。",
     "loading": "読み込み中...",
     "empty": "お知らせはまだありません。",
-    "no": "No.",
+    "no": "番号",
     "subject": "タイトル",
     "date": "掲載日",
     "status": "状態",
     "statusActive": "表示中",
     "statusEnded": "終了",
-    "exposurePeriod": "表示期間"
+    "exposurePeriod": "表示期間",
+    "viewCount": "閲覧",
+    "documentTitle": "お知らせ | VenySound",
+    "contentImageAlt": "お知らせ画像"
   },
   "popular": {
     "title": "人気楽曲 TOP 20",

@@ -60,7 +60,9 @@
     "weeklyArtistDesc": "The music creator whose tracks were played the most in the last 7 days.",
     "internationalReleasesCtaTitle": "Our music, released worldwide",
     "internationalReleasesCtaSubtitle": "See Veny Sound artists’ releases on global streaming, listed in the Music library.",
-    "internationalReleasesCtaButton": "View list →"
+    "internationalReleasesCtaButton": "View list →",
+    "announcementTitle": "Notice",
+    "announcementConfirm": "OK"
   },
   "radio": {
     "title": "Veny Radio",
@@ -234,7 +236,10 @@
     "status": "Status",
     "statusActive": "Active",
     "statusEnded": "Ended",
-    "exposurePeriod": "Exposure period"
+    "exposurePeriod": "Exposure period",
+    "viewCount": "Views",
+    "documentTitle": "Notices | VenySound",
+    "contentImageAlt": "Notice image"
   },
   "popular": {
     "title": "Popular Tracks TOP 20",
@@ -1020,7 +1025,7 @@
     "usernamePlaceholder": "Enter username (3+ characters)",
     "emailLabel": "Email",
     "emailPlaceholder": "Enter email address",
-    "passwordPlaceholder": "Enter password (6+ characters)",
+    "passwordPlaceholder": "Password (8+ chars, 3 character types)",
     "confirmPasswordLabel": "Confirm Password",
     "confirmPasswordPlaceholder": "Re-enter password",
     "registering": "Signing up...",
@@ -1033,12 +1038,24 @@
     "errEmailRequired": "Please enter an email.",
     "errEmailInvalid": "Please enter a valid email format.",
     "errPasswordRequired": "Please enter a password.",
-    "errPasswordShort": "Password must be at least 6 characters.",
+    "errPasswordShort": "Password must be at least 8 characters.",
     "errConfirmRequired": "Please confirm your password.",
     "errPasswordMismatch": "Passwords do not match.",
     "errAgreeTerms": "Please agree to the Terms of Service.",
     "errAgreePrivacy": "Please agree to the Privacy Policy.",
-    "agreeRequired": " I agree (required)"
+    "agreeRequired": " I agree (required)",
+    "valueHint": "Social sign-up is one step; with email you enter details first, then agree to terms.",
+    "nextStep": "Next (terms)",
+    "backToInfo": "Back (edit info)",
+    "step2Summary": "Username",
+    "errUsernameRepeat": "You cannot use the same character three or more times in a row.",
+    "errPasswordWeak": "Use at least 8 characters combining three or more of: uppercase, lowercase, numbers, symbols."
+  },
+  "exitApp": {
+    "title": "Exit the app?",
+    "description": "Tap Exit to close Veny Sound.",
+    "cancel": "Cancel",
+    "confirm": "Exit"
   },
   "login": {
     "subtitle": "A space connected through music",

@@ -56,7 +56,9 @@
     "radioBannerButton": "进入电台",
     "internationalReleasesCtaTitle": "我们的作品 · 海外发行",
     "internationalReleasesCtaSubtitle": "查看 Veny Sound 艺人在全球流媒体发行的作品，在音乐库中汇总展示。",
-    "internationalReleasesCtaButton": "查看列表 →"
+    "internationalReleasesCtaButton": "查看列表 →",
+    "announcementTitle": "公告",
+    "announcementConfirm": "确定"
   },
   "explore": {
     "title": "音乐库",
@@ -108,7 +110,10 @@
     "status": "状态",
     "statusActive": "进行中",
     "statusEnded": "已结束",
-    "exposurePeriod": "展示期间"
+    "exposurePeriod": "展示期间",
+    "viewCount": "浏览",
+    "documentTitle": "公告 | VenySound",
+    "contentImageAlt": "公告配图"
   },
   "radio": {
     "title": "贝尼电台",

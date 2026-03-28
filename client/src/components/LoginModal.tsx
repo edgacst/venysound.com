@@ -258,7 +258,7 @@ export function LoginModal() {
               {t("login.terms", "이용약관")}
             </a>{" "}
             {t("login.and", "및")}{" "}
-            <a href="/legal" className="underline hover:text-white/70">
+            <a href="/privacy" className="underline hover:text-white/70">
               {t("login.privacy", "개인정보처리방침")}
             </a>
             {t("login.agreementSuffix", "에 동의합니다.")}

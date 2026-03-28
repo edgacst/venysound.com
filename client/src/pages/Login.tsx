@@ -129,9 +129,11 @@ export default function Login() {
       <div className="w-full max-w-md space-y-6">
         {/* 브랜드 */}
         <div className="flex flex-col items-center text-center">
-          <div className="w-14 h-14 rounded-xl bg-[#7c3aed] flex items-center justify-center mb-3">
-            <Music className="text-white" size={28} />
-          </div>
+          <Link href="/">
+            <div className="w-14 h-14 rounded-xl bg-[#7c3aed] flex items-center justify-center mb-3 cursor-pointer">
+              <Music className="text-white" size={28} />
+            </div>
+          </Link>
           <h1 className="text-2xl font-bold text-white" data-testid="text-login-title">Veny Sound</h1>
           <p className="text-sm text-white/70 mt-1">{t("login.subtitle", "음악으로 연결되는 우리만의 공간")}</p>
         </div>
@@ -298,7 +300,7 @@ export default function Login() {
             {t("login.terms", "이용약관")}
           </Link>{" "}
           {t("login.and", "및")}{" "}
-          <Link href="/legal" className="underline hover:text-white" data-testid="link-privacy">
+          <Link href="/privacy" className="underline hover:text-white" data-testid="link-privacy">
             {t("login.privacy", "개인정보처리방침")}
           </Link>
           {t("login.agreementSuffix", "에 동의합니다.")}

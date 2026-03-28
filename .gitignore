@@ -143,3 +143,11 @@ vite.config.ts.timestamp-*
 
 # Local uploaded media (절대 푸시 금지)
 local-uploads/
+
+# Android TWA machine-local SDK path
+android-twa/local.properties
+# Release signing secrets (never commit)
+android-twa/keystore.properties
+android-twa/android.keystore
+android-twa/*.keystore
+android-twa/upload_certificate.pem

@@ -125,7 +125,7 @@ export default function Notices() {
                       <div className="mt-4 pt-3 border-t border-border/50">
                         <div className="whitespace-pre-wrap text-foreground text-sm mb-3">{a.content}</div>
                         {a.imageUrl && (
-                          <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt="" className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
+                          <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt={t("noticesPage.contentImageAlt")} className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
                         )}
                         <p className="text-xs text-muted-foreground">
                           {t("noticesPage.exposurePeriod")}: {a.startsAtDate.toLocaleString(locale)} ~ {a.endsAtDate.toLocaleString(locale)}
@@ -145,7 +145,7 @@ export default function Notices() {
                     <th className="text-left p-3 font-medium w-12 whitespace-nowrap">{t("noticesPage.no")}</th>
                     <th className="text-left p-3 font-medium max-w-[280px]">{t("noticesPage.subject")}</th>
                     <th className="text-left p-3 font-medium whitespace-nowrap min-w-[7.5rem]">{t("noticesPage.date")}</th>
-                    <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.viewCount", "조회수")}</th>
+                    <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.viewCount")}</th>
                     <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.status")}</th>
                     <th className="w-10" />
                   </tr>
@@ -191,7 +191,7 @@ export default function Notices() {
                             <td colSpan={6} className="p-4">
                               <div className="whitespace-pre-wrap text-foreground mb-3">{a.content}</div>
                               {a.imageUrl && (
-                                <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt="" className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
+                                <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt={t("noticesPage.contentImageAlt")} className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
                               )}
                               <p className="text-xs text-muted-foreground">
                                 {t("noticesPage.exposurePeriod")}: {a.startsAtDate.toLocaleString(locale)} ~ {a.endsAtDate.toLocaleString(locale)}
