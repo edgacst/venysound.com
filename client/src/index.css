@@ -45,21 +45,12 @@
     @apply border-border;
   }
 
-  /* 모바일 브라우저·PWA 상단 당김(풀 투 리프레시)·바운스 체이닝 완화 */
   html {
     scroll-behavior: auto;
-    overscroll-behavior-y: none;
-    overscroll-behavior-x: none;
   }
   body {
     @apply bg-background text-foreground antialiased font-sans selection:bg-primary/30;
     overflow-x: hidden;
-    overscroll-behavior-y: none;
-    overscroll-behavior-x: none;
-  }
-  #root {
-    overscroll-behavior-y: none;
-    overscroll-behavior-x: none;
   }
 
   h1, h2, h3, h4, h5, h6 {
