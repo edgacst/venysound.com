@@ -5,7 +5,7 @@ import { Strategy as NaverStrategy } from "passport-naver-v2";
 import { Strategy as KakaoStrategy } from "passport-kakao";
 import { Strategy as FacebookStrategy } from "passport-facebook";
 import session from "express-session";
-import type { Express, Request, RequestHandler } from "express";
+import type { Express, Request, Response, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import bcrypt from "bcryptjs";
 import { databaseConnectionString } from "../db";
@@ -23,6 +23,11 @@ import {
 } from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
 
+/** .env 값 앞의 UTF-8 BOM·앞뒤 공백 제거 (redirect_uri 한 글자 불일치 방지) */
+function cleanEnvValue(s: string): string {
+  return s.replace(/^\uFEFF/, "").trim();
+}
+
 /**
  * TikTok OAuth redirect_uri — authorize 요청과 token 교환에 동일한 문자열이어야 함.
  * 개발: 실제 접속 호스트 사용 → localhost vs 127.0.0.1 세션 불일치 방지.
@@ -30,10 +35,10 @@ import { getLoginPagePath } from "../site-paths";
  * 필요 시 .env에 TIKTOK_REDIRECT_URI 로 전체 콜백 URL을 직접 지정.
  */
 function getTikTokRedirectUri(req: Request): string {
-  const explicit = (process.env.TIKTOK_REDIRECT_URI || "").trim();
+  const explicit = cleanEnvValue(process.env.TIKTOK_REDIRECT_URI || "");
   if (explicit) return explicit.replace(/\/$/, "");
 
-  const site = (process.env.SITE_URL || "").trim().replace(/\/$/, "");
+  const site = cleanEnvValue(process.env.SITE_URL || "").replace(/\/$/, "");
   const isProd = process.env.NODE_ENV === "production";
   if (isProd && site) {
     return `${site}/api/auth/tiktok/callback`;
@@ -68,6 +73,24 @@ function buildUserSession(
   };
 }
 
+/**
+ * connect-pg-simple 는 세션을 DB에 비동기 저장함. req.login 직후 바로 res.json 하면
+ * 클라이언트가 다음 /api/auth/me 를 때릴 때 아직 store 에 반영 안 돼 401 이 날 수 있음.
+ */
+function respondAfterSessionSaved(req: Request, res: Response, send: () => void, onStoreError?: () => void) {
+  req.session.save((saveErr) => {
+    if (saveErr) {
+      console.error("[auth] session.save failed after login:", saveErr);
+      if (!res.headersSent) {
+        if (onStoreError) onStoreError();
+        else res.status(500).json({ error: "세션 저장에 실패했습니다. 잠시 후 다시 시도해 주세요." });
+      }
+      return;
+    }
+    send();
+  });
+}
+
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   const pgStore = connectPg(session);
@@ -78,8 +101,41 @@ export function getSession() {
     tableName: "sessions",
   });
   const isProd = process.env.NODE_ENV === "production";
-  /** www / apex 겸용 시 `.venysound.com` 처럼 앞에 점을 넣어 동일 세션 쿠키 공유 (OAuth 콜백 호스트와 청취 호스트가 다를 때 로그인 유지) */
-  const cookieDomain = (process.env.SESSION_COOKIE_DOMAIN || "").trim() || undefined;
+  const siteUrlRaw = (process.env.SITE_URL || "").trim();
+  const siteHost = (() => {
+    if (!siteUrlRaw) return "";
+    try {
+      const withProto = /^https?:\/\//i.test(siteUrlRaw) ? siteUrlRaw : `https://${siteUrlRaw}`;
+      return new URL(withProto).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const siteIsLocalHost =
+    siteHost === "localhost" || siteHost === "127.0.0.1" || siteHost === "[::1]" || siteHost.endsWith(".localhost");
+
+  /**
+   * Cookie Domain 은 프로덕션에서만 적용.
+   * 로컬 호스트용 SITE_URL 이면 domain 도 무시(프로덕션 .env 를 localhost 에서 쓸 때).
+   */
+  let cookieDomain: string | undefined =
+    isProd && !siteIsLocalHost && (process.env.SESSION_COOKIE_DOMAIN || "").trim().length > 0
+      ? (process.env.SESSION_COOKIE_DOMAIN || "").trim()
+      : undefined;
+  const sessionInsecure = /^(1|true|yes)$/i.test(String(process.env.SESSION_COOKIE_INSECURE || "").trim());
+  let cookieSecure = isProd && !sessionInsecure;
+  /** http://localhost + NODE_ENV=production 조합에서 Secure 쿠키가 저장 안 되는 문제 완화 */
+  if (siteIsLocalHost) {
+    cookieSecure = false;
+    cookieDomain = undefined;
+  }
+
+  if (!isProd || siteIsLocalHost) {
+    console.log(
+      `[auth] 세션 쿠키: Secure=${cookieSecure} Domain=${cookieDomain ?? "(호스트만)"} NODE_ENV=${process.env.NODE_ENV ?? ""} SITE_URL.host=${siteHost || "-"}`
+    );
+  }
+
   return session({
     secret: process.env.SESSION_SECRET || "local-dev-secret-change-in-prod",
     store: sessionStore,
@@ -87,7 +143,7 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,
+      secure: cookieSecure,
       maxAge: sessionTtl,
       sameSite: "lax",
       ...(cookieDomain ? { domain: cookieDomain } : {}),
@@ -249,7 +305,10 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/auth/login-options", (_req, res) => {
-    res.json({ hasGoogle, hasNaver, hasKakao, hasFacebook, hasTikTok });
+    const isProd = process.env.NODE_ENV === "production";
+    const devLoginDisabled = String(process.env.DISABLE_DEV_LOGIN || "").trim() === "1";
+    const allowDevLogin = !isProd && !devLoginDisabled;
+    res.json({ hasGoogle, hasNaver, hasKakao, hasFacebook, hasTikTok, allowDevLogin });
   });
 
   // 일반 회원가입
@@ -310,7 +369,9 @@ export async function setupAuth(app: Express) {
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", "", "local");
       req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "가입 후 로그인 실패" });
-        res.json({ success: true, user: { id: user.id, username: user.username, email: user.email } });
+        respondAfterSessionSaved(req, res, () =>
+          res.json({ success: true, user: { id: user.id, username: user.username, email: user.email } })
+        );
       });
     } catch (err) {
       console.error("Register error:", err);
@@ -339,7 +400,7 @@ export async function setupAuth(app: Express) {
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", user.profileImageUrl || "", "local");
       req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "로그인 실패" });
-        res.json({ success: true });
+        respondAfterSessionSaved(req, res, () => res.json({ success: true }));
       });
     } catch (err) {
       console.error("Local login error:", err);
@@ -347,13 +408,13 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // 개발용 로그인 (OAuth 없을 때만)
+  // 개발용 로그인 (NODE_ENV !== production). OAuth 키가 있어도 로컬 편의상 허용 — 막으려면 DISABLE_DEV_LOGIN=1
   app.post("/api/auth/dev-login", async (req, res) => {
     if (process.env.NODE_ENV === "production") {
       return res.status(403).json({ error: "프로덕션 환경에서는 개발용 로그인을 사용할 수 없습니다." });
     }
-    if (hasGoogle || hasNaver || hasKakao || hasFacebook || hasTikTok) {
-      return res.status(400).json({ error: "OAuth가 설정되어 있어 개발용 로그인을 사용할 수 없습니다." });
+    if (String(process.env.DISABLE_DEV_LOGIN || "").trim() === "1") {
+      return res.status(403).json({ error: "개발용 로그인이 비활성화되어 있습니다." });
     }
     try {
       const user = await authStorage.upsertUser({
@@ -366,7 +427,7 @@ export async function setupAuth(app: Express) {
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || "", user.lastName || "", user.profileImageUrl || "", "dev");
       req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "로그인 실패" });
-        res.json({ success: true });
+        respondAfterSessionSaved(req, res, () => res.json({ success: true }));
       });
     } catch (err) {
       console.error("Dev login error:", err);
@@ -399,7 +460,9 @@ export async function setupAuth(app: Express) {
               console.error("[auth] Google session error:", loginErr);
               return res.redirect(`${getLoginPagePath()}?error=google`);
             }
-            res.redirect("/");
+            respondAfterSessionSaved(req, res, () => res.redirect("/"), () =>
+              res.redirect(`${getLoginPagePath()}?error=session`)
+            );
           });
         })(req, res, next);
       }
@@ -426,6 +489,7 @@ export async function setupAuth(app: Express) {
       const state = crypto.randomBytes(24).toString("hex");
       (req.session as any).tiktokCsrfState = state;
       const redirectUri = getTikTokRedirectUri(req);
+      console.log("[TikTok] authorize redirect_uri (TikTok 콘솔 Redirect URI와 이 문자열이 완전히 같아야 함):", redirectUri);
       const base = "https://www.tiktok.com/v2/auth/authorize/";
       const params = new URLSearchParams({
         client_key: process.env.TIKTOK_CLIENT_KEY!,
@@ -519,7 +583,9 @@ export async function setupAuth(app: Express) {
             console.error("TikTok login session error:", err);
             return res.redirect(`${getLoginPagePath()}?error=session`);
           }
-          res.redirect("/");
+          respondAfterSessionSaved(req, res, () => res.redirect("/"), () =>
+            res.redirect(`${getLoginPagePath()}?error=session`)
+          );
         });
       } catch (err) {
         console.error("TikTok callback error:", err);

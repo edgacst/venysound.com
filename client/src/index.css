@@ -174,8 +174,9 @@
 /* 제거: max-width: 100% !important가 Tailwind 반응형(sm, md, lg)을 무력화해 가로 모드 반응형이 깨짐.
    대신 각 페이지의 Tailwind 클래스(container, px-4, grid-cols-2 md:grid-cols-4 등)에 맡김. */
 
-/* 휴대폰 가로(높이 낮은)에서는 홈 히어로 영역만 더 넓게 */
-@media (orientation: landscape) and (max-height: 600px) {
+/* 휴대폰 가로(높이 낮은)에서는 홈 히어로 영역만 더 넓게
+   min-width: 세로 홀드인데 뷰포트만 잠깐 가로로 잡히는 경우(주소창 등)에 가로 전용 스타일이 먹지 않게 함 */
+@media (orientation: landscape) and (max-height: 600px) and (min-width: 568px) {
   .hero-section {
     height: 420px;
   }
@@ -194,7 +195,7 @@
 }
 
 /* ===== 모바일 가로 모드(높이 낮은 환경) 헤더 최적화: 로그아웃/로그인 공통 ===== */
-@media (orientation: landscape) and (max-height: 500px) {
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 568px) {
   nav > div {
     gap: 0.35rem !important;
   }

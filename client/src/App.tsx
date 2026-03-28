@@ -376,19 +376,27 @@ function App() {
     };
 
     const sync = () => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      // 세로로 들고 있는 동안(뷰포트 높이 ≥ 너비)에는 180° 보정 금지 — angle 오동작으로 화면이 돌아가 보이는 경우 방지
+      if (vh >= vw) {
+        root.classList.remove("app-flipped");
+        return;
+      }
       const angle = getAngle();
-      // Some mobile browsers flip the UI by 180deg in landscape.
       root.classList.toggle("app-flipped", angle === 180);
     };
 
     sync();
     window.addEventListener("orientationchange", sync);
+    window.addEventListener("resize", sync);
 
     const orientation: any = (window.screen as any)?.orientation;
     orientation?.addEventListener?.("change", sync);
 
     return () => {
       window.removeEventListener("orientationchange", sync);
+      window.removeEventListener("resize", sync);
       orientation?.removeEventListener?.("change", sync);
     };
   }, []);

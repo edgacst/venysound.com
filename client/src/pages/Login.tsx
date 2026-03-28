@@ -1,5 +1,5 @@
 import { Music, CheckCircle, User, Eye, EyeOff, Lock } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useLocation, Link } from "wouter";
 import { useEffect, useState } from "react";
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,9 @@ export default function Login() {
 
   const optionsLoaded = !!loginOptions;
   const hasAnyOAuth = loginOptions && (loginOptions.hasGoogle || loginOptions.hasNaver || loginOptions.hasKakao || loginOptions.hasFacebook || loginOptions.hasTikTok);
+  const showDevLoginButton =
+    optionsLoaded &&
+    ((loginOptions as { allowDevLogin?: boolean }).allowDevLogin ?? !hasAnyOAuth);
 
   useEffect(() => {
     if (!isLoading && user) setLocation(readSafeNextPath());
@@ -77,8 +80,9 @@ export default function Login() {
       const res = await fetch("/api/auth/dev-login", { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
+        await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = readSafeNextPath(); }, 800);
+        setTimeout(() => { window.location.href = readSafeNextPath(); }, 400);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error, variant: "destructive" });
         setDevLoggingIn(false);
@@ -104,8 +108,9 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = readSafeNextPath(); }, 800);
+        setTimeout(() => { window.location.href = readSafeNextPath(); }, 400);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }
@@ -133,7 +138,7 @@ export default function Login() {
 
         {/* 소셜 로그인 */}
         <div className="space-y-3">
-          {optionsLoaded && !hasAnyOAuth && (
+          {showDevLoginButton && (
             <button
               type="button"
               onClick={handleDevLogin}

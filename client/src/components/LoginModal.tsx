@@ -1,7 +1,7 @@
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Music, CheckCircle, User, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Link } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -27,6 +27,9 @@ export function LoginModal() {
 
   const optionsLoaded = !!loginOptions;
   const hasAnyOAuth = loginOptions && (loginOptions.hasGoogle || loginOptions.hasNaver || loginOptions.hasKakao || loginOptions.hasFacebook || loginOptions.hasTikTok);
+  const showDevLoginButton =
+    optionsLoaded &&
+    ((loginOptions as { allowDevLogin?: boolean }).allowDevLogin ?? !hasAnyOAuth);
 
   useEffect(() => {
     if (!isLoading && user) close();
@@ -46,8 +49,10 @@ export function LoginModal() {
       const res = await fetch("/api/auth/dev-login", { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
+        await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = "/"; }, 800);
+        close();
+        setTimeout(() => { window.location.href = "/"; }, 200);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc"), variant: "destructive" });
         setDevLoggingIn(false);
@@ -73,8 +78,10 @@ export function LoginModal() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
+        await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = "/"; }, 800);
+        close();
+        setTimeout(() => { window.location.href = "/"; }, 200);
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }
@@ -162,7 +169,7 @@ export function LoginModal() {
 
           {/* 소셜 로그인 버튼 */}
           <div className="w-full space-y-2">
-            {optionsLoaded && !hasAnyOAuth && (
+            {showDevLoginButton && (
               <button
                 type="button"
                 onClick={handleDevLogin}

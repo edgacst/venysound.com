@@ -3,26 +3,29 @@ import { PageTransition } from "@/components/PageTransition";
 import { Navigation } from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
-import { Link, useRoute, useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
+import RadioStudioMatrix from "@/pages/RadioStudioMatrix";
 
 export default function RadioStudio() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
-  const [, params] = useRoute("/radio/:slug/studio");
-  // useRoute 가 일시적으로 params 를 반환 못할 때(새로고침 직후 등) pathname 에서 직접 추출
-  const slug = params?.slug ?? (() => {
+  // wouter useRoute 와 무관하게 주소창 기준으로만 슬러그 확정 (Matrix 분기 누락 방지)
+  const slug = (() => {
     try {
-      const m = window.location.pathname.match(/^\/radio\/([^/]+)\/studio/);
-      return m ? decodeURIComponent(m[1]) : "";
-    } catch { return ""; }
+      const p = window.location.pathname.replace(/\/+$/, "");
+      const m = p.match(/^\/radio\/([^/]+)\/studio$/);
+      return m ? decodeURIComponent(m[1]).replace(/^\uFEFF/, "").trim() : "";
+    } catch {
+      return "";
+    }
   })();
-
   useEffect(() => {
     if (!slug || authLoading) return;
+    if (slug.toLowerCase() === "d") return;
     if (!isAuthenticated) {
       const next = `/radio/${encodeURIComponent(slug.trim().toLowerCase())}/studio`;
       setLocation(`${LOGIN_PATH}?next=${encodeURIComponent(next)}`);
@@ -45,6 +48,10 @@ export default function RadioStudio() {
         </div>
       </PageTransition>
     );
+  }
+
+  if (slug.toLowerCase() === "d") {
+    return <RadioStudioMatrix />;
   }
 
   if (authLoading || !isAuthenticated) {

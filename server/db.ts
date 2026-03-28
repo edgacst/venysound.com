@@ -13,9 +13,10 @@ const _dir =
       ? path.dirname(fileURLToPath(import.meta.url))
       : process.cwd();
 const envPath = path.resolve(_dir, "..", ".env");
-dotenv.config({ path: envPath, override: true });
+// override:false — npm run dev 의 cross-env NODE_ENV=development 를 .env 의 NODE_ENV=production 이 덮어쓰지 않게 함
+dotenv.config({ path: envPath, override: false });
 if (!process.env.DATABASE_URL?.startsWith("postgresql://") && !process.env.DATABASE_URL?.startsWith("postgres://")) {
-  dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: true });
+  dotenv.config({ path: path.resolve(process.cwd(), ".env"), override: false });
 }
 
 const { Pool } = pg;

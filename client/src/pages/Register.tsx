@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Music, Eye, EyeOff, User, Mail, Lock } from "lucide-react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { LOGIN_PATH } from "@/lib/site-paths";
 
@@ -79,6 +79,7 @@ export default function Register() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        await refreshAuthSession();
         toast({ title: t("register.successTitle", "회원가입 완료!"), description: t("register.successDesc", "환영합니다! 로그인되었습니다.") });
         window.location.href = "/";
       } else {

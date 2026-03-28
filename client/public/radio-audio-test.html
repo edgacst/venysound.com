@@ -88,34 +88,58 @@
       pointer-events: none;
     }
     .on-air-badge.active { display: flex; }
-    .on-air-dot {
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      background: #ef4444;
-      box-shadow: 0 0 10px 3px rgba(239,68,68,0.7);
-      animation: onair-blink 1s ease-in-out infinite;
+    .on-air-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+      gap: 0.1em;
+      font-size: 5.7rem;
+      line-height: 1;
+    }
+    .on-air-signal {
+      width: 1em;
+      height: 1em;
+      flex-shrink: 0;
+      color: #c084fc;
+      filter: drop-shadow(0 0 0.08em rgba(168, 85, 247, 0.9)) drop-shadow(0 0 0.2em rgba(139, 92, 246, 0.5));
+      display: block;
+    }
+    .on-air-badge.active .on-air-signal {
+      animation: onair-blink 1.1s ease-in-out infinite;
     }
     .on-air-text {
-      font-size: 2.2rem;
+      font-size: 1em;
       font-weight: 900;
       letter-spacing: 0.12em;
       color: #fff;
       text-shadow: 0 0 24px rgba(239,68,68,0.9), 0 4px 16px rgba(0,0,0,0.8);
-      animation: onair-blink 1s ease-in-out infinite;
+    }
+    .on-air-badge.active .on-air-text {
+      animation: onair-blink 1.1s ease-in-out infinite;
+    }
+    .on-air-main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      min-width: 0;
     }
     .on-air-count {
-      font-size: 0.95rem;
+      font-size: 1.9rem;
       font-weight: 600;
       color: #fca5a5;
       text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+      animation: none;
+      opacity: 1;
     }
     @keyframes onair-blink {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.3; }
     }
     @media (max-width: 1024px) {
-      .on-air-text { font-size: 1.4rem; }
-      .on-air-dot { width: 10px; height: 10px; }
+      .on-air-row { font-size: 3.8rem; }
     }
     .shell {
       width: 100%;
@@ -476,6 +500,82 @@
       color:#e5e7eb;
       font-size: 0.78rem;
     }
+
+    /* wide=1: 채널 d 전용 가로 꽉 참 (색·컴포넌트 스타일은 기본 송출과 동일) */
+    html.studio-embed.studio-embed-wide body {
+      padding: 0 4px 4px;
+      justify-content: stretch;
+    }
+    html.studio-embed.studio-embed-wide .page {
+      max-width: none !important;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      padding-top: 0;
+    }
+    /*
+      wide: 얼굴~가슴(상반신)이 한 번에 보이도록 띠 높이 + 세로 기준.
+    */
+    html.studio-embed.studio-embed-wide .hero {
+      height: clamp(140px, 22vh, 240px);
+      min-height: 128px;
+      margin-bottom: 8px;
+      border-radius: 10px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+      background-size: cover;
+      background-position: 50% 48%;
+    }
+    html.studio-embed.studio-embed-wide .hero-overlay {
+      padding: 4px 10px;
+      gap: 2px;
+    }
+    html.studio-embed.studio-embed-wide .hero-title {
+      font-size: 0.92rem;
+      text-shadow: 0 4px 14px rgba(0,0,0,0.75);
+    }
+    html.studio-embed.studio-embed-wide .hero-help {
+      font-size: 0.68rem;
+      padding: 3px 9px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.35);
+    }
+    html.studio-embed.studio-embed-wide .on-air-badge {
+      align-items: center;
+    }
+    html.studio-embed.studio-embed-wide .on-air-badge.active .on-air-signal,
+    html.studio-embed.studio-embed-wide .on-air-badge.active .on-air-text {
+      animation: onair-blink 1.1s ease-in-out infinite;
+    }
+    html.studio-embed.studio-embed-wide .on-air-row {
+      font-size: 3.1rem;
+    }
+    html.studio-embed.studio-embed-wide .on-air-text {
+      letter-spacing: 0.1em;
+    }
+    html.studio-embed.studio-embed-wide .on-air-count {
+      font-size: 1.6rem;
+    }
+    html.studio-embed.studio-embed-wide .shell {
+      gap: 10px;
+    }
+    @media (max-width: 1024px) {
+      html.studio-embed.studio-embed-wide body {
+        height: 100%;
+        min-height: 100%;
+      }
+      /* 일반 .hero 100px 규칙보다 우선 — wide 임베드에서만 상단 사진 유지 */
+      html.studio-embed.studio-embed-wide .hero {
+        height: clamp(124px, 19vh, 200px);
+        min-height: 112px;
+        margin-bottom: 8px;
+        background-position: 50% 46%;
+      }
+      html.studio-embed.studio-embed-wide .on-air-row {
+        font-size: 2.7rem;
+      }
+      html.studio-embed.studio-embed-wide .on-air-count {
+        font-size: 1.48rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -483,10 +583,20 @@
     <div id="hero" class="hero" aria-hidden="true">
       <div class="hero-overlay">
         <div id="onAirBadge" class="on-air-badge">
-          <div class="on-air-dot"></div>
-          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;">
-            <span class="on-air-text">ON AIR</span>
-            <span id="onAirCount" class="on-air-count"></span>
+          <div class="on-air-main">
+            <div class="on-air-row">
+              <svg class="on-air-signal" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+                <g fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M 17 8 Q 2 20 17 32" />
+                  <path d="M 18 12 Q 7 20 18 28" />
+                  <path d="M 23 8 Q 38 20 23 32" />
+                  <path d="M 22 12 Q 33 20 22 28" />
+                </g>
+                <circle cx="20" cy="20" r="4.25" fill="currentColor" />
+              </svg>
+              <span class="on-air-text">ON AIR</span>
+            </div>
+            <span id="onAirCount" class="on-air-count" aria-live="polite"></span>
           </div>
         </div>
         <div id="heroTitleWrap">
@@ -680,6 +790,9 @@
       var _embedP = new URLSearchParams(window.location.search || '');
       if (_embedP.get('embed') === '1') {
         document.documentElement.classList.add('studio-embed');
+      }
+      if (_embedP.get('wide') === '1') {
+        document.documentElement.classList.add('studio-embed-wide');
       }
     } catch (e0) {}
 
@@ -1065,6 +1178,7 @@
       if (active) {
         onAirBadge.classList.add('active');
         heroTitleWrap.style.display = 'none';
+        syncOnAirCountFromUi();
       } else {
         onAirBadge.classList.remove('active');
         heroTitleWrap.style.display = '';
@@ -1072,8 +1186,17 @@
       }
     }
 
+    function syncOnAirCountFromUi() {
+      if (!onAirBadge || !onAirBadge.classList.contains('active') || !onAirCount) return;
+      var raw = userCountEl && userCountEl.textContent ? parseInt(userCountEl.textContent, 10) : NaN;
+      if (!isNaN(raw)) updateOnAirCount(raw);
+      else updateOnAirCount(users.length);
+    }
+
     function updateOnAirCount(n) {
-      if (onAirCount) onAirCount.textContent = (n != null && n > 0) ? '청취자 ' + n + '명' : '';
+      if (!onAirCount || !onAirBadge || !onAirBadge.classList.contains('active')) return;
+      var c = (n != null && n !== '' && !isNaN(Number(n))) ? Math.max(0, Math.floor(Number(n))) : 0;
+      onAirCount.textContent = '청취자 ' + c + '명';
     }
     function endBroadcast() {
       if (!urlSlug) return;
@@ -1664,6 +1787,7 @@
           usersListEl.appendChild(row);
         });
       userCountEl.textContent = String(users.length);
+      syncOnAirCountFromUi();
     }
 
     function updateMyBadge() {
