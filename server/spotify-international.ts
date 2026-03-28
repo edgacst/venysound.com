@@ -55,18 +55,50 @@ type SpotifyAlbumSimplified = {
 
 type SpotifyPaged<T> = { items: T[]; next: string | null };
 
+/** open.spotify.com/artist/…, spotify:artist:…, 또는 순수 ID */
+function parseSpotifyArtistId(fragment: string): string | null {
+  const s = fragment.trim();
+  if (!s) return null;
+  const uri = /^spotify:artist:([a-zA-Z0-9]+)$/i.exec(s);
+  if (uri) return uri[1];
+  const url = /open\.spotify\.com\/(?:intl-[a-z]{2}\/)?artist\/([a-zA-Z0-9]+)/i.exec(s);
+  if (url) return url[1];
+  if (/^[a-zA-Z0-9]{22}$/.test(s)) return s;
+  if (/^[a-zA-Z0-9]+$/.test(s) && s.length >= 10) return s;
+  return null;
+}
+
 function getEnvArtistIds(): string[] {
   const raw = normalizeEnvValue(process.env.SPOTIFY_INTERNATIONAL_ARTIST_IDS);
   if (!raw) return [];
-  return raw
-    .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)) {
+    const id = parseSpotifyArtistId(part);
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
 }
 
-function getMarket(): string {
-  const m = (process.env.SPOTIFY_MARKET || "KR").trim().toUpperCase();
-  return m.length === 2 ? m : "KR";
+/**
+ * 해외 출시는 특정 단일 market(예: KR)만 쓰면 해당 지역 미배포 앨범이 전부 빠져 total=0이 될 수 있음.
+ * Client Credentials에는 사용자 국가가 없어 market이 사실상 필수에 가깝다 → 여러 market 결과를 합친다.
+ */
+function getInternationalMarkets(): string[] {
+  const raw = normalizeEnvValue(process.env.SPOTIFY_INTERNATIONAL_MARKETS);
+  if (raw) {
+    const list = raw
+      .split(/[,]+/)
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => s.length === 2);
+    return [...new Set(list)];
+  }
+  const legacy = normalizeEnvValue(process.env.SPOTIFY_MARKET);
+  if (legacy.length === 2) return [legacy.toUpperCase()];
+  return ["US", "KR"];
 }
 
 async function getClientCredentialsToken(): Promise<string | null> {
@@ -112,13 +144,13 @@ async function getClientCredentialsToken(): Promise<string | null> {
   return tokenCache.token;
 }
 
-async function fetchArtistAlbumsAll(
+async function fetchArtistAlbumsForMarket(
   token: string,
   artistId: string,
+  market: string,
+  cap: number,
 ): Promise<{ albums: SpotifyAlbumSimplified[]; unauthorized: boolean }> {
-  const market = getMarket();
   const out: SpotifyAlbumSimplified[] = [];
-  const cap = Math.min(500, Math.max(50, parseInt(process.env.SPOTIFY_INTERNATIONAL_ALBUM_CAP || "200", 10) || 200));
 
   // Spotify가 limit>10 에 대해 400 "Invalid limit" 를 반환하는 경우가 있어 10으로 페이지네이션
   const pageLimit = "10";
@@ -137,7 +169,7 @@ async function fetchArtistAlbumsAll(
     }
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      console.error("[spotify-international] albums error", artistId, res.status, t.slice(0, 200));
+      console.error("[spotify-international] albums error", artistId, market, res.status, t.slice(0, 200));
       break;
     }
     const page = (await res.json()) as SpotifyPaged<SpotifyAlbumSimplified>;
@@ -149,6 +181,26 @@ async function fetchArtistAlbumsAll(
   }
 
   return { albums: out, unauthorized: false };
+}
+
+async function fetchArtistAlbumsAll(
+  token: string,
+  artistId: string,
+): Promise<{ albums: SpotifyAlbumSimplified[]; unauthorized: boolean }> {
+  const cap = Math.min(500, Math.max(50, parseInt(process.env.SPOTIFY_INTERNATIONAL_ALBUM_CAP || "200", 10) || 200));
+  const markets = getInternationalMarkets();
+  const byId = new Map<string, SpotifyAlbumSimplified>();
+  let unauthorized = false;
+  for (const market of markets) {
+    const { albums, unauthorized: u } = await fetchArtistAlbumsForMarket(token, artistId, market, cap);
+    if (u) unauthorized = true;
+    for (const al of albums) {
+      if (!byId.has(al.id)) byId.set(al.id, al);
+      if (byId.size >= cap) break;
+    }
+    if (byId.size >= cap) break;
+  }
+  return { albums: [...byId.values()], unauthorized };
 }
 
 function albumToDto(a: SpotifyAlbumSimplified): InternationalReleaseDto | null {
