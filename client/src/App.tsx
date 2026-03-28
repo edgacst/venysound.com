@@ -13,7 +13,6 @@ import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
-import { ExitAppConfirm } from "@/components/ExitAppConfirm";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 
@@ -427,7 +426,6 @@ function App() {
                   <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
                   <ScrollToTop />
                   <LoginModal />
-                  <ExitAppConfirm />
                   <Toaster />
                 </RadioWaveformProvider>
               </WsProviderWithAuth>
