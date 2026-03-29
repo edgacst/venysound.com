@@ -677,7 +677,13 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
-  const { data: adminUsers, isLoading: loadingUsers, refetch: refetchUsers } = useQuery<any[]>({
+  const {
+    data: adminUsers,
+    isLoading: loadingUsers,
+    isError: adminUsersError,
+    error: adminUsersErr,
+    refetch: refetchUsers,
+  } = useQuery<any[]>({
     queryKey: ["/api/admin/users", userSearch],
     queryFn: async () => {
       const url = userSearch ? `/api/admin/users?search=${encodeURIComponent(userSearch)}` : "/api/admin/users";
@@ -686,6 +692,8 @@ export default function Admin() {
       return res.json();
     },
     enabled: adminCheck?.isAdmin === true,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const deletePostMutation = useMutation({
@@ -2302,7 +2310,7 @@ export default function Admin() {
         <h2 className="text-xl font-bold mb-4" data-testid="text-user-management-title">{t('admin.userManagement', '회원 관리')}</h2>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <Input
-            placeholder={t('admin.searchUsers', '회원명, 이메일 검색')}
+            placeholder={t('admin.searchUsers', '아이디, 이름, 이메일 검색')}
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
             className="max-w-sm"
@@ -2322,7 +2330,7 @@ export default function Admin() {
             <table className="w-full text-sm min-w-[640px]" data-testid="table-users">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left p-3 font-medium whitespace-nowrap w-24">{t('admin.userId', '아이디')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap min-w-[120px]">{t('admin.userLoginOrName', '로그인·표시명')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap min-w-[140px]">{t('admin.email', '이메일')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-24">{t('admin.joinDate', '가입일')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.registerSource', '가입 경로')}</th>
@@ -2338,14 +2346,30 @@ export default function Admin() {
                       <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
                     </td>
                   </tr>
+                ) : adminUsersError ? (
+                  <tr>
+                    <td colSpan={7} className="text-center p-8 text-destructive text-sm">
+                      {(adminUsersErr as Error)?.message || t("admin.usersLoadError", "회원 목록을 불러오지 못했습니다. 새로고침 해 주세요.")}
+                    </td>
+                  </tr>
                 ) : adminUsers && adminUsers.length > 0 ? (
                   adminUsers.map((u: any) => {
                     const isSelf = u.id === user?.id;
                     const isUserAdmin = u.role === "admin";
                     const isPremium = isPaidSubscriptionTierId(u.subscriptionTier);
+                    const loginLabel = u.username || u.firstName || u.id;
+                    const subName =
+                      u.username && u.firstName && String(u.firstName) !== String(u.username) ? u.firstName : null;
                     return (
                       <tr key={u.id} className="border-b border-border/50" data-testid={`row-user-${u.id}`}>
-                        <td className="p-3 font-mono text-xs max-w-[100px] truncate align-middle" title={u.firstName || u.id}>{u.firstName || u.id}</td>
+                        <td className="p-3 align-middle max-w-[140px]" title={`id: ${u.id}`}>
+                          <div className="font-mono text-xs truncate">{loginLabel}</div>
+                          {subName ? (
+                            <div className="text-[11px] text-muted-foreground truncate" title={subName}>
+                              {subName}
+                            </div>
+                          ) : null}
+                        </td>
                         <td className="p-3 max-w-[180px] truncate align-middle" title={u.email || "-"}>{u.email || "-"}</td>
                         <td className="p-3 text-muted-foreground whitespace-nowrap align-middle">{u.createdAt ? formatDate(u.createdAt) : "-"}</td>
                         <td className="p-3 whitespace-nowrap align-middle">

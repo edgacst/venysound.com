@@ -1958,15 +1958,28 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /** 관리자 회원 목록. 최신 가입순 상한(대량 시 응답·메모리 보호). 검색: 로그인 아이디·이메일·이름·UUID 일부. */
   async getAllUsers(search?: string): Promise<any[]> {
-    let query = db.select().from(users).orderBy(desc(users.createdAt));
-    if (search) {
-      // @ts-ignore
-      query = query.where(
-        sql`(${users.id} ILIKE ${`%${search}%`} OR ${users.email} ILIKE ${`%${search}%`} OR ${users.firstName} ILIKE ${`%${search}%`})`
-      );
+    const MAX_ROWS = 4000;
+    const trimmed = typeof search === "string" ? search.trim() : "";
+    if (trimmed) {
+      const pat = `%${trimmed}%`;
+      return await db
+        .select()
+        .from(users)
+        .where(
+          or(
+            ilike(users.id, pat),
+            ilike(users.email, pat),
+            ilike(users.username, pat),
+            ilike(users.firstName, pat),
+            ilike(users.lastName, pat),
+          ),
+        )
+        .orderBy(desc(users.createdAt))
+        .limit(MAX_ROWS);
     }
-    return await query;
+    return await db.select().from(users).orderBy(desc(users.createdAt)).limit(MAX_ROWS);
   }
 
   async getAllPostsAdmin(): Promise<any[]> {
