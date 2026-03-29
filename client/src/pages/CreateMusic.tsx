@@ -327,6 +327,10 @@ export default function CreateMusic() {
 
   const libraryHydratedForUserRef = useRef<string | null>(null);
   const librarySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 이탈·백그라운드 직전 flush용 — 디바운스 PUT이 취소돼도 서버에 최종 목록이 올라가게 함 */
+  const libraryPendingSyncRef = useRef<{ userId: string; payload: ReturnType<typeof tracksToWirePayload> } | null>(
+    null,
+  );
 
   const { data: libraryRemote, isFetched: libraryFetched } = useQuery<{ tracks?: unknown[] }>({
     queryKey: ["/api/ai-music/library"],
@@ -339,7 +343,8 @@ export default function CreateMusic() {
       return res.json();
     },
     enabled: !!user?.id,
-    staleTime: 45_000,
+    staleTime: 0,
+    refetchOnMount: "always",
     retry: 1,
   });
 
@@ -381,17 +386,38 @@ export default function CreateMusic() {
   }, [status]);
 
   useEffect(() => {
-    return () => {
+    const flushPendingLibrary = () => {
+      const p = libraryPendingSyncRef.current;
+      if (!p) return;
+      void fetch("/api/ai-music/library", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks: p.payload }),
+      }).catch(() => {});
+    };
+    const onPageHide = () => {
       if (librarySyncTimerRef.current) {
         clearTimeout(librarySyncTimerRef.current);
         librarySyncTimerRef.current = null;
       }
+      flushPendingLibrary();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      if (librarySyncTimerRef.current) {
+        clearTimeout(librarySyncTimerRef.current);
+        librarySyncTimerRef.current = null;
+      }
+      flushPendingLibrary();
     };
   }, []);
 
   useEffect(() => {
     if (!user?.id) {
       libraryHydratedForUserRef.current = null;
+      libraryPendingSyncRef.current = null;
       setSavedTracks([]);
       setTaskId(null);
       setStatus("idle");
@@ -439,24 +465,32 @@ export default function CreateMusic() {
   }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
   const persistTracks = useCallback(
-    (tracks: SavedTrack[]) => {
+    (tracks: SavedTrack[], opts?: { immediate?: boolean }) => {
       const uid = user?.id;
       if (!uid) return;
       const payload = tracksToWirePayload(tracks);
+      libraryPendingSyncRef.current = { userId: uid, payload };
       try {
         localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(payload));
       } catch {}
       queryClient.setQueryData(["/api/ai-music/library"], { tracks: payload });
       if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
-      librarySyncTimerRef.current = setTimeout(() => {
+      const send = () => {
         librarySyncTimerRef.current = null;
         void fetch("/api/ai-music/library", {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ tracks: payload }),
-        }).catch(() => {});
-      }, 850);
+        })
+          .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
+          .catch(() => {});
+      };
+      if (opts?.immediate) {
+        send();
+        return;
+      }
+      librarySyncTimerRef.current = setTimeout(send, 850);
     },
     [user?.id, queryClient],
   );
@@ -506,7 +540,7 @@ export default function CreateMusic() {
       }
       setSavedTracks((prev) => {
         const next = prev.map((row) => (row.id === track.id ? { ...row, publishedToSite: true } : row));
-        persistTracks(next);
+        persistTracks(next, { immediate: true });
         return next;
       });
       toast({
@@ -534,7 +568,7 @@ export default function CreateMusic() {
         const next = prev.map((t) =>
           t.id === track.id ? { ...t, uploadCount: (t.uploadCount ?? 0) + 1 } : t
         );
-        persistTracks(next);
+        persistTracks(next, { immediate: true });
         return next;
       });
       setLocation("/upload");
@@ -627,7 +661,7 @@ export default function CreateMusic() {
         });
         setSavedTracks((prev) => {
           const next = [...toSave, ...prev];
-          persistTracks(next);
+          persistTracks(next, { immediate: true });
           return next;
         });
       }
