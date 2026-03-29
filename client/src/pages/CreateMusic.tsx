@@ -398,7 +398,9 @@ export default function CreateMusic() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      }).catch(() => {});
+      }).catch(() => {
+        void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
+      });
     };
     const onPageHide = () => {
       if (librarySyncTimerRef.current) {
@@ -464,7 +466,10 @@ export default function CreateMusic() {
         body: JSON.stringify({ tracks: payload }),
       })
         .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
-        .catch(() => {});
+        .catch(() => {
+          setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
+          queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
+        });
     }
   }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
@@ -491,7 +496,10 @@ export default function CreateMusic() {
           body: JSON.stringify(body),
         })
           .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
-          .catch(() => {});
+          .catch(() => {
+            setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
+            queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
+          });
       };
       if (opts?.immediate) {
         send();
