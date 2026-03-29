@@ -215,6 +215,27 @@ export default function Admin() {
     enabled: !!user,
   });
 
+  /** 배포 반영 여부 확인용 (npm run build 할 때마다 갱신됨) */
+  const { data: deployBuild } = useQuery<{ builtAt?: string }>({
+    queryKey: ["/build.json"],
+    queryFn: async () => {
+      const res = await fetch("/build.json", { cache: "no-store" });
+      if (!res.ok) return {};
+      return res.json().catch(() => ({}));
+    },
+    enabled: adminCheck?.isAdmin === true,
+    staleTime: 0,
+  });
+  const { data: serverHealth } = useQuery<{ ok?: boolean; builtAt?: string }>({
+    queryKey: ["/api/health"],
+    queryFn: async () => {
+      const res = await fetch("/api/health", { cache: "no-store" });
+      return res.json().catch(() => ({}));
+    },
+    enabled: adminCheck?.isAdmin === true,
+    staleTime: 0,
+  });
+
   const { data: stats, isLoading: loadingStats } = useQuery<{
     totalUsers: number;
     totalMusic: number;
@@ -1188,7 +1209,21 @@ export default function Admin() {
       <div className="min-h-screen bg-background flex flex-col">
         <Navigation />
         <div className="container max-w-6xl mx-auto px-4 py-8">
-          <h1 className="text-2xl font-bold mb-6" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
+          <h1 className="text-2xl font-bold mb-2" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
+          {adminCheck?.isAdmin === true && (
+            <p className="text-[11px] text-muted-foreground font-mono mb-6 leading-relaxed" data-testid="text-deploy-stamp">
+              {t("admin.deployHint", "배포 확인")}:{" "}
+              {deployBuild?.builtAt
+                ? `${t("admin.deployClientBundle", "프론트")} ${new Date(deployBuild.builtAt).toLocaleString("ko-KR")}`
+                : t("admin.deployClientMissing", "프론트 시각 없음(빌드·배포 안 됐을 수 있음)")}
+              {" · "}
+              {serverHealth?.builtAt
+                ? `${t("admin.deployServer", "서버")} ${new Date(serverHealth.builtAt).toLocaleString("ko-KR")}`
+                : serverHealth?.ok === true
+                  ? t("admin.deployServerNoStamp", "서버 동작 중(시각 없음=옛 dist 가능)")
+                  : t("admin.deployServerUnknown", "서버 상태 확인 실패")}
+            </p>
+          )}
 
           <Tabs defaultValue="stats" className="w-full">
             <TabsList className="mb-4 flex flex-wrap gap-1 h-auto">
