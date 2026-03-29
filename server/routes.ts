@@ -3702,12 +3702,10 @@ export async function registerRoutes(
   app.get("/api/admin/users", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const search = req.query.search as string | undefined;
-      const usersList = await storage.getAllUsers(search);
-      if (!Array.isArray(usersList)) {
-        console.error("[admin/users] non-array result", typeof usersList);
-        return res.status(500).json({ message: "회원 목록 형식 오류" });
-      }
-      res.json(usersList);
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+      const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
+      const { rows, total } = await storage.getAllUsers(search, limit, offset);
+      res.json({ users: rows, total, limit, offset });
     } catch (e: any) {
       console.error("[admin/users]", e);
       res.status(500).json({ message: e?.message ?? "회원 목록을 불러오지 못했습니다." });

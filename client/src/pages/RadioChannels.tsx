@@ -32,7 +32,8 @@ export default function RadioChannels() {
     queryFn: async () => {
       const res = await fetch("/api/radio/channels");
       if (!res.ok) return [];
-      return res.json();
+      const data = await res.json().catch(() => null);
+      return Array.isArray(data) ? data : [];
     },
   });
 

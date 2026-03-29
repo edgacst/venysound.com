@@ -139,6 +139,8 @@ export default function Admin() {
   const { toast } = useToast();
   const { uploadFile: uploadCuratedImage, isUploading: isUploadingCuratedImage } = useUpload();
   const [userSearch, setUserSearch] = useState("");
+  const [userPage, setUserPage] = useState(0);
+  const [userPageSize, setUserPageSize] = useState(50);
   const [adminMainTab, setAdminMainTab] = useState("stats");
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
@@ -699,24 +701,42 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
+  type AdminUsersPage = { users: any[]; total: number; limit: number; offset: number };
   const {
-    data: adminUsers,
+    data: adminUsersPage,
     isLoading: loadingUsers,
     isError: adminUsersError,
     error: adminUsersErr,
     refetch: refetchUsers,
-  } = useQuery<any[]>({
-    queryKey: ["/api/admin/users", userSearch],
+  } = useQuery<AdminUsersPage>({
+    queryKey: ["/api/admin/users", userSearch, userPage, userPageSize],
     queryFn: async () => {
-      const url = userSearch ? `/api/admin/users?search=${encodeURIComponent(userSearch)}` : "/api/admin/users";
-      const res = await fetch(url, { credentials: "include", cache: "no-store" });
+      const params = new URLSearchParams();
+      const q = userSearch.trim();
+      if (q) params.set("search", q);
+      params.set("limit", String(userPageSize));
+      params.set("offset", String(userPage * userPageSize));
+      const res = await fetch(`/api/admin/users?${params}`, { credentials: "include", cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
         const body = data && typeof data === "object" ? (data as { message?: string }) : {};
         const msg = typeof body.message === "string" ? body.message : null;
         throw new Error(msg || "Failed to fetch users");
       }
-      return Array.isArray(data) ? data : [];
+      if (data && typeof data === "object" && "users" in data) {
+        const d = data as AdminUsersPage;
+        const users = Array.isArray(d.users) ? d.users : [];
+        return {
+          users,
+          total: Math.max(0, Number(d.total) || 0),
+          limit: Number(d.limit) || userPageSize,
+          offset: Number(d.offset) || 0,
+        };
+      }
+      if (Array.isArray(data)) {
+        return { users: data, total: data.length, limit: data.length, offset: 0 };
+      }
+      return { users: [], total: 0, limit: userPageSize, offset: 0 };
     },
     enabled: adminCheck?.isAdmin === true,
     staleTime: 0,
@@ -724,6 +744,19 @@ export default function Admin() {
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
   });
+
+  const adminUsers = adminUsersPage?.users ?? [];
+  const adminUsersListTotal = adminUsersPage?.total ?? 0;
+
+  useEffect(() => {
+    setUserPage(0);
+  }, [userPageSize]);
+
+  useEffect(() => {
+    const total = adminUsersListTotal;
+    const maxPage = Math.max(0, Math.ceil(total / userPageSize) - 1);
+    if (userPage > maxPage) setUserPage(maxPage);
+  }, [adminUsersListTotal, userPageSize, userPage]);
 
   const deletePostMutation = useMutation({
     mutationFn: async (postId: number) => {
@@ -1246,7 +1279,7 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="users" className="gap-1.5">
                 {t('admin.userManagement', '회원')}
-                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-users-count">{stats?.totalUsers ?? adminUsers?.length ?? 0}</Badge>
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-users-count">{stats?.totalUsers ?? "—"}</Badge>
               </TabsTrigger>
               <TabsTrigger value="bank" className="gap-1.5">
                 {t('admin.pendingBankPayments', '입금 대기')}
@@ -1924,6 +1957,7 @@ export default function Admin() {
                                     variant="secondary"
                                     className="h-7 text-[11px] px-2"
                                     onClick={() => {
+                                      setUserPage(0);
                                       setUserSearch(row.email || row.userId || "");
                                       setAdminMainTab("users");
                                       void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
@@ -2384,7 +2418,10 @@ export default function Admin() {
           <Input
             placeholder={t('admin.searchUsers', '아이디, 이름, 이메일 검색')}
             value={userSearch}
-            onChange={(e) => setUserSearch(e.target.value)}
+            onChange={(e) => {
+              setUserPage(0);
+              setUserSearch(e.target.value);
+            }}
             className="max-w-sm"
             data-testid="input-user-search"
           />
@@ -2557,6 +2594,66 @@ export default function Admin() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 py-3 border-t border-border bg-muted/20 text-sm">
+            <div className="text-muted-foreground tabular-nums">
+              {adminUsersListTotal === 0
+                ? t("admin.usersPageEmpty", "표시할 회원이 없습니다")
+                : t("admin.usersPageRange", "전체 {{total}}명 중 {{from}}–{{to}}번째", {
+                    total: adminUsersListTotal,
+                    from: userPage * userPageSize + 1,
+                    to: Math.min(adminUsersListTotal, (userPage + 1) * userPageSize),
+                  })}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground text-xs whitespace-nowrap">{t("admin.pageSize", "페이지당")}</span>
+              <Select
+                value={String(userPageSize)}
+                onValueChange={(v) => setUserPageSize(Number(v) || 50)}
+              >
+                <SelectTrigger className="w-[88px] h-8" data-testid="select-users-page-size">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="25">25</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={userPage <= 0 || loadingUsers}
+                onClick={() => setUserPage((p) => Math.max(0, p - 1))}
+                data-testid="button-users-prev-page"
+              >
+                {t("admin.prevPage", "이전")}
+              </Button>
+              <span className="text-xs text-muted-foreground tabular-nums min-w-[4.5rem] text-center">
+                {adminUsersListTotal === 0
+                  ? "—"
+                  : t("admin.pageOf", "{{current}} / {{max}}", {
+                      current: userPage + 1,
+                      max: Math.max(1, Math.ceil(adminUsersListTotal / userPageSize)),
+                    })}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={
+                  loadingUsers ||
+                  adminUsersListTotal === 0 ||
+                  (userPage + 1) * userPageSize >= adminUsersListTotal
+                }
+                onClick={() => setUserPage((p) => p + 1)}
+                data-testid="button-users-next-page"
+              >
+                {t("admin.nextPage", "다음")}
+              </Button>
+            </div>
           </div>
         </Card>
             </TabsContent>

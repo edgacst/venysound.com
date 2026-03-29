@@ -226,7 +226,7 @@ export interface IStorage {
   removeRadioChannelStaff(channelId: number, userId: string): Promise<void>;
   getUserIdByUsername(username: string): Promise<string | undefined>;
 
-  getAllUsers(search?: string): Promise<any[]>;
+  getAllUsers(search?: string, limit?: number, offset?: number): Promise<{ rows: any[]; total: number }>;
   /** 관리자: 접속 로그와 회원 목록 불일치 조사용 */
   findUserForAdminLookup(params: { email?: string; userId?: string }): Promise<any | null>;
   getAllPostsAdmin(): Promise<any[]>;
@@ -1960,28 +1960,49 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  /** 관리자 회원 목록. 최신 가입순 상한(대량 시 응답·메모리 보호). 검색: COALESCE+ILIKE 로 NULL 컬럼·PG 호환. */
-  async getAllUsers(search?: string): Promise<any[]> {
-    const MAX_ROWS = 15000;
+  /** 관리자 회원 목록(페이지네이션). 최신 가입순. 검색: COALESCE+ILIKE. */
+  async getAllUsers(search?: string, limit = 50, offset = 0): Promise<{ rows: any[]; total: number }> {
+    const safeLimit = Math.min(200, Math.max(1, Math.floor(Number(limit) || 50)));
+    const safeOffset = Math.max(0, Math.floor(Number(offset) || 0));
     const trimmed = typeof search === "string" ? search.trim() : "";
-    if (trimmed) {
-      const pat = `%${trimmed}%`;
-      return await db
-        .select()
-        .from(users)
-        .where(
-          sql`(
+
+    const pat = `%${trimmed}%`;
+    const searchWhere =
+      trimmed.length > 0
+        ? sql`(
             CAST(${users.id} AS TEXT) ILIKE ${pat}
             OR COALESCE(${users.email}, '') ILIKE ${pat}
             OR COALESCE(${users.username}, '') ILIKE ${pat}
             OR COALESCE(${users.firstName}, '') ILIKE ${pat}
             OR COALESCE(${users.lastName}, '') ILIKE ${pat}
-          )`,
-        )
+          )`
+        : undefined;
+
+    if (searchWhere) {
+      const [cnt] = await db
+        .select({ c: sql<number>`count(*)::int` })
+        .from(users)
+        .where(searchWhere);
+      const total = Number(cnt?.c ?? 0);
+      const rows = await db
+        .select()
+        .from(users)
+        .where(searchWhere)
         .orderBy(desc(users.createdAt))
-        .limit(MAX_ROWS);
+        .limit(safeLimit)
+        .offset(safeOffset);
+      return { rows, total };
     }
-    return await db.select().from(users).orderBy(desc(users.createdAt)).limit(MAX_ROWS);
+
+    const [cnt] = await db.select({ c: sql<number>`count(*)::int` }).from(users);
+    const total = Number(cnt?.c ?? 0);
+    const rows = await db
+      .select()
+      .from(users)
+      .orderBy(desc(users.createdAt))
+      .limit(safeLimit)
+      .offset(safeOffset);
+    return { rows, total };
   }
 
   async findUserForAdminLookup(params: { email?: string; userId?: string }): Promise<any | null> {

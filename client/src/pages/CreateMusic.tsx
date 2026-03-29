@@ -709,11 +709,19 @@ export default function CreateMusic() {
                       </Link>
                       <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-center min-h-[5.5rem]">
                         {(() => {
-                          const q = aiUsage.quota ?? {
-                            kind: aiUsage.limit < 0 ? ("unlimited" as const) : aiUsage.limit <= 10 ? ("songs" as const) : ("subscription_credits" as const),
-                            used: aiUsage.usedThisMonth,
-                            limit: aiUsage.limit,
-                          };
+                          /** 서버와 동일 규칙(한도 숫자로 추측하지 않음 — 캐시/구버전 응답에서 PC·모바일 표시 불일치 방지) */
+                          const q =
+                            aiUsage.quota ??
+                            {
+                              kind:
+                                user?.role === "admin"
+                                  ? ("unlimited" as const)
+                                  : (user?.subscriptionTier ?? "free") === "free"
+                                    ? ("songs" as const)
+                                    : ("subscription_credits" as const),
+                              used: aiUsage.usedThisMonth,
+                              limit: aiUsage.limit,
+                            };
                           if (q.kind === "unlimited") {
                             return (
                               <>
