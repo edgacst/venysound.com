@@ -227,6 +227,8 @@ export interface IStorage {
   getUserIdByUsername(username: string): Promise<string | undefined>;
 
   getAllUsers(search?: string): Promise<any[]>;
+  /** 관리자: 접속 로그와 회원 목록 불일치 조사용 */
+  findUserForAdminLookup(params: { email?: string; userId?: string }): Promise<any | null>;
   getAllPostsAdmin(): Promise<any[]>;
   deletePostAdmin(id: number): Promise<void>;
   deleteUser(id: string): Promise<void>;
@@ -1960,7 +1962,7 @@ export class DatabaseStorage implements IStorage {
 
   /** 관리자 회원 목록. 최신 가입순 상한(대량 시 응답·메모리 보호). 검색: COALESCE+ILIKE 로 NULL 컬럼·PG 호환. */
   async getAllUsers(search?: string): Promise<any[]> {
-    const MAX_ROWS = 8000;
+    const MAX_ROWS = 15000;
     const trimmed = typeof search === "string" ? search.trim() : "";
     if (trimmed) {
       const pat = `%${trimmed}%`;
@@ -1980,6 +1982,22 @@ export class DatabaseStorage implements IStorage {
         .limit(MAX_ROWS);
     }
     return await db.select().from(users).orderBy(desc(users.createdAt)).limit(MAX_ROWS);
+  }
+
+  async findUserForAdminLookup(params: { email?: string; userId?: string }): Promise<any | null> {
+    const uid = params.userId?.trim();
+    if (uid) {
+      const [u] = await db.select().from(users).where(eq(users.id, uid)).limit(1);
+      return u ?? null;
+    }
+    const em = params.email?.trim();
+    if (!em) return null;
+    const [u] = await db
+      .select()
+      .from(users)
+      .where(sql`LOWER(CAST(${users.email} AS TEXT)) = LOWER(${em})`)
+      .limit(1);
+    return u ?? null;
   }
 
   async getAllPostsAdmin(): Promise<any[]> {

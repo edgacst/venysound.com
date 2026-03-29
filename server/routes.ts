@@ -3714,6 +3714,22 @@ export async function registerRoutes(
     }
   });
 
+  /** 이메일·users.id로 단일 행 존재 여부 (접속 요약 vs 회원 목록 대조용) */
+  app.get("/api/admin/users/lookup", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+      const userId = typeof req.query.userId === "string" ? req.query.userId.trim() : "";
+      if (!email && !userId) {
+        return res.status(400).json({ message: "email 또는 userId 쿼리가 필요합니다." });
+      }
+      const user = await storage.findUserForAdminLookup({ email: email || undefined, userId: userId || undefined });
+      res.json({ found: !!user, user: user ?? null });
+    } catch (e: any) {
+      console.error("[admin/users/lookup]", e);
+      res.status(500).json({ message: e?.message ?? "조회에 실패했습니다." });
+    }
+  });
+
   app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "200"), 10)));

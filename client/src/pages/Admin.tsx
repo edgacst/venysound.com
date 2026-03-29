@@ -139,6 +139,7 @@ export default function Admin() {
   const { toast } = useToast();
   const { uploadFile: uploadCuratedImage, isUploading: isUploadingCuratedImage } = useUpload();
   const [userSearch, setUserSearch] = useState("");
+  const [adminMainTab, setAdminMainTab] = useState("stats");
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
   const [adminNotes, setAdminNotes] = useState<Record<number, string>>({});
@@ -1225,7 +1226,7 @@ export default function Admin() {
             </p>
           )}
 
-          <Tabs defaultValue="stats" className="w-full">
+          <Tabs value={adminMainTab} onValueChange={setAdminMainTab} className="w-full">
             <TabsList className="mb-4 flex flex-wrap gap-1 h-auto">
               <TabsTrigger value="stats" className="gap-1.5">
                 {t('admin.statsOverview', '통계')}
@@ -1910,7 +1911,36 @@ export default function Admin() {
                       {(visitorSessionsData?.rows?.length ?? 0) > 0 ? (
                         visitorSessionsData!.rows.map((row, idx) => (
                           <tr key={`${row.visitorKey}-${row.firstAt}-${idx}`} className="border-b border-border/50">
-                            <td className="p-2 max-w-[220px] break-words">{formatVisitorSessionLabel(row)}</td>
+                            <td className="p-2 max-w-[280px] break-words align-top">
+                              <div>{formatVisitorSessionLabel(row)}</div>
+                              {row.userId ? (
+                                <div className="mt-1.5 space-y-1">
+                                  <p className="text-[10px] font-mono text-muted-foreground break-all leading-snug" title={row.userId}>
+                                    users.id: {row.userId}
+                                  </p>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    className="h-7 text-[11px] px-2"
+                                    onClick={() => {
+                                      setUserSearch(row.email || row.userId || "");
+                                      setAdminMainTab("users");
+                                      void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+                                      toast({
+                                        title: t("admin.openUserSearch", "회원 탭으로 이동"),
+                                        description: t(
+                                          "admin.openUserSearchDesc",
+                                          "검색창에 이메일·ID를 넣었습니다. 비어 있으면 새로고침을 눌러 주세요.",
+                                        ),
+                                      });
+                                    }}
+                                  >
+                                    {t("admin.findInUserList", "회원 목록에서 찾기")}
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </td>
                             <td className="p-2 text-muted-foreground text-xs max-w-[200px]">
                               {formatGeoLabel(row.countryCode, row.region)}
                             </td>
