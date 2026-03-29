@@ -937,6 +937,17 @@ export async function registerRoutes(
       if (raw.length > AI_LIBRARY_MAX_TRACKS) {
         return res.status(400).json({ message: `곡은 최대 ${AI_LIBRARY_MAX_TRACKS}개까지 저장할 수 있습니다.` });
       }
+
+      const removedRaw = req.body?.removedClientIds;
+      const removedIds: string[] = [];
+      if (Array.isArray(removedRaw)) {
+        for (const x of removedRaw) {
+          const id = clipStr(typeof x === "string" ? x : String(x), 220);
+          if (id) removedIds.push(id);
+        }
+      }
+      const removedUnique = [...new Set(removedIds)].slice(0, 500);
+
       const rows: (typeof aiMusicSavedTracks.$inferInsert)[] = [];
       const seenClient = new Set<string>();
       for (const item of raw) {
@@ -967,14 +978,54 @@ export async function registerRoutes(
           publishedToSite: Boolean(o.publishedToSite ?? o.published_to_site),
         });
       }
+
+      /** 기기 한 대가 짧은 목록으로 PUT 해도 다른 기기에서 올린 곡이 통째로 지워지지 않게: upsert + 명시적 삭제만 */
       await db.transaction(async (tx) => {
-        await tx.delete(aiMusicSavedTracks).where(eq(aiMusicSavedTracks.userId, userId));
-        if (rows.length > 0) {
-          await tx.insert(aiMusicSavedTracks).values(rows);
+        if (removedUnique.length > 0) {
+          await tx
+            .delete(aiMusicSavedTracks)
+            .where(and(eq(aiMusicSavedTracks.userId, userId), inArray(aiMusicSavedTracks.clientId, removedUnique)));
+        }
+        for (const row of rows) {
+          await tx
+            .insert(aiMusicSavedTracks)
+            .values(row)
+            .onConflictDoUpdate({
+              target: [aiMusicSavedTracks.userId, aiMusicSavedTracks.clientId],
+              set: {
+                createdAt: row.createdAt,
+                clipId: row.clipId,
+                audioUrl: row.audioUrl,
+                imageUrl: row.imageUrl,
+                title: row.title,
+                tags: row.tags,
+                prompt: row.prompt,
+                originalPrompt: row.originalPrompt,
+                customMode: row.customMode,
+                generationTaskId: row.generationTaskId,
+                generationProvider: row.generationProvider,
+                uploadCount: row.uploadCount,
+                downloadCount: row.downloadCount,
+                publishedToSite: row.publishedToSite,
+              },
+            });
+        }
+        const [cntRow] = await tx
+          .select({ c: sql<number>`cast(count(*) as int)` })
+          .from(aiMusicSavedTracks)
+          .where(eq(aiMusicSavedTracks.userId, userId));
+        const total = Number(cntRow?.c ?? 0);
+        if (total > AI_LIBRARY_MAX_TRACKS) {
+          throw Object.assign(new Error("AI_MUSIC_LIBRARY_LIMIT"), { code: "AI_MUSIC_LIBRARY_LIMIT" });
         }
       });
-      res.json({ ok: true, count: rows.length });
+      res.json({ ok: true, count: rows.length, removed: removedUnique.length });
     } catch (e: any) {
+      if (e?.code === "AI_MUSIC_LIBRARY_LIMIT") {
+        return res.status(400).json({
+          message: `저장 가능한 곡은 최대 ${AI_LIBRARY_MAX_TRACKS}개입니다. 일부 곡을 삭제한 뒤 다시 시도해 주세요.`,
+        });
+      }
       if (e?.code === "42P01" || String(e?.message || "").includes("does not exist")) {
         console.error("[ai-music library PUT] table missing — run npm run db:deploy");
         return res.status(503).json({ message: "라이브러리 DB가 아직 준비되지 않았습니다. 서버에 db:deploy를 실행해 주세요." });

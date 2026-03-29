@@ -328,9 +328,11 @@ export default function CreateMusic() {
   const libraryHydratedForUserRef = useRef<string | null>(null);
   const librarySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 이탈·백그라운드 직전 flush용 — 디바운스 PUT이 취소돼도 서버에 최종 목록이 올라가게 함 */
-  const libraryPendingSyncRef = useRef<{ userId: string; payload: ReturnType<typeof tracksToWirePayload> } | null>(
-    null,
-  );
+  const libraryPendingSyncRef = useRef<{
+    userId: string;
+    payload: ReturnType<typeof tracksToWirePayload>;
+    removedClientIds?: string[];
+  } | null>(null);
 
   const { data: libraryRemote, isFetched: libraryFetched } = useQuery<{ tracks?: unknown[] }>({
     queryKey: ["/api/ai-music/library"],
@@ -389,11 +391,13 @@ export default function CreateMusic() {
     const flushPendingLibrary = () => {
       const p = libraryPendingSyncRef.current;
       if (!p) return;
+      const body: Record<string, unknown> = { tracks: p.payload };
+      if (p.removedClientIds?.length) body.removedClientIds = p.removedClientIds;
       void fetch("/api/ai-music/library", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tracks: p.payload }),
+        body: JSON.stringify(body),
       }).catch(() => {});
     };
     const onPageHide = () => {
@@ -465,11 +469,12 @@ export default function CreateMusic() {
   }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
   const persistTracks = useCallback(
-    (tracks: SavedTrack[], opts?: { immediate?: boolean }) => {
+    (tracks: SavedTrack[], opts?: { immediate?: boolean; removedClientIds?: string[] }) => {
       const uid = user?.id;
       if (!uid) return;
       const payload = tracksToWirePayload(tracks);
-      libraryPendingSyncRef.current = { userId: uid, payload };
+      const removedClientIds = opts?.removedClientIds?.length ? [...opts.removedClientIds] : undefined;
+      libraryPendingSyncRef.current = { userId: uid, payload, removedClientIds };
       try {
         localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(payload));
       } catch {}
@@ -477,11 +482,13 @@ export default function CreateMusic() {
       if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
       const send = () => {
         librarySyncTimerRef.current = null;
+        const body: Record<string, unknown> = { tracks: payload };
+        if (removedClientIds?.length) body.removedClientIds = removedClientIds;
         void fetch("/api/ai-music/library", {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tracks: payload }),
+          body: JSON.stringify(body),
         })
           .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
           .catch(() => {});
@@ -499,7 +506,7 @@ export default function CreateMusic() {
     (id: string) => {
       setSavedTracks((prev) => {
         const next = prev.filter((t) => t.id !== id);
-        persistTracks(next);
+        persistTracks(next, { immediate: true, removedClientIds: [id] });
         return next;
       });
     },
