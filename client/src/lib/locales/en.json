@@ -1475,7 +1475,7 @@
     "outputFormatLabel": "Output format",
     "outputFormatMp3": "MP3 (default, smaller files)",
     "outputFormatWav": "WAV (high quality, for editing)",
-    "outputFormatHint": "WAV adds a conversion step after generation and produces larger files. Supported for both Suno and AIMusicAPI.",
+    "outputFormatHint": "WAV adds a conversion step after generation and produces larger files.",
     "wavPartialFailTitle": "WAV conversion issue",
     "wavPartialFailAll": "Could not fetch WAV; saved MP3 links instead.",
     "wavPartialFailSome": "Some tracks are WAV; others kept MP3 links.",

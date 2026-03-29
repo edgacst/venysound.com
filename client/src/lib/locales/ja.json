@@ -1292,7 +1292,7 @@
     "outputFormatLabel": "保存する音源形式",
     "outputFormatMp3": "MP3（標準・容量小）",
     "outputFormatWav": "WAV（高品質・編集向け）",
-    "outputFormatHint": "WAVは生成後に変換が入り時間がかかり、ファイルも大きくなります。Suno・AIMusicAPIの両方に対応しています。",
+    "outputFormatHint": "WAVは生成後に変換が入り時間がかかり、ファイルも大きくなります。",
     "wavPartialFailTitle": "WAV変換に失敗",
     "wavPartialFailAll": "WAVを取得できずMP3リンクで保存しました。",
     "wavPartialFailSome": "一部の曲のみWAVで保存され、残りはMP3リンクです。",

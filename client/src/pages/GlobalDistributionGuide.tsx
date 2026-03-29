@@ -55,6 +55,9 @@ export default function GlobalDistributionGuide() {
 
           <section className="rounded-xl border border-border/70 p-5 space-y-2">
             <h2 className="text-xl font-semibold">5) 고지 사항 및 법적 유의점</h2>
+            <p className="text-sm font-medium leading-relaxed text-red-600 dark:text-red-400">
+              해외 무료 배포는 본사의 서비스 업무일 뿐이며, 수익을 보장하는 것은 아닙니다.
+            </p>
             <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground leading-relaxed">
               <li>신청자는 음원, 아트워크, 메타데이터에 대한 배포 권리를 보유하거나 적법한 허락을 받아야 합니다.</li>
               <li>타인의 저작권/초상권/상표권 등을 침해한 경우 신청자에게 법적 책임이 발생할 수 있습니다.</li>

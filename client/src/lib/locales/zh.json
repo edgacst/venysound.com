@@ -1290,7 +1290,7 @@
     "outputFormatLabel": "保存音频格式",
     "outputFormatMp3": "MP3（默认，文件更小）",
     "outputFormatWav": "WAV（高音质，适合剪辑）",
-    "outputFormatHint": "选择WAV会在生成后增加转换步骤，耗时更长、文件更大。Suno与AIMusicAPI均支持。",
+    "outputFormatHint": "选择WAV会在生成后增加转换步骤，耗时更长、文件更大。",
     "wavPartialFailTitle": "WAV转换失败",
     "wavPartialFailAll": "无法获取WAV，已改用MP3链接保存。",
     "wavPartialFailSome": "部分曲目为WAV，其余仍为MP3链接。",

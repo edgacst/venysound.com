@@ -1497,7 +1497,7 @@
     "outputFormatLabel": "저장 음원 형식",
     "outputFormatMp3": "MP3 (기본, 용량 작음)",
     "outputFormatWav": "WAV (무손실에 가깝게, 편집용)",
-    "outputFormatHint": "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다. Suno·AIMusicAPI 모두 지원합니다.",
+    "outputFormatHint": "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다.",
     "wavPartialFailTitle": "WAV 변환 실패",
     "wavPartialFailAll": "WAV를 가져오지 못해 MP3 링크로 저장했습니다.",
     "wavPartialFailSome": "일부 곡만 WAV로 저장되었고, 나머지는 MP3 링크입니다.",

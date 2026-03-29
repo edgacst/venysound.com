@@ -1053,7 +1053,7 @@ export default function CreateMusic() {
                         <p className="mt-1.5 text-xs text-muted-foreground">
                           {t(
                             "createMusic.outputFormatHint",
-                            "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다. Suno·AIMusicAPI 모두 지원합니다.",
+                            "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다.",
                           )}
                         </p>
                       </div>
