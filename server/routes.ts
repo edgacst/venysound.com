@@ -731,6 +731,99 @@ export async function registerRoutes(
     }
   });
 
+  /** Suno WAV 변환 완료 콜백 URL용 (본 서버는 폴링으로 결과를 받지만 API 스펙상 필수) */
+  app.post("/api/ai-music/suno-wav-callback", (_req, res) => {
+    res.status(200).json({ received: true });
+  });
+
+  const WAV_POLL_MAX_ATTEMPTS = 75;
+  const WAV_POLL_INTERVAL_MS = 2000;
+
+  /** 생성된 클립의 고품질 WAV 다운로드 URL 조회 (AIMusicAPI: 즉시, Suno: 변환 작업 시작 후 폴링) */
+  app.post("/api/ai-music/wav-url", isAuthenticated, async (req, res) => {
+    const body = req.body as { clip_id?: string; generation_task_id?: string; provider?: string };
+    const clipId = typeof body.clip_id === "string" ? body.clip_id.trim() : "";
+    if (!clipId) {
+      return res.status(400).json({ message: "clip_id가 필요합니다." });
+    }
+    const provider = ((body.provider as string) || AI_MUSIC_PROVIDER || "").trim();
+    const genTaskId = typeof body.generation_task_id === "string" ? body.generation_task_id.trim() : "";
+
+    try {
+      if (provider === "aimusicapi" && AIMUSICAPI_KEY) {
+        const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/wav`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ clip_id: clipId }),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg =
+            (data as { message?: string }).message ?? (data as { error?: string }).error ?? "WAV 변환 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const wavUrl = (data as { data?: { wav_url?: string } }).data?.wav_url;
+        if (!wavUrl || typeof wavUrl !== "string") {
+          return res.status(502).json({ message: "WAV URL을 받지 못했습니다." });
+        }
+        return res.json({ wav_url: wavUrl });
+      }
+
+      if (provider === "suno" && SUNOAPI_KEY) {
+        if (!genTaskId) {
+          return res.status(400).json({ message: "Suno WAV 변환에는 생성 작업 ID(generation_task_id)가 필요합니다." });
+        }
+        const genRes = await fetch(`${SUNOAPI_BASE}/api/v1/wav/generate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${SUNOAPI_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            taskId: genTaskId,
+            audioId: clipId,
+            callBackUrl: `${siteBase}/api/ai-music/suno-wav-callback`,
+          }),
+        });
+        const genData = await genRes.json().catch(() => ({}));
+        const bizCode = (genData as { code?: number }).code;
+        if (!genRes.ok || bizCode !== 200) {
+          const msg = (genData as { msg?: string }).msg ?? "WAV 변환 시작 실패";
+          return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
+            message: String(msg),
+          });
+        }
+        const gd = (genData as { data?: { taskId?: string; task_id?: string } }).data;
+        const wavTaskId =
+          (typeof gd?.taskId === "string" ? gd.taskId : "") || (typeof gd?.task_id === "string" ? gd.task_id : "") || "";
+        if (!wavTaskId) {
+          return res.status(502).json({ message: "WAV 작업 ID를 받지 못했습니다." });
+        }
+        for (let i = 0; i < WAV_POLL_MAX_ATTEMPTS; i++) {
+          if (i > 0) {
+            await new Promise((r) => setTimeout(r, WAV_POLL_INTERVAL_MS));
+          }
+          const infoRes = await fetch(`${SUNOAPI_BASE}/api/v1/wav/record-info?taskId=${encodeURIComponent(wavTaskId)}`, {
+            headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+          });
+          const infoData = await infoRes.json().catch(() => ({}));
+          if ((infoData as { code?: number }).code !== 200) continue;
+          const d = (infoData as { data?: { successFlag?: string; response?: { audioWavUrl?: string }; errorMessage?: string } }).data;
+          const flag = d?.successFlag;
+          if (flag === "SUCCESS" && d?.response?.audioWavUrl) {
+            return res.json({ wav_url: d.response.audioWavUrl });
+          }
+          if (flag && ["CREATE_TASK_FAILED", "GENERATE_WAV_FAILED", "CALLBACK_EXCEPTION"].includes(flag)) {
+            return res.status(502).json({ message: d?.errorMessage ?? "WAV 변환에 실패했습니다." });
+          }
+        }
+        return res.status(504).json({ message: "WAV 변환 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요." });
+      }
+
+      return res.status(503).json({ message: "WAV 변환이 이 환경에서 지원되지 않습니다." });
+    } catch (e) {
+      console.error("[ai-music wav-url]", e);
+      return res.status(500).json({ message: "WAV 변환 중 오류가 발생했습니다." });
+    }
+  });
+
   // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI 우선, 없으면 AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
     if (SUNOAPI_KEY) {

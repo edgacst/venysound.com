@@ -351,6 +351,8 @@ export default function CreateMusic() {
   });
 
   const [mode, setMode] = useState<CreateMode>("description");
+  /** MP3: 생성 직후 스트리밍 URL. WAV: 서버가 외부 API로 WAV URL을 받아 온 뒤 저장(용량 큼, 편집용). */
+  const [outputFormat, setOutputFormat] = useState<"mp3" | "wav">("mp3");
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -620,7 +622,8 @@ export default function CreateMusic() {
     } catch {
       const a = document.createElement("a");
       a.href = track.audio_url;
-      a.download = `${baseName}.mp3`;
+      const fallbackExt = /\.wav(\?|$)/i.test(track.audio_url) ? ".wav" : ".mp3";
+      a.download = `${baseName}${fallbackExt}`;
       a.target = "_blank";
       a.rel = "noopener";
       a.click();
@@ -646,17 +649,14 @@ export default function CreateMusic() {
       }
       const data = await res.json();
       const state = data.state ?? "pending";
-      setStatus(state);
+
       if (state === "succeeded" && Array.isArray(data.data)) {
-        generationStartRef.current = null;
-        setResultTracks(data.data);
-        setTaskId(null);
         const now = Date.now();
         const userTitle = submittedTitleRef.current.trim();
         const userTags = submittedTagsRef.current.trim();
         const genTaskId = tid;
         const genProvider = provider ?? undefined;
-        const toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
+        let toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
           const t = tr as Record<string, unknown>;
           return {
             ...tr,
@@ -674,12 +674,66 @@ export default function CreateMusic() {
             generationProvider: genProvider,
           };
         });
+
+        if (outputFormat === "wav") {
+          const wavResults = await Promise.all(
+            toSave.map(async (tr) => {
+              if (!tr.clip_id || !tr.audio_url) {
+                return { track: tr, ok: true as const, skipped: true as const };
+              }
+              try {
+                const wavRes = await fetch("/api/ai-music/wav-url", {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    clip_id: tr.clip_id,
+                    generation_task_id: genTaskId,
+                    provider: genProvider,
+                  }),
+                });
+                const j = (await wavRes.json().catch(() => ({}))) as { wav_url?: string };
+                if (wavRes.ok && typeof j.wav_url === "string" && j.wav_url.length > 0) {
+                  return { track: { ...tr, audio_url: j.wav_url }, ok: true as const, skipped: false as const };
+                }
+              } catch {
+                /* keep MP3 URL */
+              }
+              return { track: tr, ok: false as const, skipped: false as const };
+            }),
+          );
+          toSave = wavResults.map((r) => r.track);
+          const tried = wavResults.filter((r) => !r.skipped);
+          const failed = tried.filter((r) => !r.ok).length;
+          if (tried.length > 0 && failed > 0) {
+            toast({
+              title: t("createMusic.wavPartialFailTitle", "WAV 변환 실패"),
+              description:
+                failed === tried.length
+                  ? t("createMusic.wavPartialFailAll", "WAV를 가져오지 못해 MP3 링크로 저장했습니다.")
+                  : t("createMusic.wavPartialFailSome", "일부 곡만 WAV로 저장되었고, 나머지는 MP3 링크입니다."),
+              variant: failed === tried.length ? "destructive" : "default",
+            });
+          }
+        }
+
+        generationStartRef.current = null;
+        setStatus("succeeded");
+        setTaskId(null);
+        const displayTracks: GeneratedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => ({
+          ...tr,
+          audio_url: toSave[i]?.audio_url ?? tr.audio_url,
+        }));
+        setResultTracks(displayTracks);
         setSavedTracks((prev) => {
           const next = [...toSave, ...prev];
           persistTracks(next, { immediate: true });
           return next;
         });
+        return;
       }
+
+      setStatus(state);
       if (state === "failed") {
         generationStartRef.current = null;
         setErrorMessage(data.message ?? "생성에 실패했습니다.");
@@ -689,7 +743,7 @@ export default function CreateMusic() {
         setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
-    [persistTracks]
+    [outputFormat, persistTracks, t, toast]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -973,6 +1027,37 @@ export default function CreateMusic() {
                         </div>
                       </div>
                       <div>
+                        <label className="block text-sm font-medium mb-2">{t("createMusic.outputFormatLabel", "저장 음원 형식")}</label>
+                        <div className="flex flex-wrap gap-4">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="outputFormat"
+                              checked={outputFormat === "mp3"}
+                              onChange={() => setOutputFormat("mp3")}
+                              className="rounded-full"
+                            />
+                            <span>{t("createMusic.outputFormatMp3", "MP3 (기본, 용량 작음)")}</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="outputFormat"
+                              checked={outputFormat === "wav"}
+                              onChange={() => setOutputFormat("wav")}
+                              className="rounded-full"
+                            />
+                            <span>{t("createMusic.outputFormatWav", "WAV (무손실에 가깝게, 편집용)")}</span>
+                          </label>
+                        </div>
+                        <p className="mt-1.5 text-xs text-muted-foreground">
+                          {t(
+                            "createMusic.outputFormatHint",
+                            "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다. Suno·AIMusicAPI 모두 지원합니다.",
+                          )}
+                        </p>
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium mb-1">{t("createMusic.titleLabel", "제목 (선택)")}</label>
                         <input
                           type="text"
@@ -1096,6 +1181,14 @@ export default function CreateMusic() {
                             "음원은 외부 AI 서버에서 만듭니다. 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
                           )}
                         </p>
+                        {outputFormat === "wav" && (
+                          <p className="text-xs text-muted-foreground/90 leading-relaxed pl-6">
+                            {t(
+                              "createMusic.generatingWavExtraHint",
+                              "WAV를 선택하셨습니다. 곡 생성이 끝난 뒤 WAV 변환에 1~3분가량 더 걸릴 수 있습니다.",
+                            )}
+                          </p>
+                        )}
                       </div>
                         );
                       })()}

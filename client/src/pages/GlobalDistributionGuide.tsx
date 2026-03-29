@@ -29,8 +29,8 @@ export default function GlobalDistributionGuide() {
           <section className="rounded-xl border border-border/70 p-5 space-y-2">
             <h2 className="text-xl font-semibold">2) 이용 가능 구독자</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              글로벌 출시 신청은 Pro, Premium 구독자를 대상으로 제공합니다. 신청 시점 및 승인 시점에 구독 상태가 유효해야
-              하며, 정책 변경 시 적용 조건이 업데이트될 수 있습니다.
+              글로벌 출시 신청은 Pro, Premium 구독자를 대상으로 제공합니다. 신청 시점 및 승인 시점에 구독 상태가 유효해야 하며,
+              정책 변경 시 적용 조건이 업데이트될 수 있습니다.(글로벌무료배포는 월 4곡으로 한정합니다.)
             </p>
           </section>
 
