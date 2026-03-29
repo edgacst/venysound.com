@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
 /** /radio/:slug 청취 페이지( studio / create / channels 제외 ) */
@@ -11,43 +11,35 @@ function pathIsRadioListenChannel(pathname: string): boolean {
   return s !== "channels" && s !== "create";
 }
 
-const SS_HREF = "venyNavBeforePop";
+function rootLooksBroken(): boolean {
+  const root = document.getElementById("root");
+  const text = root?.textContent?.replace(/\s/g, "") ?? "";
+  if (text.length < 100) return true;
+  const inner = root?.innerHTML?.replace(/\s/g, "") ?? "";
+  // 빈 트리·깨진 하이드레이션: 텍스트는 있는데 DOM이 비정상적으로 얇은 경우
+  return text.length < 160 && inner.length < 280;
+}
 
 /**
- * TWA·일부 WebView에서 /radio/:slug 에서 뒤로가기 시 SPA는 빈 화면만 남는 경우가 있음.
- * history.replaceState 로 스택을 만지면 wouter와 엇갈릴 수 있어, popstate 후 본문이 비었으면
- * /radio 로 전체 네비게이션으로 복구한다.
+ * TWA·일부 WebView에서 /radio/:slug 에서 뒤로가기 시 SPA가 빈 화면만 남는 경우가 있음.
+ * sessionStorage로 직전 URL을 잡으면 popstate 직후 useEffect가 새 URL로 덮어 실패할 수 있어,
+ * useLayoutEffect로 동기화한 ref를 popstate **capture**에서 읽는다.
  */
 export function RadioBackNavigationRecovery() {
   const [loc] = useLocation();
+  /** 마지막으로 커밋된 wouter 경로 — capture 단계 popstate 시 아직 이전 값 */
+  const committedPathRef = useRef(loc);
   const recoveringRef = useRef(false);
 
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(SS_HREF, window.location.href);
-    } catch {
-      /* ignore */
-    }
+  useLayoutEffect(() => {
+    committedPathRef.current = loc;
   }, [loc]);
 
   useEffect(() => {
     const onPop = () => {
-      let beforeHref = "";
-      try {
-        beforeHref = sessionStorage.getItem(SS_HREF) || "";
-      } catch {
-        beforeHref = "";
-      }
-
-      let beforePath = "";
-      try {
-        beforePath = beforeHref ? new URL(beforeHref).pathname : "";
-      } catch {
-        beforePath = "";
-      }
-
-      const wasRadioListen = pathIsRadioListenChannel(beforePath);
-      if (!wasRadioListen) return;
+      const beforeRaw = committedPathRef.current || "/";
+      const beforePath = (beforeRaw.replace(/\/$/, "") || "/").split("?")[0];
+      if (!pathIsRadioListenChannel(beforePath)) return;
 
       const nowPath = (window.location.pathname.replace(/\/$/, "") || "/").split("?")[0];
       if (nowPath !== "/" && nowPath !== "/radio") return;
@@ -56,10 +48,7 @@ export function RadioBackNavigationRecovery() {
 
       window.setTimeout(() => {
         if (recoveringRef.current) return;
-        const root = document.getElementById("root");
-        const text = root?.textContent?.replace(/\s/g, "") ?? "";
-        // 정상 홈·방송국은 텍스트가 훨씬 많음. 빈/깨진 트리만 복구
-        if (text.length >= 100) return;
+        if (!rootLooksBroken()) return;
 
         recoveringRef.current = true;
         window.location.replace(`${window.location.origin}/radio`);
@@ -74,10 +63,10 @@ export function RadioBackNavigationRecovery() {
       }
     };
 
-    window.addEventListener("popstate", onPop);
+    window.addEventListener("popstate", onPop, true);
     window.addEventListener("pageshow", onPageShow);
     return () => {
-      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("popstate", onPop, true);
       window.removeEventListener("pageshow", onPageShow);
     };
   }, []);

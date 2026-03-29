@@ -1275,6 +1275,7 @@
     "heroTitle2": "创作你的音乐",
     "heroTitle3": "",
     "heroDesc": "输入歌词或风格，AI将生成音乐。生成的歌曲可播放、下载后上传分享。",
+    "heroCopyrightWarning": "模仿知名艺人的内容可能被算法判定为版权风险，请注意。",
     "comingSoon": "音乐生成API对接准备中。完成后即可在本页直接生成。",
     "uploadCta": "上传创作的音乐",
     "loginRequired": "请登录后使用音乐生成功能。",

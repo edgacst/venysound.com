@@ -670,6 +670,12 @@ export default function CreateMusic() {
               <p className="text-muted-foreground">
                 {t("createMusic.heroDesc", "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드 후 업로드하여 공유할 수 있습니다.")}
               </p>
+              <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400 max-w-2xl mx-auto leading-relaxed underline decoration-red-600 dark:decoration-red-400 underline-offset-2">
+                {t(
+                  "createMusic.heroCopyrightWarning",
+                  "유명가수를 모방하는 내용을 사용하면 알고리즘에 의해 저작권에 걸리므로 주의하세요",
+                )}
+              </p>
             </div>
 
             {!authLoading && !user && (
