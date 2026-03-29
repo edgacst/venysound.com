@@ -1958,9 +1958,9 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  /** 관리자 회원 목록. 최신 가입순 상한(대량 시 응답·메모리 보호). 검색: 로그인 아이디·이메일·이름·UUID 일부. */
+  /** 관리자 회원 목록. 최신 가입순 상한(대량 시 응답·메모리 보호). 검색: COALESCE+ILIKE 로 NULL 컬럼·PG 호환. */
   async getAllUsers(search?: string): Promise<any[]> {
-    const MAX_ROWS = 4000;
+    const MAX_ROWS = 8000;
     const trimmed = typeof search === "string" ? search.trim() : "";
     if (trimmed) {
       const pat = `%${trimmed}%`;
@@ -1968,13 +1968,13 @@ export class DatabaseStorage implements IStorage {
         .select()
         .from(users)
         .where(
-          or(
-            ilike(users.id, pat),
-            ilike(users.email, pat),
-            ilike(users.username, pat),
-            ilike(users.firstName, pat),
-            ilike(users.lastName, pat),
-          ),
+          sql`(
+            CAST(${users.id} AS TEXT) ILIKE ${pat}
+            OR COALESCE(${users.email}, '') ILIKE ${pat}
+            OR COALESCE(${users.username}, '') ILIKE ${pat}
+            OR COALESCE(${users.firstName}, '') ILIKE ${pat}
+            OR COALESCE(${users.lastName}, '') ILIKE ${pat}
+          )`,
         )
         .orderBy(desc(users.createdAt))
         .limit(MAX_ROWS);

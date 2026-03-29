@@ -688,16 +688,19 @@ export default function Admin() {
     queryFn: async () => {
       const url = userSearch ? `/api/admin/users?search=${encodeURIComponent(userSearch)}` : "/api/admin/users";
       const res = await fetch(url, { credentials: "include", cache: "no-store" });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => null);
       if (!res.ok) {
-        const msg = typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : null;
+        const body = data && typeof data === "object" ? (data as { message?: string }) : {};
+        const msg = typeof body.message === "string" ? body.message : null;
         throw new Error(msg || "Failed to fetch users");
       }
-      return data;
+      return Array.isArray(data) ? data : [];
     },
     enabled: adminCheck?.isAdmin === true,
     staleTime: 0,
+    gcTime: 0,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
 
   const deletePostMutation = useMutation({

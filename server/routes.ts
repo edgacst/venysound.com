@@ -3703,6 +3703,10 @@ export async function registerRoutes(
     try {
       const search = req.query.search as string | undefined;
       const usersList = await storage.getAllUsers(search);
+      if (!Array.isArray(usersList)) {
+        console.error("[admin/users] non-array result", typeof usersList);
+        return res.status(500).json({ message: "회원 목록 형식 오류" });
+      }
       res.json(usersList);
     } catch (e: any) {
       console.error("[admin/users]", e);

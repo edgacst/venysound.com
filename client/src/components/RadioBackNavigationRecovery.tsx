@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
-/** popstate 직전 SPA 경로 (useLayoutEffect보다 먼저 읽기 위해 sessionStorage 동기 기록) */
+/** popstate 직전 SPA 경로 (layout effect로 동기 기록) */
 const SS_LAST_SPA_PATH = "venyLastSpaPath";
 
 /** /radio/:slug 청취 페이지( studio / create / channels 제외 ) */
@@ -18,30 +18,12 @@ function normalizePath(pathname: string): string {
   return (pathname.replace(/\/$/, "") || "/").split("?")[0];
 }
 
-function rootLooksBroken(): boolean {
-  const root = document.getElementById("root");
-  const text = root?.textContent?.replace(/\s/g, "") ?? "";
-  if (text.length < 100) return true;
-  const inner = root?.innerHTML?.replace(/\s/g, "") ?? "";
-  return text.length < 160 && inner.length < 280;
-}
-
-/** PWA·TWA·iOS 홈화면 등: 시스템 뒤로가기 시 SPA가 자주 깨짐 */
-function isStandaloneLike(): boolean {
-  try {
-    if (typeof window === "undefined") return false;
-    if ((window.navigator as unknown as { standalone?: boolean }).standalone === true) return true;
-    return window.matchMedia("(display-mode: standalone)").matches;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * TWA·WebView에서 /radio/:slug → 뒤로가기 시 빈 화면이 되는 경우 대응.
- * - sessionStorage에 마지막 wouter 경로를 동기 저장 → popstate 시점에 직전 경로 확정
- * - standalone(TWA/홈화면): 청취에서 / 또는 /radio 로 돌아오면 곧바로 /radio 전체 로드(블랙 스크린 우선 방지)
- * - 일반 브라우저: #root 가 비어 보일 때만 복구 + 지연 1회 재시도
+ * TWA·모바일 크롬 등에서 /radio/:slug → 시스템 뒤로가기 시 SPA가 멈추거나 검은 화면만 남는 경우.
+ *
+ * #root 안에 글로벌 플레이어·숨김 텍스트가 많아 "빈 화면" 자동 판별(root 텍스트 길이)은 오탐/미탐이 심함.
+ * 청취 페이지에서만 / 또는 /radio 로 돌아온 popstate 한 번이면 **항상** /radio 로 전체 로드해 복구한다.
+ * (홈으로 돌아가고 싶으면 상단에서 홈 링크 사용.)
  */
 export function RadioBackNavigationRecovery() {
   const [loc] = useLocation();
@@ -51,7 +33,8 @@ export function RadioBackNavigationRecovery() {
   useLayoutEffect(() => {
     committedPathRef.current = loc;
     try {
-      sessionStorage.setItem(SS_LAST_SPA_PATH, loc);
+      const p = normalizePath(loc || window.location.pathname || "/");
+      sessionStorage.setItem(SS_LAST_SPA_PATH, p);
     } catch {
       /* ignore */
     }
@@ -78,23 +61,7 @@ export function RadioBackNavigationRecovery() {
       if (nowPath !== "/" && nowPath !== "/radio") return;
 
       if (recoveringRef.current) return;
-
-      if (isStandaloneLike()) {
-        goRadio();
-        return;
-      }
-
-      window.setTimeout(() => {
-        if (recoveringRef.current) return;
-        if (!rootLooksBroken()) return;
-        goRadio();
-      }, 400);
-
-      window.setTimeout(() => {
-        if (recoveringRef.current) return;
-        if (!rootLooksBroken()) return;
-        goRadio();
-      }, 900);
+      goRadio();
     };
 
     const onPageShow = (ev: PageTransitionEvent) => {
