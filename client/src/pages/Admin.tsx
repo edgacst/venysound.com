@@ -688,8 +688,12 @@ export default function Admin() {
     queryFn: async () => {
       const url = userSearch ? `/api/admin/users?search=${encodeURIComponent(userSearch)}` : "/api/admin/users";
       const res = await fetch(url, { credentials: "include", cache: "no-store" });
-      if (!res.ok) throw new Error("Failed to fetch users");
-      return res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof (data as { message?: string }).message === "string" ? (data as { message: string }).message : null;
+        throw new Error(msg || "Failed to fetch users");
+      }
+      return data;
     },
     enabled: adminCheck?.isAdmin === true,
     staleTime: 0,

@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation } from "wouter";
 
+/** popstate 직전 SPA 경로 (useLayoutEffect보다 먼저 읽기 위해 sessionStorage 동기 기록) */
+const SS_LAST_SPA_PATH = "venyLastSpaPath";
+
 /** /radio/:slug 청취 페이지( studio / create / channels 제외 ) */
 function pathIsRadioListenChannel(pathname: string): boolean {
   const p = (pathname.replace(/\/$/, "") || "/").split("?")[0];
@@ -11,53 +14,92 @@ function pathIsRadioListenChannel(pathname: string): boolean {
   return s !== "channels" && s !== "create";
 }
 
+function normalizePath(pathname: string): string {
+  return (pathname.replace(/\/$/, "") || "/").split("?")[0];
+}
+
 function rootLooksBroken(): boolean {
   const root = document.getElementById("root");
   const text = root?.textContent?.replace(/\s/g, "") ?? "";
   if (text.length < 100) return true;
   const inner = root?.innerHTML?.replace(/\s/g, "") ?? "";
-  // 빈 트리·깨진 하이드레이션: 텍스트는 있는데 DOM이 비정상적으로 얇은 경우
   return text.length < 160 && inner.length < 280;
 }
 
+/** PWA·TWA·iOS 홈화면 등: 시스템 뒤로가기 시 SPA가 자주 깨짐 */
+function isStandaloneLike(): boolean {
+  try {
+    if (typeof window === "undefined") return false;
+    if ((window.navigator as unknown as { standalone?: boolean }).standalone === true) return true;
+    return window.matchMedia("(display-mode: standalone)").matches;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * TWA·일부 WebView에서 /radio/:slug 에서 뒤로가기 시 SPA가 빈 화면만 남는 경우가 있음.
- * sessionStorage로 직전 URL을 잡으면 popstate 직후 useEffect가 새 URL로 덮어 실패할 수 있어,
- * useLayoutEffect로 동기화한 ref를 popstate **capture**에서 읽는다.
+ * TWA·WebView에서 /radio/:slug → 뒤로가기 시 빈 화면이 되는 경우 대응.
+ * - sessionStorage에 마지막 wouter 경로를 동기 저장 → popstate 시점에 직전 경로 확정
+ * - standalone(TWA/홈화면): 청취에서 / 또는 /radio 로 돌아오면 곧바로 /radio 전체 로드(블랙 스크린 우선 방지)
+ * - 일반 브라우저: #root 가 비어 보일 때만 복구 + 지연 1회 재시도
  */
 export function RadioBackNavigationRecovery() {
   const [loc] = useLocation();
-  /** 마지막으로 커밋된 wouter 경로 — capture 단계 popstate 시 아직 이전 값 */
   const committedPathRef = useRef(loc);
   const recoveringRef = useRef(false);
 
   useLayoutEffect(() => {
     committedPathRef.current = loc;
+    try {
+      sessionStorage.setItem(SS_LAST_SPA_PATH, loc);
+    } catch {
+      /* ignore */
+    }
   }, [loc]);
 
   useEffect(() => {
+    const goRadio = () => {
+      if (recoveringRef.current) return;
+      recoveringRef.current = true;
+      window.location.replace(`${window.location.origin}/radio`);
+    };
+
     const onPop = () => {
-      const beforeRaw = committedPathRef.current || "/";
-      const beforePath = (beforeRaw.replace(/\/$/, "") || "/").split("?")[0];
+      let stored = "";
+      try {
+        stored = sessionStorage.getItem(SS_LAST_SPA_PATH) || "";
+      } catch {
+        stored = "";
+      }
+      const beforePath = normalizePath(stored || committedPathRef.current || "/");
       if (!pathIsRadioListenChannel(beforePath)) return;
 
-      const nowPath = (window.location.pathname.replace(/\/$/, "") || "/").split("?")[0];
+      const nowPath = normalizePath(window.location.pathname);
       if (nowPath !== "/" && nowPath !== "/radio") return;
 
       if (recoveringRef.current) return;
 
+      if (isStandaloneLike()) {
+        goRadio();
+        return;
+      }
+
       window.setTimeout(() => {
         if (recoveringRef.current) return;
         if (!rootLooksBroken()) return;
-
-        recoveringRef.current = true;
-        window.location.replace(`${window.location.origin}/radio`);
+        goRadio();
       }, 400);
+
+      window.setTimeout(() => {
+        if (recoveringRef.current) return;
+        if (!rootLooksBroken()) return;
+        goRadio();
+      }, 900);
     };
 
     const onPageShow = (ev: PageTransitionEvent) => {
       if (!ev.persisted) return;
-      const p = window.location.pathname.replace(/\/$/, "") || "/";
+      const p = normalizePath(window.location.pathname);
       if (pathIsRadioListenChannel(p)) {
         window.location.reload();
       }

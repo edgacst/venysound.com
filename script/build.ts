@@ -38,11 +38,11 @@ async function buildAll() {
   console.log("building client...");
   await viteBuild();
 
-  // 배포 반영 확인용: index.html에 빌드 시각 주입 (페이지 소스에서 확인 가능)
+  // 배포 반영 확인용: index.html 주석 + /build.json (curl·브라우저로 배포 시각 확인)
   const publicIndex = join(process.cwd(), "dist/public/index.html");
+  const buildTime = new Date().toISOString();
   try {
     let html = await readFile(publicIndex, "utf-8");
-    const buildTime = new Date().toISOString();
     const buildComment = `<!-- build: ${buildTime} -->`;
     if (html.includes("<!-- build:")) {
       html = html.replace(/<!-- build: [^>]+ -->/, buildComment);
@@ -50,6 +50,10 @@ async function buildAll() {
       html = html.replace("</head>", `\n    ${buildComment}\n  </head>`);
     }
     await writeFile(publicIndex, html);
+    await writeFile(
+      join(process.cwd(), "dist/public/build.json"),
+      `${JSON.stringify({ builtAt: buildTime })}\n`,
+    );
   } catch (_) {}
 
   console.log("building server...");

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
 import { execSync } from "child_process";
-import { existsSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
 import { submitDistributionReleaseToDistributor } from "./distribution/submitDistributor";
@@ -509,9 +509,20 @@ export async function registerRoutes(
     }
   }
 
-  // 배포 시 헬스 체크용 (인증 없음)
+  // 배포 시 헬스 체크용 (인증 없음). builtAt = 마지막 npm run build 시각 (dist/public/build.json)
   app.get("/api/health", (_req, res) => {
-    res.status(200).json({ ok: true });
+    let builtAt: string | undefined;
+    try {
+      const root = (globalThis as { __APP_ROOT__?: string }).__APP_ROOT__ ?? process.cwd();
+      const p = path.join(root, "dist", "public", "build.json");
+      if (existsSync(p)) {
+        const j = JSON.parse(readFileSync(p, "utf-8")) as { builtAt?: string };
+        if (typeof j.builtAt === "string") builtAt = j.builtAt;
+      }
+    } catch {
+      /* ignore */
+    }
+    res.status(200).json({ ok: true, ...(builtAt ? { builtAt } : {}) });
   });
 
   // 사이트맵 (SEO) — /api 경로로 두어 정적·캐시와 겹치지 않게 함
@@ -3689,9 +3700,14 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/users", isAuthenticated, isAdmin, async (req, res) => {
-    const search = req.query.search as string | undefined;
-    const usersList = await storage.getAllUsers(search);
-    res.json(usersList);
+    try {
+      const search = req.query.search as string | undefined;
+      const usersList = await storage.getAllUsers(search);
+      res.json(usersList);
+    } catch (e: any) {
+      console.error("[admin/users]", e);
+      res.status(500).json({ message: e?.message ?? "회원 목록을 불러오지 못했습니다." });
+    }
   });
 
   app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
