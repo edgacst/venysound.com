@@ -18,7 +18,7 @@ import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigur
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
-import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs } from "../shared/models/auth";
+import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs, aiMusicSavedTracks } from "../shared/models/auth";
 import { db } from "./db";
 import {
   users,
@@ -881,6 +881,105 @@ export async function registerRoutes(
         creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
         deductsCreditsPerCreate: false,
       });
+    }
+  });
+
+  const AI_LIBRARY_MAX_TRACKS = 400;
+  const clipStr = (v: unknown, max: number): string | null => {
+    if (v == null) return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    return s.length <= max ? s : s.slice(0, max);
+  };
+
+  app.get("/api/ai-music/library", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      const rows = await db
+        .select()
+        .from(aiMusicSavedTracks)
+        .where(eq(aiMusicSavedTracks.userId, userId))
+        .orderBy(desc(aiMusicSavedTracks.createdAt));
+      const tracks = rows.map((r) => ({
+        id: r.clientId,
+        createdAt: r.createdAt ? new Date(r.createdAt).getTime() : Date.now(),
+        clip_id: r.clipId ?? undefined,
+        audio_url: r.audioUrl ?? undefined,
+        image_url: r.imageUrl ?? undefined,
+        title: r.title ?? undefined,
+        tags: r.tags ?? undefined,
+        prompt: r.prompt ?? undefined,
+        original_prompt: r.originalPrompt ?? undefined,
+        custom_mode: Boolean(r.customMode),
+        generationTaskId: r.generationTaskId ?? undefined,
+        generationProvider: r.generationProvider ?? undefined,
+        uploadCount: r.uploadCount ?? 0,
+        downloadCount: r.downloadCount ?? 0,
+        publishedToSite: Boolean(r.publishedToSite),
+      }));
+      res.json({ tracks });
+    } catch (e) {
+      console.error("[ai-music library GET]", e);
+      res.status(500).json({ message: "라이브러리를 불러오지 못했습니다." });
+    }
+  });
+
+  app.put("/api/ai-music/library", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      const raw = req.body?.tracks;
+      if (!Array.isArray(raw)) {
+        return res.status(400).json({ message: "tracks 배열이 필요합니다." });
+      }
+      if (raw.length > AI_LIBRARY_MAX_TRACKS) {
+        return res.status(400).json({ message: `곡은 최대 ${AI_LIBRARY_MAX_TRACKS}개까지 저장할 수 있습니다.` });
+      }
+      const rows: (typeof aiMusicSavedTracks.$inferInsert)[] = [];
+      const seenClient = new Set<string>();
+      for (const item of raw) {
+        if (!item || typeof item !== "object") continue;
+        const o = item as Record<string, unknown>;
+        const id = clipStr(o.id, 220);
+        if (!id) continue;
+        if (seenClient.has(id)) continue;
+        seenClient.add(id);
+        const createdAtMs = typeof o.createdAt === "number" && Number.isFinite(o.createdAt) ? o.createdAt : Date.now();
+        const createdAt = new Date(createdAtMs);
+        rows.push({
+          userId,
+          clientId: id,
+          createdAt: isNaN(createdAt.getTime()) ? new Date() : createdAt,
+          clipId: clipStr(o.clip_id ?? o.clipId, 512),
+          audioUrl: clipStr(o.audio_url ?? o.audioUrl, 8000),
+          imageUrl: clipStr(o.image_url ?? o.imageUrl, 8000),
+          title: clipStr(o.title, 2000),
+          tags: clipStr(o.tags, 4000),
+          prompt: clipStr(o.prompt, 12000),
+          originalPrompt: clipStr(o.original_prompt ?? o.originalPrompt, 12000),
+          customMode: Boolean(o.custom_mode ?? o.customMode),
+          generationTaskId: clipStr(o.generationTaskId ?? o.generation_task_id, 128),
+          generationProvider: clipStr(o.generationProvider ?? o.generation_provider, 32),
+          uploadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.uploadCount) || 0))),
+          downloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.downloadCount) || 0))),
+          publishedToSite: Boolean(o.publishedToSite ?? o.published_to_site),
+        });
+      }
+      await db.transaction(async (tx) => {
+        await tx.delete(aiMusicSavedTracks).where(eq(aiMusicSavedTracks.userId, userId));
+        if (rows.length > 0) {
+          await tx.insert(aiMusicSavedTracks).values(rows);
+        }
+      });
+      res.json({ ok: true, count: rows.length });
+    } catch (e: any) {
+      if (e?.code === "42P01" || String(e?.message || "").includes("does not exist")) {
+        console.error("[ai-music library PUT] table missing — run npm run db:deploy");
+        return res.status(503).json({ message: "라이브러리 DB가 아직 준비되지 않았습니다. 서버에 db:deploy를 실행해 주세요." });
+      }
+      console.error("[ai-music library PUT]", e);
+      res.status(500).json({ message: "라이브러리를 저장하지 못했습니다." });
     }
   });
 

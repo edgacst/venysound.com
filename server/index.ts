@@ -180,7 +180,7 @@ async function runAutoMigrations() {
 const app = express();
 const httpServer = createServer(app);
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 
 /** 이후 요청에서 Sec-CH-UA-Mobile 등이 붙도록(디바이스 집계 정확도) */

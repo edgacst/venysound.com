@@ -25,7 +25,7 @@ function nextAiMusicPollMs(apiState: string): number {
   if (apiState === "running") return 1500;
   return 2200;
 }
-/** 이전에는 `createMusic_savedTracks` 단일 키를 썼음 → 계정 간 목록이 섞임. 지금은 계정별 키만 사용. */
+/** 로컬 캐시 키(계정별). 서버 `GET/PUT /api/ai-music/library`와 병합해 PC·모바일 동기화. */
 
 function savedTracksStorageKey(userId: string): string {
   return `createMusic_savedTracks:${userId}`;
@@ -221,6 +221,90 @@ type SavedTrack = GeneratedTrack & {
   generationProvider?: string;
 };
 
+function parseLocalStorageRawToArray(parsed: unknown): unknown[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { data?: unknown[] }).data)) {
+    return (parsed as { data: unknown[] }).data;
+  }
+  if (parsed && typeof parsed === "object" && Array.isArray((parsed as { tracks?: unknown[] }).tracks)) {
+    return (parsed as { tracks: unknown[] }).tracks;
+  }
+  return [];
+}
+
+function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
+  if (!arr.length) return [];
+  return arr.map((item: unknown, i: number) => {
+    const t = item as Record<string, unknown>;
+    const id = typeof t.id === "string" ? t.id : `saved-${Date.now()}-${i}-${t.clip_id ?? t.id ?? i}`;
+    const createdAt =
+      typeof t.createdAt === "number" ? t.createdAt : typeof t.created_at === "number" ? t.created_at : Date.now();
+    const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
+    const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
+    return {
+      ...(item as object),
+      id,
+      createdAt,
+      uploadCount,
+      downloadCount,
+      generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
+      generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
+      audio_url: (t.audio_url ?? t.audioUrl) as string | undefined,
+      image_url: (t.image_url ?? t.imageUrl) as string | undefined,
+      clip_id: t.clip_id ?? t.id,
+      title: t.title as string | undefined,
+      tags: t.tags as string | undefined,
+      prompt: t.prompt as string | undefined,
+      original_prompt: (t.original_prompt ?? t.prompt) as string | undefined,
+      custom_mode: Boolean(t.custom_mode),
+      publishedToSite: Boolean(t.publishedToSite),
+    } as SavedTrack;
+  });
+}
+
+function loadSavedTracksFromLocalStorage(userId: string): SavedTrack[] {
+  try {
+    const raw = localStorage.getItem(savedTracksStorageKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return normalizeRawToSavedTracks(parseLocalStorageRawToArray(parsed));
+  } catch {
+    return [];
+  }
+}
+
+/** 서버·로컬 합집합 — 같은 id는 서버 우선 */
+function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTrack[] {
+  const byId = new Map<string, SavedTrack>();
+  for (const t of server) {
+    if (t.id) byId.set(t.id, t);
+  }
+  for (const t of local) {
+    if (t.id && !byId.has(t.id)) byId.set(t.id, t);
+  }
+  return Array.from(byId.values()).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+function tracksToWirePayload(tracks: SavedTrack[]) {
+  return tracks.map((t) => ({
+    id: t.id,
+    createdAt: t.createdAt,
+    clip_id: t.clip_id,
+    audio_url: t.audio_url,
+    image_url: t.image_url,
+    title: t.title,
+    tags: t.tags,
+    prompt: t.prompt,
+    original_prompt: t.original_prompt,
+    custom_mode: t.custom_mode,
+    generationTaskId: t.generationTaskId,
+    generationProvider: t.generationProvider,
+    uploadCount: t.uploadCount,
+    downloadCount: t.downloadCount,
+    publishedToSite: t.publishedToSite,
+  }));
+}
+
 export default function CreateMusic() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
@@ -239,6 +323,24 @@ export default function CreateMusic() {
   }>({
     queryKey: ["/api/ai-music/usage"],
     enabled: !!user,
+  });
+
+  const libraryHydratedForUserRef = useRef<string | null>(null);
+  const librarySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: libraryRemote, isFetched: libraryFetched } = useQuery<{ tracks?: unknown[] }>({
+    queryKey: ["/api/ai-music/library"],
+    queryFn: async () => {
+      const res = await fetch("/api/ai-music/library", { credentials: "include" });
+      if (!res.ok) {
+        if (res.status === 503) return { tracks: [] };
+        throw new Error("library");
+      }
+      return res.json();
+    },
+    enabled: !!user?.id,
+    staleTime: 45_000,
+    retry: 1,
   });
 
   const [mode, setMode] = useState<CreateMode>("description");
@@ -279,7 +381,17 @@ export default function CreateMusic() {
   }, [status]);
 
   useEffect(() => {
+    return () => {
+      if (librarySyncTimerRef.current) {
+        clearTimeout(librarySyncTimerRef.current);
+        librarySyncTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user?.id) {
+      libraryHydratedForUserRef.current = null;
       setSavedTracks([]);
       setTaskId(null);
       setStatus("idle");
@@ -287,82 +399,66 @@ export default function CreateMusic() {
       setErrorMessage(null);
       return;
     }
-    const storageKey = savedTracksStorageKey(user.id);
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) {
-        setSavedTracks([]);
-        return;
-      }
-      const parsed = JSON.parse(raw) as unknown;
-      const arr = Array.isArray(parsed)
-        ? parsed
-        : (parsed && typeof parsed === "object" && Array.isArray((parsed as { data?: unknown[] }).data))
-          ? (parsed as { data: unknown[] }).data
-          : (parsed && typeof parsed === "object" && Array.isArray((parsed as { tracks?: unknown[] }).tracks))
-            ? (parsed as { tracks: unknown[] }).tracks
-            : [];
-      if (arr.length === 0) {
-        setSavedTracks([]);
-        return;
-      }
-      const normalized: SavedTrack[] = arr.map((item: unknown, i: number) => {
-        const t = item as Record<string, unknown>;
-        const id = typeof t.id === "string" ? t.id : `saved-${Date.now()}-${i}-${t.clip_id ?? t.id ?? i}`;
-        const createdAt = typeof t.createdAt === "number" ? t.createdAt : (typeof t.created_at === "number" ? t.created_at : Date.now());
-        const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
-        const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
-        return {
-          ...(item as object),
-          id,
-          createdAt,
-          uploadCount,
-          downloadCount,
-          generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
-          generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
-          audio_url: (t.audio_url ?? t.audioUrl) as string | undefined,
-          image_url: (t.image_url ?? t.imageUrl) as string | undefined,
-          clip_id: t.clip_id ?? t.id,
-          title: t.title,
-          tags: t.tags,
-          prompt: t.prompt,
-          original_prompt: t.original_prompt ?? t.prompt,
-          custom_mode: Boolean(t.custom_mode),
-          publishedToSite: Boolean(t.publishedToSite),
-        } as SavedTrack;
-      });
-      setSavedTracks(normalized);
-    } catch {
-      setSavedTracks([]);
-    }
+    libraryHydratedForUserRef.current = null;
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !libraryFetched) return;
+    if (libraryHydratedForUserRef.current === user.id) return;
+    libraryHydratedForUserRef.current = user.id;
+
+    const serverTracks = normalizeRawToSavedTracks(
+      Array.isArray(libraryRemote?.tracks) ? libraryRemote.tracks : [],
+    );
+    const localTracks = loadSavedTracksFromLocalStorage(user.id);
+    const merged = mergeAiMusicLibrary(serverTracks, localTracks);
+    setSavedTracks(merged);
+
+    const payload = tracksToWirePayload(merged);
+    try {
+      localStorage.setItem(savedTracksStorageKey(user.id), JSON.stringify(payload));
+    } catch {}
+    queryClient.setQueryData(["/api/ai-music/library"], { tracks: payload });
+
+    const serverIds = new Set(serverTracks.map((t) => t.id));
+    const needsPush =
+      (serverTracks.length === 0 && localTracks.length > 0) ||
+      localTracks.some((t) => Boolean(t.id) && !serverIds.has(t.id)) ||
+      merged.length !== serverTracks.length;
+
+    if (needsPush) {
+      void fetch("/api/ai-music/library", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tracks: payload }),
+      })
+        .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
+        .catch(() => {});
+    }
+  }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
   const persistTracks = useCallback(
     (tracks: SavedTrack[]) => {
       const uid = user?.id;
       if (!uid) return;
+      const payload = tracksToWirePayload(tracks);
       try {
-        const toPersist = tracks.map((t) => ({
-          id: t.id,
-          createdAt: t.createdAt,
-          clip_id: t.clip_id,
-          audio_url: t.audio_url,
-          image_url: t.image_url,
-          title: t.title,
-          tags: t.tags,
-          prompt: t.prompt,
-          original_prompt: t.original_prompt,
-          custom_mode: t.custom_mode,
-          generationTaskId: t.generationTaskId,
-          generationProvider: t.generationProvider,
-          uploadCount: t.uploadCount,
-          downloadCount: t.downloadCount,
-          publishedToSite: t.publishedToSite,
-        }));
-        localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(toPersist));
+        localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(payload));
       } catch {}
+      queryClient.setQueryData(["/api/ai-music/library"], { tracks: payload });
+      if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
+      librarySyncTimerRef.current = setTimeout(() => {
+        librarySyncTimerRef.current = null;
+        void fetch("/api/ai-music/library", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracks: payload }),
+        }).catch(() => {});
+      }, 850);
     },
-    [user?.id],
+    [user?.id, queryClient],
   );
 
   const removeSavedTrack = useCallback(

@@ -32,6 +32,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "radio-now-playing-object-path.sql", name: "radio_channels 로컬 송출 컬럼" },
   { file: "create-ai-music-usage.sql", name: "ai_music_usage" },
   { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
+  { file: "ai-music-saved-library.sql", name: "ai_music_saved_tracks" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
   { file: "notify-activity-email.sql", name: "users notify_activity_email 컬럼" },
   { file: "credit-refund-requests.sql", name: "credit_refund_requests" },

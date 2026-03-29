@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 // Session storage table (express-session + connect-pg-simple).
 export const sessions = pgTable(
@@ -102,5 +102,33 @@ export const aiMusicGenerationLogs = pgTable(
     index("idx_ai_music_gen_logs_user").on(table.userId),
     index("idx_ai_music_gen_logs_task").on(table.taskId),
     index("idx_ai_music_gen_logs_created").on(table.createdAt),
+  ]
+);
+
+/** AI 음악 생성 페이지「내 라이브러리」(기기 간 동기화 — 기존 localStorage 보완) */
+export const aiMusicSavedTracks = pgTable(
+  "ai_music_saved_tracks",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    clientId: varchar("client_id", { length: 220 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    clipId: text("clip_id"),
+    audioUrl: text("audio_url"),
+    imageUrl: text("image_url"),
+    title: text("title"),
+    tags: text("tags"),
+    prompt: text("prompt"),
+    originalPrompt: text("original_prompt"),
+    customMode: boolean("custom_mode").default(false).notNull(),
+    generationTaskId: varchar("generation_task_id", { length: 128 }),
+    generationProvider: varchar("generation_provider", { length: 32 }),
+    uploadCount: integer("upload_count").default(0).notNull(),
+    downloadCount: integer("download_count").default(0).notNull(),
+    publishedToSite: boolean("published_to_site").default(false).notNull(),
+  },
+  (table) => [
+    uniqueIndex("ai_music_saved_tracks_user_client").on(table.userId, table.clientId),
+    index("idx_ai_music_saved_user_created").on(table.userId, table.createdAt),
   ]
 );
