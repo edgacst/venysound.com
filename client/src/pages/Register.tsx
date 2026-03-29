@@ -27,11 +27,6 @@ export default function Register() {
     queryFn: () => fetch("/api/auth/login-options").then((r) => r.json()),
   });
 
-  if (user) {
-    setLocation("/");
-    return null;
-  }
-
   useEffect(() => {
     const norm = (p: string) => (p.replace(/\/$/, "") || "/") as string;
     const onPop = () => {
@@ -41,6 +36,12 @@ export default function Register() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
+
+  useEffect(() => {
+    if (user) setLocation("/");
+  }, [user, setLocation]);
+
+  if (user) return null;
 
   const validateCredentials = () => {
     const e: Record<string, string> = {};

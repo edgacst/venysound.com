@@ -74,7 +74,6 @@ export default function RadioChannel() {
   const [, params] = useRoute("/radio/:slug");
   const slug = params?.slug ?? "";
   const reservedTo = slug ? reservedRadioPathRedirect(slug) : null;
-  if (reservedTo) return <Redirect to={reservedTo} />;
 
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -110,7 +109,7 @@ export default function RadioChannel() {
       if (!res.ok) throw new Error("Not found");
       return res.json();
     },
-    enabled: !!slug,
+    enabled: !!slug && !reservedTo,
     refetchInterval: (data) => (data?.status === "live" ? 3000 : false),
     refetchIntervalInBackground: false,
   });
@@ -121,7 +120,7 @@ export default function RadioChannel() {
   const nowPlayingId = channel?.nowPlayingMusicId ?? null;
   const nowPlayingObjectPath = channel?.nowPlayingObjectPath ?? null;
   const displayName = user?.username ?? user?.firstName ?? null;
-  const { listenerCount } = useRadioRoom(slug, displayName);
+  const { listenerCount } = useRadioRoom(reservedTo ? undefined : slug, displayName);
 
   // 현재 재생 중인 음원 정보 (로컬 송출 시에는 없음)
   const { data: nowPlayingMusic } = useQuery<{
@@ -274,7 +273,7 @@ export default function RadioChannel() {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
-    enabled: !!slug && !!user,
+    enabled: !!slug && !!user && !reservedTo,
   });
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const canSeeChatRef = useRef(false);
@@ -610,7 +609,7 @@ export default function RadioChannel() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!normalizedSlug,
+    enabled: !!normalizedSlug && !reservedTo,
   });
   const [staffUsername, setStaffUsername] = useState("");
   function getRoleForUser(userId: string): "owner" | "dj" | "sub_host" | "staff" | null {
@@ -695,6 +694,10 @@ export default function RadioChannel() {
         </div>
       </PageTransition>
     );
+  }
+
+  if (reservedTo) {
+    return <Redirect to={reservedTo} />;
   }
 
   if (isLoading) {
