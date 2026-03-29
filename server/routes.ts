@@ -799,6 +799,8 @@ export async function registerRoutes(
     user: (typeof users.$inferSelect) | undefined;
     taskId: string;
     provider: "suno" | "aimusicapi";
+    /** 실제 users.credits 에서 차감된 양만 기록(구독 월 한도만 쓴 경우 0) */
+    walletCreditsCharged: number;
     body: {
       title?: string;
       tags?: string;
@@ -807,7 +809,7 @@ export async function registerRoutes(
     };
   }): Promise<void> {
     try {
-      const { userId, user, taskId, provider, body } = params;
+      const { userId, user, taskId, provider, body, walletCreditsCharged } = params;
       const tier = user?.subscriptionTier ?? "free";
       const nowLog = new Date();
       const subscriptionActive =
@@ -815,8 +817,7 @@ export async function registerRoutes(
         (user == null || !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > nowLog);
       const billingKind =
         user?.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
-      const creditsCharged =
-        billingKind === "admin" || billingKind === "free" ? 0 : AI_MUSIC_CREDITS_PER_TRACK;
+      const creditsCharged = Math.max(0, Math.floor(Number(walletCreditsCharged) || 0));
       const promptText = (body.prompt ?? body.gpt_description_prompt ?? "").trim();
       const parts = [
         body.title?.trim() && `title: ${body.title.trim()}`,
@@ -1173,6 +1174,7 @@ export async function registerRoutes(
           user,
           taskId,
           provider: "suno",
+          walletCreditsCharged: creditsCharged,
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
         });
         const [uAfterSuno] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
@@ -1240,6 +1242,7 @@ export async function registerRoutes(
         user,
         taskId,
         provider: "aimusicapi",
+        walletCreditsCharged: creditsCharged,
         body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
       });
       const [uAfterAimusic] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));

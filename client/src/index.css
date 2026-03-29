@@ -47,10 +47,17 @@
 
   html {
     scroll-behavior: auto;
+    /* 모바일 크롬/TWA 등: 맨 위에서 아래로 당길 때 브라우저 새로고침 방지 (스크롤 자체는 그대로) */
+    overscroll-behavior-y: contain;
   }
   body {
     @apply bg-background text-foreground antialiased font-sans selection:bg-primary/30;
     overflow-x: hidden;
+    overscroll-behavior-y: contain;
+  }
+
+  #root {
+    overscroll-behavior-y: contain;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -156,13 +163,6 @@
 
 .glass-panel {
   @apply bg-background/80 backdrop-blur-md border border-white/5;
-}
-
-/* 일부 모바일 브라우저에서 가로 전환 시 180도 거꾸로 표시되는 경우가 있어 보정용.
-   화면 레이아웃 자체는 그대로 두고 콘텐츠만 회전 처리합니다. */
-.app-flipped {
-  transform: rotate(180deg);
-  transform-origin: center center;
 }
 
 /* 예전: 모바일 가로 모드 차단 오버레이

@@ -366,47 +366,6 @@ function App() {
   const radioWaveformRef = useRef<Uint8Array | null>(null);
   const radioSlug = useRadioPlayerStore((s) => s.slug);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const root = document.querySelector(".app-root") as HTMLElement | null;
-    if (!root) return;
-
-    const getAngle = (): number | null => {
-      try {
-        const orientation: any = (window.screen as any)?.orientation;
-        const angle = typeof orientation?.angle === "number" ? orientation.angle : null;
-        return angle;
-      } catch {
-        return null;
-      }
-    };
-
-    const sync = () => {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      // 세로로 들고 있는 동안(뷰포트 높이 ≥ 너비)에는 180° 보정 금지 — angle 오동작으로 화면이 돌아가 보이는 경우 방지
-      if (vh >= vw) {
-        root.classList.remove("app-flipped");
-        return;
-      }
-      const angle = getAngle();
-      root.classList.toggle("app-flipped", angle === 180);
-    };
-
-    sync();
-    window.addEventListener("orientationchange", sync);
-    window.addEventListener("resize", sync);
-
-    const orientation: any = (window.screen as any)?.orientation;
-    orientation?.addEventListener?.("change", sync);
-
-    return () => {
-      window.removeEventListener("orientationchange", sync);
-      window.removeEventListener("resize", sync);
-      orientation?.removeEventListener?.("change", sync);
-    };
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <Router>

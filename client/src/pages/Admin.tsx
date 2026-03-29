@@ -3757,7 +3757,15 @@ export default function Admin() {
                     <th className="text-left py-2 px-2 font-medium">taskId</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogTitle', '요청 제목')}</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogSummary', '요약')}</th>
-                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogDeploy', '배포')}</th>
+                    <th
+                      className="text-left py-2 px-2 font-medium"
+                      title={t(
+                        "admin.aiLogDeployHint",
+                        "사이트에 ‘신곡 공개’로 올린 music id만 표시됩니다. 생성 성공 여부와 무관하며, 미공개면 — 가 정상입니다.",
+                      )}
+                    >
+                      {t('admin.aiLogDeploy', '배포')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
