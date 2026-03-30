@@ -181,7 +181,7 @@ export default function Explore() {
               <p className="text-sm text-muted-foreground max-w-2xl">
                 {t(
                   "explore.internationalSubtitle",
-                  "베니사운드 아티스트가 글로벌 플랫폼(Spotify 등)에 출시한 곡입니다. Spotify 기준으로 표시됩니다. 사이트에 같은 곡이 연결되면「이 사이트에서 듣기」로 재생할 수 있습니다(제목·아티스트 자동 매칭 또는 음원 수정에서 Spotify 앨범 ID 지정).",
+                  "Spotify 카탈로그 기준으로, 해외 스트리밍에 출시된 우리 아티스트 곡을 보여 줍니다.",
                 )}
               </p>
             ) : null}
@@ -244,6 +244,34 @@ export default function Explore() {
             {t("explore.catalogInternational", "해외 출시")}
           </button>
         </div>
+
+        {catalogTab === "international" && (
+          <div
+            className="mb-6 rounded-xl border border-primary/25 bg-primary/5 px-4 py-4 md:px-5 md:py-5 text-sm space-y-3"
+            data-testid="international-info-banner"
+          >
+            <p className="font-semibold text-foreground flex items-center gap-2">
+              <Globe className="text-primary shrink-0" size={18} aria-hidden />
+              {t("explore.internationalBannerTitle")}
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              {t("explore.internationalBannerBody")}
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              {t("explore.internationalBannerOtherStores")}
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              {t("explore.internationalBannerMatching")}
+            </p>
+            <Link
+              href="/global-distribution-guide"
+              className="inline-flex text-primary font-medium hover:underline underline-offset-4"
+              data-testid="link-international-distribution-guide"
+            >
+              {t("explore.internationalBannerGuideCta")}
+            </Link>
+          </div>
+        )}
 
         {catalogTab === "site" && Array.isArray(popularTracks) && popularTracks.length > 0 && (
           <section className="mb-8">

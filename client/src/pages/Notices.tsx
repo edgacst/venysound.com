@@ -28,10 +28,11 @@ export default function Notices() {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const locale = i18n.language === "ja" ? "ja-JP" : i18n.language === "en" ? "en-US" : i18n.language === "zh" ? "zh-CN" : "ko-KR";
+  const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
   const { data, isLoading } = useQuery<SiteAnnouncement[]>({
-    queryKey: ["/api/announcements/site"],
+    queryKey: ["/api/announcements/site", lang],
     queryFn: async () => {
-      const res = await fetch("/api/announcements/site");
+      const res = await fetch(`/api/announcements/site?lang=${encodeURIComponent(lang)}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -43,14 +44,14 @@ export default function Notices() {
         .then((res) => res.ok && res.json())
         .then((body) => {
           if (body?.viewCount != null) {
-            queryClient.setQueryData<SiteAnnouncement[]>(["/api/announcements/site"], (prev) =>
+            queryClient.setQueryData<SiteAnnouncement[]>(["/api/announcements/site", lang], (prev) =>
               prev?.map((a) => (a.id === id ? { ...a, viewCount: body.viewCount } : a)) ?? []
             );
           }
         })
         .catch(() => {});
     },
-    [queryClient]
+    [queryClient, lang]
   );
 
   const toggleExpand = useCallback(

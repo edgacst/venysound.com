@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { resolveStorageUrl } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -55,19 +55,40 @@ export default function Home() {
     },
   });
 
-  const liveTickerText = liveChannels?.length
-    ? liveChannels
-        .map((ch) => {
-          const startAt = ch.scheduledStartAt ? new Date(ch.scheduledStartAt) : (ch.updatedAt ? new Date(ch.updatedAt) : null);
-          const endAt = ch.scheduledEndAt ? new Date(ch.scheduledEndAt) : null;
-          const startStr = startAt ? startAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-          const endStr = endAt ? endAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-          if (startStr && endStr) return `${ch.name} 채널 ${startStr}~${endStr} 방송중`;
-          if (startStr) return `${ch.name} 채널 ${startStr}부터 방송중`;
-          return `${ch.name} 채널 지금 방송중`;
-        })
-        .join("    ★    ")
-    : "";
+  const timeLocale = useMemo(() => {
+    const l = (i18n.language || "ko").split("-")[0].toLowerCase();
+    if (l === "ja") return "ja-JP";
+    if (l === "zh") return "zh-CN";
+    if (l === "en") return "en-US";
+    return "ko-KR";
+  }, [i18n.language]);
+
+  const liveTickerText = useMemo(() => {
+    if (!liveChannels?.length) return "";
+    const liveWord = t("home.radioLiveShort", "방송중");
+    return liveChannels
+      .map((ch) => {
+        const startAt = ch.scheduledStartAt ? new Date(ch.scheduledStartAt) : ch.updatedAt ? new Date(ch.updatedAt) : null;
+        const endAt = ch.scheduledEndAt ? new Date(ch.scheduledEndAt) : null;
+        const startStr = startAt
+          ? startAt.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit", hour12: false })
+          : "";
+        const endStr = endAt ? endAt.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+        if (startStr && endStr) {
+          return t("home.liveTickerScheduled", "{{name}} 채널 {{start}}~{{end}} {{live}}", {
+            name: ch.name,
+            start: startStr,
+            end: endStr,
+            live: liveWord,
+          });
+        }
+        if (startStr) {
+          return t("home.liveTickerFrom", "{{name}} 채널 {{start}}부터 {{live}}", { name: ch.name, start: startStr, live: liveWord });
+        }
+        return t("home.liveTickerNow", "{{name}} 채널 지금 {{live}}", { name: ch.name, live: liveWord });
+      })
+      .join("    ★    ");
+  }, [liveChannels, t, timeLocale]);
 
   const banners = [
     { image: banner1, title: t('home.banner1Title'), subtitle: t('home.banner1Subtitle'), link: "/upload", buttonText: t('home.banner1Button') },
@@ -352,7 +373,7 @@ export default function Home() {
                 variant="outline"
                 className="rounded-full px-4 sm:px-8 border-cyan-300/40 text-cyan-200 bg-cyan-500/10 backdrop-blur-sm hover:bg-cyan-500/20 whitespace-normal leading-tight max-w-[90vw]"
               >
-                글로벌 음원출시로 수익방법
+                {t("home.globalDistributionRevenueCta", "글로벌 음원출시로 수익방법")}
               </Button>
             </Link>
           </motion.div>

@@ -3702,10 +3702,12 @@ export async function registerRoutes(
     }
   });
 
-  // 사이트 공지 리스트 (공개용) — 최신순 최대 50개
-  app.get("/api/announcements/site", async (_req, res) => {
+  // 사이트 공지 리스트 (공개용) — 최신순 최대 50개 (`lang`: content_translations 우선)
+  app.get("/api/announcements/site", async (req, res) => {
     try {
-      const list = await storage.getSiteAnnouncements();
+      const rawLang = typeof req.query.lang === "string" ? req.query.lang.trim().split("-")[0].toLowerCase() : "";
+      const lang = /^[a-z]{2}$/.test(rawLang) ? rawLang : undefined;
+      const list = await storage.getSiteAnnouncements(lang);
       res.json(
         list.map((a) => ({
           id: a.id,

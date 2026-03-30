@@ -44,6 +44,27 @@ export function getCanonicalMusicGenreLabels(): string[] {
   return Array.from(s).sort((a, b) => a.localeCompare(b, "ko"));
 }
 
+/** 사이트 공지 본문: `content_translations[lang]`이 있으면 사용, 없으면 기본 `content` */
+export function resolveSiteAnnouncementContentForLang(
+  defaultContent: string,
+  rawTranslations: unknown,
+  lang?: string,
+): string {
+  if (!lang) return defaultContent;
+  const translations: Record<string, string> =
+    typeof rawTranslations === "string"
+      ? (() => {
+          try {
+            return JSON.parse(rawTranslations) ?? {};
+          } catch {
+            return {};
+          }
+        })()
+      : ((rawTranslations ?? {}) as Record<string, string>);
+  const tr = translations[lang]?.trim();
+  return tr || defaultContent;
+}
+
 export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
@@ -218,7 +239,7 @@ export interface IStorage {
   hasDistributionLedgerForReleaseMonth(releaseId: number, periodMonth: string): Promise<boolean>;
   getDistributionBalanceSummary(userId: string): Promise<{ totalEarned: number; totalPaid: number; available: number }>;
   getActiveSiteAnnouncement(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } | null>;
-  getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
+  getSiteAnnouncements(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; showAsPopup: boolean; startsAt: Date; endsAt: Date; createdAt: Date }[]>;
   saveSiteAnnouncement(data: { content: string; imageUrl?: string | null; textSize?: string | null; showAsPopup?: boolean; startsAt: Date; endsAt: Date }): Promise<{ id: number; content: string; imageUrl: string | null; startsAt: Date; endsAt: Date }>;
   updateSiteAnnouncementTranslations(id: number, translations: Record<string, string>): Promise<void>;
   deleteSiteAnnouncement(id: number): Promise<void>;
@@ -2941,10 +2962,7 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(siteAnnouncements.createdAt))
       .limit(1);
     if (!row) return null;
-    const raw = row.contentTranslations;
-    const translations: Record<string, string> =
-      typeof raw === "string" ? (() => { try { return JSON.parse(raw) ?? {}; } catch { return {}; } })() : (raw ?? {}) as Record<string, string>;
-    const content = (lang && translations[lang]) ? translations[lang] : row.content;
+    const content = resolveSiteAnnouncementContentForLang(row.content, row.contentTranslations, lang);
     const result: { id: number; content: string; imageUrl: string | null; textSize: string | null; startsAt: Date; endsAt: Date } = {
       id: row.id,
       content,
@@ -2956,10 +2974,11 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getSiteAnnouncements(): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; showAsPopup: boolean; viewCount: number; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
+  async getSiteAnnouncements(lang?: string): Promise<{ id: number; content: string; imageUrl: string | null; textSize: string | null; showAsPopup: boolean; viewCount: number; startsAt: Date; endsAt: Date; createdAt: Date }[]> {
     const rows = await db.select({
       id: siteAnnouncements.id,
       content: siteAnnouncements.content,
+      contentTranslations: siteAnnouncements.contentTranslations,
       imageUrl: siteAnnouncements.imageUrl,
       textSize: siteAnnouncements.textSize,
       showAsPopup: siteAnnouncements.showAsPopup,
@@ -2968,7 +2987,17 @@ export class DatabaseStorage implements IStorage {
       endsAt: siteAnnouncements.endsAt,
       createdAt: siteAnnouncements.createdAt,
     }).from(siteAnnouncements).orderBy(desc(siteAnnouncements.createdAt)).limit(50);
-    return rows.map((r) => ({ ...r, showAsPopup: r.showAsPopup ?? true, viewCount: r.viewCount ?? 0, createdAt: r.createdAt ?? new Date() }));
+    return rows.map((r) => ({
+      id: r.id,
+      content: resolveSiteAnnouncementContentForLang(r.content, r.contentTranslations, lang),
+      imageUrl: r.imageUrl,
+      textSize: r.textSize,
+      showAsPopup: r.showAsPopup ?? true,
+      viewCount: r.viewCount ?? 0,
+      startsAt: r.startsAt,
+      endsAt: r.endsAt,
+      createdAt: r.createdAt ?? new Date(),
+    }));
   }
 
   async incrementSiteAnnouncementViewCount(id: number): Promise<number> {
