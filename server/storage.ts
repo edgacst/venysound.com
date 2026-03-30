@@ -171,6 +171,30 @@ export interface IStorage {
     pendingCreditChargeCount: number;
     pendingTotalWon: number;
   }>;
+  /** 관리자: 결제 완료 건 목록(회원 정보 포함). kind로 구독/크레딧 필터 */
+  listAdminRevenuePayments(input: {
+    dateFilters?: { start?: Date; endExclusive?: Date; endInclusive?: Date };
+    kind: "all" | "subscription" | "credit";
+    limit: number;
+    offset: number;
+  }): Promise<{
+    total: number;
+    rows: {
+      id: string;
+      userId: string;
+      orderId: string;
+      amount: number;
+      plan: string | null;
+      billingPeriod: string | null;
+      paymentKey: string | null;
+      createdAt: Date;
+      email: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      username: string | null;
+      paymentKind: "subscription" | "credit";
+    }[];
+  }>;
   createDistributionRelease(input: { ownerUserId: string; musicId: number; releaseTitle: string; artistName: string; rightsConfirmed: boolean; releaseDate?: Date | null }): Promise<DistributionRelease>;
   listMyDistributionReleases(ownerUserId: string): Promise<DistributionRelease[]>;
   submitDistributionRelease(ownerUserId: string, releaseId: number): Promise<void>;
@@ -1550,6 +1574,97 @@ export class DatabaseStorage implements IStorage {
       pendingCreditChargeCount,
       pendingTotalWon: pendingSubscriptionWon + pendingCreditChargeWon,
     };
+  }
+
+  async listAdminRevenuePayments(input: {
+    dateFilters?: { start?: Date; endExclusive?: Date; endInclusive?: Date };
+    kind: "all" | "subscription" | "credit";
+    limit: number;
+    offset: number;
+  }): Promise<{
+    total: number;
+    rows: {
+      id: string;
+      userId: string;
+      orderId: string;
+      amount: number;
+      plan: string | null;
+      billingPeriod: string | null;
+      paymentKey: string | null;
+      createdAt: Date;
+      email: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      username: string | null;
+      paymentKind: "subscription" | "credit";
+    }[];
+  }> {
+    const tierIds = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
+    const df = input.dateFilters;
+    const dateParts: SQL[] = [];
+    if (df?.start) dateParts.push(gte(payments.createdAt, df.start));
+    if (df?.endExclusive) dateParts.push(lt(payments.createdAt, df.endExclusive));
+    if (df?.endInclusive) dateParts.push(lte(payments.createdAt, df.endInclusive));
+
+    const paid = eq(payments.status, "paid");
+    let kindCond: SQL;
+    if (input.kind === "subscription") {
+      kindCond = inArray(payments.plan, tierIds);
+    } else if (input.kind === "credit") {
+      kindCond = eq(payments.plan, "credit_charge");
+    } else {
+      const sub = inArray(payments.plan, tierIds);
+      const cr = eq(payments.plan, "credit_charge");
+      kindCond = or(sub, cr)!;
+    }
+
+    const where = and(paid, kindCond, ...dateParts);
+
+    const [countRow] = await db.select({ n: sql<number>`count(*)::int` }).from(payments).where(where);
+    const total = Number(countRow?.n ?? 0);
+
+    const safeLimit = Math.min(200, Math.max(1, Math.floor(input.limit)));
+    const safeOffset = Math.max(0, Math.floor(input.offset));
+
+    const rawRows = await db
+      .select({
+        id: payments.id,
+        userId: payments.userId,
+        orderId: payments.orderId,
+        amount: payments.amount,
+        plan: payments.plan,
+        billingPeriod: payments.billingPeriod,
+        paymentKey: payments.paymentKey,
+        createdAt: payments.createdAt,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        username: users.username,
+      })
+      .from(payments)
+      .leftJoin(users, eq(payments.userId, users.id))
+      .where(where)
+      .orderBy(desc(payments.createdAt))
+      .limit(safeLimit)
+      .offset(safeOffset);
+
+    const rows = rawRows.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      orderId: r.orderId,
+      amount: r.amount,
+      plan: r.plan,
+      billingPeriod: r.billingPeriod,
+      paymentKey: r.paymentKey,
+      createdAt: r.createdAt instanceof Date ? r.createdAt : new Date(String(r.createdAt)),
+      email: r.email,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      username: r.username,
+      paymentKind: r.plan === "credit_charge" ? ("credit" as const) : ("subscription" as const),
+    }));
+
+    return { total, rows };
   }
 
   async createDistributionRelease(input: {

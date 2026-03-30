@@ -152,7 +152,15 @@ export function getSession() {
 }
 
 export async function setupAuth(app: Express) {
-  app.set("trust proxy", 1);
+  /** 프록시 단계: Nginx만=1, Cloudflare+Nginx 등=2. .env TRUST_PROXY=true | 숫자 */
+  const tp = process.env.TRUST_PROXY?.trim();
+  if (tp === "true" || tp === "1") {
+    app.set("trust proxy", true);
+  } else if (tp && /^\d+$/.test(tp)) {
+    app.set("trust proxy", parseInt(tp, 10));
+  } else {
+    app.set("trust proxy", 1);
+  }
   app.use(getSession());
   app.use(passport.initialize());
   /** pauseStream: 바디 파서 이후에도 역직렬화 전 요청 스트림 이슈 방지(세션 복원·analytics 에서 req.user 누락 완화) */

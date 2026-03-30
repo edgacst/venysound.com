@@ -17,6 +17,7 @@ import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigured, type ActivityEmailKind } from "./email";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
+import { getClientIpForGeo } from "./client-ip";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs, aiMusicSavedTracks } from "../shared/models/auth";
@@ -3056,7 +3057,7 @@ export async function registerRoutes(
     const fromCookieOk = fromCookieRaw && UUID_V4_RE.test(fromCookieRaw) ? fromCookieRaw : null;
     const visitorKey = fromClientOk ?? fromCookieOk ?? crypto.randomUUID();
     appendVisitorKeyCookie(res, visitorKey);
-    const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+    const ip = getClientIpForGeo(req);
     const ipHash = ip ? crypto.createHash("sha256").update(ip).digest("hex").slice(0, 16) : undefined;
     const deviceType = getDeviceTypeFromRequest(req);
     const refererDomainVal = refererDomain(req.headers["referer"]);
@@ -3532,6 +3533,42 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/revenue-summary]", e);
       res.status(500).json({ message: "매출 요약을 불러오지 못했습니다." });
+    }
+  });
+
+  /** 결제 완료 건 목록(회원 식별). period=all | month | days, kind=all|subscription|credit, limit&offset */
+  app.get("/api/admin/revenue-payments", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const parsed = parseAdminRevenueRangeQuery({
+        period: typeof req.query.period === "string" ? req.query.period : "all",
+        days: typeof req.query.days === "string" ? req.query.days : "",
+      });
+      if (!parsed.ok) return res.status(400).json({ message: parsed.error });
+      let dateFilters: { start?: Date; endExclusive?: Date; endInclusive?: Date } | undefined;
+      if (parsed.start != null && parsed.endExclusive != null) {
+        dateFilters = { start: parsed.start, endExclusive: parsed.endExclusive };
+      } else if (parsed.start != null && parsed.endInclusive != null) {
+        dateFilters = { start: parsed.start, endInclusive: parsed.endInclusive };
+      }
+      const kindRaw = typeof req.query.kind === "string" ? req.query.kind.toLowerCase() : "all";
+      const kind = kindRaw === "subscription" || kindRaw === "credit" ? kindRaw : "all";
+      const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+      const offset = Math.max(0, parseInt(String(req.query.offset ?? "0"), 10) || 0);
+      const result = await storage.listAdminRevenuePayments({ dateFilters, kind, limit, offset });
+      res.json({
+        rangeLabel: parsed.label,
+        kind,
+        limit,
+        offset,
+        total: result.total,
+        rows: result.rows.map((r) => ({
+          ...r,
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        })),
+      });
+    } catch (e) {
+      console.error("[admin/revenue-payments]", e);
+      res.status(500).json({ message: "결제 목록을 불러오지 못했습니다." });
     }
   });
 

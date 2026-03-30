@@ -144,6 +144,9 @@ export default function Admin() {
   const [adminMainTab, setAdminMainTab] = useState("stats");
   const [revenuePeriod, setRevenuePeriod] = useState<"all" | "month" | "days">("all");
   const [revenueDays, setRevenueDays] = useState(30);
+  const [revenuePaymentsKind, setRevenuePaymentsKind] = useState<"all" | "subscription" | "credit">("all");
+  const [revenuePaymentsPage, setRevenuePaymentsPage] = useState(0);
+  const REVENUE_PAYMENTS_PAGE_SIZE = 50;
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
   const [adminNotes, setAdminNotes] = useState<Record<number, string>>({});
@@ -354,6 +357,57 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
     staleTime: 30_000,
   });
+
+  type AdminRevenuePaymentRow = {
+    id: string;
+    userId: string;
+    orderId: string;
+    amount: number;
+    plan: string | null;
+    billingPeriod: string | null;
+    paymentKey: string | null;
+    createdAt: string;
+    email: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    username: string | null;
+    paymentKind: "subscription" | "credit";
+  };
+
+  const { data: revenuePayments, isLoading: loadingRevenuePayments } = useQuery<{
+    rangeLabel: string;
+    kind: string;
+    limit: number;
+    offset: number;
+    total: number;
+    rows: AdminRevenuePaymentRow[];
+  }>({
+    queryKey: [
+      "/api/admin/revenue-payments",
+      revenuePeriod,
+      revenueDays,
+      revenuePaymentsKind,
+      revenuePaymentsPage,
+      REVENUE_PAYMENTS_PAGE_SIZE,
+    ],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      p.set("period", revenuePeriod);
+      if (revenuePeriod === "days") p.set("days", String(revenueDays));
+      p.set("kind", revenuePaymentsKind);
+      p.set("limit", String(REVENUE_PAYMENTS_PAGE_SIZE));
+      p.set("offset", String(revenuePaymentsPage * REVENUE_PAYMENTS_PAGE_SIZE));
+      const res = await fetch(`/api/admin/revenue-payments?${p.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("revenue-payments");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    setRevenuePaymentsPage(0);
+  }, [revenuePeriod, revenueDays, revenuePaymentsKind]);
 
   const { data: statsByRegion } = useQuery<{ countryCode: string | null; region: string | null; count: number }[]>({
     queryKey: ["/api/admin/stats/regions"],
@@ -1040,6 +1094,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
       toast({ title: t('admin.bankPaymentConfirmed', '입금 확인 처리되었습니다') });
     },
     onError: (err: any) => {
@@ -1055,6 +1110,7 @@ export default function Admin() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
       toast({ title: t('admin.paymentDeleted', '입금 대기 건이 삭제되었습니다') });
     },
     onError: (err: any) => {
@@ -1581,6 +1637,129 @@ export default function Admin() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground">{t("admin.revenueLoadError", "매출 데이터를 불러오지 못했습니다.")}</p>
+            )}
+          </Card>
+
+          <Card className="p-4 mt-4 overflow-x-auto" data-testid="card-revenue-payments">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+              <h3 className="text-sm font-semibold">
+                {t("admin.revenuePaymentsTitle", "구독·크레딧 결제 내역 (누가)")}
+              </h3>
+              <select
+                className="h-9 rounded-md border bg-background px-2 text-sm w-full sm:w-auto"
+                value={revenuePaymentsKind}
+                onChange={(e) => setRevenuePaymentsKind(e.target.value as "all" | "subscription" | "credit")}
+              >
+                <option value="all">{t("admin.revenuePaymentsKindAll", "전체 (구독+충전)")}</option>
+                <option value="subscription">{t("admin.revenuePaymentsKindSub", "구독만")}</option>
+                <option value="credit">{t("admin.revenuePaymentsKindCredit", "크레딧 충전만")}</option>
+              </select>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t("admin.revenuePaymentsHint", "위 매출 카드와 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다.")}
+            </p>
+            {loadingRevenuePayments ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : revenuePayments ? (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  {t("admin.revenueRangeLabel", "집계 구간")}:{" "}
+                  <span className="font-medium text-foreground">{revenuePayments.rangeLabel}</span>
+                  {" · "}
+                  {revenuePayments.total}
+                  {t("admin.revenueCountSuffix", "건")}
+                </p>
+                <div className="rounded-md border border-border/80 overflow-hidden min-w-[640px]">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-muted/40 border-b border-border/80">
+                      <tr>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColTime", "일시")}</th>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColKind", "구분")}</th>
+                        <th className="p-2 font-medium">{t("admin.revenuePayColUser", "회원")}</th>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColPlan", "플랜/주기")}</th>
+                        <th className="p-2 font-medium whitespace-nowrap text-right">{t("admin.revenuePayColAmount", "금액")}</th>
+                        <th className="p-2 font-medium font-mono text-[10px] max-w-[140px] truncate">orderId</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {revenuePayments.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                            —
+                          </td>
+                        </tr>
+                      ) : (
+                        revenuePayments.rows.map((row) => {
+                          const displayName =
+                            row.email?.trim() ||
+                            [row.firstName, row.lastName].filter(Boolean).join(" ").trim() ||
+                            row.username?.trim() ||
+                            row.userId;
+                          return (
+                            <tr key={row.id} className="border-b border-border/60 last:border-0">
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">{formatDateTime(row.createdAt)}</td>
+                              <td className="p-2 whitespace-nowrap">
+                                {row.paymentKind === "credit"
+                                  ? t("admin.revenuePayKindCredit", "크레딧")
+                                  : t("admin.revenuePayKindSub", "구독")}
+                              </td>
+                              <td className="p-2">
+                                <div className="font-medium text-foreground truncate max-w-[200px]" title={displayName}>
+                                  {displayName}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground font-mono truncate max-w-[220px]" title={row.userId}>
+                                  {row.userId}
+                                </div>
+                              </td>
+                              <td className="p-2 text-muted-foreground whitespace-nowrap">
+                                {row.plan ?? "—"}
+                                {row.billingPeriod ? ` · ${row.billingPeriod}` : ""}
+                              </td>
+                              <td className="p-2 text-right tabular-nums font-medium">{row.amount.toLocaleString()}원</td>
+                              <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[140px] truncate" title={row.orderId}>
+                                {row.orderId}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {revenuePayments.total > REVENUE_PAYMENTS_PAGE_SIZE && (
+                  <div className="flex items-center justify-between gap-2 mt-3 text-xs">
+                    <span className="text-muted-foreground tabular-nums">
+                      {revenuePaymentsPage * REVENUE_PAYMENTS_PAGE_SIZE + 1}–
+                      {Math.min((revenuePaymentsPage + 1) * REVENUE_PAYMENTS_PAGE_SIZE, revenuePayments.total)} /{" "}
+                      {revenuePayments.total}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={revenuePaymentsPage <= 0}
+                        onClick={() => setRevenuePaymentsPage((p) => Math.max(0, p - 1))}
+                      >
+                        {t("admin.prevPage", "이전")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={(revenuePaymentsPage + 1) * REVENUE_PAYMENTS_PAGE_SIZE >= revenuePayments.total}
+                        onClick={() => setRevenuePaymentsPage((p) => p + 1)}
+                      >
+                        {t("admin.nextPage", "다음")}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("admin.revenuePaymentsLoadError", "결제 목록을 불러오지 못했습니다.")}</p>
             )}
           </Card>
 
