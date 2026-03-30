@@ -1,7 +1,8 @@
 import { useTranslation } from "react-i18next";
-import { ExternalLink, Headphones } from "lucide-react";
+import { ExternalLink, Headphones, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/components/AudioPlayer";
+import { Link } from "wouter";
 
 export type InternationalReleaseItem = {
   id: string;
@@ -16,9 +17,15 @@ export type InternationalReleaseItem = {
   siteMusicId?: number | null;
 };
 
+function siteSearchHref(item: InternationalReleaseItem): string {
+  const q = `${item.title} ${item.artists}`.trim();
+  return `/music?q=${encodeURIComponent(q)}`;
+}
+
 export function InternationalReleaseCard({ item }: { item: InternationalReleaseItem }) {
   const { t } = useTranslation();
   const playMusic = usePlayerStore((s) => s.playMusic);
+  const canPlayOnSite = item.siteMusicId != null && item.siteMusicId > 0;
 
   return (
     <div
@@ -48,26 +55,33 @@ export function InternationalReleaseCard({ item }: { item: InternationalReleaseI
             </p>
           ) : null}
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 shrink-0 mt-auto w-full">
-          <Button variant="outline" size="sm" className="flex-1 gap-1.5 border-white/10 min-h-9" asChild>
+        <div className="flex flex-col gap-2 shrink-0 mt-auto w-full">
+          <Button variant="outline" size="sm" className="w-full gap-1.5 border-white/10 min-h-9 justify-center" asChild>
             <a href={item.spotifyUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink size={14} className="shrink-0" />
               <span className="truncate">{t("explore.listenOnSpotify", "Spotify에서 듣기")}</span>
             </a>
           </Button>
-          {item.siteMusicId != null && item.siteMusicId > 0 ? (
+          {canPlayOnSite ? (
             <Button
               type="button"
-              variant="outline"
+              variant="default"
               size="sm"
-              className="flex-1 gap-1.5 border-primary/30 bg-primary/5 hover:bg-primary/10 min-h-9"
+              className="w-full gap-1.5 min-h-9 justify-center"
               onClick={() => playMusic(item.siteMusicId!)}
               data-testid={`button-listen-site-${item.id}`}
             >
               <Headphones size={14} className="shrink-0" />
-              <span className="truncate">{t("explore.listenOnSite", "이 사이트에서 듣기")}</span>
+              <span className="truncate">{t("explore.listenOnSite")}</span>
             </Button>
-          ) : null}
+          ) : (
+            <Button variant="outline" size="sm" className="w-full gap-1.5 border-primary/30 bg-primary/5 hover:bg-primary/10 min-h-9 justify-center" asChild>
+              <Link href={siteSearchHref(item)} data-testid={`link-search-site-${item.id}`}>
+                <Search size={14} className="shrink-0" />
+                <span className="truncate">{t("explore.findOnSite")}</span>
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
     </div>

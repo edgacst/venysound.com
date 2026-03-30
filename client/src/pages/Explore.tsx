@@ -11,6 +11,7 @@ import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
+import { StreamingPlatformsStrip } from "@/components/StreamingPlatformsStrip";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from 'react-i18next';
 import { resolveStorageUrl } from "@/lib/utils";
@@ -44,6 +45,13 @@ export default function Explore() {
   const [currentPage, setCurrentPage] = useState(1);
   
   const debouncedSearch = useDebounce(searchTerm, 500);
+
+  /** /music?q=… 또는 ?search=… 로 들어올 때 사이트 탭 검색창에 반영 */
+  useEffect(() => {
+    const p = new URLSearchParams(searchString);
+    const q = (p.get("q") || p.get("search") || "").trim();
+    if (q) setSearchTerm(q);
+  }, [searchString]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -250,10 +258,20 @@ export default function Explore() {
             className="mb-6 rounded-xl border border-primary/25 bg-primary/5 px-4 py-4 md:px-5 md:py-5 text-sm space-y-3"
             data-testid="international-info-banner"
           >
-            <p className="font-semibold text-foreground flex items-center gap-2">
-              <Globe className="text-primary shrink-0" size={18} aria-hidden />
-              {t("explore.internationalBannerTitle")}
-            </p>
+            <div className="space-y-1.5">
+              <p className="font-semibold text-foreground flex items-center gap-2">
+                <Globe className="text-primary shrink-0" size={18} aria-hidden />
+                {t("explore.internationalBannerTitle")}
+              </p>
+              <StreamingPlatformsStrip />
+              <Link
+                href="/global-distribution-guide"
+                className="inline-flex text-primary font-medium hover:underline underline-offset-4"
+                data-testid="link-international-distribution-guide"
+              >
+                {t("explore.internationalBannerGuideCta")}
+              </Link>
+            </div>
             <p className="text-muted-foreground leading-relaxed">
               {t("explore.internationalBannerBody")}
             </p>
@@ -263,13 +281,6 @@ export default function Explore() {
             <p className="text-muted-foreground leading-relaxed">
               {t("explore.internationalBannerMatching")}
             </p>
-            <Link
-              href="/global-distribution-guide"
-              className="inline-flex text-primary font-medium hover:underline underline-offset-4"
-              data-testid="link-international-distribution-guide"
-            >
-              {t("explore.internationalBannerGuideCta")}
-            </Link>
           </div>
         )}
 

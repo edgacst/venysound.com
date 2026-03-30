@@ -865,9 +865,23 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  /** Spotify `artists` 문자열의 각 세그먼트(쉼표 기준)로 제목·아티스트 퍼지 매칭 시도 */
   private async findMusicIdFuzzyInternationalMatch(title: string, artists: string): Promise<number | null> {
+    const segments = artists
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const toTry = segments.length > 0 ? segments : [primaryArtistFromSpotifyArtists(artists)];
+    for (const seg of toTry) {
+      const id = await this.findMusicIdFuzzyInternationalMatchForArtist(title, seg);
+      if (id != null) return id;
+    }
+    return null;
+  }
+
+  private async findMusicIdFuzzyInternationalMatchForArtist(title: string, singleArtist: string): Promise<number | null> {
     const nt = normalizeInternationalMatchString(stripForIntlTitleMatch(title));
-    const na = normalizeInternationalMatchString(primaryArtistFromSpotifyArtists(artists));
+    const na = normalizeInternationalMatchString(singleArtist);
     if (!nt || !na) return null;
 
     const dbTitle = sql`regexp_replace(lower(trim(${music.title})), E'\\s+', ' ', 'g')`;
