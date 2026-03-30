@@ -13,13 +13,14 @@ GitHub에는 올려 뒀는데 **서버(사이트)에는 아직 반영이 안 된
 
 **배포 폴더** (앱은 **venysound 하나만** 사용합니다. `/var/www/venysound` 또는 실제로 쓰는 앱 디렉터리 한 곳에서만 실행하세요.)
 
-빌드(`npm run build`)는 **tsx·Vite** 등 **devDependencies**가 필요합니다. `--omit=dev`만 설치한 뒤에는 `tsx: not found` 가 납니다. 순서는 **전체 설치 → 빌드 →(선택) dev 제거** 입니다.
+빌드(`npm run build`)는 **tsx·Vite** 등 **devDependencies**가 필요합니다.  
+서버 셸이나 PM2·systemd 등에서 **`NODE_ENV=production` 이 잡혀 있으면**, `npm install` 만 쳐도 **devDependencies 가 설치되지 않아** 같은 증상(`tsx: not found`)이 납니다. 그때는 **`--include=dev`** 로 강제하세요.
 
 ```bash
-cd /var/www/venysound && git pull && npm install && npm run build && npm prune --omit=dev && pm2 restart venysound
+cd /var/www/venysound && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
 ```
 
-- `npm prune --omit=dev` 는 빌드 후 dev 패키지를 지워 디스크를 줄입니다. 다음 배포 때 다시 `npm install` 하면 됩니다.
+- `npm prune --omit=dev` 는 빌드 후 dev 패키지를 지워 디스크를 줄입니다. 다음 배포 때 다시 `npm install --include=dev` 하면 됩니다.
 - `pm2 restart all` 대신 `pm2 restart venysound` 로 서비스 앱만 재시작하는 것을 권장합니다.
 
 **3) `pm2 restart all` 했는데 “재시작할 프로세스 0개” 라고 나오면**  
@@ -63,7 +64,7 @@ GitHub을 쓰지 않고 **파일만** 서버에 올릴 때:
 그다음 **서버** 터미널에서 (git pull 없이):
 
 ```bash
-cd /var/www/venysound && npm install && npm run build && npm prune --omit=dev && pm2 restart all
+cd /var/www/venysound && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart all
 ```
 
 ### 뭐가 뭔지 (용어 한 줄 정리)
@@ -342,7 +343,7 @@ sudo /root/switch-to-port.sh 5000
 4. **이후 배포**  
    - 정한 **그 폴더 하나**에서만:  
      ```bash
-     cd /var/www/venysound && git pull && npm install && npm run build && npm prune --omit=dev && pm2 restart venysound
+     cd /var/www/venysound && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
      ```
 
 **정리:**  
