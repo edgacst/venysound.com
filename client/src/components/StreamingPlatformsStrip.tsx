@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 type PlatformDef = {
-  /** simpleicons.org CDN slug — 없으면 이니셜 배지 */
   slug?: string;
   color: string;
   name: string;
+  url: string;
 };
 
 /**
@@ -13,27 +13,27 @@ type PlatformDef = {
  * 아이콘: https://simpleicons.org/ CDN — 실패 시 이니셜 폴백.
  */
 const PLATFORMS: PlatformDef[] = [
-  { slug: "spotify", color: "1ED760", name: "Spotify" },
-  { slug: "instagram", color: "E4405F", name: "Instagram" },
-  { slug: "tiktok", color: "000000", name: "TikTok" },
-  { slug: "youtubemusic", color: "FF0000", name: "YouTube Music" },
-  { slug: "amazonmusic", color: "46C2EB", name: "Amazon Music" },
-  { slug: "pandora", color: "3668FF", name: "Pandora" },
-  { slug: "deezer", color: "FEAA2D", name: "Deezer" },
-  { slug: "tidal", color: "000000", name: "Tidal" },
-  { slug: "iheartradio", color: "C6002B", name: "iHeartRadio" },
-  { slug: "qobuz", color: "2986CC", name: "Qobuz" },
-  { slug: "line", color: "00B900", name: "LINE Music" },
-  { color: "1A1A2E", name: "Boomplay" },
-  { slug: "neteasecloudmusic", color: "E60026", name: "NetEase Cloud Music" },
-  { slug: "anghami", color: "A21D42", name: "Anghami" },
-  { slug: "tencentqq", color: "12B7F5", name: "Tencent Music" },
-  { slug: "jiosaavn", color: "1CB251", name: "JioSaavn" },
-  { color: "00CD3C", name: "Melon" },
-  { color: "FF6B35", name: "Genie" },
-  { color: "F5C400", name: "Adaptr" },
-  { color: "3B82F6", name: "FLO" },
-  { color: "E31E24", name: "Bugs" },
+  { slug: "spotify", color: "1ED760", name: "Spotify", url: "https://open.spotify.com/" },
+  { slug: "instagram", color: "E4405F", name: "Instagram", url: "https://www.instagram.com/" },
+  { slug: "tiktok", color: "000000", name: "TikTok", url: "https://www.tiktok.com/" },
+  { slug: "youtubemusic", color: "FF0000", name: "YouTube Music", url: "https://music.youtube.com/" },
+  { slug: "amazonmusic", color: "46C2EB", name: "Amazon Music", url: "https://music.amazon.com/" },
+  { slug: "pandora", color: "3668FF", name: "Pandora", url: "https://www.pandora.com/" },
+  { slug: "deezer", color: "FEAA2D", name: "Deezer", url: "https://www.deezer.com/" },
+  { slug: "tidal", color: "000000", name: "Tidal", url: "https://tidal.com/" },
+  { slug: "iheartradio", color: "C6002B", name: "iHeartRadio", url: "https://www.iheart.com/" },
+  { slug: "qobuz", color: "2986CC", name: "Qobuz", url: "https://www.qobuz.com/" },
+  { slug: "line", color: "00B900", name: "LINE Music", url: "https://music.line.me/" },
+  { color: "1A1A2E", name: "Boomplay", url: "https://www.boomplay.com/" },
+  { slug: "neteasecloudmusic", color: "E60026", name: "NetEase Cloud Music", url: "https://music.163.com/" },
+  { slug: "anghami", color: "A21D42", name: "Anghami", url: "https://www.anghami.com/" },
+  { slug: "tencentqq", color: "12B7F5", name: "Tencent Music", url: "https://y.qq.com/" },
+  { slug: "jiosaavn", color: "1CB251", name: "JioSaavn", url: "https://www.jiosaavn.com/" },
+  { color: "00CD3C", name: "Melon", url: "https://www.melon.com/" },
+  { color: "FF6B35", name: "Genie", url: "https://www.genie.co.kr/" },
+  { color: "F5C400", name: "Adaptr", url: "https://www.adaptr.com/" },
+  { color: "3B82F6", name: "FLO", url: "https://www.musicflo.com/" },
+  { color: "E31E24", name: "Bugs", url: "https://music.bugs.co.kr/" },
 ];
 
 function InitialBadge({ name, bg }: { name: string; bg: string }) {
@@ -54,10 +54,14 @@ function PlatformTile({ def }: { def: PlatformDef }) {
   const showImg = def.slug && !broken;
 
   return (
-    <div
-      className="flex shrink-0 flex-col items-center gap-0.5"
+    <a
+      href={def.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex shrink-0 flex-col items-center gap-0.5 rounded-lg outline-none ring-offset-background transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-primary"
       title={def.name}
       role="listitem"
+      aria-label={def.name}
     >
       {showImg ? (
         <img
@@ -73,7 +77,7 @@ function PlatformTile({ def }: { def: PlatformDef }) {
       ) : (
         <InitialBadge name={def.name} bg={def.color} />
       )}
-    </div>
+    </a>
   );
 }
 
@@ -81,12 +85,12 @@ export function StreamingPlatformsStrip() {
   const { t } = useTranslation();
 
   return (
-    <div className="space-y-2 pt-0.5" data-testid="streaming-platforms-strip">
-      <p className="text-xs sm:text-sm text-muted-foreground leading-snug">
+    <div className="space-y-0.5" data-testid="streaming-platforms-strip">
+      <p className="text-[11px] sm:text-xs text-muted-foreground leading-tight">
         {t("explore.internationalPlatformsStrip")}
       </p>
       <div
-        className="flex flex-wrap gap-2 sm:flex-nowrap sm:overflow-x-auto sm:pb-1 scrollbar-hide items-center -mx-0.5 px-0.5"
+        className="flex flex-wrap gap-1 sm:flex-nowrap sm:overflow-x-auto scrollbar-hide items-center"
         role="list"
         aria-label={t("explore.internationalPlatformsAria")}
       >

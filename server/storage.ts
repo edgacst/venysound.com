@@ -391,9 +391,42 @@ function primaryArtistFromSpotifyArtists(artists: string): string {
 function stripForIntlTitleMatch(s: string): string {
   let t = s.normalize("NFKC").trim();
   t = t.replace(/\s*\((feat|ft|featuring)[^)]*\)/gi, "");
+  t = t.replace(/\s*\[(explicit|clean|radio edit|instrumental)[^\]]*\]/gi, "");
+  t = t.replace(/\s*\(360[^)]*\)/gi, "");
   t = t.replace(/\s*-\s*(single|ep|deluxe edition|remaster(ed)?)\s*$/i, "");
   t = t.replace(/\s+/g, " ").trim();
   return t;
+}
+
+/** Spotify 아티스트 문자열을 쉼표·& 로 나눔 (콜라보·다중 표기) */
+function spotifyArtistSegments(artists: string): string[] {
+  const parts = artists.split(",").map((s) => s.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    for (const q of p.split(/\s*&\s*/)) {
+      const t = q.trim();
+      if (t) out.push(t);
+    }
+  }
+  return [...new Set(out)];
+}
+
+/** 앨범/트랙명 변형 — 괄호 부제 제거, -·: 분할 등 */
+function titleVariantsForIntl(raw: string): string[] {
+  const seen = new Set<string>();
+  const add = (s: string) => {
+    const u = stripForIntlTitleMatch(s).trim();
+    if (u.length > 0) seen.add(u);
+  };
+  add(raw);
+  const base = stripForIntlTitleMatch(raw);
+  const noParen = base.replace(/\s*\([^)]{1,56}\)\s*$/g, "").trim();
+  if (noParen.length > 0 && noParen !== base) add(noParen);
+  for (const seg of base.split(/\s*[-–—:]\s*/)) {
+    const t = seg.trim();
+    if (t.length >= 3) add(t);
+  }
+  return [...seen];
 }
 
 export class DatabaseStorage implements IStorage {
@@ -865,18 +898,38 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  /** Spotify `artists` 문자열의 각 세그먼트(쉼표 기준)로 제목·아티스트 퍼지 매칭 시도 */
+  /** Spotify 앨범명·아티스트와 사이트 music 행 퍼지 매칭 (제목 변형·아티스트 & 분리·아티스트 없는 초장문 제목) */
   private async findMusicIdFuzzyInternationalMatch(title: string, artists: string): Promise<number | null> {
-    const segments = artists
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    const toTry = segments.length > 0 ? segments : [primaryArtistFromSpotifyArtists(artists)];
-    for (const seg of toTry) {
-      const id = await this.findMusicIdFuzzyInternationalMatchForArtist(title, seg);
-      if (id != null) return id;
+    const segments = spotifyArtistSegments(artists);
+    const toTry =
+      segments.length > 0 ? segments : [primaryArtistFromSpotifyArtists(artists)].filter(Boolean);
+    const variants = titleVariantsForIntl(title);
+    for (const variant of variants) {
+      for (const seg of toTry) {
+        const id = await this.findMusicIdFuzzyInternationalMatchForArtist(variant, seg);
+        if (id != null) return id;
+      }
+    }
+    for (const v of variants) {
+      const nt = normalizeInternationalMatchString(v);
+      if (nt.length >= 14) {
+        const id = await this.findMusicIdTitleOnlyExact(nt);
+        if (id != null) return id;
+      }
     }
     return null;
+  }
+
+  /** 아티스트 매칭 없이 제목만 완전 일치 — 제목이 충분히 길 때만(동명 단곡 오탐 완화) */
+  private async findMusicIdTitleOnlyExact(nt: string): Promise<number | null> {
+    const dbTitle = sql`regexp_replace(lower(trim(${music.title})), E'\\s+', ' ', 'g')`;
+    const rows = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(sql`${dbTitle} = ${nt}`)
+      .orderBy(desc(music.createdAt))
+      .limit(1);
+    return rows[0]?.id ?? null;
   }
 
   private async findMusicIdFuzzyInternationalMatchForArtist(title: string, singleArtist: string): Promise<number | null> {
@@ -917,7 +970,7 @@ export class DatabaseStorage implements IStorage {
     if (prefixRows.length > 0) return prefixRows[0].id;
 
     // 3) 한쪽 문자열이 다른 쪽에 포함 (긴 쪽이 짧은 쪽을 포함 — 오탐 줄이기 위해 최소 길이)
-    if (nt.length < 8) return null;
+    if (nt.length < 5) return null;
     const containMatch = or(sql`strpos(${dbTitle}, ${nt}) > 0`, sql`strpos(${nt}, ${dbTitle}) > 0`)!;
     const containRows = await db
       .select({ id: music.id })

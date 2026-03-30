@@ -172,10 +172,12 @@ export default function Explore() {
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
       
-        <div className="container px-4 py-8">
-        <div className="flex flex-col md:flex-row gap-4 mb-4 items-center justify-between flex-wrap">
-          <div className="flex flex-col gap-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
+        <div className={`container px-4 ${catalogTab === "international" ? "py-4" : "py-8"}`}>
+        <div
+          className={`flex flex-col md:flex-row items-center justify-between flex-wrap min-w-0 ${catalogTab === "international" ? "gap-0.5 mb-1.5" : "gap-4 mb-4"}`}
+        >
+          <div className="flex flex-col min-w-0 gap-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-3xl font-display font-bold" data-testid="text-page-title">
                 {catalogTab === "international"
                   ? t("explore.internationalPageTitle", "우리가 만든 곡 해외 출시 목록")
@@ -186,10 +188,10 @@ export default function Explore() {
               </span>
             </div>
             {catalogTab === "international" ? (
-              <p className="text-sm text-muted-foreground max-w-2xl">
+              <p className="text-[12px] sm:text-[13px] text-muted-foreground leading-tight max-w-3xl py-0">
                 {t(
-                  "explore.internationalSubtitle",
-                  "Spotify 카탈로그 기준으로, 해외 스트리밍에 출시된 우리 아티스트 곡을 보여 줍니다.",
+                  "explore.internationalIntroLead",
+                  "VenySound는 회원 아티스트의 음원을 해외 스트리밍 플랫폼에 출시할 수 있도록 무료로 돕고 있습니다. 다만 해당 플랫폼에서 정책상 거절되거나 삭제될 수 있음을 알려드립니다. 이 사이트에 표시되는 내용은 Spotify 출시 내역만 해당됩니다.",
                 )}
               </p>
             ) : null}
@@ -226,7 +228,10 @@ export default function Explore() {
           ) : null}
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide" data-testid="catalog-tabs">
+        <div
+          className={`flex gap-2 overflow-x-auto scrollbar-hide ${catalogTab === "international" ? "pb-1.5 mb-0.5" : "pb-6"}`}
+          data-testid="catalog-tabs"
+        >
           <button
             type="button"
             onClick={() => setCatalogTab("site")}
@@ -255,32 +260,17 @@ export default function Explore() {
 
         {catalogTab === "international" && (
           <div
-            className="mb-6 rounded-xl border border-primary/25 bg-primary/5 px-4 py-4 md:px-5 md:py-5 text-sm space-y-3"
+            className="mb-2 rounded-lg border border-primary/25 bg-primary/5 px-2 py-1.5 text-sm space-y-1"
             data-testid="international-info-banner"
           >
-            <div className="space-y-1.5">
-              <p className="font-semibold text-foreground flex items-center gap-2">
-                <Globe className="text-primary shrink-0" size={18} aria-hidden />
-                {t("explore.internationalBannerTitle")}
-              </p>
-              <StreamingPlatformsStrip />
-              <Link
-                href="/global-distribution-guide"
-                className="inline-flex text-primary font-medium hover:underline underline-offset-4"
-                data-testid="link-international-distribution-guide"
-              >
-                {t("explore.internationalBannerGuideCta")}
-              </Link>
-            </div>
-            <p className="text-muted-foreground leading-relaxed">
-              {t("explore.internationalBannerBody")}
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              {t("explore.internationalBannerOtherStores")}
-            </p>
-            <p className="text-muted-foreground leading-relaxed">
-              {t("explore.internationalBannerMatching")}
-            </p>
+            <StreamingPlatformsStrip />
+            <Link
+              href="/global-distribution-guide"
+              className="inline-flex text-primary text-xs sm:text-sm font-medium hover:underline underline-offset-2 leading-tight"
+              data-testid="link-international-distribution-guide"
+            >
+              {t("explore.internationalBannerGuideCta")}
+            </Link>
           </div>
         )}
 
