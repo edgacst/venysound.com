@@ -1515,7 +1515,7 @@ export default function Admin() {
             </Card>
           </div>
 
-          <Card className="p-4 mt-4" data-testid="card-revenue-summary">
+          <Card className="p-4 mt-4 overflow-x-auto" data-testid="card-revenue-summary">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <Landmark className="w-4 h-4 shrink-0" />
@@ -1638,9 +1638,8 @@ export default function Admin() {
             ) : (
               <p className="text-sm text-muted-foreground">{t("admin.revenueLoadError", "매출 데이터를 불러오지 못했습니다.")}</p>
             )}
-          </Card>
 
-          <Card className="p-4 mt-4 overflow-x-auto" data-testid="card-revenue-payments">
+            <div className="border-t border-border/80 mt-6 pt-5 space-y-3" data-testid="card-revenue-payments">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
               <h3 className="text-sm font-semibold">
                 {t("admin.revenuePaymentsTitle", "구독·크레딧 결제 내역 (누가)")}
@@ -1656,7 +1655,7 @@ export default function Admin() {
               </select>
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              {t("admin.revenuePaymentsHint", "위 매출 카드와 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다.")}
+              {t("admin.revenuePaymentsHint", "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다.")}
             </p>
             {loadingRevenuePayments ? (
               <div className="flex justify-center py-6">
@@ -1761,6 +1760,7 @@ export default function Admin() {
             ) : (
               <p className="text-sm text-muted-foreground">{t("admin.revenuePaymentsLoadError", "결제 목록을 불러오지 못했습니다.")}</p>
             )}
+            </div>
           </Card>
 
           <Card className="p-4 mt-4 overflow-hidden">
@@ -1800,7 +1800,7 @@ export default function Admin() {
                   onClick={() => batchPublishDistributionMutation.mutate()}
                   className="ml-1"
                 >
-                  일괄 배포
+                  {t("admin.distBatchPublish", "일괄 배포")}
                 </Button>
               </div>
             </div>
@@ -1888,7 +1888,7 @@ export default function Admin() {
                                     variant="outline"
                                     onClick={() => reviewDistributionMutation.mutate({ releaseId: r.id, action: "approved" })}
                                   >
-                                    승인
+                                    {t("admin.creditRefundApprove", "승인")}
                                   </Button>
                                   <Button
                                     type="button"
@@ -1900,7 +1900,7 @@ export default function Admin() {
                                       reason: distributionReviewReason[r.id] || "관리자 반려",
                                     })}
                                   >
-                                    반려
+                                    {t("admin.creditRefundReject", "반려")}
                                   </Button>
                                 </>
                               ) : ["approved", "delivered", "live"].includes(r.status) ? (
@@ -1913,7 +1913,7 @@ export default function Admin() {
                                       disabled={downloadingDistributionReleaseId === r.id}
                                       onClick={() => downloadDistributionPackage(r.id)}
                                     >
-                                      패키지 다운로드
+                                      {t("admin.distDownloadPackage", "패키지 다운로드")}
                                     </Button>
                                   ) : (
                                     <Button
@@ -1923,7 +1923,7 @@ export default function Admin() {
                                       disabled={runDistributionQcMutation.isPending}
                                       onClick={() => runDistributionQcMutation.mutate(r.id)}
                                     >
-                                      QC 실행
+                                      {t("admin.distRunQc", "QC 실행")}
                                     </Button>
                                   )}
 
@@ -1942,7 +1942,9 @@ export default function Admin() {
                                         })
                                       }
                                     >
-                                      {hasLinkedExternalRef ? "외부 ref 수정" : "외부 ref 연결"}
+                                      {hasLinkedExternalRef
+                                        ? t("admin.distExternalRefEdit", "외부 ref 수정")
+                                        : t("admin.distExternalRefLink", "외부 ref 연결")}
                                     </Button>
                                   )}
 
@@ -1952,7 +1954,7 @@ export default function Admin() {
                                     variant="outline"
                                     onClick={() => setDistributionSelectedReleaseId(r.id)}
                                   >
-                                    정산 입력
+                                    {t("admin.distEarningOpen", "정산 입력")}
                                   </Button>
                                 </>
                               ) : (
@@ -1989,7 +1991,7 @@ export default function Admin() {
             >
               <DialogContent className="sm:max-w-md" data-testid="dialog-distribution-link-external-ref">
                 <DialogHeader>
-                  <DialogTitle>외부 릴리즈 ref 연결</DialogTitle>
+                  <DialogTitle>{t("admin.distLinkDialogTitle", "외부 릴리즈 ref 연결")}</DialogTitle>
                 </DialogHeader>
                 {distributionLinkDialog && (
                   <div className="space-y-4 py-1">
@@ -2039,7 +2041,7 @@ export default function Admin() {
                 )}
                 <DialogFooter className="gap-2 sm:gap-0">
                   <Button type="button" variant="outline" onClick={() => setDistributionLinkDialog(null)}>
-                    취소
+                    {t("common.cancel", "취소")}
                   </Button>
                   <Button
                     type="button"
@@ -2057,7 +2059,7 @@ export default function Admin() {
                       });
                     }}
                   >
-                    {linkExternalReleaseRefMutation.isPending ? "저장 중…" : "저장"}
+                    {linkExternalReleaseRefMutation.isPending ? t("common.saving", "저장 중...") : t("common.save", "저장")}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -2074,7 +2076,9 @@ export default function Admin() {
                   <Input value={distributionExternalRef} onChange={(e) => setDistributionExternalRef(e.target.value)} placeholder="externalRef(선택)" />
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                  <Button type="button" variant="outline" onClick={() => setDistributionSelectedReleaseId(null)}>닫기</Button>
+                  <Button type="button" variant="outline" onClick={() => setDistributionSelectedReleaseId(null)}>
+                    {t("common.close", "닫기")}
+                  </Button>
                   <Button
                     type="button"
                     disabled={addDistributionEarningMutation.isPending || !distributionPeriodMonth || !distributionGrossAmount}
@@ -2089,7 +2093,9 @@ export default function Admin() {
                       });
                     }}
                   >
-                    {addDistributionEarningMutation.isPending ? "입력 중..." : "정산 저장"}
+                    {addDistributionEarningMutation.isPending
+                      ? t("common.entering", "입력 중...")
+                      : t("admin.distEarningSave", "정산 저장")}
                   </Button>
                 </div>
               </div>
@@ -2121,7 +2127,9 @@ export default function Admin() {
                 disabled={importDistributionEarningsMutation.isPending || !distributionBulkCsv.trim()}
                 onClick={() => importDistributionEarningsMutation.mutate()}
               >
-                {importDistributionEarningsMutation.isPending ? "반입 중…" : "일괄 반입 실행"}
+                {importDistributionEarningsMutation.isPending
+                  ? t("admin.distImportRunning", "반입 중…")
+                  : t("admin.distImportRun", "일괄 반입 실행")}
               </Button>
             </div>
             <Textarea
@@ -4195,7 +4203,7 @@ export default function Admin() {
               data-testid="button-save-local"
             >
               {savingLocal ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <HardDrive className="w-4 h-4 mr-2" />}
-              {savingLocal ? "저장 중..." : "전체 백업 저장 (E드라이브)"}
+              {savingLocal ? t("common.saving", "저장 중...") : t("admin.backupSaveLocal", "전체 백업 저장 (E드라이브)")}
             </Button>
             <Button
               variant="outline"
@@ -4233,7 +4241,9 @@ export default function Admin() {
               }}
             >
               {savingServer ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Database className="w-4 h-4 mr-2" />}
-              {savingServer ? "서버 백업 생성 중..." : "원격 서버에 백업 파일 생성"}
+              {savingServer
+                ? t("admin.backupServerSaving", "서버 백업 생성 중...")
+                : t("admin.backupServerCreate", "원격 서버에 백업 파일 생성")}
             </Button>
           </div>
 
@@ -4326,7 +4336,7 @@ export default function Admin() {
                       }
                     }}
                   >
-                    확인
+                    {t("common.confirm", "확인")}
                   </Button>
                 </div>
               </div>
