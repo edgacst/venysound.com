@@ -429,6 +429,27 @@ function titleVariantsForIntl(raw: string): string[] {
   return [...seen];
 }
 
+/**
+ * 구두점·공백·버전 표기 차이 무시 비교용 키 (영문·숫자·한글 음절만 유지).
+ * Spotify 앨범명 vs 사이트 곡명, ver.1 / ver1 / (Ver 2) 등 흡수.
+ */
+function compactKeyIntl(raw: string): string {
+  let u = stripForIntlTitleMatch(raw);
+  u = u.replace(/[''`´]/g, "");
+  u = u.replace(/\bver\.?\s*(\d+)\b/gi, "ver$1");
+  u = u.replace(/\bversion\s*(\d+)\b/gi, "ver$1");
+  return normalizeInternationalMatchString(u).replace(/[^a-z0-9가-힣]/gi, "");
+}
+
+/** DB 컬럼용: 소문자·trim 후 영숫자·한글만 남김 (compactKeyIntl 과 동일 규칙) */
+function sqlMusicTitleCompact() {
+  return sql`regexp_replace(lower(trim(${music.title})), E'[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ]', '', 'g')`;
+}
+
+function sqlMusicArtistCompact() {
+  return sql`regexp_replace(lower(trim(${music.artist})), E'[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ]', '', 'g')`;
+}
+
 export class DatabaseStorage implements IStorage {
   // Music
   async createMusic(musicData: InsertMusic & { userId: string }): Promise<Music> {
@@ -912,12 +933,31 @@ export class DatabaseStorage implements IStorage {
     }
     for (const v of variants) {
       const nt = normalizeInternationalMatchString(v);
-      if (nt.length >= 14) {
+      if (nt.length >= 11) {
         const id = await this.findMusicIdTitleOnlyExact(nt);
         if (id != null) return id;
       }
     }
+    for (const v of variants) {
+      const ck = compactKeyIntl(v);
+      if (ck.length >= 18) {
+        const id = await this.findMusicIdTitleOnlyCompact(ck);
+        if (id != null) return id;
+      }
+    }
     return null;
+  }
+
+  /** 제목 압축 키만 완전 일치 — 긴 제목만(동명곡 완화), 아티스트 무관 */
+  private async findMusicIdTitleOnlyCompact(ck: string): Promise<number | null> {
+    const dbT = sqlMusicTitleCompact();
+    const rows = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(sql`${dbT} = ${ck}`)
+      .orderBy(desc(music.createdAt))
+      .limit(1);
+    return rows[0]?.id ?? null;
   }
 
   /** 아티스트 매칭 없이 제목만 완전 일치 — 제목이 충분히 길 때만(동명 단곡 오탐 완화) */
@@ -979,6 +1019,48 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(music.createdAt))
       .limit(1);
     if (containRows.length > 0) return containRows[0].id;
+
+    const compactId = await this.findMusicIdCompactIntlMatch(title, singleArtist);
+    if (compactId != null) return compactId;
+
+    return null;
+  }
+
+  /**
+   * 구두점·대소문·공백 제거 후 제목·아티스트 비교.
+   * 사이트 `artist`에 괄호/부가 표기가 있어도 strpos 로 잡음.
+   */
+  private async findMusicIdCompactIntlMatch(title: string, singleArtist: string): Promise<number | null> {
+    const ckT = compactKeyIntl(title);
+    const ckA = compactKeyIntl(singleArtist);
+    if (ckT.length < 5 || ckA.length < 3) return null;
+
+    const dbT = sqlMusicTitleCompact();
+    const dbA = sqlMusicArtistCompact();
+
+    const artistOk =
+      ckA.length >= 5
+        ? or(sql`${dbA} = ${ckA}`, sql`strpos(${dbA}, ${ckA}) > 0`, sql`strpos(${ckA}, ${dbA}) > 0`)!
+        : or(sql`${dbA} = ${ckA}`, sql`strpos(${dbA}, ${ckA}) > 0`)!;
+
+    const exactT = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(and(sql`${dbT} = ${ckT}`, artistOk))
+      .orderBy(desc(music.createdAt))
+      .limit(1);
+    if (exactT.length > 0) return exactT[0].id;
+
+    if (ckT.length >= 6) {
+      const titleLoose = or(sql`strpos(${dbT}, ${ckT}) > 0`, sql`strpos(${ckT}, ${dbT}) > 0`)!;
+      const loose = await db
+        .select({ id: music.id })
+        .from(music)
+        .where(and(titleLoose, artistOk))
+        .orderBy(desc(music.createdAt))
+        .limit(1);
+      if (loose.length > 0) return loose[0].id;
+    }
 
     return null;
   }
