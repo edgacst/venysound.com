@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePlayerStore } from "@/components/AudioPlayer";
 
 export type InternationalReleaseItem = {
   id: string;
@@ -11,10 +12,13 @@ export type InternationalReleaseItem = {
   spotifyUrl: string;
   previewUrl?: string | null;
   releaseDate?: string | null;
+  /** 사이트 `music.id` — Spotify 앨범 id 또는 제목·아티스트로 매칭되면 채워짐 */
+  siteMusicId?: number | null;
 };
 
 export function InternationalReleaseCard({ item }: { item: InternationalReleaseItem }) {
   const { t } = useTranslation();
+  const playMusic = usePlayerStore((s) => s.playMusic);
 
   return (
     <div
@@ -44,12 +48,27 @@ export function InternationalReleaseCard({ item }: { item: InternationalReleaseI
             </p>
           ) : null}
         </div>
-        <Button variant="outline" size="sm" className="w-full gap-1.5 border-white/10 shrink-0" asChild>
-          <a href={item.spotifyUrl} target="_blank" rel="noopener noreferrer">
-            <ExternalLink size={14} />
-            {t("explore.listenOnSpotify", "Spotify에서 듣기")}
-          </a>
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0 mt-auto w-full">
+          <Button variant="outline" size="sm" className="flex-1 gap-1.5 border-white/10 min-h-9" asChild>
+            <a href={item.spotifyUrl} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={14} className="shrink-0" />
+              <span className="truncate">{t("explore.listenOnSpotify", "Spotify에서 듣기")}</span>
+            </a>
+          </Button>
+          {item.siteMusicId != null && item.siteMusicId > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex-1 gap-1.5 border-primary/30 bg-primary/5 hover:bg-primary/10 min-h-9"
+              onClick={() => playMusic(item.siteMusicId!)}
+              data-testid={`button-listen-site-${item.id}`}
+            >
+              <Headphones size={14} className="shrink-0" />
+              <span className="truncate">{t("explore.listenOnSite", "이 사이트에서 듣기")}</span>
+            </Button>
+          ) : null}
+        </div>
       </div>
     </div>
   );

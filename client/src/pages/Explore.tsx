@@ -181,7 +181,7 @@ export default function Explore() {
               <p className="text-sm text-muted-foreground max-w-2xl">
                 {t(
                   "explore.internationalSubtitle",
-                  "베니사운드 아티스트가 글로벌 플랫폼(Spotify 등)에 출시한 곡입니다. Spotify 기준으로 표시되며, 사이트 업로드 음원과 다를 수 있고 여기서 직접 재생되지 않을 수 있습니다.",
+                  "베니사운드 아티스트가 글로벌 플랫폼(Spotify 등)에 출시한 곡입니다. Spotify 기준으로 표시됩니다. 사이트에 같은 곡이 연결되면「이 사이트에서 듣기」로 재생할 수 있습니다(제목·아티스트 자동 매칭 또는 음원 수정에서 Spotify 앨범 ID 지정).",
                 )}
               </p>
             ) : null}

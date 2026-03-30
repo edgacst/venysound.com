@@ -24,6 +24,8 @@ export const music = pgTable("music", {
   price: integer("price").default(0),
   isDownloadable: boolean("is_downloadable").default(false),
   userId: text("user_id").references(() => users.id).notNull(),
+  /** Spotify 앨범·싱글 id — 해외 출시 목록과 사이트 음원 매칭용 (선택) */
+  spotifyAlbumId: text("spotify_album_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -104,6 +104,7 @@ export function useUpdateMusic() {
       queryClient.invalidateQueries({ queryKey: [api.music.list.path] });
       queryClient.invalidateQueries({ queryKey: [api.music.get.path, variables.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/users/profile"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/music/international-releases"] });
       toast({ title: "음원이 수정되었습니다" });
     },
     onError: (error: Error) => {

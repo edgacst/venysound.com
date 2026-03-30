@@ -254,6 +254,7 @@ export function MusicCard({ music }: MusicCardProps) {
   const [editCoverUrl, setEditCoverUrl] = useState<string | null>(null);
   const [editIsDownloadable, setEditIsDownloadable] = useState<boolean>(music.isDownloadable || false);
   const [editPrice, setEditPrice] = useState<number | "">(music.price ?? 0);
+  const [editSpotifyAlbumId, setEditSpotifyAlbumId] = useState(() => (music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "");
   const [isFetchingEditCover, setIsFetchingEditCover] = useState(false);
   const [syncEditorOpen, setSyncEditorOpen] = useState(false);
 
@@ -435,6 +436,7 @@ export function MusicCard({ music }: MusicCardProps) {
     setEditCoverUrl(null);
     setEditIsDownloadable(music.isDownloadable || false);
     setEditPrice(music.price ?? 0);
+    setEditSpotifyAlbumId((music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "");
     setEditOpen(true);
   };
 
@@ -461,6 +463,11 @@ export function MusicCard({ music }: MusicCardProps) {
     }
     if (editCoverUrl) {
       data.imageFilename = editCoverUrl;
+    }
+    const prevSpotify = ((music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "").trim();
+    const nextSpotify = editSpotifyAlbumId.trim();
+    if (nextSpotify !== prevSpotify) {
+      data.spotifyAlbumId = nextSpotify || null;
     }
     updateMusic({ id: music.id, data }, {
       onSuccess: () => setEditOpen(false),
@@ -705,6 +712,20 @@ export function MusicCard({ music }: MusicCardProps) {
             <div>
               <Label htmlFor="edit-tags">{t('music.tagsComma')}</Label>
               <Input id="edit-tags" value={editTags} onChange={(e) => setEditTags(e.target.value)} data-testid="input-edit-tags" />
+            </div>
+            <div>
+              <Label htmlFor="edit-spotify-album-id">{t("music.spotifyAlbumIdLabel", "Spotify 앨범·싱글 ID (선택)")}</Label>
+              <Input
+                id="edit-spotify-album-id"
+                value={editSpotifyAlbumId}
+                onChange={(e) => setEditSpotifyAlbumId(e.target.value)}
+                placeholder={t("music.spotifyAlbumIdPlaceholder", "open.spotify.com/album/ 뒤의 ID")}
+                className="font-mono text-xs"
+                data-testid="input-edit-spotify-album-id"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t("music.spotifyAlbumIdHint", "해외 출시 목록과 이 곡을 정확히 연결할 때만 입력하세요. 비우면 제목·아티스트로 자동 매칭을 시도합니다.")}
+              </p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">

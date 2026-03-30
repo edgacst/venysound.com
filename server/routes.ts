@@ -1666,7 +1666,11 @@ export async function registerRoutes(
       const pageNum = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
       const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "30"), 10) || 30));
       const { data, total } = await fetchInternationalReleasesPage(pageNum, limitNum);
-      res.json({ data, total, page: pageNum, limit: limitNum });
+      const siteIds = await storage.resolveSiteMusicIdsForInternationalReleases(
+        data.map((d) => ({ spotifyAlbumId: d.id, title: d.title, artists: d.artists })),
+      );
+      const enriched = data.map((d, i) => ({ ...d, siteMusicId: siteIds[i] ?? null }));
+      res.json({ data: enriched, total, page: pageNum, limit: limitNum });
     } catch (e) {
       console.error("[international-releases]", e);
       res.status(500).json({ message: "목록을 불러올 수 없습니다" });
@@ -2298,7 +2302,7 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
       if (existing.userId !== userId) return res.status(403).json({ message: "본인의 음원만 수정할 수 있습니다" });
 
-      const { title, artist, genre, tags, lyrics, isAi, imageFilename, price, isDownloadable } = req.body;
+      const { title, artist, genre, tags, lyrics, isAi, imageFilename, price, isDownloadable, spotifyAlbumId } = req.body;
       if (title !== undefined && !title.trim()) return res.status(400).json({ message: "제목을 입력해주세요" });
       if (artist !== undefined && !artist.trim()) return res.status(400).json({ message: "아티스트를 입력해주세요" });
 
@@ -2313,6 +2317,12 @@ export async function registerRoutes(
       if (imageFilename !== undefined) updateData.imageFilename = imageFilename;
       if (price !== undefined) updateData.price = isPremium ? (Number(price) || 0) : 0;
       if (isDownloadable !== undefined) updateData.isDownloadable = isPremium ? Boolean(isDownloadable) : false;
+      if (spotifyAlbumId !== undefined) {
+        const raw = spotifyAlbumId == null ? "" : String(spotifyAlbumId).trim();
+        if (!raw) updateData.spotifyAlbumId = null;
+        else if (/^[0-9A-Za-z]{10,32}$/.test(raw)) updateData.spotifyAlbumId = raw;
+        else return res.status(400).json({ message: "spotifyAlbumId 형식이 올바르지 않습니다" });
+      }
       const updated = await storage.updateMusic(musicId, updateData);
       res.json(updated);
     } catch (err) {

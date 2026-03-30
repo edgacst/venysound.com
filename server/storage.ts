@@ -51,7 +51,11 @@ export interface IStorage {
   getMusicById(id: number): Promise<Music | undefined>;
   getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]>;
   
-  updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean }): Promise<Music | undefined>;
+  updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean; spotifyAlbumId?: string | null }): Promise<Music | undefined>;
+  /** Spotify 해외 출시 항목과 동일한 사이트 음원 id (spotify_album_id 우선, 없으면 제목·대표 아티스트 퍼지 매칭) */
+  resolveSiteMusicIdsForInternationalReleases(
+    items: { spotifyAlbumId: string; title: string; artists: string }[],
+  ): Promise<(number | null)[]>;
   deleteMusic(id: number): Promise<void>;
 
   // Likes
@@ -349,6 +353,19 @@ export interface IStorage {
   updateUserReportStatus(id: number, status: string, adminNote?: string): Promise<void>;
 }
 
+function normalizeInternationalMatchString(s: string): string {
+  return s
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+function primaryArtistFromSpotifyArtists(artists: string): string {
+  const first = artists.split(",")[0]?.trim() ?? "";
+  return first || artists.trim();
+}
+
 export class DatabaseStorage implements IStorage {
   // Music
   async createMusic(musicData: InsertMusic & { userId: string }): Promise<Music> {
@@ -391,6 +408,7 @@ export class DatabaseStorage implements IStorage {
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
     let query = db
@@ -812,9 +830,64 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean }): Promise<Music | undefined> {
+  async updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean; spotifyAlbumId?: string | null }): Promise<Music | undefined> {
     const [updated] = await db.update(music).set(data).where(eq(music.id, id)).returning();
     return updated;
+  }
+
+  private async findMusicIdFuzzyInternationalMatch(title: string, artists: string): Promise<number | null> {
+    const nt = normalizeInternationalMatchString(title);
+    const na = normalizeInternationalMatchString(primaryArtistFromSpotifyArtists(artists));
+    if (!nt || !na) return null;
+
+    const titleEq = sql`regexp_replace(lower(trim(${music.title})), E'\\s+', ' ', 'g') = ${nt}`;
+    const ar = sql`regexp_replace(lower(trim(${music.artist})), E'\\s+', ' ', 'g')`;
+    const artistMatch = or(
+      sql`${ar} = ${na}`,
+      sql`${ar} LIKE ${`${na}%`}`,
+      sql`${na} LIKE concat(${ar}, '%')`,
+    )!;
+
+    const rows = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(and(titleEq, artistMatch))
+      .orderBy(desc(music.createdAt))
+      .limit(2);
+
+    if (rows.length !== 1) return null;
+    return rows[0].id;
+  }
+
+  async resolveSiteMusicIdsForInternationalReleases(
+    items: { spotifyAlbumId: string; title: string; artists: string }[],
+  ): Promise<(number | null)[]> {
+    if (items.length === 0) return [];
+    const albumIds = [...new Set(items.map((i) => i.spotifyAlbumId).filter(Boolean))];
+    const exactMap = new Map<string, number>();
+    if (albumIds.length > 0) {
+      const exactRows = await db
+        .select({ id: music.id, spotifyAlbumId: music.spotifyAlbumId })
+        .from(music)
+        .where(and(isNotNull(music.spotifyAlbumId), inArray(music.spotifyAlbumId, albumIds)))
+        .orderBy(desc(music.createdAt));
+      for (const row of exactRows) {
+        const aid = row.spotifyAlbumId;
+        if (aid && !exactMap.has(aid)) exactMap.set(aid, row.id);
+      }
+    }
+
+    const out: (number | null)[] = [];
+    for (const item of items) {
+      const byAlbum = exactMap.get(item.spotifyAlbumId);
+      if (byAlbum != null) {
+        out.push(byAlbum);
+        continue;
+      }
+      const fid = await this.findMusicIdFuzzyInternationalMatch(item.title, item.artists);
+      out.push(fid);
+    }
+    return out;
   }
 
   async deleteMusic(id: number): Promise<void> {
