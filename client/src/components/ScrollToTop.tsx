@@ -2,10 +2,12 @@ import { useState, useEffect, useCallback } from "react";
 import { ArrowUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "@/components/AudioPlayer";
+import { useTranslation } from "react-i18next";
 
 const SCROLL_THRESHOLD = 400;
 
 export function ScrollToTop() {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
   const activeMusicId = usePlayerStore((s) => s.activeMusicId);
 
@@ -34,7 +36,7 @@ export function ScrollToTop() {
       className={`fixed right-4 z-40 rounded-full shadow-lg size-11 border border-border bg-card/95 backdrop-blur hover:bg-card ${bottomClass}`}
       style={{ marginRight: "env(safe-area-inset-right)", marginBottom: "env(safe-area-inset-bottom)" }}
       onClick={scrollToTop}
-      aria-label="맨 위로"
+      aria-label={t("common.scrollToTop", "맨 위로")}
       data-testid="button-scroll-to-top"
     >
       <ArrowUp size={20} />

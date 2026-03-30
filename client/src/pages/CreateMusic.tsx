@@ -469,11 +469,11 @@ export default function CreateMusic() {
       })
         .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
         .catch(() => {
-          setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
+          setErrorMessage(t("createMusic.serverSyncFailed", "서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요."));
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
         });
     }
-  }, [user?.id, libraryFetched, libraryRemote, queryClient]);
+  }, [user?.id, libraryFetched, libraryRemote, queryClient, t]);
 
   const persistTracks = useCallback(
     (tracks: SavedTrack[], opts?: { immediate?: boolean; removedClientIds?: string[] }) => {
@@ -499,7 +499,7 @@ export default function CreateMusic() {
         })
           .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
           .catch(() => {
-            setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
+            setErrorMessage(t("createMusic.serverSyncFailed", "서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요."));
             queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
           });
       };
@@ -509,7 +509,7 @@ export default function CreateMusic() {
       }
       librarySyncTimerRef.current = setTimeout(send, 850);
     },
-    [user?.id, queryClient],
+    [user?.id, queryClient, t],
   );
 
   const removeSavedTrack = useCallback(
@@ -549,8 +549,8 @@ export default function CreateMusic() {
       const data = await res.json();
       if (!res.ok) {
         toast({
-          title: "공개 실패",
-          description: data.message || "오류가 발생했습니다.",
+          title: t("createMusic.publishFailedTitle", "공개 실패"),
+          description: data.message || t("createMusic.publishFailedUnknown", "오류가 발생했습니다."),
           variant: "destructive",
         });
         return;
@@ -561,15 +561,21 @@ export default function CreateMusic() {
         return next;
       });
       toast({
-        title: "신곡으로 공개되었습니다!",
-        description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
+        title: t("createMusic.publishSuccessTitle", "신곡으로 공개되었습니다!"),
+        description: t("createMusic.publishSuccessDesc", '"{{title}}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.', {
+          title: track.title || t("createMusic.aiGeneratedTrackFallback", "AI 생성 음악"),
+        }),
       });
     } catch {
-      toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
+      toast({
+        title: t("createMusic.publishFailedTitle", "공개 실패"),
+        description: t("createMusic.publishNetworkError", "네트워크 오류가 발생했습니다."),
+        variant: "destructive",
+      });
     } finally {
       setPublishingId(null);
     }
-  }, [toast, persistTracks]);
+  }, [toast, persistTracks, t]);
 
   const goUploadWithTrack = useCallback(
     (track: SavedTrack) => {
@@ -597,15 +603,15 @@ export default function CreateMusic() {
     if (!track.audio_url) return;
     usePlayerStore.getState().playExternalTrack({
       url: track.audio_url,
-      title: track.title || "제목 없음",
+      title: track.title || t("createMusic.untitled", "제목 없음"),
       artist: track.tags,
       imageUrl: track.image_url,
     });
-  }, []);
+  }, [t]);
 
   const handleDownloadTrack = useCallback(async (track: SavedTrack) => {
     if (!track.audio_url) return;
-    const baseName = sanitizeFilename(track.title || "제목 없음");
+    const baseName = sanitizeFilename(track.title || t("createMusic.untitled", "제목 없음"));
     try {
       const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}`;
       const res = await fetch(proxyUrl, { credentials: "include" });
@@ -636,7 +642,7 @@ export default function CreateMusic() {
       persistTracks(next);
       return next;
     });
-  }, []);
+  }, [t, persistTracks]);
 
   const pollTask = useCallback(
     async (tid: string, provider?: string) => {
@@ -644,7 +650,7 @@ export default function CreateMusic() {
       const res = await fetch(`/api/ai-music/task/${tid}${q}`, { credentials: "include" });
       if (!res.ok) {
         setStatus("failed");
-        setErrorMessage("작업 조회에 실패했습니다.");
+        setErrorMessage(t("createMusic.taskPollFailed", "작업 조회에 실패했습니다."));
         return;
       }
       const data = await res.json();
@@ -736,7 +742,7 @@ export default function CreateMusic() {
       setStatus(state);
       if (state === "failed") {
         generationStartRef.current = null;
-        setErrorMessage(data.message ?? "생성에 실패했습니다.");
+        setErrorMessage(data.message ?? t("createMusic.generationFailedGeneric", "생성에 실패했습니다."));
         setTaskId(null);
       }
       if (state === "pending" || state === "running") {
@@ -752,11 +758,11 @@ export default function CreateMusic() {
     const customMode = mode === "custom";
     const promptTrim = prompt.trim();
     if (customMode && !promptTrim) {
-      toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
+      toast({ title: t("createMusic.toastEnterLyrics", "가사를 입력해 주세요."), variant: "destructive" });
       return;
     }
     if (!customMode && !promptTrim) {
-      toast({ title: "음악에 대한 설명을 입력해 주세요.", variant: "destructive" });
+      toast({ title: t("createMusic.toastEnterDescription", "음악에 대한 설명을 입력해 주세요."), variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
@@ -788,13 +794,13 @@ export default function CreateMusic() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus("failed");
-        setErrorMessage(data.message ?? "생성 요청에 실패했습니다.");
+        setErrorMessage(data.message ?? t("createMusic.generationRequestFailed", "생성 요청에 실패했습니다."));
         if (res.status === 403 && (data as { code?: string }).code === "AI_MUSIC_LIMIT_REACHED") {
           toast({ title: data.message, variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
         }
         if (res.status === 402 && (data as { code?: string }).code === "INSUFFICIENT_CREDITS") {
-          toast({ title: data.message ?? "크레딧이 부족합니다.", variant: "destructive" });
+          toast({ title: data.message ?? t("createMusic.insufficientCreditsFallback", "크레딧이 부족합니다."), variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
           queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
         }
@@ -804,7 +810,7 @@ export default function CreateMusic() {
       const provider = data.provider ?? undefined;
       if (!tid) {
         setStatus("failed");
-        setErrorMessage("서버 응답 오류.");
+        setErrorMessage(t("createMusic.serverResponseError", "서버 응답 오류."));
         return;
       }
       setTaskId(tid);
@@ -840,7 +846,7 @@ export default function CreateMusic() {
       pollTask(tid, provider);
     } catch {
       setStatus("failed");
-      setErrorMessage("네트워크 오류가 발생했습니다.");
+      setErrorMessage(t("createMusic.networkErrorGeneric", "네트워크 오류가 발생했습니다."));
     } finally {
       setIsSubmitting(false);
     }
@@ -1251,33 +1257,34 @@ export default function CreateMusic() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Globe className="w-5 h-5 text-violet-500" />
-              신곡으로 사이트에 공개
+              {t("createMusic.publishDialogTitle", "신곡으로 사이트에 공개")}
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-3 text-sm text-muted-foreground">
                 <p>
-                  <span className="font-semibold text-foreground">"{publishConfirmTrack?.title || "AI 생성 음악"}"</span>을(를)
-                  베니사운드 신곡 목록에 공개합니다.
+                  {t("createMusic.publishDialogIntro", '"{{title}}"을(를) 베니사운드 신곡 목록에 공개합니다.', {
+                    title: publishConfirmTrack?.title || t("createMusic.aiGeneratedTrackFallback", "AI 생성 음악"),
+                  })}
                 </p>
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs space-y-1.5">
-                  <p className="font-semibold text-amber-700 dark:text-amber-400">공개 전 확인해주세요</p>
+                  <p className="font-semibold text-amber-700 dark:text-amber-400">
+                    {t("createMusic.publishDialogCheckTitle", "공개 전 확인해주세요")}
+                  </p>
                   <ul className="list-disc list-inside space-y-1 text-amber-700 dark:text-amber-500">
-                    <li>AI 생성 배지가 자동으로 표시됩니다</li>
-                    <li>무료 플랜은 AI 공개곡 1곡으로 제한됩니다</li>
-                    <li>수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다</li>
-                    <li>Venysound 이용약관 및 저작권법을 준수해야 합니다</li>
-                    <li>부적절한 내용은 관리자에 의해 삭제될 수 있습니다</li>
+                    <li>{t("createMusic.publishDialogBullet1", "AI 생성 배지가 자동으로 표시됩니다")}</li>
+                    <li>{t("createMusic.publishDialogBullet2", "무료 플랜은 AI 공개곡 1곡으로 제한됩니다")}</li>
+                    <li>{t("createMusic.publishDialogBullet3", "수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다")}</li>
+                    <li>{t("createMusic.publishDialogBullet4", "Venysound 이용약관 및 저작권법을 준수해야 합니다")}</li>
+                    <li>{t("createMusic.publishDialogBullet5", "부적절한 내용은 관리자에 의해 삭제될 수 있습니다")}</li>
                   </ul>
                 </div>
-                <p className="text-xs">
-                  위 내용에 동의하고 신곡으로 공개하시겠습니까?
-                </p>
+                <p className="text-xs">{t("createMusic.publishDialogConsent", "위 내용에 동의하고 신곡으로 공개하시겠습니까?")}</p>
               </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setPublishConfirmTrack(null)}>
-              취소
+              {t("common.cancel", "취소")}
             </Button>
             <Button
               className="bg-violet-600 hover:bg-violet-700 text-white"
@@ -1290,9 +1297,15 @@ export default function CreateMusic() {
               }}
             >
               {publishingId === publishConfirmTrack?.id ? (
-                <><Loader2 className="w-4 h-4 animate-spin mr-1" />공개 중...</>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  {t("createMusic.publishPublishing", "공개 중...")}
+                </>
               ) : (
-                <><Globe className="w-4 h-4 mr-1" />동의하고 공개</>
+                <>
+                  <Globe className="w-4 h-4 mr-1" />
+                  {t("createMusic.publishAgree", "동의하고 공개")}
+                </>
               )}
             </Button>
           </DialogFooter>

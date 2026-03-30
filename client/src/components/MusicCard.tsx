@@ -357,7 +357,7 @@ export function MusicCard({ music }: MusicCardProps) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error((err?.message as string) || "가사 정렬 실패");
+        throw new Error((err?.message as string) || t("music.alignLyricsFailedDefault", "가사 정렬 실패"));
       }
       return res.json() as Promise<{ lyrics: string }>;
     },
@@ -849,7 +849,7 @@ export function MusicCard({ music }: MusicCardProps) {
                       onClick={() => setEditCoverUrl(null)}
                       data-testid="button-edit-remove-cover"
                     >
-                      원래 커버로 되돌리기
+                      {t("music.revertCover", "원래 커버로 되돌리기")}
                     </button>
                   )}
                 </div>
@@ -870,7 +870,7 @@ export function MusicCard({ music }: MusicCardProps) {
           <DialogHeader>
             <DialogTitle>{t('music.syncLyrics')}</DialogTitle>
             <DialogDescription>
-              음원을 재생하면서 가사가 나올 때마다 아래 버튼을 누르세요. 자동으로 타이밍이 기록됩니다.
+              {t("music.syncLyricsEditorDesc", "음원을 재생하면서 가사가 나올 때마다 아래 버튼을 누르세요. 자동으로 타이밍이 기록됩니다.")}
             </DialogDescription>
           </DialogHeader>
           <LyricsSyncEditor
@@ -907,7 +907,10 @@ export function MusicCard({ music }: MusicCardProps) {
           <DialogHeader>
             <DialogTitle>{t('music.reportTitle')}</DialogTitle>
             <DialogDescription>
-              "{music.title}" - {music.artist} 음원에 대한 저작권 신고
+              {t("music.reportCopyrightDescription", '"{{title}}" - {{artist}} 음원에 대한 저작권 신고', {
+                title: music.title,
+                artist: music.artist,
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -921,7 +924,7 @@ export function MusicCard({ music }: MusicCardProps) {
                   <SelectItem value="unauthorized_use">{t('music.reportReasonUnauthorized')}</SelectItem>
                   <SelectItem value="plagiarism">{t('music.reportReasonSimilar')}</SelectItem>
                   <SelectItem value="false_attribution">{t('music.reportReasonCover')}</SelectItem>
-                  <SelectItem value="ai_without_credit">AI 생성물 미표기</SelectItem>
+                  <SelectItem value="ai_without_credit">{t("music.reportReasonAiNoCredit", "AI 생성물 미표기")}</SelectItem>
                   <SelectItem value="other">{t('music.reportReasonOther')}</SelectItem>
                 </SelectContent>
               </Select>
@@ -1022,7 +1025,7 @@ export function MusicCard({ music }: MusicCardProps) {
           </DialogHeader>
           <div className="text-center py-4">
             <p className="text-3xl font-bold text-foreground">{(music.price || 0).toLocaleString()} {t('credits.creditUnit')}</p>
-            <p className="text-sm text-muted-foreground mt-2">구매 후 음원을 다운로드할 수 있습니다</p>
+            <p className="text-sm text-muted-foreground mt-2">{t("music.buyAfterDownloadHint", "구매 후 음원을 다운로드할 수 있습니다")}</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBuyOpen(false)}>{t('common.cancel')}</Button>
@@ -1044,7 +1047,7 @@ export function MusicCard({ music }: MusicCardProps) {
               <ListPlus className="text-primary" size={20} /> {t('music.addToPlaylist')}
             </DialogTitle>
             <DialogDescription>
-              "{music.title}"을(를) 추가할 플레이리스트를 선택하세요
+              {t("music.addToPlaylistDescription", '"{{title}}"을(를) 추가할 플레이리스트를 선택하세요', { title: music.title })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 max-h-60 overflow-y-auto">

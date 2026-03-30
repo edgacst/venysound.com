@@ -450,12 +450,12 @@ export default function RadioChannel() {
       fd.append("file", file);
       fd.append("desiredFilename", file.name.replace(/\.[^.]+$/, ""));
       const res = await fetch("/api/uploads/local", { method: "POST", credentials: "include", body: fd });
-      if (!res.ok) throw new Error("업로드 실패");
+      if (!res.ok) throw new Error(t("radio.uploadFailedGeneric", "업로드 실패"));
       const data = await res.json();
       const objectPath = data.objectPath || data.objectUrl || data.url || "";
       setEditCover(objectPath);
     } catch {
-      toast({ title: "이미지 업로드에 실패했습니다.", variant: "destructive" });
+      toast({ title: t("radio.imageUploadFailed", "이미지 업로드에 실패했습니다."), variant: "destructive" });
       setEditCoverPreview(channel?.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
       setEditCover(channel?.coverFilename ?? "");
     } finally {
@@ -477,12 +477,15 @@ export default function RadioChannel() {
           coverFilename: editCover.trim() || null,
         }),
       });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || "수정 실패"); }
-      toast({ title: "채널 정보가 수정되었습니다." });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.message || t("radio.channelPatchFailed", "수정 실패"));
+      }
+      toast({ title: t("radio.channelInfoUpdated", "채널 정보가 수정되었습니다.") });
       queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
       setEditOpen(false);
     } catch (err: any) {
-      toast({ title: err.message ?? "수정 실패", variant: "destructive" });
+      toast({ title: err.message ?? t("radio.channelInfoUpdateFailed", "수정 실패"), variant: "destructive" });
     } finally {
       setEditSaving(false);
     }
@@ -587,8 +590,8 @@ export default function RadioChannel() {
           const err = await res.json();
           if (err && typeof err.message === "string") message = err.message;
         } catch {
-          if (res.status === 401) message = "로그인이 필요합니다.";
-          else if (res.status === 404) message = "채널을 찾을 수 없습니다.";
+          if (res.status === 401) message = t("radio.requestLoginRequired", "로그인이 필요합니다.");
+          else if (res.status === 404) message = t("radio.requestChannelNotFound", "채널을 찾을 수 없습니다.");
         }
         throw new Error(message);
       }
@@ -655,7 +658,7 @@ export default function RadioChannel() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "스텝이 추가되었습니다." });
+      toast({ title: t("radio.staffAddedToast", "스텝이 추가되었습니다.") });
       setStaffUsername("");
       refetchStaff();
     },
@@ -674,7 +677,7 @@ export default function RadioChannel() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "스텝이 제거되었습니다." });
+      toast({ title: t("radio.staffRemovedToast", "스텝이 제거되었습니다.") });
       refetchStaff();
     },
     onError: (e: Error) => toast({ title: t("radio.staffRemoveFailed", "스텝 제거 실패"), description: e.message, variant: "destructive" }),
@@ -686,9 +689,11 @@ export default function RadioChannel() {
         <div className="min-h-screen bg-background flex flex-col">
           <Navigation />
           <div className="container px-4 py-10 text-center">
-            <p className="text-muted-foreground">{t("radio.channelNotFound", "??? ?? ? ????.")}</p>
+            <p className="text-muted-foreground">{t("radio.channelNotFound")}</p>
             <Link href="/radio">
-              <Button variant="outline" className="mt-4">?????</Button>
+              <Button variant="outline" className="mt-4">
+                {t("radio.goToRadio", "방송국 가기")}
+              </Button>
             </Link>
           </div>
         </div>
@@ -706,7 +711,7 @@ export default function RadioChannel() {
         <div className="min-h-screen bg-background flex flex-col">
           <Navigation />
           <div className="container px-4 py-20 text-center text-muted-foreground">
-            {t("radio.loading", "???? ?...")}
+            {t("radio.loading")}
           </div>
         </div>
       </PageTransition>
@@ -719,9 +724,11 @@ export default function RadioChannel() {
         <div className="min-h-screen bg-background flex flex-col">
           <Navigation />
           <div className="container px-4 py-10 text-center">
-            <p className="text-muted-foreground">{t("radio.channelNotFound", "??? ?? ? ????.")}</p>
+            <p className="text-muted-foreground">{t("radio.channelNotFound")}</p>
             <Link href="/radio">
-              <Button variant="outline" className="mt-4">?????</Button>
+              <Button variant="outline" className="mt-4">
+                {t("radio.goToRadio", "방송국 가기")}
+              </Button>
             </Link>
           </div>
         </div>
@@ -772,7 +779,7 @@ export default function RadioChannel() {
                     </span>
                     {typeof listenerCount === "number" && listenerCount > 0 && (
                       <span className="text-sm font-semibold text-red-300 drop-shadow-[0_2px_8px_rgba(0,0,0,0.7)]">
-                        청취자 {listenerCount}명
+                        {t("radio.listenersBadge", "청취자 {{count}}명", { count: listenerCount })}
                       </span>
                     )}
                   </div>
@@ -800,7 +807,9 @@ export default function RadioChannel() {
                     <MessageCircle size={18} className="text-muted-foreground" />
                     <span className="font-medium text-sm">{t("radio.chatTitle", "채팅")} {t("radio.chatGroupSuffix", "(단체)")}</span>
                     {typeof listenerCount === "number" && (
-                      <span className="text-muted-foreground text-xs">· {listenerCount}명 참여 중</span>
+                      <span className="text-muted-foreground text-xs">
+                        · {t("radio.chatParticipating", "{{count}}명 참여 중", { count: listenerCount })}
+                      </span>
                     )}
                   </div>
                   <p className="text-muted-foreground text-xs px-4 pt-1 shrink-0">{t("radio.chatGroupHint", "같은 채널 청취자가 모두 보는 단체 채팅입니다.")}</p>
@@ -957,7 +966,11 @@ export default function RadioChannel() {
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h1 className="text-2xl font-bold">{channel.name}</h1>
                   {isOwner && (
-                    <button onClick={openEditDialog} className="p-1 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-foreground" title="채널 수정">
+                    <button
+                      onClick={openEditDialog}
+                      className="p-1 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-foreground"
+                      title={t("radio.editChannelTitleAttr", "채널 수정")}
+                    >
                       <Settings size={16} />
                     </button>
                   )}
@@ -1061,7 +1074,7 @@ export default function RadioChannel() {
                           className="gap-2"
                         >
                           {radioIsPlaying ? <Pause size={16} /> : <Play size={16} />}
-                          {radioIsPlaying ? t("radio.pause", "일시정지") : t("radio.play", "재생")}
+                          {radioIsPlaying ? t("radio.listenPause") : t("radio.listenPlay")}
                         </Button>
                       </div>
                     )}
@@ -1070,9 +1083,7 @@ export default function RadioChannel() {
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Headphones size={18} />
                     <span>
-                      {isLive
-                        ? t("radio.listenComingSoon", "?? ??? ?? ????.")
-                        : t("radio.listenComingSoon", "?? ??? ?? ????.")}
+                      {t("radio.listenComingSoon")}
                     </span>
                   </div>
                 )}
@@ -1204,9 +1215,9 @@ export default function RadioChannel() {
                     className="gap-2"
                   >
                     {editUploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-                    {editUploading ? "업로드 중..." : "이미지 선택"}
+                    {editUploading ? t("radio.uploadingCoverImage") : t("radio.pickCoverImage")}
                   </Button>
-                  <p className="text-xs text-muted-foreground">JPG, PNG 권장</p>
+                  <p className="text-xs text-muted-foreground">{t("radio.coverFormatHint")}</p>
                 </div>
                 <input
                   ref={editFileRef}
@@ -1223,7 +1234,7 @@ export default function RadioChannel() {
               </Button>
               <Button onClick={handleEditSave} disabled={editSaving || !editName.trim()} className="gap-2">
                 {editSaving && <Loader2 size={14} className="animate-spin" />}
-                {editSaving ? "저장 중..." : t("common.save", "저장")}
+                {editSaving ? t("common.saving", "저장 중...") : t("common.save", "저장")}
               </Button>
             </div>
           </div>

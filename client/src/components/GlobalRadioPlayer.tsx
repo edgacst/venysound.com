@@ -17,7 +17,7 @@ const REFETCH_INTERVAL_MS = 8000;
 const CROSSFADE_DURATION_MS = 1500;
 
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const { subscribe } = useWs();
   const { toast } = useToast();
@@ -70,7 +70,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (newStreamUrl !== currentUrl) {
           // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
           if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
-          const resolvedName = String(data?.name ?? channelName ?? "라디오").trim() || "라디오";
+          const def = i18n.t("radio.defaultChannelName");
+          const resolvedName = String(data?.name ?? channelName ?? def).trim() || def;
           setStream(slug, resolvedName, newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
         }
       } catch { /* ignore */ }
@@ -143,7 +144,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             if (newStreamUrl !== current || needsReload) {
               // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
               if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
-              const resolvedName = String(channelName ?? "라디오").trim() || "라디오";
+              const def = i18n.t("radio.defaultChannelName");
+              const resolvedName = String(channelName ?? def).trim() || def;
               setStream(slug, resolvedName, newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
             }
           }
@@ -336,7 +338,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     navigator.mediaSession.metadata = new MediaMetadata({
       title: channelName,
-      artist: "라디오 청취 중",
+      artist: t("radio.mediaSessionArtist", "라디오 청취 중"),
       album: "VenySound",
       artwork: origin
         ? [{ src: `${origin}/favicon.png`, sizes: "192x192", type: "image/png" }]
@@ -360,7 +362,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         navigator.mediaSession.setActionHandler("stop", null);
       } catch { /* ignore */ }
     };
-  }, [streamUrl, channelName, getActiveAudio, handleStop]);
+  }, [streamUrl, channelName, getActiveAudio, handleStop, t]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -407,7 +409,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const advanceBody =
         match && Number.isFinite(musicId) ? JSON.stringify({ currentMusicId: musicId }) : JSON.stringify({});
       if (currentSlug && shouldAutoAdvance) {
-        const chName = (state.channelName ?? "라디오").trim() || "라디오";
+        const def = i18n.t("radio.defaultChannelName");
+        const chName = (state.channelName ?? def).trim() || def;
         fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -431,7 +434,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               if (!newStreamUrl) return;
               const s = useRadioPlayerStore.getState();
               if (s.userStopped || s.slug !== currentSlug) return;
-              const resolvedName = String(channelData?.name ?? chName).trim() || "라디오";
+              const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
               s.setStream(
                 currentSlug,
                 resolvedName,
@@ -464,12 +467,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
       if (unauthFirstEnd && currentSlug) {
         toast({
-          title: "음악을 연속해서 들을려면 로그인 하세요",
-          description: "로그인 후에는 다음 곡으로 자동 재생됩니다.",
+          title: t("radio.loginContinuousRadioTitle", "음악을 연속해서 들으려면 로그인 하세요"),
+          description: t("radio.loginContinuousRadioDesc", "로그인 후에는 다음 곡으로 자동 재생됩니다."),
           variant: "default",
           action: (
-            <ToastAction altText="확인" onClick={() => redirectToLogin()}>
-              확인
+            <ToastAction altText={t("common.ok", "확인")} onClick={() => redirectToLogin()}>
+              {t("common.ok", "확인")}
             </ToastAction>
           ),
         });
@@ -485,6 +488,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       isAuthenticated,
       authLoading,
       toast,
+      t,
+      i18n,
     ],
   );
 
@@ -529,8 +534,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   if (!slug) return null;
 
-  const listenerText = listenerCount != null ? ` · 청취자 ${listenerCount}명` : "";
-  const resolvedChannelName = (channelName ?? "").trim() || "라디오";
+  const listenerText =
+    listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
+  const resolvedChannelName = (channelName ?? "").trim() || t("radio.defaultChannelName");
 
   return (
     <>
@@ -541,7 +547,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg shadow-lg"
             onClick={handleUnmute}
           >
-            🔊 소리 켜기 (탭하세요)
+            {t("radio.unmuteButton")}
           </button>
         </div>
       )}
@@ -551,7 +557,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg shadow-lg"
             onClick={handlePlay}
           >
-            ▶ 탭하여 라디오 듣기
+            {t("radio.tapToListenRadio")}
           </button>
         </div>
       )}
@@ -565,12 +571,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           {/* 방송 정보 텍스트 */}
           <span className="flex-1 min-w-0 text-sm truncate">
             {playError ? (
-              <span className="text-destructive">재생 오류</span>
+              <span className="text-destructive">{t("radio.globalPlaybackError")}</span>
             ) : (
               <>
-                <span className="font-medium">현재 </span>
-                <span className="font-semibold text-primary">{resolvedChannelName}</span>
-                <span className="font-medium"> 방송 청취중</span>
+                <span className="font-medium">
+                  {t("radio.globalListeningTo", { name: resolvedChannelName })}
+                </span>
                 {listenerText && (
                   <span className="text-muted-foreground text-xs">{listenerText}</span>
                 )}
@@ -592,7 +598,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             variant="ghost"
             className="h-8 w-8 shrink-0"
             onClick={isPlaying ? handlePause : handlePlay}
-            aria-label={isPlaying ? "일시정지" : "재생"}
+            aria-label={isPlaying ? t("radio.playerAriaPause") : t("radio.playerAriaPlay")}
           >
             {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </Button>
@@ -603,7 +609,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             variant="ghost"
             className="h-8 w-8 shrink-0"
             onClick={handleStop}
-            aria-label="방송 종료"
+            aria-label={t("radio.stopBroadcastAria")}
           >
             <X className="h-4 w-4" />
           </Button>

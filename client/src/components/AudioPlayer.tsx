@@ -464,10 +464,17 @@ export function GlobalAudioPlayer() {
   const handleStreamingLimit = useCallback(() => {
     if (!streamingLimitShownRef.current) {
       streamingLimitShownRef.current = true;
-      toast({ title: "스트리밍 제한", description: "오늘의 무료 스트리밍 한도(100곡)에 도달했습니다. 프리미엄으로 업그레이드하면 무제한으로 감상할 수 있습니다.", variant: "destructive" });
+      toast({
+        title: t("player.streamingLimitTitle", "스트리밍 제한"),
+        description: t(
+          "player.streamingLimitDesc",
+          "오늘의 무료 스트리밍 한도(100곡)에 도달했습니다. 프리미엄으로 업그레이드하면 무제한으로 감상할 수 있습니다.",
+        ),
+        variant: "destructive",
+      });
       setTimeout(() => { streamingLimitShownRef.current = false; }, 60000);
     }
-  }, [toast]);
+  }, [toast, t]);
   const tracker = useStreamingTracker(activeMusicId, handleStreamingLimit);
   const unauthEndedToastShownRef = useRef(false);
   const unauthStoppedRef = useRef(false);
@@ -484,11 +491,11 @@ export function GlobalAudioPlayer() {
     if (user && unauthStoppedRef.current) {
       unauthStoppedRef.current = false;
       toast({
-        title: "로그인 후에는 연속 재생됩니다",
+        title: t("player.loginContinuousPlayAfterLogin", "로그인 후에는 연속 재생됩니다"),
         variant: "default",
       });
     }
-  }, [user, toast]);
+  }, [user, toast, t]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -736,7 +743,7 @@ export function GlobalAudioPlayer() {
           unauthEndedToastShownRef.current = true;
           unauthStoppedRef.current = true;
           toast({
-            title: "음악 연속 듣기를 하실려면 로그인 하세요",
+            title: t("player.loginContinuousPlayTitle", "음악 연속 듣기를 하시려면 로그인 하세요"),
             variant: "default",
           });
         }
@@ -748,8 +755,10 @@ export function GlobalAudioPlayer() {
       if (displayMusic?.title) {
         toast({
           variant: "destructive",
-          title: "재생 실패",
-          description: `"${displayMusic.title}" 음원 파일을 불러올 수 없습니다. /file-guide 에서 필요한 파일 목록을 확인해 주세요.`,
+          title: t("player.playFailedTitle", "재생 실패"),
+          description: t("player.playFailedDesc", '"{{title}}" 음원 파일을 불러올 수 없습니다. /file-guide 에서 필요한 파일 목록을 확인해 주세요.', {
+            title: displayMusic.title,
+          }),
         });
       }
     };
@@ -771,7 +780,7 @@ export function GlobalAudioPlayer() {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
     };
-  }, [isSeeking, tracker, playNext, user, toast, displayMusic?.title]);
+  }, [isSeeking, tracker, playNext, user, toast, t, displayMusic?.title]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;

@@ -49,11 +49,11 @@ export default function RadioCreate() {
       fd.append("file", file);
       fd.append("desiredFilename", file.name.replace(/\.[^.]+$/, ""));
       const res = await fetch("/api/uploads/local", { method: "POST", credentials: "include", body: fd });
-      if (!res.ok) throw new Error("업로드 실패");
+      if (!res.ok) throw new Error(t("radio.uploadFailedGeneric", "업로드 실패"));
       const data = await res.json();
       setCoverUrl(data.objectPath || data.objectUrl || data.url || "");
     } catch {
-      toast({ title: "이미지 업로드에 실패했습니다.", variant: "destructive" });
+      toast({ title: t("radio.imageUploadFailed", "이미지 업로드에 실패했습니다."), variant: "destructive" });
       setCoverPreview(null);
       setCoverUrl("");
     } finally {
@@ -210,9 +210,9 @@ export default function RadioCreate() {
                         className="gap-2"
                       >
                         {coverUploading ? <Loader2 size={14} className="animate-spin" /> : <ImagePlus size={14} />}
-                        {coverUploading ? "업로드 중..." : "이미지 선택"}
+                        {coverUploading ? t("radio.uploadingCoverImage") : t("radio.pickCoverImage")}
                       </Button>
-                      <p className="text-xs text-muted-foreground">JPG, PNG 권장</p>
+                      <p className="text-xs text-muted-foreground">{t("radio.coverFormatHint")}</p>
                     </div>
                     <input
                       ref={coverFileRef}

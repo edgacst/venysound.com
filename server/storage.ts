@@ -366,6 +366,15 @@ function primaryArtistFromSpotifyArtists(artists: string): string {
   return first || artists.trim();
 }
 
+/** Spotify 앨범명·사이트 곡명 비교용 — (feat. …), - Single 등 제거 */
+function stripForIntlTitleMatch(s: string): string {
+  let t = s.normalize("NFKC").trim();
+  t = t.replace(/\s*\((feat|ft|featuring)[^)]*\)/gi, "");
+  t = t.replace(/\s*-\s*(single|ep|deluxe edition|remaster(ed)?)\s*$/i, "");
+  t = t.replace(/\s+/g, " ").trim();
+  return t;
+}
+
 export class DatabaseStorage implements IStorage {
   // Music
   async createMusic(musicData: InsertMusic & { userId: string }): Promise<Music> {
@@ -836,27 +845,54 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async findMusicIdFuzzyInternationalMatch(title: string, artists: string): Promise<number | null> {
-    const nt = normalizeInternationalMatchString(title);
+    const nt = normalizeInternationalMatchString(stripForIntlTitleMatch(title));
     const na = normalizeInternationalMatchString(primaryArtistFromSpotifyArtists(artists));
     if (!nt || !na) return null;
 
-    const titleEq = sql`regexp_replace(lower(trim(${music.title})), E'\\s+', ' ', 'g') = ${nt}`;
+    const dbTitle = sql`regexp_replace(lower(trim(${music.title})), E'\\s+', ' ', 'g')`;
     const ar = sql`regexp_replace(lower(trim(${music.artist})), E'\\s+', ' ', 'g')`;
-    const artistMatch = or(
+    const artistMatchStrict = or(
       sql`${ar} = ${na}`,
       sql`${ar} LIKE ${`${na}%`}`,
       sql`${na} LIKE concat(${ar}, '%')`,
     )!;
+    const artistMatch =
+      na.length >= 4 ? or(artistMatchStrict, sql`strpos(${ar}, ${na}) > 0`)! : artistMatchStrict;
 
-    const rows = await db
+    // 1) 제목 정확 일치 (동명 다수면 최신 1건)
+    const exactRows = await db
       .select({ id: music.id })
       .from(music)
-      .where(and(titleEq, artistMatch))
+      .where(and(sql`${dbTitle} = ${nt}`, artistMatch))
       .orderBy(desc(music.createdAt))
-      .limit(2);
+      .limit(1);
+    if (exactRows.length > 0) return exactRows[0].id;
 
-    if (rows.length !== 1) return null;
-    return rows[0].id;
+    // 2) 한쪽이 다른 쪽으로 시작(싱글·트렁케이션·부제 차이)
+    const prefixMatch = or(
+      sql`strpos(${dbTitle}, ${nt}) = 1`,
+      and(sql`char_length(${dbTitle}) >= 6`, sql`strpos(${nt}, ${dbTitle}) = 1`)!,
+    )!;
+    const prefixRows = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(and(prefixMatch, artistMatch))
+      .orderBy(desc(music.createdAt))
+      .limit(1);
+    if (prefixRows.length > 0) return prefixRows[0].id;
+
+    // 3) 한쪽 문자열이 다른 쪽에 포함 (긴 쪽이 짧은 쪽을 포함 — 오탐 줄이기 위해 최소 길이)
+    if (nt.length < 8) return null;
+    const containMatch = or(sql`strpos(${dbTitle}, ${nt}) > 0`, sql`strpos(${nt}, ${dbTitle}) > 0`)!;
+    const containRows = await db
+      .select({ id: music.id })
+      .from(music)
+      .where(and(containMatch, artistMatch))
+      .orderBy(desc(music.createdAt))
+      .limit(1);
+    if (containRows.length > 0) return containRows[0].id;
+
+    return null;
   }
 
   async resolveSiteMusicIdsForInternationalReleases(
