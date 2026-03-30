@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
+import { parseAdminRevenueRangeQuery } from "./admin-revenue-range";
 import { submitDistributionReleaseToDistributor } from "./distribution/submitDistributor";
 import { translateAnnouncementContent } from "./translate";
 import { api, errorSchemas } from "@shared/routes";
@@ -3512,6 +3513,28 @@ export async function registerRoutes(
     }
   });
 
+  /** payments 기준 매출(구독·크레딧 충전 원화). period=all | month | days&days=N */
+  app.get("/api/admin/revenue-summary", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const parsed = parseAdminRevenueRangeQuery({
+        period: typeof req.query.period === "string" ? req.query.period : "all",
+        days: typeof req.query.days === "string" ? req.query.days : "",
+      });
+      if (!parsed.ok) return res.status(400).json({ message: parsed.error });
+      let filters: { start?: Date; endExclusive?: Date; endInclusive?: Date } | undefined;
+      if (parsed.start != null && parsed.endExclusive != null) {
+        filters = { start: parsed.start, endExclusive: parsed.endExclusive };
+      } else if (parsed.start != null && parsed.endInclusive != null) {
+        filters = { start: parsed.start, endInclusive: parsed.endInclusive };
+      }
+      const summary = await storage.getAdminRevenueSummary(filters);
+      res.json({ rangeLabel: parsed.label, ...summary });
+    } catch (e) {
+      console.error("[admin/revenue-summary]", e);
+      res.status(500).json({ message: "매출 요약을 불러오지 못했습니다." });
+    }
+  });
+
   app.get("/api/admin/stats/regions", isAuthenticated, isAdmin, async (_req, res) => {
     try {
       const rows = await storage.getAdminStatsByRegion();
@@ -5000,6 +5023,21 @@ export async function registerRoutes(
         return res.status(400).json({ message: "최소 충전 금액은 1,000원입니다" });
       }
 
+      const amountNum = Number(amount);
+      const oid =
+        orderId && String(orderId).trim()
+          ? String(orderId).trim()
+          : `CREDIT_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32)}_${Date.now()}`;
+
+      const [existingPay] = await db.select().from(payments).where(eq(payments.orderId, oid)).limit(1);
+      if (existingPay?.status === "paid") {
+        const newCredits = await storage.getUserCredits(userId);
+        return res.json({ credits: newCredits, message: "이미 처리된 결제입니다." });
+      }
+      if (existingPay?.status === "pending") {
+        return res.status(400).json({ message: "동일 주문이 입금 대기 중입니다. 중복 결제를 확인해 주세요." });
+      }
+
       const tossSecretKey = process.env.TOSS_SECRET_KEY;
       if (tossSecretKey && paymentKey && orderId) {
         const confirmRes = await fetch("https://api.tosspayments.com/v1/payments/confirm", {
@@ -5017,18 +5055,43 @@ export async function registerRoutes(
         }
       }
 
-      const creditsToAdd = creditsFromTotalVatInclusiveWon(Number(amount));
+      const creditsToAdd = creditsFromTotalVatInclusiveWon(amountNum);
       if (creditsToAdd < 1) {
         return res.status(400).json({ message: "결제 금액으로 환산된 크레딧이 없습니다" });
       }
 
-      await storage.addCredits(userId, creditsToAdd);
-      await storage.createCreditTransaction({
-        userId,
-        type: "charge",
-        amount: creditsToAdd,
-        description: `${creditsToAdd.toLocaleString()} 크레딧 충전 (총결제 ${Number(amount).toLocaleString()}원)`,
-      });
+      try {
+        await db.insert(payments).values({
+          userId,
+          orderId: oid,
+          paymentKey: paymentKey ? String(paymentKey) : tossSecretKey ? "toss_card" : "manual",
+          amount: amountNum,
+          status: "paid",
+          plan: "credit_charge",
+          billingPeriod: null,
+        });
+      } catch (insErr: unknown) {
+        const msg = insErr instanceof Error ? insErr.message : String(insErr);
+        const code = (insErr as { code?: string })?.code;
+        if (code === "23505" || /unique|duplicate/i.test(msg)) {
+          const newCredits = await storage.getUserCredits(userId);
+          return res.json({ credits: newCredits, message: "이미 처리된 결제입니다." });
+        }
+        throw insErr;
+      }
+
+      try {
+        await storage.addCredits(userId, creditsToAdd);
+        await storage.createCreditTransaction({
+          userId,
+          type: "charge",
+          amount: creditsToAdd,
+          description: `${creditsToAdd.toLocaleString()} 크레딧 충전 (총결제 ${amountNum.toLocaleString()}원)`,
+        });
+      } catch (credErr) {
+        await db.delete(payments).where(eq(payments.orderId, oid));
+        throw credErr;
+      }
 
       const newCredits = await storage.getUserCredits(userId);
       res.json({ credits: newCredits, message: "크레딧이 충전되었습니다" });

@@ -142,6 +142,8 @@ export default function Admin() {
   const [userPage, setUserPage] = useState(0);
   const [userPageSize, setUserPageSize] = useState(50);
   const [adminMainTab, setAdminMainTab] = useState("stats");
+  const [revenuePeriod, setRevenuePeriod] = useState<"all" | "month" | "days">("all");
+  const [revenueDays, setRevenueDays] = useState(30);
   const [reportStatusFilter, setReportStatusFilter] = useState("all");
   const [withdrawalFilter, setWithdrawalFilter] = useState("all");
   const [adminNotes, setAdminNotes] = useState<Record<number, string>>({});
@@ -322,6 +324,35 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 60000,
+  });
+
+  type AdminRevenueSummary = {
+    rangeLabel: string;
+    subscriptionByPlan: { plan: string; totalWon: number; count: number }[];
+    subscriptionTotalWon: number;
+    subscriptionCount: number;
+    creditChargeTotalWon: number;
+    creditChargeCount: number;
+    paidGrandTotalWon: number;
+    pendingSubscriptionWon: number;
+    pendingSubscriptionCount: number;
+    pendingCreditChargeWon: number;
+    pendingCreditChargeCount: number;
+    pendingTotalWon: number;
+  };
+
+  const { data: revenueSummary, isLoading: loadingRevenue } = useQuery<AdminRevenueSummary>({
+    queryKey: ["/api/admin/revenue-summary", revenuePeriod, revenueDays],
+    queryFn: async () => {
+      const p = new URLSearchParams();
+      p.set("period", revenuePeriod);
+      if (revenuePeriod === "days") p.set("days", String(revenueDays));
+      const res = await fetch(`/api/admin/revenue-summary?${p.toString()}`, { credentials: "include" });
+      if (!res.ok) throw new Error("revenue-summary");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+    staleTime: 30_000,
   });
 
   const { data: statsByRegion } = useQuery<{ countryCode: string | null; region: string | null; count: number }[]>({
@@ -1008,6 +1039,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
       toast({ title: t('admin.bankPaymentConfirmed', '입금 확인 처리되었습니다') });
     },
     onError: (err: any) => {
@@ -1022,6 +1054,7 @@ export default function Admin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
       toast({ title: t('admin.paymentDeleted', '입금 대기 건이 삭제되었습니다') });
     },
     onError: (err: any) => {
@@ -1425,6 +1458,131 @@ export default function Admin() {
               </div>
             </Card>
           </div>
+
+          <Card className="p-4 mt-4" data-testid="card-revenue-summary">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Landmark className="w-4 h-4 shrink-0" />
+                {t("admin.revenueSummaryTitle", "매출 요약 (payments)")}
+              </h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  className="h-9 rounded-md border bg-background px-2 text-sm"
+                  value={revenuePeriod}
+                  onChange={(e) => setRevenuePeriod(e.target.value as "all" | "month" | "days")}
+                >
+                  <option value="all">{t("admin.revenuePeriodAll", "전체")}</option>
+                  <option value="month">{t("admin.revenuePeriodMonth", "이번 달 (서울)")}</option>
+                  <option value="days">{t("admin.revenuePeriodDays", "최근 N일")}</option>
+                </select>
+                {revenuePeriod === "days" && (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={366}
+                    className="h-9 w-24"
+                    value={revenueDays}
+                    onChange={(e) =>
+                      setRevenueDays(Math.min(366, Math.max(1, parseInt(e.target.value, 10) || 30)))
+                    }
+                  />
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t(
+                "admin.revenueSummaryHint",
+                "금액은 payments 기준(총결제액). 과거 카드 즉시 크레딧 충전은 본 기능 배포 이전 데이터가 없을 수 있습니다.",
+              )}
+            </p>
+            {loadingRevenue ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : revenueSummary ? (
+              <>
+                <p className="text-xs text-muted-foreground mb-3">
+                  {t("admin.revenueRangeLabel", "집계 구간")}: <span className="font-medium text-foreground">{revenueSummary.rangeLabel}</span>
+                </p>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+                  <div className="rounded-lg border border-border/80 p-3 bg-muted/20">
+                    <div className="text-xs text-muted-foreground mb-1">{t("admin.revenuePaidTotal", "기간 내 결제 합계")}</div>
+                    <div className="text-lg font-bold tabular-nums text-primary">
+                      {revenueSummary.paidGrandTotalWon.toLocaleString()}원
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border/80 p-3 bg-muted/20">
+                    <div className="text-xs text-muted-foreground mb-1">{t("admin.revenueSubscription", "구독료 매출")}</div>
+                    <div className="text-lg font-bold tabular-nums">{revenueSummary.subscriptionTotalWon.toLocaleString()}원</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {revenueSummary.subscriptionCount}
+                      {t("admin.revenueCountSuffix", "건")}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-border/80 p-3 bg-muted/20">
+                    <div className="text-xs text-muted-foreground mb-1">{t("admin.revenueCreditCharge", "크레딧 충전 매출")}</div>
+                    <div className="text-lg font-bold tabular-nums">{revenueSummary.creditChargeTotalWon.toLocaleString()}원</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {revenueSummary.creditChargeCount}
+                      {t("admin.revenueCountSuffix", "건")}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-amber-500/30 p-3 bg-amber-500/5">
+                    <div className="text-xs text-muted-foreground mb-1">{t("admin.revenuePendingTotal", "미입금 대기 합계")}</div>
+                    <div className="text-lg font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                      {revenueSummary.pendingTotalWon.toLocaleString()}원
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {t("admin.revenuePendingNote", "기간과 무관 · 계좌이체 대기")}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <div className="font-medium text-foreground mb-2">{t("admin.revenueByPlan", "구독 플랜별")}</div>
+                    {revenueSummary.subscriptionByPlan.filter((x) => x.count > 0).length === 0 ? (
+                      <p className="text-xs text-muted-foreground">—</p>
+                    ) : (
+                      <ul className="space-y-1.5 text-xs">
+                        {revenueSummary.subscriptionByPlan
+                          .filter((x) => x.count > 0)
+                          .map((row) => (
+                            <li key={row.plan} className="flex justify-between gap-2 tabular-nums">
+                              <span className="font-mono text-muted-foreground">{row.plan}</span>
+                              <span>
+                                {row.totalWon.toLocaleString()}원 · {row.count}
+                                {t("admin.revenueCountSuffix", "건")}
+                              </span>
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <div className="font-medium text-foreground mb-2">{t("admin.revenuePendingBreakdown", "미입금 상세")}</div>
+                    <ul className="space-y-1.5 text-xs tabular-nums">
+                      <li className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">{t("admin.revenuePendingSub", "구독 신청")}</span>
+                        <span>
+                          {revenueSummary.pendingSubscriptionWon.toLocaleString()}원 ({revenueSummary.pendingSubscriptionCount}
+                          {t("admin.revenueCountSuffix", "건")})
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">{t("admin.revenuePendingCredit", "크레딧 입금")}</span>
+                        <span>
+                          {revenueSummary.pendingCreditChargeWon.toLocaleString()}원 ({revenueSummary.pendingCreditChargeCount}
+                          {t("admin.revenueCountSuffix", "건")})
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t("admin.revenueLoadError", "매출 데이터를 불러오지 못했습니다.")}</p>
+            )}
+          </Card>
 
           <Card className="p-4 mt-4 overflow-hidden">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">

@@ -14,9 +14,10 @@ import {
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest,
   type DistributionRelease
 } from "@shared/schema";
-import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, ne, isNotNull } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
-import { users } from "@shared/models/auth";
+import { users, payments } from "@shared/models/auth";
+import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
 
 /**
  * 곡 목록 장르 필터·업로드 UI·송출실 곡검색과 동일한 기준.
@@ -152,6 +153,24 @@ export interface IStorage {
   getAdminStatsBySource(): Promise<{ source: string; count: number }[]>;
   getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
+  /** `payments` 테이블 기준: status=paid 구독·크레딧 충전 원화 합계, 미입금(pending bank) 합계(기간 무관) */
+  getAdminRevenueSummary(filters?: {
+    start?: Date;
+    endExclusive?: Date;
+    endInclusive?: Date;
+  }): Promise<{
+    subscriptionByPlan: { plan: string; totalWon: number; count: number }[];
+    subscriptionTotalWon: number;
+    subscriptionCount: number;
+    creditChargeTotalWon: number;
+    creditChargeCount: number;
+    paidGrandTotalWon: number;
+    pendingSubscriptionWon: number;
+    pendingSubscriptionCount: number;
+    pendingCreditChargeWon: number;
+    pendingCreditChargeCount: number;
+    pendingTotalWon: number;
+  }>;
   createDistributionRelease(input: { ownerUserId: string; musicId: number; releaseTitle: string; artistName: string; rightsConfirmed: boolean; releaseDate?: Date | null }): Promise<DistributionRelease>;
   listMyDistributionReleases(ownerUserId: string): Promise<DistributionRelease[]>;
   submitDistributionRelease(ownerUserId: string, releaseId: number): Promise<void>;
@@ -1428,6 +1447,109 @@ export class DatabaseStorage implements IStorage {
       and(eq(creditTransactions.type, "charge"), sql`${creditTransactions.amount} > 0`)
     );
     return row?.total ?? 0;
+  }
+
+  async getAdminRevenueSummary(filters?: {
+    start?: Date;
+    endExclusive?: Date;
+    endInclusive?: Date;
+  }): Promise<{
+    subscriptionByPlan: { plan: string; totalWon: number; count: number }[];
+    subscriptionTotalWon: number;
+    subscriptionCount: number;
+    creditChargeTotalWon: number;
+    creditChargeCount: number;
+    paidGrandTotalWon: number;
+    pendingSubscriptionWon: number;
+    pendingSubscriptionCount: number;
+    pendingCreditChargeWon: number;
+    pendingCreditChargeCount: number;
+    pendingTotalWon: number;
+  }> {
+    const tierIds = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
+    const paidDateClauses: SQL[] = [];
+    if (filters?.start) paidDateClauses.push(gte(payments.createdAt, filters.start));
+    if (filters?.endExclusive) paidDateClauses.push(lt(payments.createdAt, filters.endExclusive));
+    if (filters?.endInclusive) paidDateClauses.push(lte(payments.createdAt, filters.endInclusive));
+
+    const paidBase: SQL[] = [eq(payments.status, "paid"), ...paidDateClauses];
+
+    const subWhere = and(...paidBase, inArray(payments.plan, tierIds));
+    const subRows = await db
+      .select({
+        plan: payments.plan,
+        totalWon: sql<number>`coalesce(sum(${payments.amount}), 0)::int`,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(payments)
+      .where(subWhere)
+      .groupBy(payments.plan);
+
+    const subscriptionByPlan = subRows.map((r) => ({
+      plan: r.plan ?? "unknown",
+      totalWon: Number(r.totalWon ?? 0),
+      count: Number(r.cnt ?? 0),
+    }));
+    const subscriptionTotalWon = subscriptionByPlan.reduce((s, x) => s + x.totalWon, 0);
+    const subscriptionCount = subscriptionByPlan.reduce((s, x) => s + x.count, 0);
+
+    const creditWhere = and(...paidBase, eq(payments.plan, "credit_charge"));
+    const [creditAgg] = await db
+      .select({
+        totalWon: sql<number>`coalesce(sum(${payments.amount}), 0)::int`,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(payments)
+      .where(creditWhere);
+
+    const creditChargeTotalWon = Number(creditAgg?.totalWon ?? 0);
+    const creditChargeCount = Number(creditAgg?.cnt ?? 0);
+    const paidGrandTotalWon = subscriptionTotalWon + creditChargeTotalWon;
+
+    const pendSubWhere = and(
+      eq(payments.status, "pending"),
+      eq(payments.paymentKey, "bank_transfer"),
+      inArray(payments.plan, tierIds),
+    );
+    const [ps] = await db
+      .select({
+        totalWon: sql<number>`coalesce(sum(${payments.amount}), 0)::int`,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(payments)
+      .where(pendSubWhere);
+
+    const pendCredWhere = and(
+      eq(payments.status, "pending"),
+      eq(payments.paymentKey, "bank_transfer"),
+      eq(payments.plan, "credit_charge"),
+    );
+    const [pc] = await db
+      .select({
+        totalWon: sql<number>`coalesce(sum(${payments.amount}), 0)::int`,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(payments)
+      .where(pendCredWhere);
+
+    const pendingSubscriptionWon = Number(ps?.totalWon ?? 0);
+    const pendingSubscriptionCount = Number(ps?.cnt ?? 0);
+    const pendingCreditChargeWon = Number(pc?.totalWon ?? 0);
+    const pendingCreditChargeCount = Number(pc?.cnt ?? 0);
+
+    return {
+      subscriptionByPlan,
+      subscriptionTotalWon,
+      subscriptionCount,
+      creditChargeTotalWon,
+      creditChargeCount,
+      paidGrandTotalWon,
+      pendingSubscriptionWon,
+      pendingSubscriptionCount,
+      pendingCreditChargeWon,
+      pendingCreditChargeCount,
+      pendingTotalWon: pendingSubscriptionWon + pendingCreditChargeWon,
+    };
   }
 
   async createDistributionRelease(input: {
