@@ -3,7 +3,22 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { PageTransition } from "@/components/PageTransition";
-import { Music, Sparkles, Wand2, Loader2, Download, AlertCircle, Trash2, CloudUpload, Search, Play, Globe, Coins } from "lucide-react";
+import {
+  Music,
+  Sparkles,
+  Wand2,
+  Loader2,
+  Download,
+  AlertCircle,
+  Trash2,
+  CloudUpload,
+  Search,
+  Play,
+  Globe,
+  Coins,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -19,6 +34,9 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+
+/** 생성된 곡 목록 페이지당 개수 */
+const SAVED_TRACKS_LIST_PAGE_SIZE = 10;
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
@@ -351,8 +369,6 @@ export default function CreateMusic() {
   });
 
   const [mode, setMode] = useState<CreateMode>("description");
-  /** MP3: 생성 직후 스트리밍 URL. WAV: 서버가 외부 API로 WAV URL을 받아 온 뒤 저장(용량 큼, 편집용). */
-  const [outputFormat, setOutputFormat] = useState<"mp3" | "wav">("mp3");
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -364,6 +380,7 @@ export default function CreateMusic() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [taskProvider, setTaskProvider] = useState<string | null>(null);
   const [savedTracksSearch, setSavedTracksSearch] = useState("");
+  const [savedTracksListPage, setSavedTracksListPage] = useState(1);
   const [elapsedSec, setElapsedSec] = useState(0);
   const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
@@ -379,6 +396,40 @@ export default function CreateMusic() {
     () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
     [savedTracks]
   );
+
+  const sortedFilteredSavedTracks = useMemo(() => {
+    const q = savedTracksSearch.trim().toLowerCase();
+    const base =
+      q === ""
+        ? [...savedTracks]
+        : savedTracks.filter(
+            (tr) =>
+              (tr.title ?? "").toLowerCase().includes(q) ||
+              (tr.tags ?? "").toLowerCase().includes(q) ||
+              (tr.prompt ?? "").toLowerCase().includes(q) ||
+              (tr.original_prompt ?? "").toLowerCase().includes(q)
+          );
+    return base.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  }, [savedTracks, savedTracksSearch]);
+
+  const savedTracksTotalPages = Math.max(
+    1,
+    Math.ceil(sortedFilteredSavedTracks.length / SAVED_TRACKS_LIST_PAGE_SIZE)
+  );
+  const savedTracksSafePage = Math.min(savedTracksListPage, savedTracksTotalPages);
+
+  useEffect(() => {
+    setSavedTracksListPage(1);
+  }, [savedTracksSearch]);
+
+  useEffect(() => {
+    setSavedTracksListPage((p) => Math.min(p, savedTracksTotalPages));
+  }, [savedTracksTotalPages]);
+
+  const savedTracksPageSlice = useMemo(() => {
+    const start = (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE;
+    return sortedFilteredSavedTracks.slice(start, start + SAVED_TRACKS_LIST_PAGE_SIZE);
+  }, [sortedFilteredSavedTracks, savedTracksSafePage]);
 
   useEffect(() => {
     if (status !== "pending" && status !== "running") return;
@@ -469,11 +520,11 @@ export default function CreateMusic() {
       })
         .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
         .catch(() => {
-          setErrorMessage(t("createMusic.serverSyncFailed", "서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요."));
+          setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
         });
     }
-  }, [user?.id, libraryFetched, libraryRemote, queryClient, t]);
+  }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
   const persistTracks = useCallback(
     (tracks: SavedTrack[], opts?: { immediate?: boolean; removedClientIds?: string[] }) => {
@@ -499,7 +550,7 @@ export default function CreateMusic() {
         })
           .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
           .catch(() => {
-            setErrorMessage(t("createMusic.serverSyncFailed", "서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요."));
+            setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
             queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
           });
       };
@@ -509,7 +560,7 @@ export default function CreateMusic() {
       }
       librarySyncTimerRef.current = setTimeout(send, 850);
     },
-    [user?.id, queryClient, t],
+    [user?.id, queryClient],
   );
 
   const removeSavedTrack = useCallback(
@@ -549,8 +600,8 @@ export default function CreateMusic() {
       const data = await res.json();
       if (!res.ok) {
         toast({
-          title: t("createMusic.publishFailedTitle", "공개 실패"),
-          description: data.message || t("createMusic.publishFailedUnknown", "오류가 발생했습니다."),
+          title: "공개 실패",
+          description: data.message || "오류가 발생했습니다.",
           variant: "destructive",
         });
         return;
@@ -561,21 +612,15 @@ export default function CreateMusic() {
         return next;
       });
       toast({
-        title: t("createMusic.publishSuccessTitle", "신곡으로 공개되었습니다!"),
-        description: t("createMusic.publishSuccessDesc", '"{{title}}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.', {
-          title: track.title || t("createMusic.aiGeneratedTrackFallback", "AI 생성 음악"),
-        }),
+        title: "신곡으로 공개되었습니다!",
+        description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
       });
     } catch {
-      toast({
-        title: t("createMusic.publishFailedTitle", "공개 실패"),
-        description: t("createMusic.publishNetworkError", "네트워크 오류가 발생했습니다."),
-        variant: "destructive",
-      });
+      toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
     } finally {
       setPublishingId(null);
     }
-  }, [toast, persistTracks, t]);
+  }, [toast, persistTracks]);
 
   const goUploadWithTrack = useCallback(
     (track: SavedTrack) => {
@@ -603,15 +648,15 @@ export default function CreateMusic() {
     if (!track.audio_url) return;
     usePlayerStore.getState().playExternalTrack({
       url: track.audio_url,
-      title: track.title || t("createMusic.untitled", "제목 없음"),
+      title: track.title || "제목 없음",
       artist: track.tags,
       imageUrl: track.image_url,
     });
-  }, [t]);
+  }, []);
 
   const handleDownloadTrack = useCallback(async (track: SavedTrack) => {
     if (!track.audio_url) return;
-    const baseName = sanitizeFilename(track.title || t("createMusic.untitled", "제목 없음"));
+    const baseName = sanitizeFilename(track.title || "제목 없음");
     try {
       const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}`;
       const res = await fetch(proxyUrl, { credentials: "include" });
@@ -628,8 +673,7 @@ export default function CreateMusic() {
     } catch {
       const a = document.createElement("a");
       a.href = track.audio_url;
-      const fallbackExt = /\.wav(\?|$)/i.test(track.audio_url) ? ".wav" : ".mp3";
-      a.download = `${baseName}${fallbackExt}`;
+      a.download = `${baseName}.mp3`;
       a.target = "_blank";
       a.rel = "noopener";
       a.click();
@@ -642,7 +686,7 @@ export default function CreateMusic() {
       persistTracks(next);
       return next;
     });
-  }, [t, persistTracks]);
+  }, [persistTracks]);
 
   const pollTask = useCallback(
     async (tid: string, provider?: string) => {
@@ -650,19 +694,22 @@ export default function CreateMusic() {
       const res = await fetch(`/api/ai-music/task/${tid}${q}`, { credentials: "include" });
       if (!res.ok) {
         setStatus("failed");
-        setErrorMessage(t("createMusic.taskPollFailed", "작업 조회에 실패했습니다."));
+        setErrorMessage("작업 조회에 실패했습니다.");
         return;
       }
       const data = await res.json();
       const state = data.state ?? "pending";
-
+      setStatus(state);
       if (state === "succeeded" && Array.isArray(data.data)) {
+        generationStartRef.current = null;
+        setResultTracks(data.data);
+        setTaskId(null);
         const now = Date.now();
         const userTitle = submittedTitleRef.current.trim();
         const userTags = submittedTagsRef.current.trim();
         const genTaskId = tid;
         const genProvider = provider ?? undefined;
-        let toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
+        const toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
           const t = tr as Record<string, unknown>;
           return {
             ...tr,
@@ -680,76 +727,22 @@ export default function CreateMusic() {
             generationProvider: genProvider,
           };
         });
-
-        if (outputFormat === "wav") {
-          const wavResults = await Promise.all(
-            toSave.map(async (tr) => {
-              if (!tr.clip_id || !tr.audio_url) {
-                return { track: tr, ok: true as const, skipped: true as const };
-              }
-              try {
-                const wavRes = await fetch("/api/ai-music/wav-url", {
-                  method: "POST",
-                  credentials: "include",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    clip_id: tr.clip_id,
-                    generation_task_id: genTaskId,
-                    provider: genProvider,
-                  }),
-                });
-                const j = (await wavRes.json().catch(() => ({}))) as { wav_url?: string };
-                if (wavRes.ok && typeof j.wav_url === "string" && j.wav_url.length > 0) {
-                  return { track: { ...tr, audio_url: j.wav_url }, ok: true as const, skipped: false as const };
-                }
-              } catch {
-                /* keep MP3 URL */
-              }
-              return { track: tr, ok: false as const, skipped: false as const };
-            }),
-          );
-          toSave = wavResults.map((r) => r.track);
-          const tried = wavResults.filter((r) => !r.skipped);
-          const failed = tried.filter((r) => !r.ok).length;
-          if (tried.length > 0 && failed > 0) {
-            toast({
-              title: t("createMusic.wavPartialFailTitle", "WAV 변환 실패"),
-              description:
-                failed === tried.length
-                  ? t("createMusic.wavPartialFailAll", "WAV를 가져오지 못해 MP3 링크로 저장했습니다.")
-                  : t("createMusic.wavPartialFailSome", "일부 곡만 WAV로 저장되었고, 나머지는 MP3 링크입니다."),
-              variant: failed === tried.length ? "destructive" : "default",
-            });
-          }
-        }
-
-        generationStartRef.current = null;
-        setStatus("succeeded");
-        setTaskId(null);
-        const displayTracks: GeneratedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => ({
-          ...tr,
-          audio_url: toSave[i]?.audio_url ?? tr.audio_url,
-        }));
-        setResultTracks(displayTracks);
         setSavedTracks((prev) => {
           const next = [...toSave, ...prev];
           persistTracks(next, { immediate: true });
           return next;
         });
-        return;
       }
-
-      setStatus(state);
       if (state === "failed") {
         generationStartRef.current = null;
-        setErrorMessage(data.message ?? t("createMusic.generationFailedGeneric", "생성에 실패했습니다."));
+        setErrorMessage(data.message ?? "생성에 실패했습니다.");
         setTaskId(null);
       }
       if (state === "pending" || state === "running") {
         setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
-    [outputFormat, persistTracks, t, toast]
+    [persistTracks]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -758,11 +751,11 @@ export default function CreateMusic() {
     const customMode = mode === "custom";
     const promptTrim = prompt.trim();
     if (customMode && !promptTrim) {
-      toast({ title: t("createMusic.toastEnterLyrics", "가사를 입력해 주세요."), variant: "destructive" });
+      toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
     }
     if (!customMode && !promptTrim) {
-      toast({ title: t("createMusic.toastEnterDescription", "음악에 대한 설명을 입력해 주세요."), variant: "destructive" });
+      toast({ title: "음악에 대한 설명을 입력해 주세요.", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
@@ -794,13 +787,13 @@ export default function CreateMusic() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus("failed");
-        setErrorMessage(data.message ?? t("createMusic.generationRequestFailed", "생성 요청에 실패했습니다."));
+        setErrorMessage(data.message ?? "생성 요청에 실패했습니다.");
         if (res.status === 403 && (data as { code?: string }).code === "AI_MUSIC_LIMIT_REACHED") {
           toast({ title: data.message, variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
         }
         if (res.status === 402 && (data as { code?: string }).code === "INSUFFICIENT_CREDITS") {
-          toast({ title: data.message ?? t("createMusic.insufficientCreditsFallback", "크레딧이 부족합니다."), variant: "destructive" });
+          toast({ title: data.message ?? "크레딧이 부족합니다.", variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
           queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
         }
@@ -810,7 +803,7 @@ export default function CreateMusic() {
       const provider = data.provider ?? undefined;
       if (!tid) {
         setStatus("failed");
-        setErrorMessage(t("createMusic.serverResponseError", "서버 응답 오류."));
+        setErrorMessage("서버 응답 오류.");
         return;
       }
       setTaskId(tid);
@@ -846,7 +839,7 @@ export default function CreateMusic() {
       pollTask(tid, provider);
     } catch {
       setStatus("failed");
-      setErrorMessage(t("createMusic.networkErrorGeneric", "네트워크 오류가 발생했습니다."));
+      setErrorMessage("네트워크 오류가 발생했습니다.");
     } finally {
       setIsSubmitting(false);
     }
@@ -1033,37 +1026,6 @@ export default function CreateMusic() {
                         </div>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-2">{t("createMusic.outputFormatLabel", "저장 음원 형식")}</label>
-                        <div className="flex flex-wrap gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="outputFormat"
-                              checked={outputFormat === "mp3"}
-                              onChange={() => setOutputFormat("mp3")}
-                              className="rounded-full"
-                            />
-                            <span>{t("createMusic.outputFormatMp3", "MP3 (기본, 용량 작음)")}</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="outputFormat"
-                              checked={outputFormat === "wav"}
-                              onChange={() => setOutputFormat("wav")}
-                              className="rounded-full"
-                            />
-                            <span>{t("createMusic.outputFormatWav", "WAV (무손실에 가깝게, 편집용)")}</span>
-                          </label>
-                        </div>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          {t(
-                            "createMusic.outputFormatHint",
-                            "WAV는 생성 완료 후 변환 단계가 더 걸리고 파일이 큽니다.",
-                          )}
-                        </p>
-                      </div>
-                      <div>
                         <label className="block text-sm font-medium mb-1">{t("createMusic.titleLabel", "제목 (선택)")}</label>
                         <input
                           type="text"
@@ -1187,47 +1149,23 @@ export default function CreateMusic() {
                             "음원은 외부 AI 서버에서 만듭니다. 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
                           )}
                         </p>
-                        {outputFormat === "wav" && (
-                          <p className="text-xs text-muted-foreground/90 leading-relaxed pl-6">
-                            {t(
-                              "createMusic.generatingWavExtraHint",
-                              "WAV를 선택하셨습니다. 곡 생성이 끝난 뒤 WAV 변환에 1~3분가량 더 걸릴 수 있습니다.",
-                            )}
-                          </p>
-                        )}
                       </div>
                         );
                       })()}
                     {savedTracks.length === 0 && status !== "pending" && status !== "running" ? (
                       <p className="text-muted-foreground text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 왼쪽에서 음악을 생성해 보세요.")}</p>
-                    ) : (() => {
-                      const q = savedTracksSearch.trim().toLowerCase();
-                      const filtered =
-                        q === ""
-                          ? [...savedTracks].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-                          : [...savedTracks]
-                              .filter(
-                                (t) =>
-                                  (t.title ?? "").toLowerCase().includes(q) ||
-                                  (t.tags ?? "").toLowerCase().includes(q) ||
-                                  (t.prompt ?? "").toLowerCase().includes(q) ||
-                                  (t.original_prompt ?? "").toLowerCase().includes(q)
-                              )
-                              .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-                      if (filtered.length === 0) {
-                        return (
-                          <p className="text-muted-foreground text-sm">
-                            {t("createMusic.noSearchResults", "검색 결과가 없습니다.")}
-                          </p>
-                        );
-                      }
-                      return (
-                        <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1 scrollbar-thin">
-                          {filtered.map((track, index) => (
+                    ) : sortedFilteredSavedTracks.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        {t("createMusic.noSearchResults", "검색 결과가 없습니다.")}
+                      </p>
+                    ) : (
+                      <>
+                        <div className="space-y-3 pr-1">
+                          {savedTracksPageSlice.map((track, index) => (
                             <TrackCard
                               key={track.id}
                               track={track}
-                              order={index + 1}
+                              order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
                               onRemove={() => removeSavedTrack(track.id)}
                               onUpload={() => goUploadWithTrack(track)}
                               onDownload={() => handleDownloadTrack(track)}
@@ -1239,8 +1177,52 @@ export default function CreateMusic() {
                             />
                           ))}
                         </div>
-                      );
-                    })()}
+                        {savedTracksTotalPages > 1 && (
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-border/50">
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {t("createMusic.listPaginationRange", "{{from}}–{{to}}번째 / 총 {{total}}곡", {
+                                from:
+                                  (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + 1,
+                                to: Math.min(
+                                  sortedFilteredSavedTracks.length,
+                                  savedTracksSafePage * SAVED_TRACKS_LIST_PAGE_SIZE
+                                ),
+                                total: sortedFilteredSavedTracks.length,
+                              })}
+                            </p>
+                            <div className="flex items-center gap-2 justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1"
+                                disabled={savedTracksSafePage <= 1}
+                                onClick={() => setSavedTracksListPage((p) => Math.max(1, p - 1))}
+                              >
+                                <ChevronLeft className="w-4 h-4" />
+                                {t("createMusic.listPagePrev", "이전")}
+                              </Button>
+                              <span className="text-sm text-muted-foreground tabular-nums min-w-[5.5rem] text-center">
+                                {savedTracksSafePage} / {savedTracksTotalPages}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-1"
+                                disabled={savedTracksSafePage >= savedTracksTotalPages}
+                                onClick={() =>
+                                  setSavedTracksListPage((p) => Math.min(savedTracksTotalPages, p + 1))
+                                }
+                              >
+                                {t("createMusic.listPageNext", "다음")}
+                                <ChevronRight className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
               </>
@@ -1257,34 +1239,33 @@ export default function CreateMusic() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Globe className="w-5 h-5 text-violet-500" />
-              {t("createMusic.publishDialogTitle", "신곡으로 사이트에 공개")}
+              신곡으로 사이트에 공개
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-3 text-sm text-muted-foreground">
                 <p>
-                  {t("createMusic.publishDialogIntro", '"{{title}}"을(를) 베니사운드 신곡 목록에 공개합니다.', {
-                    title: publishConfirmTrack?.title || t("createMusic.aiGeneratedTrackFallback", "AI 생성 음악"),
-                  })}
+                  <span className="font-semibold text-foreground">"{publishConfirmTrack?.title || "AI 생성 음악"}"</span>을(를)
+                  베니사운드 신곡 목록에 공개합니다.
                 </p>
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs space-y-1.5">
-                  <p className="font-semibold text-amber-700 dark:text-amber-400">
-                    {t("createMusic.publishDialogCheckTitle", "공개 전 확인해주세요")}
-                  </p>
+                  <p className="font-semibold text-amber-700 dark:text-amber-400">공개 전 확인해주세요</p>
                   <ul className="list-disc list-inside space-y-1 text-amber-700 dark:text-amber-500">
-                    <li>{t("createMusic.publishDialogBullet1", "AI 생성 배지가 자동으로 표시됩니다")}</li>
-                    <li>{t("createMusic.publishDialogBullet2", "무료 플랜은 AI 공개곡 1곡으로 제한됩니다")}</li>
-                    <li>{t("createMusic.publishDialogBullet3", "수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다")}</li>
-                    <li>{t("createMusic.publishDialogBullet4", "Venysound 이용약관 및 저작권법을 준수해야 합니다")}</li>
-                    <li>{t("createMusic.publishDialogBullet5", "부적절한 내용은 관리자에 의해 삭제될 수 있습니다")}</li>
+                    <li>AI 생성 배지가 자동으로 표시됩니다</li>
+                    <li>무료 플랜은 AI 공개곡 1곡으로 제한됩니다</li>
+                    <li>수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다</li>
+                    <li>Venysound 이용약관 및 저작권법을 준수해야 합니다</li>
+                    <li>부적절한 내용은 관리자에 의해 삭제될 수 있습니다</li>
                   </ul>
                 </div>
-                <p className="text-xs">{t("createMusic.publishDialogConsent", "위 내용에 동의하고 신곡으로 공개하시겠습니까?")}</p>
+                <p className="text-xs">
+                  위 내용에 동의하고 신곡으로 공개하시겠습니까?
+                </p>
               </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setPublishConfirmTrack(null)}>
-              {t("common.cancel", "취소")}
+              취소
             </Button>
             <Button
               className="bg-violet-600 hover:bg-violet-700 text-white"
@@ -1297,15 +1278,9 @@ export default function CreateMusic() {
               }}
             >
               {publishingId === publishConfirmTrack?.id ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
-                  {t("createMusic.publishPublishing", "공개 중...")}
-                </>
+                <><Loader2 className="w-4 h-4 animate-spin mr-1" />공개 중...</>
               ) : (
-                <>
-                  <Globe className="w-4 h-4 mr-1" />
-                  {t("createMusic.publishAgree", "동의하고 공개")}
-                </>
+                <><Globe className="w-4 h-4 mr-1" />동의하고 공개</>
               )}
             </Button>
           </DialogFooter>
