@@ -701,7 +701,7 @@
     "logoSummary": "Overall, this logo conveys the message of \"a hub where anyone can freely enjoy and share music, with artistic sensibility layered on top of technical perfection.\"",
     "mission": "Our Mission",
     "missionQuote": "\"Every voice deserves to be heard.\"",
-    "missionDesc": "Veny Sound was created to build a platform where anyone can share their music with the world and communicate through music beyond borders and languages. We provide opportunities for artists and new inspiration for listeners.",
+    "missionDesc": "Veny Sound is a music streaming platform where anyone can create their own music with AI, upload it to our site, and share it. You can also create channels with others for live broadcasts, or run your own radio station. We provide opportunities for artists and new inspiration for listeners.",
     "registeredArtists": "Registered Artists",
     "sharedTracks": "Shared Tracks",
     "coreValues": "Core Values",
@@ -718,7 +718,7 @@
   "faq": {
     "title": "Frequently Asked Questions (FAQ)",
     "q1": "What is Veny Sound?",
-    "a1": "Veny Sound is a music streaming platform where anyone can upload and share their music. It provides a space for artists and listeners to connect through music.",
+    "a1": "Veny Sound is a music streaming platform where anyone can create their own music with AI, upload it to our site, and share it. You can also create channels with others for live broadcasts, or run your own radio station.",
     "q2": "How do I upload music?",
     "a2": "After logging in, click the 'Upload' button in the top menu to upload audio files (MP3, WAV, OGG). You can enter information such as title, artist name, genre, and also register an album cover image.",
     "q3": "What audio file formats are supported?",

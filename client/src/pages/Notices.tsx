@@ -65,7 +65,6 @@ export default function Notices() {
     [recordView]
   );
 
-  const now = new Date();
   const list = (data ?? []).map((a) => ({
     ...a,
     startsAtDate: new Date(a.startsAt),
@@ -88,7 +87,6 @@ export default function Notices() {
             {/* 모바일: 카드 목록 */}
             <div className="block md:hidden divide-y divide-border">
               {list.map((a, idx) => {
-                const isActive = a.startsAtDate <= now && a.endsAtDate >= now;
                 const isExpanded = expandedId === a.id;
                 return (
                   <div
@@ -112,11 +110,6 @@ export default function Notices() {
                               <Eye size={12} />
                               {a.viewCount.toLocaleString()}
                             </span>
-                          )}
-                          {isActive ? (
-                            <span className="inline-flex px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">{t("noticesPage.statusActive")}</span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">{t("noticesPage.statusEnded")}</span>
                           )}
                         </div>
                       </div>
@@ -147,13 +140,11 @@ export default function Notices() {
                     <th className="text-left p-3 font-medium max-w-[280px]">{t("noticesPage.subject")}</th>
                     <th className="text-left p-3 font-medium whitespace-nowrap min-w-[7.5rem]">{t("noticesPage.date")}</th>
                     <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.viewCount")}</th>
-                    <th className="text-center p-3 font-medium whitespace-nowrap">{t("noticesPage.status")}</th>
                     <th className="w-10" />
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((a, idx) => {
-                    const isActive = a.startsAtDate <= now && a.endsAtDate >= now;
                     const isExpanded = expandedId === a.id;
                     return (
                       <Fragment key={a.id}>
@@ -178,18 +169,11 @@ export default function Notices() {
                               "-"
                             )}
                           </td>
-                          <td className="p-3 text-center whitespace-nowrap">
-                            {isActive ? (
-                              <span className="inline-flex px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 text-xs">{t("noticesPage.statusActive")}</span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">{t("noticesPage.statusEnded")}</span>
-                            )}
-                          </td>
                           <td className="p-3">{isExpanded ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}</td>
                         </tr>
                         {isExpanded && (
                           <tr className="bg-muted/10">
-                            <td colSpan={6} className="p-4">
+                            <td colSpan={5} className="p-4">
                               <div className="whitespace-pre-wrap text-foreground mb-3">{a.content}</div>
                               {a.imageUrl && (
                                 <img src={a.imageUrl.startsWith("http") ? a.imageUrl : (typeof window !== "undefined" ? window.location.origin : "") + a.imageUrl} alt={t("noticesPage.contentImageAlt")} className="max-w-full rounded-lg max-h-64 object-contain mt-2" />
