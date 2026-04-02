@@ -41,6 +41,7 @@ import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
 import { fetchInternationalReleasesPage } from "./spotify-international";
+import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
 import {
   normalizeSubscriptionPlanPrices,
@@ -2321,8 +2322,16 @@ export async function registerRoutes(
       if (spotifyAlbumId !== undefined) {
         const raw = spotifyAlbumId == null ? "" : String(spotifyAlbumId).trim();
         if (!raw) updateData.spotifyAlbumId = null;
-        else if (/^[0-9A-Za-z]{10,32}$/.test(raw)) updateData.spotifyAlbumId = raw;
-        else return res.status(400).json({ message: "spotifyAlbumId 형식이 올바르지 않습니다" });
+        else {
+          const id = parseSpotifyAlbumIdFromUserInput(raw);
+          if (!id) {
+            return res.status(400).json({
+              message:
+                "Spotify 앨범·싱글 ID를 찾을 수 없습니다. 숫자·영문 ID만 입력하거나, open.spotify.com/album/… 전체 주소를 붙여넣어 주세요.",
+            });
+          }
+          updateData.spotifyAlbumId = id;
+        }
       }
       const updated = await storage.updateMusic(musicId, updateData);
       res.json(updated);

@@ -14,6 +14,7 @@ import { motion } from "framer-motion";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
 import { DonationBadge } from "@/components/DonationBadge";
+import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -465,7 +466,23 @@ export function MusicCard({ music }: MusicCardProps) {
       data.imageFilename = editCoverUrl;
     }
     const prevSpotify = ((music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "").trim();
-    const nextSpotify = editSpotifyAlbumId.trim();
+    const rawSpotify = editSpotifyAlbumId.trim();
+    let nextSpotify = "";
+    if (rawSpotify) {
+      const parsed = parseSpotifyAlbumIdFromUserInput(rawSpotify);
+      if (!parsed) {
+        toast({
+          title: t("music.spotifyAlbumIdInvalidTitle", "Spotify ID 형식"),
+          description: t(
+            "music.spotifyAlbumIdInvalidDesc",
+            "앨범·싱글 링크 전체를 붙여넣거나, 주소 중 /album/ 뒤의 ID만 입력해 주세요.",
+          ),
+          variant: "destructive",
+        });
+        return;
+      }
+      nextSpotify = parsed;
+    }
     if (nextSpotify !== prevSpotify) {
       data.spotifyAlbumId = nextSpotify || null;
     }
@@ -719,7 +736,16 @@ export function MusicCard({ music }: MusicCardProps) {
                 id="edit-spotify-album-id"
                 value={editSpotifyAlbumId}
                 onChange={(e) => setEditSpotifyAlbumId(e.target.value)}
-                placeholder={t("music.spotifyAlbumIdPlaceholder", "open.spotify.com/album/ 뒤의 ID")}
+                onBlur={() => {
+                  const raw = editSpotifyAlbumId.trim();
+                  if (!raw) return;
+                  const p = parseSpotifyAlbumIdFromUserInput(raw);
+                  if (p) setEditSpotifyAlbumId(p);
+                }}
+                placeholder={t(
+                  "music.spotifyAlbumIdPlaceholder",
+                  "ID 또는 open.spotify.com/album/… 전체 링크",
+                )}
                 className="font-mono text-xs"
                 data-testid="input-edit-spotify-album-id"
               />
