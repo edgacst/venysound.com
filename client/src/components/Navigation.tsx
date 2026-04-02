@@ -103,7 +103,7 @@ export function Navigation() {
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
             <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap" title="Veny Sound">
               <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">Sound</span>
             </span>
             <div className="invisible group-hover:visible absolute top-full left-0 mt-2 z-50 p-2 bg-card border border-white/10 rounded-lg shadow-xl" data-testid="logo-preview-popup">
               <img src={logoImage} alt="Veny Sound Logo" className="w-48 h-48 object-contain rounded-md" />

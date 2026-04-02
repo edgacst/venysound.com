@@ -12,7 +12,7 @@ export function Footer() {
               <img src={logoImage} alt="Veny Sound" className="h-4 w-auto rounded bg-white/10 p-0.5" />
               <span className="font-bold">
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">Sound</span>
               </span>
             </div>
             <ul className="space-y-0">
@@ -42,7 +42,7 @@ export function Footer() {
           </div>
         </div>
         <div className="border-t border-white/5 mt-4 pt-3 text-center">
-          &copy; 2026 Veny_Sound. All rights reserved.
+          &copy; 2026 VenySound. All rights reserved.
         </div>
       </div>
     </footer>

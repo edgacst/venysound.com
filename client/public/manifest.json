@@ -1,6 +1,6 @@
 {
   "name": "Veny Sound",
-  "short_name": "Veny_Sound",
+  "short_name": "VenySound",
   "description": "음악으로 연결되는 우리만의 공간",
   "start_url": "https://venysound.com/",
   "scope": "https://venysound.com/",

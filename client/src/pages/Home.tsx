@@ -285,7 +285,7 @@ export default function Home() {
             data-testid="text-hero-title"
           >
             <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">_Sound</span>
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">Sound</span>
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 12 }}
