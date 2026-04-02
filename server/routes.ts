@@ -1090,8 +1090,9 @@ export async function registerRoutes(
               set: {
                 createdAt: row.createdAt,
                 clipId: row.clipId,
-                audioUrl: row.audioUrl,
-                imageUrl: row.imageUrl,
+                /** JSON 직렬화 시 undefined 키가 빠지면 row.audioUrl이 null이 되어 기존 URL을 지워버림 — 보존 */
+                audioUrl: sql`coalesce(excluded.audio_url, ${aiMusicSavedTracks.audioUrl})`,
+                imageUrl: sql`coalesce(excluded.image_url, ${aiMusicSavedTracks.imageUrl})`,
                 title: row.title,
                 tags: row.tags,
                 prompt: row.prompt,

@@ -291,14 +291,32 @@ function loadSavedTracksFromLocalStorage(userId: string): SavedTrack[] {
   }
 }
 
-/** 서버·로컬 합집합 — 같은 id는 서버 우선 */
+function preferNonEmptyMediaUrl(serverVal?: string, localVal?: string): string | undefined {
+  const s = (serverVal ?? "").trim();
+  if (s) return serverVal;
+  const l = (localVal ?? "").trim();
+  if (l) return localVal;
+  return serverVal ?? localVal;
+}
+
+/** 서버·로컬 합집합 — 메타는 서버 우선, audio/image URL은 비어 있으면 로컬로 보완(동기화 시 URL 누락 방지) */
 function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTrack[] {
   const byId = new Map<string, SavedTrack>();
   for (const t of server) {
-    if (t.id) byId.set(t.id, t);
+    if (t.id) byId.set(t.id, { ...t });
   }
   for (const t of local) {
-    if (t.id && !byId.has(t.id)) byId.set(t.id, t);
+    if (!t.id) continue;
+    const existing = byId.get(t.id);
+    if (!existing) {
+      byId.set(t.id, t);
+    } else {
+      byId.set(t.id, {
+        ...existing,
+        audio_url: preferNonEmptyMediaUrl(existing.audio_url, t.audio_url),
+        image_url: preferNonEmptyMediaUrl(existing.image_url, t.image_url),
+      });
+    }
   }
   return Array.from(byId.values()).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
@@ -308,8 +326,9 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
     id: t.id,
     createdAt: t.createdAt,
     clip_id: t.clip_id,
-    audio_url: t.audio_url,
-    image_url: t.image_url,
+    /** undefined는 JSON에서 키가 빠져 서버 upsert가 URL을 null로 덮을 수 있음 */
+    audio_url: t.audio_url ?? null,
+    image_url: t.image_url ?? null,
     title: t.title,
     tags: t.tags,
     prompt: t.prompt,
