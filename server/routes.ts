@@ -581,6 +581,29 @@ export async function registerRoutes(
 
   const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
 
+  /** Suno/AIMusic 응답에서 클립별 오디오·이미지 URL (record-info는 audioUrl만 오고 stream_audio_url만 있는 클립이 있음) */
+  function pickRemoteClipAudioUrl(o: Record<string, unknown>): string | undefined {
+    for (const k of [
+      "audioUrl",
+      "audio_url",
+      "stream_audio_url",
+      "streamAudioUrl",
+      "source_audio_url",
+      "source_stream_audio_url",
+    ] as const) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return undefined;
+  }
+  function pickRemoteClipImageUrl(o: Record<string, unknown>): string | undefined {
+    for (const k of ["imageUrl", "image_url", "image_large_url", "imageLargeUrl"] as const) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+    }
+    return undefined;
+  }
+
   // Suno 콜백 결과 저장 (first: 30~40초, complete: 2~3분) — 폴링 시 즉시 반환해 체감 속도 개선
   const sunoCallbackResults = new Map<string, { state: "succeeded"; data: { clip_id?: string; audio_url?: string; image_url?: string; title?: string; tags?: string; prompt?: string; custom_mode?: boolean }[] }>();
 
@@ -596,8 +619,8 @@ export async function registerRoutes(
           const r = t as Record<string, unknown>;
           return {
             clip_id: r.id as string | undefined,
-            audio_url: (r.audio_url || r.stream_audio_url) as string | undefined,
-            image_url: r.image_url as string | undefined,
+            audio_url: pickRemoteClipAudioUrl(r),
+            image_url: pickRemoteClipImageUrl(r),
             title: r.title as string | undefined,
             tags: r.tags as string | undefined,
             prompt: r.prompt as string | undefined,
@@ -1447,15 +1470,19 @@ export async function registerRoutes(
               customMode = param.customMode === true;
             }
           } catch {}
-          const list = (d.response.sunoData as { id?: string; audioUrl?: string; imageUrl?: string; title?: string; tags?: string; prompt?: string }[]).map((t) => ({
-            clip_id: t.id,
-            audio_url: t.audioUrl,
-            image_url: t.imageUrl,
-            title: t.title,
-            tags: t.tags,
-            prompt: t.prompt,
-            custom_mode: customMode,
-          }));
+          const list = (d.response.sunoData as Record<string, unknown>[]).map((raw) => {
+            const t = raw;
+            const id = t.id;
+            return {
+              clip_id: typeof id === "string" ? id : id != null ? String(id) : undefined,
+              audio_url: pickRemoteClipAudioUrl(t),
+              image_url: pickRemoteClipImageUrl(t),
+              title: typeof t.title === "string" ? t.title : undefined,
+              tags: typeof t.tags === "string" ? t.tags : undefined,
+              prompt: typeof t.prompt === "string" ? t.prompt : undefined,
+              custom_mode: customMode,
+            };
+          });
           return res.json({ state: "succeeded", data: list });
         }
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
@@ -1483,13 +1510,17 @@ export async function registerRoutes(
       if (state === "succeeded") {
         const list = rawList.map((item: any) => {
           const t = item?.full ?? item?.extended ?? item;
+          const clip = t && typeof t === "object" ? (t as Record<string, unknown>) : {};
           return {
-            clip_id: t?.clip_id ?? t?.id,
-            audio_url: t?.audio_url ?? t?.audioUrl,
-            image_url: t?.image_url ?? t?.imageUrl,
-            title: t?.title,
-            tags: t?.tags,
-            prompt: t?.prompt ?? t?.lyrics ?? t?.gpt_description_prompt,
+            clip_id: (t as { clip_id?: string; id?: string })?.clip_id ?? (t as { id?: string })?.id,
+            audio_url: pickRemoteClipAudioUrl(clip),
+            image_url: pickRemoteClipImageUrl(clip),
+            title: (t as { title?: string })?.title,
+            tags: (t as { tags?: string })?.tags,
+            prompt:
+              (t as { prompt?: string; lyrics?: string; gpt_description_prompt?: string })?.prompt ??
+              (t as { lyrics?: string })?.lyrics ??
+              (t as { gpt_description_prompt?: string })?.gpt_description_prompt,
             custom_mode: false,
           };
         });

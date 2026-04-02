@@ -60,6 +60,22 @@ function sanitizeFilename(name: string): string {
   return s || "audio";
 }
 
+/** API·로컬 캐시에 클립마다 audioUrl / stream_audio_url 등 필드명이 달라 2곡 중 1곡만 재생되는 경우 방지 */
+function pickSavedTrackAudioUrl(t: Record<string, unknown>): string | undefined {
+  for (const k of [
+    "audio_url",
+    "audioUrl",
+    "stream_audio_url",
+    "streamAudioUrl",
+    "source_audio_url",
+    "source_stream_audio_url",
+  ] as const) {
+    const v = t[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 function TrackCard({
   track,
   order,
@@ -267,8 +283,8 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       downloadCount,
       generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
       generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
-      audio_url: (t.audio_url ?? t.audioUrl) as string | undefined,
-      image_url: (t.image_url ?? t.imageUrl) as string | undefined,
+      audio_url: pickSavedTrackAudioUrl(t),
+      image_url: (t.image_url ?? t.imageUrl ?? t.image_large_url ?? t.imageLargeUrl) as string | undefined,
       clip_id: t.clip_id ?? t.id,
       title: t.title as string | undefined,
       tags: t.tags as string | undefined,
@@ -734,7 +750,7 @@ export default function CreateMusic() {
             ...tr,
             title: userTitle ? userTitle : (tr.title ?? (t.title as string | undefined)),
             tags: userTags ? userTags : (tr.tags ?? (t.tags as string | undefined)),
-            audio_url: (tr.audio_url ?? t.audioUrl) as string | undefined,
+            audio_url: pickSavedTrackAudioUrl(t) ?? (tr.audio_url as string | undefined),
             image_url: (tr.image_url ?? t.imageUrl) as string | undefined,
             id: `saved-${now}-${i}-${tr.clip_id ?? i}`,
             createdAt: now,
