@@ -15,9 +15,13 @@ import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
+import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 
 const VISITOR_KEY = "vkey";
-const VISIT_HEARTBEAT_MS = 15_000;
+/** 체류 추정용 내부 ping 간격 (실제 페이지 path와 별도 — PV 집계에 포함되지 않음) */
+const DWELL_HEARTBEAT_MS = 8_000;
+/** 짧은 체류도 0초가 되지 않게 첫 ping (탭이 보이는 동안만) */
+const DWELL_FIRST_PING_MS = 3_000;
 
 function readVisitorKey(): string | null {
   try {
@@ -212,29 +216,138 @@ function AnalyticsVisit() {
     }
   };
 
+  const sendDwellHeartbeatViaGet = (opts: { keepalive?: boolean }) => {
+    const visitorKey = readVisitorKey();
+    let utmSource: string | undefined;
+    try {
+      utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
+    } catch {
+      utmSource = undefined;
+    }
+    const q = new URLSearchParams();
+    q.set("path", ANALYTICS_DWELL_HEARTBEAT_PATH);
+    if (visitorKey) q.set("visitorKey", visitorKey);
+    if (utmSource) q.set("utmSource", utmSource);
+    q.set("_", String(Date.now()));
+    return fetch(`/api/analytics/visit?${q.toString()}`, {
+      method: "GET",
+      credentials: "include",
+      keepalive: !!opts.keepalive,
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then(applyVisitorKey)
+      .catch(() => {});
+  };
+
+  const sendDwellHeartbeat = () => {
+    const visitorKey = readVisitorKey();
+    let utmSource: string | undefined;
+    try {
+      utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
+    } catch {
+      utmSource = undefined;
+    }
+    const body = JSON.stringify({
+      path: ANALYTICS_DWELL_HEARTBEAT_PATH,
+      visitorKey: visitorKey || undefined,
+      utmSource,
+    });
+    const tryPost = (attempt: number) => {
+      fetch("/api/analytics/visit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body,
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json();
+        })
+        .then(applyVisitorKey)
+        .catch(() => {
+          if (attempt < 2) {
+            window.setTimeout(() => tryPost(attempt + 1), 350 * (attempt + 1));
+            return;
+          }
+          void sendDwellHeartbeatViaGet({ keepalive: false });
+        });
+    };
+    tryPost(0);
+  };
+
+  const sendDwellHeartbeatBeacon = () => {
+    if (typeof navigator === "undefined") return;
+    const visitorKey = readVisitorKey();
+    let utmSource: string | undefined;
+    try {
+      utmSource = new URLSearchParams(window.location.search).get("utm_source") || undefined;
+    } catch {
+      utmSource = undefined;
+    }
+    const body = JSON.stringify({
+      path: ANALYTICS_DWELL_HEARTBEAT_PATH,
+      visitorKey: visitorKey || undefined,
+      utmSource,
+    });
+    try {
+      fetch("/api/analytics/visit", {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body,
+      })
+        .then((r) => {
+          if (r.ok) return r.json().then(applyVisitorKey);
+          return sendDwellHeartbeatViaGet({ keepalive: true });
+        })
+        .catch(() => void sendDwellHeartbeatViaGet({ keepalive: true }));
+    } catch {
+      void sendDwellHeartbeatViaGet({ keepalive: true });
+    }
+  };
+
   const sendVisitRef = useRef(sendVisit);
   const sendVisitBeaconRef = useRef(sendVisitBeacon);
+  const sendDwellHeartbeatRef = useRef(sendDwellHeartbeat);
+  const sendDwellHeartbeatBeaconRef = useRef(sendDwellHeartbeatBeacon);
   sendVisitRef.current = sendVisit;
   sendVisitBeaconRef.current = sendVisitBeacon;
+  sendDwellHeartbeatRef.current = sendDwellHeartbeat;
+  sendDwellHeartbeatBeaconRef.current = sendDwellHeartbeatBeacon;
 
   /** /api/auth/me 이후·경로·로그인 전환 시 1회 (서버 vs_vkey 쿠키로 동일 방문자 유지) */
   useEffect(() => {
     if (authLoading) return undefined;
     sendVisit();
+    const pathWhenScheduled = pathnameRef.current || "/";
+    const early = window.setTimeout(() => {
+      if (document.visibilityState !== "visible") return;
+      if ((pathnameRef.current || "/") !== pathWhenScheduled) return;
+      sendDwellHeartbeatRef.current();
+    }, DWELL_FIRST_PING_MS);
+    return () => window.clearTimeout(early);
   }, [pathname, user?.id, authLoading]);
 
-  /** 페이지 이동마다 인터벌을 갈아엎지 않음 → 15초 하트비트가 실제로 누적됨 */
+  /** 탭이 켜져 있는 동안 체류용 ping (PV와 분리된 path — 관리자 체류(추정)만 늘림) */
   useEffect(() => {
     if (authLoading) return undefined;
 
     const heartbeat = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      sendVisitRef.current();
-    }, VISIT_HEARTBEAT_MS);
+      sendDwellHeartbeatRef.current();
+    }, DWELL_HEARTBEAT_MS);
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") sendVisitBeaconRef.current();
-      else if (document.visibilityState === "visible") sendVisitRef.current();
+      if (document.visibilityState === "hidden") {
+        sendVisitBeaconRef.current();
+        sendDwellHeartbeatBeaconRef.current();
+      } else if (document.visibilityState === "visible") {
+        sendVisitRef.current();
+      }
     };
 
     const onPageShow = (e: PageTransitionEvent) => {
@@ -245,7 +358,10 @@ function AnalyticsVisit() {
       if (document.visibilityState === "visible") sendVisitRef.current();
     };
 
-    const runBeacon = () => sendVisitBeaconRef.current();
+    const runBeacon = () => {
+      sendVisitBeaconRef.current();
+      sendDwellHeartbeatBeaconRef.current();
+    };
 
     window.addEventListener("beforeunload", runBeacon);
     window.addEventListener("pageshow", onPageShow);

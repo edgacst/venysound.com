@@ -18,6 +18,7 @@ import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, lt, ne, i
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users, payments } from "@shared/models/auth";
 import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
+import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 
 /**
  * 곡 목록 장르 필터·업로드 UI·송출실 곡검색과 동일한 기준.
@@ -1636,7 +1637,7 @@ export class DatabaseStorage implements IStorage {
             min(v.visited_at) AS first_at,
             max(v.visited_at) AS last_at,
             (extract(epoch FROM max(v.visited_at) - min(v.visited_at)))::int AS duration_seconds,
-            count(*)::int AS page_views,
+            (count(*) filter (where v.path <> ${ANALYTICS_DWELL_HEARTBEAT_PATH}))::int AS page_views,
             max(v.country_code) AS country_code,
             max(v.region) AS region
           FROM analytics_visits v
@@ -1683,7 +1684,12 @@ export class DatabaseStorage implements IStorage {
         countryCode: analyticsVisits.countryCode,
         region: analyticsVisits.region,
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits).groupBy(analyticsVisits.countryCode, analyticsVisits.region).orderBy(desc(sql`count(*)`)).limit(20);
+      })
+        .from(analyticsVisits)
+        .where(ne(analyticsVisits.path, ANALYTICS_DWELL_HEARTBEAT_PATH))
+        .groupBy(analyticsVisits.countryCode, analyticsVisits.region)
+        .orderBy(desc(sql`count(*)`))
+        .limit(20);
       return rows;
     } catch {
       return [];
@@ -1695,7 +1701,12 @@ export class DatabaseStorage implements IStorage {
       const rows = await db.select({
         deviceType: analyticsVisits.deviceType,
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits).groupBy(analyticsVisits.deviceType).orderBy(desc(sql`count(*)`)).limit(10);
+      })
+        .from(analyticsVisits)
+        .where(ne(analyticsVisits.path, ANALYTICS_DWELL_HEARTBEAT_PATH))
+        .groupBy(analyticsVisits.deviceType)
+        .orderBy(desc(sql`count(*)`))
+        .limit(10);
       return rows;
     } catch {
       return [];
@@ -1709,6 +1720,7 @@ export class DatabaseStorage implements IStorage {
           COALESCE(NULLIF(TRIM(referer_domain), ''), NULLIF(TRIM(utm_source), ''), 'direct') AS source,
           count(*)::int AS count
         FROM analytics_visits
+        WHERE path <> ${ANALYTICS_DWELL_HEARTBEAT_PATH}
         GROUP BY 1
         ORDER BY count DESC
         LIMIT 15
@@ -1726,7 +1738,7 @@ export class DatabaseStorage implements IStorage {
         SELECT
           to_char((visited_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') as date,
           count(DISTINCT visitor_key)::int as unique_visitors,
-          count(*)::int as page_views
+          (count(*) filter (where path <> ${ANALYTICS_DWELL_HEARTBEAT_PATH}))::int as page_views
         FROM analytics_visits
         WHERE visited_at >= ((date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul') - make_interval(days => ${safeDays}))
         GROUP BY 1
@@ -2433,6 +2445,7 @@ export class DatabaseStorage implements IStorage {
   async getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }> {
     // "오늘" = 한국(Asia/Seoul) 기준 자정~현재. visited_at이 UTC로 저장돼 있어도 일일/오늘 페이지뷰가 맞게 집계되도록.
     const todayCondition = sql`${analyticsVisits.visitedAt} >= (date_trunc('day', (now() AT TIME ZONE 'Asia/Seoul')) AT TIME ZONE 'Asia/Seoul')`;
+    const notDwellHb = ne(analyticsVisits.path, ANALYTICS_DWELL_HEARTBEAT_PATH);
     try {
       const [dailyV] = await db.select({
         count: sql<number>`count(distinct ${analyticsVisits.visitorKey})::int`,
@@ -2442,10 +2455,10 @@ export class DatabaseStorage implements IStorage {
       }).from(analyticsVisits);
       const [pvToday] = await db.select({
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits).where(todayCondition);
+      }).from(analyticsVisits).where(and(todayCondition, notDwellHb));
       const [pvTotal] = await db.select({
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits);
+      }).from(analyticsVisits).where(notDwellHb);
       return {
         dailyVisitors: dailyV?.count ?? 0,
         totalVisitors: totalV?.count ?? 0,
@@ -2463,10 +2476,10 @@ export class DatabaseStorage implements IStorage {
       }).from(analyticsVisits);
       const [pvToday] = await db.select({
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits).where(fallback);
+      }).from(analyticsVisits).where(and(fallback, notDwellHb));
       const [pvTotal] = await db.select({
         count: sql<number>`count(*)::int`,
-      }).from(analyticsVisits);
+      }).from(analyticsVisits).where(notDwellHb);
       return {
         dailyVisitors: dailyV?.count ?? 0,
         totalVisitors: totalV?.count ?? 0,
