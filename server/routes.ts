@@ -1718,6 +1718,14 @@ export async function registerRoutes(
         extraSpotifyAlbumIds: merge.spotifyAlbumIds,
         extraUpcs: merge.upcs,
       });
+      if (total === 0 && /^(1|true|yes)$/i.test(String(process.env.SPOTIFY_DEBUG_INTL ?? "").trim())) {
+        console.warn("[international-releases] empty", {
+          mergeSpotifyAlbumIds: merge.spotifyAlbumIds.length,
+          mergeUpcs: merge.upcs.length,
+          userFilterCount: userFilter.length,
+          hasArtistEnv: String(process.env.SPOTIFY_INTERNATIONAL_ARTIST_IDS ?? "").trim().length > 0,
+        });
+      }
       const siteIds = await storage.resolveSiteMusicIdsForInternationalReleases(
         data.map((d) => ({ spotifyAlbumId: d.id, title: d.title, artists: d.artists })),
       );
