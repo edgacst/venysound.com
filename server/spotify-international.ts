@@ -24,6 +24,14 @@ let warnedNoToken = false;
 let warnedUnauthorized = false;
 let warnedZeroAlbums = false;
 
+/** Spotify 429/403 연속 호출 완화 — 목록 짧게 캐시 */
+let intlReleasesFullListCache: { key: string; expiresAt: number; dtos: InternationalReleaseDto[] } | null =
+  null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function normalizeEnvValue(v: string | undefined): string {
   if (v == null) return "";
   return v.replace(/^\uFEFF/, "").trim();
@@ -186,9 +194,14 @@ async function fetchArtistAlbumsForMarket(
     }).toString();
 
   while (url && out.length < cap) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     if (res.status === 401) {
       return { albums: out, unauthorized: true };
+    }
+    if (res.status === 429 || res.status === 403) {
+      const ra = parseInt(res.headers.get("retry-after") || "0", 10);
+      await sleep(ra > 0 ? Math.min(ra * 1000, 8000) : 800);
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     }
     if (!res.ok) {
       const t = await res.text().catch(() => "");
@@ -215,7 +228,9 @@ async function fetchArtistAlbumsAll(
   const byId = new Map<string, SpotifyAlbumSimplified>();
   /** 한 시장만 401이어도 true였다가 끝까지 앨범이 있으면 false — 전체 해외 목록이 []로 떨어지는 것 방지 */
   let sawUnauthorized = false;
-  for (const market of markets) {
+  for (let mi = 0; mi < markets.length; mi++) {
+    const market = markets[mi]!;
+    if (mi > 0) await sleep(100);
     const { albums, unauthorized: u } = await fetchArtistAlbumsForMarket(token, artistId, market, cap);
     if (u) sawUnauthorized = true;
     for (const al of albums) {
@@ -230,26 +245,46 @@ async function fetchArtistAlbumsAll(
 
 async function fetchSpotifyAlbumsByIds(token: string, ids: string[]): Promise<SpotifyAlbumSimplified[]> {
   const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
   const merged = new Map<string, SpotifyAlbumSimplified>();
-  const marketCandidates = [null as string | null, ...getInternationalMarkets()];
+  let marketCandidates = getInternationalMarkets();
+  if (marketCandidates.length === 0) marketCandidates = ["US"];
 
   for (let i = 0; i < unique.length; i += 20) {
     const chunk = unique.slice(i, i + 20);
-    for (const mkt of marketCandidates) {
-      const params = new URLSearchParams({ ids: chunk.join(",") });
-      if (mkt) params.set("market", mkt);
+    for (let mi = 0; mi < marketCandidates.length; mi++) {
+      const mkt = marketCandidates[mi]!;
+      if (chunk.every((id) => merged.has(id))) break;
+      if (mi > 0) await sleep(120);
+
+      const params = new URLSearchParams({ ids: chunk.join(","), market: mkt });
       const url = "https://api.spotify.com/v1/albums?" + params.toString();
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) {
-        const t = await res.text().catch(() => "");
-        console.error(
-          "[spotify-international] albums by ids error",
-          mkt ?? "no-market",
-          res.status,
-          t.slice(0, 200),
-        );
+
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) break;
+        if (res.status === 401) {
+          const t = await res.text().catch(() => "");
+          console.error("[spotify-international] albums by ids 401", mkt, t.slice(0, 120));
+          break;
+        }
+        if (res.status === 429 || res.status === 403) {
+          const ra = parseInt(res.headers.get("retry-after") || "0", 10);
+          await sleep(ra > 0 ? Math.min(ra * 1000, 10_000) : 500 * (attempt + 1));
+          continue;
+        }
+        break;
+      }
+
+      if (!res?.ok) {
+        const t = await res?.text().catch(() => "") ?? "";
+        if (res && res.status !== 401) {
+          console.error("[spotify-international] albums by ids error", mkt, res.status, t.slice(0, 200));
+        }
         continue;
       }
+
       const j = (await res.json()) as { albums?: (SpotifyAlbumSimplified | null)[] };
       for (const al of j.albums ?? []) {
         if (!al?.id) continue;
@@ -264,13 +299,31 @@ async function fetchSpotifyAlbumsByIds(token: string, ids: string[]): Promise<Sp
 }
 
 async function searchSpotifyAlbumIdByUpc(token: string, upc: string): Promise<string | null> {
-  const markets = [null as string | null, ...getInternationalMarkets()];
-  for (const mkt of markets) {
-    const params = new URLSearchParams({ q: `upc:${upc}`, type: "album", limit: "5" });
-    if (mkt) params.set("market", mkt);
+  const markets = getInternationalMarkets();
+  const mktList = markets.length > 0 ? markets : ["US"];
+  for (let mi = 0; mi < mktList.length; mi++) {
+    const mkt = mktList[mi]!;
+    if (mi > 0) await sleep(100);
+    const params = new URLSearchParams({
+      q: `upc:${upc}`,
+      type: "album",
+      limit: "5",
+      market: mkt,
+    });
     const url = "https://api.spotify.com/v1/search?" + params.toString();
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) continue;
+
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) break;
+      if (res.status === 429 || res.status === 403) {
+        const ra = parseInt(res.headers.get("retry-after") || "0", 10);
+        await sleep(ra > 0 ? Math.min(ra * 1000, 8000) : 400 * (attempt + 1));
+        continue;
+      }
+      break;
+    }
+    if (!res?.ok) continue;
     const j = (await res.json()) as {
       albums?: {
         items?: { id?: string; external_ids?: { upc?: string } }[];
@@ -288,13 +341,10 @@ async function searchSpotifyAlbumIdByUpc(token: string, upc: string): Promise<st
 
 async function resolveUpcsToAlbumIds(token: string, upcs: string[]): Promise<string[]> {
   const seen = new Set<string>();
-  const chunkSize = 8;
-  for (let i = 0; i < upcs.length; i += chunkSize) {
-    const chunk = upcs.slice(i, i + chunkSize);
-    const ids = await Promise.all(chunk.map((upc) => searchSpotifyAlbumIdByUpc(token, upc)));
-    for (const id of ids) {
-      if (id) seen.add(id);
-    }
+  for (let i = 0; i < upcs.length; i++) {
+    if (i > 0) await sleep(90);
+    const id = await searchSpotifyAlbumIdByUpc(token, upcs[i]!);
+    if (id) seen.add(id);
   }
   return [...seen];
 }
@@ -385,6 +435,19 @@ export async function fetchInternationalReleasesPage(
     return { data: [], total: 0 };
   }
 
+  const cacheKey = `${artistIds.join(",")}|${[...extraAlbumIds].sort().join(",")}|${[...extraUpcs].sort().join(",")}`;
+  const nowMs = Date.now();
+  if (
+    intlReleasesFullListCache &&
+    intlReleasesFullListCache.key === cacheKey &&
+    intlReleasesFullListCache.expiresAt > nowMs
+  ) {
+    const cached = intlReleasesFullListCache.dtos;
+    const total = cached.length;
+    const start = (page - 1) * limit;
+    return { data: cached.slice(start, start + limit), total };
+  }
+
   const token = await getClientCredentialsToken();
   if (!token) {
     return { data: [], total: 0 };
@@ -441,5 +504,10 @@ export async function fetchInternationalReleasesPage(
   const total = dtos.length;
   const start = (page - 1) * limit;
   const data = dtos.slice(start, start + limit);
+  intlReleasesFullListCache = {
+    key: cacheKey,
+    expiresAt: Date.now() + (total > 0 ? 120_000 : 90_000),
+    dtos,
+  };
   return { data, total };
 }
