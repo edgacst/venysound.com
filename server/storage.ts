@@ -1230,7 +1230,8 @@ export class DatabaseStorage implements IStorage {
 
     const albumIdSet = new Set<string>();
     const upcSet = new Set<string>();
-    const spotifyAlbumIdShape = /^[a-zA-Z0-9]{22}$/;
+    /** Spotify 앨범 ID는 보통 22자이나 API·파서와 동일하게 10~32 허용 */
+    const spotifyAlbumIdShape = /^[0-9A-Za-z]{10,32}$/;
 
     for (const r of rows) {
       const sid = r.spotifyAlbumId?.trim();

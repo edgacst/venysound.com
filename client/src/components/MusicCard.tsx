@@ -409,6 +409,8 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
 
   const isOwner = user?.id === music.userId;
   const isAdmin = adminCheck?.isAdmin === true;
+  /** 관리자는 타인 음원에도 Spotify 앨범 ID만 저장 가능(API와 동일) */
+  const isAdminSpotifyOnly = isAdmin && !isOwner;
   const canEdit = isOwner;
   const canDelete = isOwner || isAdmin;
   const canReport = !!user && !isOwner;
@@ -458,15 +460,6 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
   };
 
   const handleEditSubmit = () => {
-    const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: editTags, lyrics: editLyrics, isAi: editIsAi };
-    if (uploaderIsPremium) {
-      data.isDownloadable = editIsDownloadable;
-      const priceValue = typeof editPrice === "number" ? editPrice : 0;
-      data.price = editIsDownloadable ? priceValue : 0;
-    }
-    if (editCoverUrl) {
-      data.imageFilename = editCoverUrl;
-    }
     const prevSpotify = ((music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "").trim();
     const rawSpotify = editSpotifyAlbumId.trim();
     let nextSpotify = "";
@@ -484,6 +477,28 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
         return;
       }
       nextSpotify = parsed;
+    }
+
+    if (isAdminSpotifyOnly) {
+      if (nextSpotify === prevSpotify) {
+        setEditOpen(false);
+        return;
+      }
+      updateMusic(
+        { id: music.id, data: { spotifyAlbumId: nextSpotify || null } },
+        { onSuccess: () => setEditOpen(false) },
+      );
+      return;
+    }
+
+    const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: editTags, lyrics: editLyrics, isAi: editIsAi };
+    if (uploaderIsPremium) {
+      data.isDownloadable = editIsDownloadable;
+      const priceValue = typeof editPrice === "number" ? editPrice : 0;
+      data.price = editIsDownloadable ? priceValue : 0;
+    }
+    if (editCoverUrl) {
+      data.imageFilename = editCoverUrl;
     }
     if (nextSpotify !== prevSpotify) {
       data.spotifyAlbumId = nextSpotify || null;
@@ -607,6 +622,12 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
                       {t('music.edit')}
                     </DropdownMenuItem>
                   )}
+                  {isAdminSpotifyOnly && (
+                    <DropdownMenuItem onClick={handleEdit} data-testid={`button-admin-spotify-music-${music.id}`}>
+                      <Pencil size={14} className="mr-2" />
+                      {t("music.adminSpotifyLink", "Spotify 앨범 ID (관리자)")}
+                    </DropdownMenuItem>
+                  )}
                   {canDelete && (
                     <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-500 focus:text-red-500" data-testid={`button-delete-music-${music.id}`}>
                       <Trash2 size={14} className="mr-2" />
@@ -615,7 +636,7 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
                   )}
                   {user && (
                     <>
-                      {(canEdit || canDelete) && <DropdownMenuSeparator />}
+                      {(canEdit || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
                       <DropdownMenuItem onClick={handleOpenPlaylistDialog} data-testid={`button-add-to-playlist-${music.id}`}>
                         <ListPlus size={14} className="mr-2" />
                         {t('music.addToPlaylist')}
@@ -722,9 +743,20 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('music.editMusic')}</DialogTitle>
+            <DialogTitle>
+              {isAdminSpotifyOnly
+                ? t("music.adminSpotifyDialogTitle", "Spotify 앨범·싱글 ID (관리자)")
+                : t("music.editMusic")}
+            </DialogTitle>
+            {isAdminSpotifyOnly && (
+              <p className="text-sm text-muted-foreground pt-1">
+                {music.title} — {music.artist} (ID: {music.id})
+              </p>
+            )}
           </DialogHeader>
           <div className="space-y-4">
+            {!isAdminSpotifyOnly && (
+              <>
             <div>
               <Label htmlFor="edit-title">{t('music.title')}</Label>
               <Input id="edit-title" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} data-testid="input-edit-title" />
@@ -741,6 +773,8 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
               <Label htmlFor="edit-tags">{t('music.tagsComma')}</Label>
               <Input id="edit-tags" value={editTags} onChange={(e) => setEditTags(e.target.value)} data-testid="input-edit-tags" />
             </div>
+              </>
+            )}
             <div>
               <Label htmlFor="edit-spotify-album-id">{t("music.spotifyAlbumIdLabel", "Spotify 앨범·싱글 ID (선택)")}</Label>
               <Input
@@ -764,6 +798,8 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
                 {t("music.spotifyAlbumIdHint", "해외 출시 목록과 이 곡을 정확히 연결할 때만 입력하세요. 비우면 제목·아티스트로 자동 매칭을 시도합니다.")}
               </p>
             </div>
+            {!isAdminSpotifyOnly && (
+              <>
             <div>
               <div className="flex items-center justify-between mb-1">
                 <Label htmlFor="edit-lyrics">{t('music.lyricsLabel')}</Label>
@@ -892,10 +928,16 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
                 </div>
               </div>
             </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>{t('common.cancel')}</Button>
-            <Button onClick={handleEditSubmit} disabled={isUpdating || !editTitle || !editArtist} data-testid="button-save-edit">
+            <Button
+              onClick={handleEditSubmit}
+              disabled={isUpdating || (!isAdminSpotifyOnly && (!editTitle.trim() || !editArtist.trim()))}
+              data-testid="button-save-edit"
+            >
               {isUpdating ? t('music.saving') : t('music.save')}
             </Button>
           </DialogFooter>

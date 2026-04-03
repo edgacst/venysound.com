@@ -2344,7 +2344,7 @@ export async function registerRoutes(
     }
   });
 
-  // Update music (owner only)
+  // Update music (owner; 관리자는 spotifyAlbumId만 타인 음원에 설정 가능 — 해외 출시 DB 병합용)
   app.patch("/api/music/:id", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
@@ -2352,9 +2352,55 @@ export async function registerRoutes(
       const musicId = Number(req.params.id);
       const existing = await storage.getMusicById(musicId);
       if (!existing) return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
-      if (existing.userId !== userId) return res.status(403).json({ message: "본인의 음원만 수정할 수 있습니다" });
+
+      const role = await storage.getUserRole(userId);
+      const isAdminUser = role === "admin";
+      const isOwner = existing.userId === userId;
+
+      if (!isOwner && !isAdminUser) {
+        return res.status(403).json({ message: "본인의 음원만 수정할 수 있습니다" });
+      }
 
       const { title, artist, genre, tags, lyrics, isAi, imageFilename, price, isDownloadable, spotifyAlbumId } = req.body;
+
+      if (!isOwner && isAdminUser) {
+        const otherFields = [
+          title,
+          artist,
+          genre,
+          tags,
+          lyrics,
+          isAi,
+          imageFilename,
+          price,
+          isDownloadable,
+        ].some((v) => v !== undefined);
+        if (otherFields) {
+          return res.status(400).json({
+            message: "관리자는 다른 회원 음원에 spotifyAlbumId(해외 앨범 연동)만 수정할 수 있습니다.",
+          });
+        }
+        if (spotifyAlbumId === undefined) {
+          return res.status(400).json({ message: "수정할 spotifyAlbumId 값을 보내 주세요." });
+        }
+        const raw = spotifyAlbumId == null ? "" : String(spotifyAlbumId).trim();
+        const updateData: { spotifyAlbumId: string | null } = {
+          spotifyAlbumId: null,
+        };
+        if (raw) {
+          const id = parseSpotifyAlbumIdFromUserInput(raw);
+          if (!id) {
+            return res.status(400).json({
+              message:
+                "Spotify 앨범·싱글 ID를 찾을 수 없습니다. 숫자·영문 ID만 입력하거나, open.spotify.com/album/… 전체 주소를 붙여넣어 주세요.",
+            });
+          }
+          updateData.spotifyAlbumId = id;
+        }
+        const updated = await storage.updateMusic(musicId, updateData);
+        return res.json(updated);
+      }
+
       if (title !== undefined && !title.trim()) return res.status(400).json({ message: "제목을 입력해주세요" });
       if (artist !== undefined && !artist.trim()) return res.status(400).json({ message: "아티스트를 입력해주세요" });
 
