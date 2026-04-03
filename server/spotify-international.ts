@@ -213,17 +213,19 @@ async function fetchArtistAlbumsAll(
   const cap = Math.min(500, Math.max(50, parseInt(process.env.SPOTIFY_INTERNATIONAL_ALBUM_CAP || "200", 10) || 200));
   const markets = getInternationalMarkets();
   const byId = new Map<string, SpotifyAlbumSimplified>();
-  let unauthorized = false;
+  /** 한 시장만 401이어도 true였다가 끝까지 앨범이 있으면 false — 전체 해외 목록이 []로 떨어지는 것 방지 */
+  let sawUnauthorized = false;
   for (const market of markets) {
     const { albums, unauthorized: u } = await fetchArtistAlbumsForMarket(token, artistId, market, cap);
-    if (u) unauthorized = true;
+    if (u) sawUnauthorized = true;
     for (const al of albums) {
       if (!byId.has(al.id)) byId.set(al.id, al);
       if (byId.size >= cap) break;
     }
     if (byId.size >= cap) break;
   }
-  return { albums: [...byId.values()], unauthorized };
+  const albums = [...byId.values()];
+  return { albums, unauthorized: sawUnauthorized && albums.length === 0 };
 }
 
 async function fetchSpotifyAlbumsByIds(token: string, ids: string[]): Promise<SpotifyAlbumSimplified[]> {
@@ -398,7 +400,7 @@ export async function fetchInternationalReleasesPage(
       fromArtists = second.byId;
       unauthorized = second.unauthorized;
     }
-    if (unauthorized) {
+    if (unauthorized && fromArtists.size === 0) {
       if (!warnedUnauthorized) {
         warnedUnauthorized = true;
         console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
