@@ -228,59 +228,68 @@ async function fetchArtistAlbumsAll(
 
 async function fetchSpotifyAlbumsByIds(token: string, ids: string[]): Promise<SpotifyAlbumSimplified[]> {
   const unique = [...new Set(ids.filter(Boolean))];
-  const out: SpotifyAlbumSimplified[] = [];
+  const merged = new Map<string, SpotifyAlbumSimplified>();
+  const marketCandidates = [null as string | null, ...getInternationalMarkets()];
+
   for (let i = 0; i < unique.length; i += 20) {
     const chunk = unique.slice(i, i + 20);
-    const url =
-      "https://api.spotify.com/v1/albums?" +
-      new URLSearchParams({
-        ids: chunk.join(","),
-        market: getInternationalMarkets()[0] ?? "US",
-      }).toString();
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      console.error("[spotify-international] albums by ids error", res.status, t.slice(0, 200));
-      continue;
-    }
-    const j = (await res.json()) as { albums?: (SpotifyAlbumSimplified | null)[] };
-    for (const al of j.albums ?? []) {
-      if (al?.id) out.push(al);
+    for (const mkt of marketCandidates) {
+      const params = new URLSearchParams({ ids: chunk.join(",") });
+      if (mkt) params.set("market", mkt);
+      const url = "https://api.spotify.com/v1/albums?" + params.toString();
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        console.error(
+          "[spotify-international] albums by ids error",
+          mkt ?? "no-market",
+          res.status,
+          t.slice(0, 200),
+        );
+        continue;
+      }
+      const j = (await res.json()) as { albums?: (SpotifyAlbumSimplified | null)[] };
+      for (const al of j.albums ?? []) {
+        if (!al?.id) continue;
+        const prev = merged.get(al.id);
+        const prevHas = !!prev?.external_urls?.spotify;
+        const nextHas = !!al.external_urls?.spotify;
+        if (!prev || (!prevHas && nextHas)) merged.set(al.id, al);
+      }
     }
   }
-  return out;
+  return unique.map((id) => merged.get(id)).filter((x): x is SpotifyAlbumSimplified => !!x);
 }
 
-async function searchSpotifyAlbumIdByUpc(token: string, upc: string, market: string): Promise<string | null> {
-  const url =
-    "https://api.spotify.com/v1/search?" +
-    new URLSearchParams({
-      q: `upc:${upc}`,
-      type: "album",
-      limit: "5",
-      market,
-    }).toString();
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return null;
-  const j = (await res.json()) as {
-    albums?: {
-      items?: { id?: string; external_ids?: { upc?: string } }[];
+async function searchSpotifyAlbumIdByUpc(token: string, upc: string): Promise<string | null> {
+  const markets = [null as string | null, ...getInternationalMarkets()];
+  for (const mkt of markets) {
+    const params = new URLSearchParams({ q: `upc:${upc}`, type: "album", limit: "5" });
+    if (mkt) params.set("market", mkt);
+    const url = "https://api.spotify.com/v1/search?" + params.toString();
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) continue;
+    const j = (await res.json()) as {
+      albums?: {
+        items?: { id?: string; external_ids?: { upc?: string } }[];
+      };
     };
-  };
-  const items = j.albums?.items ?? [];
-  for (const it of items) {
-    if (it.external_ids?.upc === upc && it.id) return it.id;
+    const items = j.albums?.items ?? [];
+    for (const it of items) {
+      if (it.external_ids?.upc === upc && it.id) return it.id;
+    }
+    const first = items[0]?.id;
+    if (first) return first;
   }
-  return items[0]?.id ?? null;
+  return null;
 }
 
 async function resolveUpcsToAlbumIds(token: string, upcs: string[]): Promise<string[]> {
-  const market = getInternationalMarkets()[0] ?? "US";
   const seen = new Set<string>();
   const chunkSize = 8;
   for (let i = 0; i < upcs.length; i += chunkSize) {
     const chunk = upcs.slice(i, i + chunkSize);
-    const ids = await Promise.all(chunk.map((upc) => searchSpotifyAlbumIdByUpc(token, upc, market)));
+    const ids = await Promise.all(chunk.map((upc) => searchSpotifyAlbumIdByUpc(token, upc)));
     for (const id of ids) {
       if (id) seen.add(id);
     }
@@ -289,7 +298,8 @@ async function resolveUpcsToAlbumIds(token: string, upcs: string[]): Promise<str
 }
 
 function albumToDto(a: SpotifyAlbumSimplified): InternationalReleaseDto | null {
-  const spotifyUrl = a.external_urls?.spotify;
+  const spotifyUrl =
+    a.external_urls?.spotify || (a.id ? `https://open.spotify.com/album/${a.id}` : null);
   if (!spotifyUrl) return null;
   const artists = (a.artists ?? []).map((x) => x.name).filter(Boolean).join(", ") || "—";
   const imageUrl = a.images?.[0]?.url ?? null;
