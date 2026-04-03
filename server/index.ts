@@ -154,6 +154,10 @@ CREATE TABLE IF NOT EXISTS distribution_payouts (
 );
 CREATE INDEX IF NOT EXISTS idx_distribution_payouts_user_status ON distribution_payouts(user_id, status);`,
   },
+  {
+    name: "012-music-spotify-album-id",
+    sql: `ALTER TABLE music ADD COLUMN IF NOT EXISTS spotify_album_id varchar(32);`,
+  },
 ];
 
 async function runAutoMigrations() {
@@ -297,7 +301,8 @@ app.use((req, res, next) => {
   }
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  const host = process.env.HOST || (process.platform === "win32" ? "127.0.0.1" : "0.0.0.0");
+  /** Windows에서 localhost가 IPv6(::1)만 가리키면 127.0.0.1 전용 바인딩은 연결 실패할 수 있어 기본은 전 인터페이스(IPv4). .env의 HOST로 덮어쓰기 가능 */
+  const host = process.env.HOST || "0.0.0.0";
   httpServer.listen(
     {
       port,
@@ -305,9 +310,8 @@ app.use((req, res, next) => {
       ...(process.platform !== "win32" && { reusePort: true }),
     },
     () => {
-      log(`serving on port ${port}`);
-      const url = host === "0.0.0.0" ? `http://localhost:${port}` : `http://${host}:${port}`;
-      log(`로컬 테스트: 브라우저에서 ${url} 로 접속하세요.`);
+      log(`serving on port ${port} (host=${host})`);
+      log(`로컬: http://127.0.0.1:${port} 또는 http://localhost:${port} — 안 열리면 127.0.0.1 주소를 쓰세요.`);
     },
   );
 })();

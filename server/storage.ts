@@ -14,7 +14,7 @@ import {
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest,
   type DistributionRelease
 } from "@shared/schema";
-import { eq, desc, asc, and, or, ilike, inArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
+import { eq, desc, asc, and, or, ilike, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users, payments } from "@shared/models/auth";
 import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
@@ -24,6 +24,16 @@ import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
  * 곡 목록 장르 필터·업로드 UI·송출실 곡검색과 동일한 기준.
  * 대분류 키를 선택하면 이 배열에 포함된 music.genre 값이 모두 매칭됩니다.
  */
+/** DistroKid 등 external_release_ref 에서 UPC 숫자만 추출 (예: distrokid:825628673111) */
+function extractUpcFromExternalReleaseRef(ref: string | null | undefined): string | null {
+  if (!ref) return null;
+  const t = ref.trim();
+  if (!t) return null;
+  const tail = t.includes(":") ? t.slice(t.lastIndexOf(":") + 1).trim() : t;
+  if (/^\d{8,14}$/.test(tail)) return tail;
+  return null;
+}
+
 export const MUSIC_GENRE_GROUPS: Record<string, string[]> = {
   "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
   "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
@@ -70,6 +80,8 @@ export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
   getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
+  /** 글로벌 배포(발매일·승인일 기준) 또는 Spotify 앨범 연동 곡 — 홈 「신곡」 */
+  getHomeNewReleases(limit?: number): Promise<MusicWithUploaderTier[]>;
   getMusicById(id: number): Promise<Music | undefined>;
   getMusicByUser(userId: string): Promise<MusicWithUploaderTier[]>;
   
@@ -78,6 +90,11 @@ export interface IStorage {
   resolveSiteMusicIdsForInternationalReleases(
     items: { spotifyAlbumId: string; title: string; artists: string }[],
   ): Promise<(number | null)[]>;
+  /**
+   * 해외 탭 병합용: 배포 완료(delivered/live) 유통 건의 Spotify 앨범 id 및 DistroKid UPC(외부 ref).
+   * filterOwnerUserIds 가 있으면 해당 업로더(등록자)만, 없으면 전체.
+   */
+  getDistributionInternationalMergeSources(filterOwnerUserIds?: string[]): Promise<{ spotifyAlbumIds: string[]; upcs: string[] }>;
   deleteMusic(id: number): Promise<void>;
 
   // Likes
@@ -522,6 +539,101 @@ export class DatabaseStorage implements IStorage {
     });
 
     return { data, total };
+  }
+
+  async getHomeNewReleases(limit: number = 16): Promise<MusicWithUploaderTier[]> {
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const releaseStatuses = ["live", "delivered", "approved", "submitted"];
+
+    const musicCols = {
+      id: music.id,
+      title: music.title,
+      artist: music.artist,
+      filename: music.filename,
+      imageFilename: music.imageFilename,
+      genre: music.genre,
+      tags: music.tags,
+      lyrics: music.lyrics,
+      isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      price: music.price,
+      isDownloadable: music.isDownloadable,
+      userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
+      createdAt: music.createdAt,
+    };
+
+    const sortRelease = sql`coalesce(${distributionReleases.releaseDate}, ${distributionReleases.approvedAt}, ${distributionReleases.submittedAt}, ${music.createdAt})`;
+
+    const rowsDr = await db
+      .select({
+        ...musicCols,
+        _uploaderTier: users.subscriptionTier,
+        _uploaderExpiresAt: users.subscriptionExpiresAt,
+        _uploaderRole: users.role,
+      })
+      .from(music)
+      .innerJoin(distributionReleases, eq(music.id, distributionReleases.musicId))
+      .leftJoin(users, eq(music.userId, users.id))
+      .where(
+        and(
+          inArray(distributionReleases.status, releaseStatuses),
+          or(
+            isNotNull(distributionReleases.releaseDate),
+            isNotNull(distributionReleases.approvedAt),
+            isNotNull(distributionReleases.submittedAt),
+          ),
+        ),
+      )
+      .orderBy(desc(sortRelease))
+      .limit(safeLimit);
+
+    const now = new Date();
+    const toTiered = (rows: typeof rowsDr): MusicWithUploaderTier[] =>
+      rows.map((r) => {
+        const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as (typeof rowsDr)[0] & {
+          _uploaderTier: string | null;
+          _uploaderExpiresAt: Date | string | null;
+          _uploaderRole: string | null;
+        };
+        const subscriptionPremium =
+          (_uploaderTier === "pro" || _uploaderTier === "premium") &&
+          (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+        const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+        return {
+          ...rest,
+          uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free",
+          uploaderDonationBadge: null,
+        } as MusicWithUploaderTier;
+      });
+
+    let out = toTiered(rowsDr);
+    const seen = new Set(out.map((m) => m.id));
+
+    if (out.length < safeLimit) {
+      const need = safeLimit - out.length;
+      const excludeIds = [...seen];
+      const spotifyWhere: SQL[] = [
+        isNotNull(music.spotifyAlbumId),
+        sql`trim(${music.spotifyAlbumId}) != ''`,
+      ];
+      if (excludeIds.length) spotifyWhere.push(notInArray(music.id, excludeIds));
+      const rowsSp = await db
+        .select({
+          ...musicCols,
+          _uploaderTier: users.subscriptionTier,
+          _uploaderExpiresAt: users.subscriptionExpiresAt,
+          _uploaderRole: users.role,
+        })
+        .from(music)
+        .leftJoin(users, eq(music.userId, users.id))
+        .where(and(...spotifyWhere))
+        .orderBy(desc(music.createdAt))
+        .limit(need);
+      out = [...out, ...toTiered(rowsSp)];
+    }
+
+    return out.slice(0, safeLimit);
   }
 
   async getMusicById(id: number): Promise<Music | undefined> {
@@ -1095,6 +1207,45 @@ export class DatabaseStorage implements IStorage {
       out.push(fid);
     }
     return out;
+  }
+
+  async getDistributionInternationalMergeSources(
+    filterOwnerUserIds?: string[],
+  ): Promise<{ spotifyAlbumIds: string[]; upcs: string[] }> {
+    const statusOk = inArray(distributionReleases.status, ["delivered", "live"]);
+    const ownerOk =
+      filterOwnerUserIds && filterOwnerUserIds.length > 0
+        ? inArray(music.userId, filterOwnerUserIds)
+        : undefined;
+    const whereClause = ownerOk ? and(statusOk, ownerOk) : statusOk;
+
+    const rows = await db
+      .select({
+        spotifyAlbumId: music.spotifyAlbumId,
+        externalReleaseRef: distributionReleases.externalReleaseRef,
+      })
+      .from(distributionReleases)
+      .innerJoin(music, eq(distributionReleases.musicId, music.id))
+      .where(whereClause);
+
+    const albumIdSet = new Set<string>();
+    const upcSet = new Set<string>();
+    const spotifyAlbumIdShape = /^[a-zA-Z0-9]{22}$/;
+
+    for (const r of rows) {
+      const sid = r.spotifyAlbumId?.trim();
+      if (sid && spotifyAlbumIdShape.test(sid)) {
+        albumIdSet.add(sid);
+        continue;
+      }
+      const upc = extractUpcFromExternalReleaseRef(r.externalReleaseRef);
+      if (upc) upcSet.add(upc);
+    }
+
+    return {
+      spotifyAlbumIds: [...albumIdSet],
+      upcs: [...upcSet],
+    };
   }
 
   async deleteMusic(id: number): Promise<void> {

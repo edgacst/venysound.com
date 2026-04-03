@@ -21,8 +21,8 @@ export default function GlobalDistributionGuide() {
           <section className="rounded-xl border border-border/70 p-5 space-y-2">
             <h2 className="text-xl font-semibold">1) 배포 가능한 플랫폼</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              글로벌 음원 배포는 DistroKid를 포함한(약20여개) 해외 음원 파트너 플랫폼을 통해 진행됩니다. 실제 반영 스토어와 노출 시점은
-              각 플랫폼의 심사/정책/지역 지원 여부에 따라 달라질 수 있습니다.
+              글로벌 음원 배포는 Spotify, YouTube Music 등(약20여개) 해외 음원 파트너 플랫폼을 통해 진행됩니다. 실제 반영 스토어와 노출
+              시점은 각 플랫폼의 심사/정책/지역 지원 여부에 따라 달라질 수 있습니다.
             </p>
           </section>
 
@@ -49,7 +49,15 @@ export default function GlobalDistributionGuide() {
               <li>권리 보유 확인 체크 후 유통 초안을 생성하고 제출합니다.</li>
               <li>내부 검수(QC) 및 운영 검토를 거쳐 승인/보완/반려 상태가 결정됩니다.</li>
               <li>승인 후 외부 배포사 연동이 진행되며, 플랫폼별 노출 시점이 순차 반영됩니다.</li>
-              <li>일반적으로 제출 후 라이브 반영까지 수일~수주가 소요될 수 있습니다.</li>
+              <li className="space-y-2">
+                <span className="block">일반적으로 제출 후 라이브 반영까지 수일~수주가 소요될 수 있습니다.</span>
+                <Link
+                  href="/dashboard#global-distribution-management"
+                  className="inline-block text-sm text-primary underline underline-offset-2 hover:opacity-90"
+                >
+                  대시보드에서 글로벌 출시 신청하기
+                </Link>
+              </li>
             </ol>
           </section>
 
@@ -69,12 +77,6 @@ export default function GlobalDistributionGuide() {
               본 페이지는 안내 목적이며, 구체적 법률/세무 판단은 전문가 자문을 권장합니다.
             </p>
           </section>
-
-          <div className="pt-2">
-            <Link href="/dashboard#global-distribution-management" className="text-sm text-primary underline underline-offset-2">
-              대시보드에서 글로벌 출시 신청하기
-            </Link>
-          </div>
         </main>
         <Footer />
       </div>

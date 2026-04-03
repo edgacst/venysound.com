@@ -34,6 +34,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
   { file: "ai-music-saved-library.sql", name: "ai_music_saved_tracks" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
+  { file: "music-spotify-album-id.sql", name: "music spotify_album_id 컬럼" },
   { file: "notify-activity-email.sql", name: "users notify_activity_email 컬럼" },
   { file: "credit-refund-requests.sql", name: "credit_refund_requests" },
   { file: "credit-refund-requests-processed-by.sql", name: "credit_refund_requests.processed_by_user_id" },

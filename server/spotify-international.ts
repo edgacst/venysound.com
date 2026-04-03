@@ -84,6 +84,21 @@ function getEnvArtistIds(): string[] {
   return out;
 }
 
+/** VenySound user id(로그인 sub) 목록 — 유통 병합 시 해당 등록자만. 비우면 전체 배포 완료 건. */
+export function getEnvInternationalFromUserIds(): string[] {
+  const raw = normalizeEnvValue(process.env.SPOTIFY_INTERNATIONAL_FROM_USER_IDS);
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean)) {
+    if (part && !seen.has(part)) {
+      seen.add(part);
+      out.push(part);
+    }
+  }
+  return out;
+}
+
 /**
  * 해외 출시는 특정 단일 market(예: KR)만 쓰면 해당 지역 미배포 앨범이 전부 빠져 total=0이 될 수 있음.
  * Client Credentials에는 사용자 국가가 없어 market이 사실상 필수에 가깝다 → 여러 market 결과를 합친다.
@@ -211,6 +226,68 @@ async function fetchArtistAlbumsAll(
   return { albums: [...byId.values()], unauthorized };
 }
 
+async function fetchSpotifyAlbumsByIds(token: string, ids: string[]): Promise<SpotifyAlbumSimplified[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  const out: SpotifyAlbumSimplified[] = [];
+  for (let i = 0; i < unique.length; i += 20) {
+    const chunk = unique.slice(i, i + 20);
+    const url =
+      "https://api.spotify.com/v1/albums?" +
+      new URLSearchParams({
+        ids: chunk.join(","),
+        market: getInternationalMarkets()[0] ?? "US",
+      }).toString();
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error("[spotify-international] albums by ids error", res.status, t.slice(0, 200));
+      continue;
+    }
+    const j = (await res.json()) as { albums?: (SpotifyAlbumSimplified | null)[] };
+    for (const al of j.albums ?? []) {
+      if (al?.id) out.push(al);
+    }
+  }
+  return out;
+}
+
+async function searchSpotifyAlbumIdByUpc(token: string, upc: string, market: string): Promise<string | null> {
+  const url =
+    "https://api.spotify.com/v1/search?" +
+    new URLSearchParams({
+      q: `upc:${upc}`,
+      type: "album",
+      limit: "5",
+      market,
+    }).toString();
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  const j = (await res.json()) as {
+    albums?: {
+      items?: { id?: string; external_ids?: { upc?: string } }[];
+    };
+  };
+  const items = j.albums?.items ?? [];
+  for (const it of items) {
+    if (it.external_ids?.upc === upc && it.id) return it.id;
+  }
+  return items[0]?.id ?? null;
+}
+
+async function resolveUpcsToAlbumIds(token: string, upcs: string[]): Promise<string[]> {
+  const market = getInternationalMarkets()[0] ?? "US";
+  const seen = new Set<string>();
+  const chunkSize = 8;
+  for (let i = 0; i < upcs.length; i += chunkSize) {
+    const chunk = upcs.slice(i, i + chunkSize);
+    const ids = await Promise.all(chunk.map((upc) => searchSpotifyAlbumIdByUpc(token, upc, market)));
+    for (const id of ids) {
+      if (id) seen.add(id);
+    }
+  }
+  return [...seen];
+}
+
 function albumToDto(a: SpotifyAlbumSimplified): InternationalReleaseDto | null {
   const spotifyUrl = a.external_urls?.spotify;
   if (!spotifyUrl) return null;
@@ -270,46 +347,76 @@ async function collectAlbumsForArtists(
   return { byId, unauthorized: false };
 }
 
+export type InternationalReleasesMergeInput = {
+  /** DB music.spotify_album_id 등 */
+  extraSpotifyAlbumIds?: string[];
+  /** external_release_ref 에서 뽑은 UPC — Spotify search 로 앨범 id 해석 */
+  extraUpcs?: string[];
+};
+
 export async function fetchInternationalReleasesPage(
   page: number,
   limit: number,
+  merge?: InternationalReleasesMergeInput,
 ): Promise<{ data: InternationalReleaseDto[]; total: number }> {
   const artistIds = getEnvArtistIds();
-  if (artistIds.length === 0) {
+  const extraAlbumIds = [...new Set((merge?.extraSpotifyAlbumIds ?? []).map((s) => s.trim()).filter(Boolean))];
+  const extraUpcs = [...new Set((merge?.extraUpcs ?? []).map((s) => s.trim()).filter(Boolean))];
+
+  if (artistIds.length === 0 && extraAlbumIds.length === 0 && extraUpcs.length === 0) {
     if (!warnedNoArtistIds) {
       warnedNoArtistIds = true;
       console.warn(
-        "[spotify-international] SPOTIFY_INTERNATIONAL_ARTIST_IDS is empty — set comma-separated Spotify artist IDs in .env",
+        "[spotify-international] No international sources: set SPOTIFY_INTERNATIONAL_ARTIST_IDS and/or ship delivered/live distribution with music.spotify_album_id or UPC in external_release_ref",
       );
     }
     return { data: [], total: 0 };
   }
 
-  let { byId, unauthorized } = await collectAlbumsForArtists(artistIds);
-  if (unauthorized) {
-    clearSpotifyTokenCache();
-    const second = await collectAlbumsForArtists(artistIds);
-    byId = second.byId;
-    unauthorized = second.unauthorized;
-  }
-
-  if (unauthorized) {
-    if (!warnedUnauthorized) {
-      warnedUnauthorized = true;
-      console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
-    }
+  const token = await getClientCredentialsToken();
+  if (!token) {
     return { data: [], total: 0 };
   }
 
-  if (byId.size === 0 && !warnedZeroAlbums) {
-    warnedZeroAlbums = true;
-    console.warn(
-      "[spotify-international] 0 albums for artists",
-      artistIds.join(","),
-      "markets",
-      getInternationalMarkets().join(","),
-      "— check artist IDs on open.spotify.com and SPOTIFY_INTERNATIONAL_MARKETS",
-    );
+  const byId = new Map<string, SpotifyAlbumSimplified>();
+
+  if (artistIds.length > 0) {
+    let { byId: fromArtists, unauthorized } = await collectAlbumsForArtists(artistIds);
+    if (unauthorized) {
+      clearSpotifyTokenCache();
+      const second = await collectAlbumsForArtists(artistIds);
+      fromArtists = second.byId;
+      unauthorized = second.unauthorized;
+    }
+    if (unauthorized) {
+      if (!warnedUnauthorized) {
+        warnedUnauthorized = true;
+        console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
+      }
+      return { data: [], total: 0 };
+    }
+    for (const [k, v] of fromArtists) {
+      byId.set(k, v);
+    }
+    if (fromArtists.size === 0 && extraAlbumIds.length === 0 && extraUpcs.length === 0 && !warnedZeroAlbums) {
+      warnedZeroAlbums = true;
+      console.warn(
+        "[spotify-international] 0 albums for artists",
+        artistIds.join(","),
+        "markets",
+        getInternationalMarkets().join(","),
+        "— check artist IDs on open.spotify.com and SPOTIFY_INTERNATIONAL_MARKETS",
+      );
+    }
+  }
+
+  const fromUpcs = extraUpcs.length > 0 ? await resolveUpcsToAlbumIds(token, extraUpcs) : [];
+  const toFetchIds = [...new Set([...extraAlbumIds, ...fromUpcs])].filter((id) => !byId.has(id));
+  if (toFetchIds.length > 0) {
+    const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
+    for (const al of fetched) {
+      if (!byId.has(al.id)) byId.set(al.id, al);
+    }
   }
 
   const dtos: InternationalReleaseDto[] = [];

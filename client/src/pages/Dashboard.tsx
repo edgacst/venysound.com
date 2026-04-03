@@ -28,7 +28,7 @@ function formatDuration(seconds: number) {
 export default function Dashboard() {
   const { t } = useTranslation();
   const { user, isLoading: authLoading } = useAuth();
-  const [, navigate] = useLocation();
+  const [pathname, navigate] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const [announcementOpen, setAnnouncementOpen] = useState(false);
@@ -40,24 +40,60 @@ export default function Dashboard() {
   const [distributionReleaseDate, setDistributionReleaseDate] = useState("");
   const [distributionRightsConfirmed, setDistributionRightsConfirmed] = useState(false);
 
-  useEffect(() => {
-    const scrollToDistributionSection = () => {
-      if (typeof window === "undefined") return;
-      if (window.location.hash !== "#global-distribution-management") return;
-      const section = document.getElementById("global-distribution-management");
-      if (!section) return;
-      section.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-
-    scrollToDistributionSection();
-    window.addEventListener("hashchange", scrollToDistributionSection);
-    return () => window.removeEventListener("hashchange", scrollToDistributionSection);
-  }, []);
-
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ["/api/dashboard/my-music-stats"],
     enabled: !!user,
   });
+
+  useEffect(() => {
+    const HASH = "#global-distribution-management";
+    const targetId = "global-distribution-management";
+
+    const scrollIfHashMatches = (): boolean => {
+      if (typeof window === "undefined") return true;
+      if (window.location.hash !== HASH) return true;
+      const el = document.getElementById(targetId);
+      if (!el) return false;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      return true;
+    };
+
+    let cancelled = false;
+    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
+
+    const scheduleAttempts = () => {
+      if (statsLoading) return;
+      const delays = [0, 80, 200, 450, 800, 1400];
+      delays.forEach((ms) => {
+        const id = window.setTimeout(() => {
+          if (cancelled) return;
+          scrollIfHashMatches();
+        }, ms);
+        timeoutIds.push(id);
+      });
+    };
+
+    scheduleAttempts();
+
+    const onHashChange = () => {
+      const delays = [0, 100, 250, 500];
+      delays.forEach((ms) => {
+        const id = window.setTimeout(() => {
+          if (cancelled) return;
+          scrollIfHashMatches();
+        }, ms);
+        timeoutIds.push(id);
+      });
+    };
+    window.addEventListener("hashchange", onHashChange);
+
+    return () => {
+      cancelled = true;
+      for (const id of timeoutIds) clearTimeout(id);
+      timeoutIds.length = 0;
+      window.removeEventListener("hashchange", onHashChange);
+    };
+  }, [statsLoading, pathname]);
 
   const { data: myAnnouncements } = useQuery<any[]>({
     queryKey: ["/api/announcements/my"],

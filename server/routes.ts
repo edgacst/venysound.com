@@ -40,7 +40,7 @@ import { eq, sql, inArray, and, desc, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
-import { fetchInternationalReleasesPage } from "./spotify-international";
+import { fetchInternationalReleasesPage, getEnvInternationalFromUserIds } from "./spotify-international";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
 import {
@@ -1693,12 +1693,31 @@ export async function registerRoutes(
     res.json(result);
   });
 
-  /** 우리 아티스트 해외(Spotify) 출시 목록 — Client Credentials + SPOTIFY_INTERNATIONAL_ARTIST_IDS */
+  /** 홈 「신곡」: 배포 발매일·승인일 우선, 부족 시 Spotify 앨범 연동 곡(업로드 순) */
+  app.get("/api/music/home-new-releases", async (req, res) => {
+    try {
+      const limitNum = Math.min(32, Math.max(1, parseInt(String(req.query.limit || "16"), 10) || 16));
+      const data = await storage.getHomeNewReleases(limitNum);
+      res.json(data);
+    } catch (e) {
+      console.error("[home-new-releases]", e);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
+  });
+
+  /** 해외(Spotify) 출시: env 아티스트 목록 + 배포 완료 유통(DB)의 spotify_album_id·UPC 병합. 선택: SPOTIFY_INTERNATIONAL_FROM_USER_IDS 로 등록자만 */
   app.get("/api/music/international-releases", async (req, res) => {
     try {
       const pageNum = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
       const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "30"), 10) || 30));
-      const { data, total } = await fetchInternationalReleasesPage(pageNum, limitNum);
+      const userFilter = getEnvInternationalFromUserIds();
+      const merge = await storage.getDistributionInternationalMergeSources(
+        userFilter.length > 0 ? userFilter : undefined,
+      );
+      const { data, total } = await fetchInternationalReleasesPage(pageNum, limitNum, {
+        extraSpotifyAlbumIds: merge.spotifyAlbumIds,
+        extraUpcs: merge.upcs,
+      });
       const siteIds = await storage.resolveSiteMusicIdsForInternationalReleases(
         data.map((d) => ({ spotifyAlbumId: d.id, title: d.title, artists: d.artists })),
       );

@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dialog";
 
 /** 생성된 곡 목록 페이지당 개수 */
-const SAVED_TRACKS_LIST_PAGE_SIZE = 10;
+const SAVED_TRACKS_LIST_PAGE_SIZE = 6;
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
@@ -107,9 +107,14 @@ function TrackCard({
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
   const hasDownloaded = (track.downloadCount ?? 0) > 0;
   const hasUploaded = (track.uploadCount ?? 0) > 0;
-  const doneActionClass = "text-emerald-500 dark:text-emerald-400 font-medium";
+  const doneActionClass = "text-emerald-600 dark:text-emerald-400 font-medium";
+  /** 다크 배경에서 primary보다 대비가 좋은 액션 색(시안 계열) */
+  const actionLinkClass =
+    "text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors";
+  const publishLinkClass =
+    "text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors";
   return (
-    <div className="rounded-xl border border-border/60 bg-background/60 p-3 flex gap-3 items-start w-full">
+    <div className="rounded-xl border border-border/80 bg-muted/25 shadow-sm p-3 flex gap-3 items-start w-full">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
         {order}
       </span>
@@ -120,7 +125,7 @@ function TrackCard({
         <div className="flex items-center gap-2 h-10">
           <div className="flex-1 min-w-0 h-10 flex flex-col justify-center pr-1 gap-0.5">
             <p className="text-xs font-medium truncate leading-none">{title}</p>
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[11px] text-primary">
+            <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[11px] ${actionLinkClass}`}>
               <button
                 type="button"
                 onClick={() => setShowLyrics((v) => !v)}
@@ -179,7 +184,7 @@ function TrackCard({
                       type="button"
                       onClick={onPublish}
                       disabled={isPublishing}
-                      className="inline-flex items-center gap-0.5 hover:underline text-primary disabled:opacity-50"
+                      className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${publishLinkClass}`}
                     >
                       {isPublishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
                       {t("createMusic.publishToSite", "신곡으로 공개")}
@@ -1043,10 +1048,25 @@ export default function CreateMusic() {
                     </Link>
                   </p>
                 )}
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,1fr),minmax(480px,1.5fr)] gap-8 lg:gap-10 items-start w-full">
+                <div
+                  className="w-full rounded-3xl border-2 border-border/80 bg-card/55 backdrop-blur-md shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_64px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
+                  data-testid="create-music-workspace"
+                >
+                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,1fr),minmax(480px,1.5fr)] gap-0 items-stretch w-full">
                   {/* 왼쪽: 생성 폼 */}
-                  <div className="flex flex-col items-start">
-                    <form onSubmit={handleSubmit} className="rounded-2xl border border-border/60 bg-muted/20 p-6 md:p-8 w-full max-w-xl space-y-4">
+                  <div className="flex flex-col items-stretch p-5 md:p-7 lg:p-8 border-b-2 border-border/80 lg:border-b-0 lg:border-r-2 lg:border-r-purple-500/25 bg-gradient-to-br from-purple-950/35 via-card/40 to-background/30">
+                    <div className="mb-4 flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/25 text-purple-200 ring-1 ring-purple-400/30">
+                        <Wand2 className="h-4 w-4" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-purple-200/90">
+                          {t("createMusic.sectionCreateLabel", "새로 만들기")}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{t("createMusic.sectionCreateHint", "프롬프트를 입력하고 생성을 누르세요")}</p>
+                      </div>
+                    </div>
+                    <form onSubmit={handleSubmit} className="rounded-2xl border-2 border-purple-500/35 bg-background/85 shadow-inner shadow-black/20 p-6 md:p-8 w-full max-w-xl space-y-4 ring-1 ring-white/5">
                       <div>
                         <label className="block text-sm font-medium mb-2">{t("createMusic.modeLabel", "생성 방식")}</label>
                         <div className="flex gap-3">
@@ -1127,7 +1147,7 @@ export default function CreateMusic() {
 
                     <div className="mt-6 flex flex-wrap gap-3">
                       <Link href="/suno-guide">
-                        <Button variant="outline" className="rounded-full gap-2">
+                        <Button variant="outline" className="rounded-full gap-2 border-purple-500/30 bg-background/60 hover:bg-purple-500/10">
                           <Wand2 className="w-4 h-4" />
                           {t("createMusic.guideCta", "음악 만들기 가이드")}
                         </Button>
@@ -1136,7 +1156,19 @@ export default function CreateMusic() {
                   </div>
 
                   {/* 오른쪽: 생성된 곡 목록 (저장됨, 삭제할 때까지 유지) */}
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 md:p-6 lg:min-h-[320px] min-w-0">
+                  <div className="flex flex-col p-5 md:p-7 lg:p-8 lg:min-h-[320px] min-w-0 bg-gradient-to-bl from-fuchsia-950/20 via-card/30 to-background/30">
+                    <div className="mb-4 flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/25">
+                        <Music className="h-4 w-4" aria-hidden />
+                      </span>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/90">
+                          {t("createMusic.sectionLibraryLabel", "생성된 곡")}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{t("createMusic.sectionLibraryHint", "재생·다운로드·업로드·공개")}</p>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border-2 border-fuchsia-500/30 bg-background/80 shadow-inner shadow-black/15 p-4 md:p-6 flex-1 flex flex-col min-h-0 ring-1 ring-white/5">
                     <div className="flex items-center justify-between gap-2 mb-3">
                       <h2 className="text-lg font-bold">
                         {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
@@ -1181,7 +1213,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground/90 leading-relaxed pl-6">
                           {t(
                             "createMusic.generatingSlowHint",
-                            "음원은 외부 AI 서버에서 만듭니다. 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
+                            "음원은 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
                           )}
                         </p>
                       </div>
@@ -1258,6 +1290,8 @@ export default function CreateMusic() {
                         )}
                       </>
                     )}
+                    </div>
+                  </div>
                   </div>
                 </div>
               </>

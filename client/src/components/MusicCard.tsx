@@ -225,9 +225,11 @@ export function LyricsSyncEditor({ audioUrl, plainLyrics, onSave, onClose }: {
 
 interface MusicCardProps {
   music: Music;
+  /** 홈 주간 차트 등 순위 표시 (멜론식 배지) */
+  chartRank?: number;
 }
 
-export function MusicCard({ music }: MusicCardProps) {
+export function MusicCard({ music, chartRank }: MusicCardProps) {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { playMusic, activeMusicId } = usePlayerStore();
@@ -570,7 +572,16 @@ export function MusicCard({ music }: MusicCardProps) {
             </Button>
           </div>
 
-          <div className="absolute top-2 left-2 flex items-center gap-1">
+          {chartRank != null && chartRank > 0 && (
+            <span
+              className="absolute top-2 left-2 z-[12] flex h-8 min-w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-600 px-1.5 text-sm font-black tabular-nums text-black shadow-lg ring-2 ring-black/20"
+              data-testid={`badge-chart-rank-${music.id}`}
+            >
+              {chartRank}
+            </span>
+          )}
+
+          <div className={`absolute ${chartRank != null && chartRank > 0 ? "top-11" : "top-2"} left-2 z-[11] flex flex-wrap items-center gap-1 max-w-[calc(100%-3rem)]`}>
             {music.isAi && (
               <span className="text-xs bg-blue-600/80 text-white px-2 py-0.5 rounded-full">
                 AI{(music as any).aiProvider ? ` · ${(music as any).aiProvider}` : ""}
