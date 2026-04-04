@@ -416,16 +416,47 @@ export type InternationalReleasesMergeInput = {
   extraUpcs?: string[];
 };
 
+/** Spotify API 없이 카드 메타를 채울 때 routes → storage 에서 전달 */
+export type InternationalReleaseDbSeed = {
+  spotifyAlbumId: string;
+  title: string;
+  artists: string;
+  imageUrl: string | null;
+  releaseDate: string | null;
+  musicId: number;
+};
+
+function seedByIdFromDb(
+  byId: Map<string, SpotifyAlbumSimplified>,
+  seeds: InternationalReleaseDbSeed[],
+): void {
+  for (const row of seeds) {
+    const sid = row.spotifyAlbumId.trim();
+    if (!sid) continue;
+    const img = row.imageUrl?.trim() ?? "";
+    byId.set(sid, {
+      id: sid,
+      name: row.title,
+      artists: [{ name: row.artists }],
+      images: img ? [{ url: img }] : [],
+      external_urls: { spotify: `https://open.spotify.com/album/${sid}` },
+      release_date: row.releaseDate ?? undefined,
+    });
+  }
+}
+
 export async function fetchInternationalReleasesPage(
   page: number,
   limit: number,
   merge?: InternationalReleasesMergeInput,
+  dbSeeds: InternationalReleaseDbSeed[] = [],
 ): Promise<{ data: InternationalReleaseDto[]; total: number }> {
   const artistIds = getEnvArtistIds();
   const extraAlbumIds = [...new Set((merge?.extraSpotifyAlbumIds ?? []).map((s) => s.trim()).filter(Boolean))];
   const extraUpcs = [...new Set((merge?.extraUpcs ?? []).map((s) => s.trim()).filter(Boolean))];
+  const seeds = dbSeeds ?? [];
 
-  if (artistIds.length === 0 && extraAlbumIds.length === 0 && extraUpcs.length === 0) {
+  if (seeds.length === 0 && artistIds.length === 0 && extraAlbumIds.length === 0 && extraUpcs.length === 0) {
     if (!warnedNoArtistIds) {
       warnedNoArtistIds = true;
       console.warn(
@@ -435,7 +466,11 @@ export async function fetchInternationalReleasesPage(
     return { data: [], total: 0 };
   }
 
-  const cacheKey = `${artistIds.join(",")}|${[...extraAlbumIds].sort().join(",")}|${[...extraUpcs].sort().join(",")}`;
+  const dbKey = seeds
+    .map((s) => s.spotifyAlbumId)
+    .sort()
+    .join(",");
+  const cacheKey = `${artistIds.join(",")}|${[...extraAlbumIds].sort().join(",")}|${[...extraUpcs].sort().join(",")}|db:${dbKey}`;
   const nowMs = Date.now();
   if (
     intlReleasesFullListCache &&
@@ -448,14 +483,17 @@ export async function fetchInternationalReleasesPage(
     return { data: cached.slice(start, start + limit), total };
   }
 
-  const token = await getClientCredentialsToken();
-  if (!token) {
-    return { data: [], total: 0 };
-  }
-
   const byId = new Map<string, SpotifyAlbumSimplified>();
+  seedByIdFromDb(byId, seeds);
 
-  if (artistIds.length > 0) {
+  const needSpotify = artistIds.length > 0 || extraAlbumIds.length > 0 || extraUpcs.length > 0;
+  const token = needSpotify ? await getClientCredentialsToken() : null;
+
+  if (needSpotify && !token) {
+    if (byId.size === 0) {
+      return { data: [], total: 0 };
+    }
+  } else if (needSpotify && token && artistIds.length > 0) {
     let { byId: fromArtists, unauthorized } = await collectAlbumsForArtists(artistIds);
     if (unauthorized) {
       clearSpotifyTokenCache();
@@ -464,16 +502,25 @@ export async function fetchInternationalReleasesPage(
       unauthorized = second.unauthorized;
     }
     if (unauthorized && fromArtists.size === 0) {
-      if (!warnedUnauthorized) {
-        warnedUnauthorized = true;
-        console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
+      if (byId.size === 0) {
+        if (!warnedUnauthorized) {
+          warnedUnauthorized = true;
+          console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
+        }
+        return { data: [], total: 0 };
       }
-      return { data: [], total: 0 };
+    } else {
+      for (const [k, v] of fromArtists) {
+        byId.set(k, v);
+      }
     }
-    for (const [k, v] of fromArtists) {
-      byId.set(k, v);
-    }
-    if (fromArtists.size === 0 && extraAlbumIds.length === 0 && extraUpcs.length === 0 && !warnedZeroAlbums) {
+    if (
+      fromArtists.size === 0 &&
+      extraAlbumIds.length === 0 &&
+      extraUpcs.length === 0 &&
+      seeds.length === 0 &&
+      !warnedZeroAlbums
+    ) {
       warnedZeroAlbums = true;
       console.warn(
         "[spotify-international] 0 albums for artists",
@@ -485,12 +532,22 @@ export async function fetchInternationalReleasesPage(
     }
   }
 
-  const fromUpcs = extraUpcs.length > 0 ? await resolveUpcsToAlbumIds(token, extraUpcs) : [];
-  const toFetchIds = [...new Set([...extraAlbumIds, ...fromUpcs])].filter((id) => !byId.has(id));
-  if (toFetchIds.length > 0) {
-    const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
-    for (const al of fetched) {
-      if (!byId.has(al.id)) byId.set(al.id, al);
+  if (token && extraUpcs.length > 0) {
+    const fromUpcs = await resolveUpcsToAlbumIds(token, extraUpcs);
+    const toFetchIds = [...new Set([...extraAlbumIds, ...fromUpcs])].filter((id) => !byId.has(id));
+    if (toFetchIds.length > 0) {
+      const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
+      for (const al of fetched) {
+        if (!byId.has(al.id)) byId.set(al.id, al);
+      }
+    }
+  } else if (token && extraAlbumIds.length > 0) {
+    const toFetchIds = [...new Set(extraAlbumIds)].filter((id) => !byId.has(id));
+    if (toFetchIds.length > 0) {
+      const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
+      for (const al of fetched) {
+        if (!byId.has(al.id)) byId.set(al.id, al);
+      }
     }
   }
 

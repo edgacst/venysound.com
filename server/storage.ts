@@ -95,6 +95,20 @@ export interface IStorage {
    * filterOwnerUserIds 가 있으면 해당 업로더(등록자)만, 없으면 전체.
    */
   getDistributionInternationalMergeSources(filterOwnerUserIds?: string[]): Promise<{ spotifyAlbumIds: string[]; upcs: string[] }>;
+  /**
+   * 배포 완료(delivered/live) + music.spotify_album_id 가 있는 건만.
+   * Spotify API 없이 해외 탭 카드 메타(제목·아티스트·커버·링크)를 채울 때 사용.
+   */
+  getInternationalReleasesDbSeeds(filterOwnerUserIds?: string[]): Promise<
+    {
+      spotifyAlbumId: string;
+      title: string;
+      artists: string;
+      imageUrl: string | null;
+      releaseDate: string | null;
+      musicId: number;
+    }[]
+  >;
   deleteMusic(id: number): Promise<void>;
 
   // Likes
@@ -1247,6 +1261,76 @@ export class DatabaseStorage implements IStorage {
       spotifyAlbumIds: [...albumIdSet],
       upcs: [...upcSet],
     };
+  }
+
+  async getInternationalReleasesDbSeeds(
+    filterOwnerUserIds?: string[],
+  ): Promise<
+    {
+      spotifyAlbumId: string;
+      title: string;
+      artists: string;
+      imageUrl: string | null;
+      releaseDate: string | null;
+      musicId: number;
+    }[]
+  > {
+    const statusOk = inArray(distributionReleases.status, ["delivered", "live"]);
+    const ownerOk =
+      filterOwnerUserIds && filterOwnerUserIds.length > 0
+        ? inArray(music.userId, filterOwnerUserIds)
+        : undefined;
+    const whereClause = and(statusOk, ownerOk, isNotNull(music.spotifyAlbumId));
+
+    const rows = await db
+      .select({
+        spotifyAlbumId: music.spotifyAlbumId,
+        musicId: music.id,
+        musicTitle: music.title,
+        musicArtist: music.artist,
+        imageFilename: music.imageFilename,
+        distTitle: distributionReleases.releaseTitle,
+        distArtist: distributionReleases.artistName,
+        distReleaseDate: distributionReleases.releaseDate,
+      })
+      .from(distributionReleases)
+      .innerJoin(music, eq(distributionReleases.musicId, music.id))
+      .where(whereClause);
+
+    const shape = /^[0-9A-Za-z]{10,32}$/;
+    const out: {
+      spotifyAlbumId: string;
+      title: string;
+      artists: string;
+      imageUrl: string | null;
+      releaseDate: string | null;
+      musicId: number;
+    }[] = [];
+
+    for (const r of rows) {
+      const sid = r.spotifyAlbumId?.trim();
+      if (!sid || !shape.test(sid)) continue;
+      const title = (r.distTitle?.trim() || r.musicTitle || "").trim() || r.musicTitle;
+      const artists = (r.distArtist?.trim() || r.musicArtist || "").trim() || r.musicArtist;
+      let imageUrl: string | null = null;
+      const fn = r.imageFilename?.trim();
+      if (fn) {
+        imageUrl =
+          fn.startsWith("http://") || fn.startsWith("https://") || fn.startsWith("/")
+            ? fn
+            : `/objects/${fn}`;
+      }
+      let releaseDate: string | null = null;
+      if (r.distReleaseDate) {
+        try {
+          releaseDate = r.distReleaseDate.toISOString().slice(0, 10);
+        } catch {
+          releaseDate = null;
+        }
+      }
+      out.push({ spotifyAlbumId: sid, title, artists, imageUrl, releaseDate, musicId: r.musicId });
+    }
+    return out;
   }
 
   async deleteMusic(id: number): Promise<void> {

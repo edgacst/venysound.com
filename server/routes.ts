@@ -1711,17 +1711,24 @@ export async function registerRoutes(
       const pageNum = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1);
       const limitNum = Math.min(100, Math.max(1, parseInt(String(req.query.limit || "30"), 10) || 30));
       const userFilter = getEnvInternationalFromUserIds();
-      const merge = await storage.getDistributionInternationalMergeSources(
-        userFilter.length > 0 ? userFilter : undefined,
+      const filterOwners = userFilter.length > 0 ? userFilter : undefined;
+      const merge = await storage.getDistributionInternationalMergeSources(filterOwners);
+      const dbSeeds = await storage.getInternationalReleasesDbSeeds(filterOwners);
+      const seedMusicByAlbum = new Map(dbSeeds.map((s) => [s.spotifyAlbumId, s.musicId]));
+      const { data, total } = await fetchInternationalReleasesPage(
+        pageNum,
+        limitNum,
+        {
+          extraSpotifyAlbumIds: merge.spotifyAlbumIds,
+          extraUpcs: merge.upcs,
+        },
+        dbSeeds,
       );
-      const { data, total } = await fetchInternationalReleasesPage(pageNum, limitNum, {
-        extraSpotifyAlbumIds: merge.spotifyAlbumIds,
-        extraUpcs: merge.upcs,
-      });
       if (total === 0 && /^(1|true|yes)$/i.test(String(process.env.SPOTIFY_DEBUG_INTL ?? "").trim())) {
         console.warn("[international-releases] empty", {
           mergeSpotifyAlbumIds: merge.spotifyAlbumIds.length,
           mergeUpcs: merge.upcs.length,
+          dbSeedRows: dbSeeds.length,
           userFilterCount: userFilter.length,
           hasArtistEnv: String(process.env.SPOTIFY_INTERNATIONAL_ARTIST_IDS ?? "").trim().length > 0,
         });
@@ -1729,7 +1736,10 @@ export async function registerRoutes(
       const siteIds = await storage.resolveSiteMusicIdsForInternationalReleases(
         data.map((d) => ({ spotifyAlbumId: d.id, title: d.title, artists: d.artists })),
       );
-      const enriched = data.map((d, i) => ({ ...d, siteMusicId: siteIds[i] ?? null }));
+      const enriched = data.map((d, i) => ({
+        ...d,
+        siteMusicId: seedMusicByAlbum.get(d.id) ?? siteIds[i] ?? null,
+      }));
       res.json({ data: enriched, total, page: pageNum, limit: limitNum });
     } catch (e) {
       console.error("[international-releases]", e);
