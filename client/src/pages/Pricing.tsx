@@ -26,6 +26,7 @@ import {
   Star,
   Layers,
   Globe,
+  FileText,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
@@ -88,6 +89,7 @@ export default function Pricing() {
   const PREMIUM_FEATURES = [
     { icon: Crown, text: t("pricing.premiumFeatureAllPro", "Pro 모든 기능") },
     { icon: Sparkles, text: t("pricing.premiumFeatureCredits", "AI 음악 생성 2,000 크레딧/월") },
+    { icon: FileText, text: t("pricing.premiumFeatureScorePdf", "AI 라이브러리 악보 PDF 다운로드") },
     { icon: Crown, text: t("pricing.premiumFeature6", "프리미엄 배지") },
     { icon: Shield, text: t("pricing.premiumFeatureSupport", "우선 지원") },
     {

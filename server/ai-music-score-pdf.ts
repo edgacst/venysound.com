@@ -1,7 +1,7 @@
 /**
  * AI 라이브러리 곡 오디오 → Basic Pitch(MIDI) → MuseScore(PDF).
  * 서버에 설치 필요: pip install basic-pitch, MuseScore 3 CLI (예: musescore3).
- * 활성화: .env 에 AI_SCORE_ENABLED=1
+ * 활성화: .env 에 AI_SCORE_ENABLED=1 — 이용: Premium(유효 구독) 또는 관리자만
  * 선택: AI_SCORE_MUSESCORE_BIN, AI_SCORE_BASIC_PITCH_BIN, AI_SCORE_XVFB=1 (헤드리스)
  * basic-pitch 모델: AI_SCORE_BP_MODEL=tflite(기본)|onnx|tf — tflite가 서버에서 실패하면 onnxruntime 설치 후 onnx
  * 디버그: AI_SCORE_VERBOSE=1 이면 detail 길이 확장
@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { eq, and } from "drizzle-orm";
 import { isAuthenticated } from "./auth";
 import { db } from "./db";
-import { aiMusicSavedTracks } from "../shared/models/auth";
+import { aiMusicSavedTracks, users } from "../shared/models/auth";
 
 const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
 const BASIC_PITCH_TIMEOUT_MS = 180_000;
@@ -24,6 +24,20 @@ const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_MAX_PER_HOUR = 10;
 
 const rateBuckets = new Map<string, number[]>();
+
+/** Premium(유효 구독) 또는 관리자만 악보 PDF. 만료일 없으면 유효로 간주. */
+function isPremiumScorePdfUser(
+  row:
+    | { subscriptionTier: string | null; subscriptionExpiresAt: Date | null; role: string | null }
+    | undefined,
+): boolean {
+  if (!row) return false;
+  if (row.role === "admin") return true;
+  const tier = row.subscriptionTier ?? "free";
+  if (tier !== "premium") return false;
+  if (!row.subscriptionExpiresAt) return true;
+  return new Date(row.subscriptionExpiresAt) > new Date();
+}
 
 function isScoreEnabled(): boolean {
   const v = (process.env.AI_SCORE_ENABLED ?? "").trim().toLowerCase();
@@ -186,8 +200,29 @@ function jsonCliFailure(
 }
 
 export function registerAiMusicScorePdfRoutes(app: Express): void {
-  app.get("/api/ai-music/score-pdf/availability", isAuthenticated, (_req: Request, res: Response) => {
-    res.json({ enabled: isScoreEnabled() });
+  app.get("/api/ai-music/score-pdf/availability", isAuthenticated, async (req: Request, res: Response) => {
+    if (!isScoreEnabled()) {
+      return res.json({ enabled: false });
+    }
+    const userId = req.user?.claims?.sub as string | undefined;
+    if (!userId) {
+      return res.json({ enabled: false });
+    }
+    try {
+      const [u] = await db
+        .select({
+          subscriptionTier: users.subscriptionTier,
+          subscriptionExpiresAt: users.subscriptionExpiresAt,
+          role: users.role,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      res.json({ enabled: isPremiumScorePdfUser(u) });
+    } catch (e) {
+      console.error("[ai-music score-pdf] availability", e);
+      res.json({ enabled: false });
+    }
   });
 
   app.post("/api/ai-music/score-pdf", isAuthenticated, async (req: Request, res: Response) => {
@@ -202,6 +237,27 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
     const userId = req.user?.claims?.sub as string | undefined;
     if (!userId) {
       return res.status(401).json({ message: "로그인이 필요합니다." });
+    }
+
+    try {
+      const [u] = await db
+        .select({
+          subscriptionTier: users.subscriptionTier,
+          subscriptionExpiresAt: users.subscriptionExpiresAt,
+          role: users.role,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (!isPremiumScorePdfUser(u)) {
+        return res.status(403).json({
+          message: "악보 PDF 다운로드는 Premium 구독자만 이용할 수 있습니다.",
+          code: "SCORE_PDF_PREMIUM_ONLY",
+        });
+      }
+    } catch (e) {
+      console.error("[ai-music score-pdf] user lookup", e);
+      return res.status(500).json({ message: "사용자 정보를 확인하지 못했습니다." });
     }
 
     if (!checkRateLimit(userId)) {
