@@ -501,7 +501,7 @@
       font-size: 0.78rem;
     }
 
-    /* wide=1: 채널 d 전용 가로 꽉 참 (색·컴포넌트 스타일은 기본 송출과 동일) */
+    /* studio-embed-wide: 임베드 송출실 가로 꽉 참(embed=1 시 자동). wide=1 로도 켤 수 있음 */
     html.studio-embed.studio-embed-wide body {
       padding: 0 4px 4px;
       justify-content: stretch;
@@ -684,14 +684,14 @@
         </span>
       </div>
       <div class="row" style="margin-bottom:4px;">
-        <label for="micVol" style="margin:0;color:#9ca3af;" title="마이크 입력(모니터·녹음 믹스) 크기">마이크 볼륨</label>
-        <input id="micVol" type="range" min="0" max="1" step="0.01" value="0.75" />
+        <label for="micVol" style="margin:0;color:#9ca3af;" title="마이크 꺼짐: 0%. 연결 시 자동 100%, 끊으면 다시 0%">마이크 볼륨</label>
+        <input id="micVol" type="range" min="0" max="1" step="0.01" value="0" />
         <span id="micVolTxt" class="pill">0%</span>
       </div>
       <div class="row" style="margin-bottom:4px;">
-        <label for="musicDuck" style="margin:0;color:#9ca3af;" title="마이크가 켜진 동안 재생 중인 곡(송출) 음량">음악 볼륨</label>
-        <input id="musicDuck" type="range" min="5" max="95" step="5" value="15" />
-        <span id="musicDuckTxt" class="pill">15%</span>
+        <label for="musicDuck" style="margin:0;color:#9ca3af;" title="마이크 꺼짐: 100%(풀). 켜진 동안 송출 음원 비율(0=음소거)">음악 볼륨</label>
+        <input id="musicDuck" type="range" min="0" max="100" step="5" value="100" />
+        <span id="musicDuckTxt" class="pill">100%</span>
       </div>
       <div class="row">
         <button id="btnRec" style="background:#dc2626;">녹음 시작</button>
@@ -790,6 +790,8 @@
       var _embedP = new URLSearchParams(window.location.search || '');
       if (_embedP.get('embed') === '1') {
         document.documentElement.classList.add('studio-embed');
+        /* React 송출실 iframe 등: embed만 쓰는 경로도 가로 풀(wide)과 동일하게 — 채널별로 레이아웃 이중화 방지 */
+        document.documentElement.classList.add('studio-embed-wide');
       }
       if (_embedP.get('wide') === '1') {
         document.documentElement.classList.add('studio-embed-wide');
@@ -895,9 +897,9 @@
     var MIC_DUCK_UP_MS = 500;
 
     function getMusicDuckTargetVol() {
-      var p = musicDuck ? Number(musicDuck.value) : 15;
-      if (!isFinite(p)) p = 15;
-      return Math.max(0.05, Math.min(0.95, p / 100));
+      var p = musicDuck ? Number(musicDuck.value) : 100;
+      if (!isFinite(p)) p = 100;
+      return Math.max(0, Math.min(1, p / 100));
     }
 
     /** 마이크 ON 직후 음원 덕킹: 복구용 레벨은 최초 1회만 저장 → 목표까지 램프 (중복 호출 시 저장 덮어쓰지 않음) */
@@ -907,13 +909,35 @@
       cancelMusicVolRamp();
       if (savedAudioVolForMic == null) {
         var fromSave = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
-        if (fromSave < 0.16) fromSave = 1;
+        // 거의 음소거만 "복구 기준 불명"으로 보고 1로 가정 (이미 낮게 듣는 설정은 덮어쓰지 않음)
+        if (fromSave < 0.04) fromSave = 1;
         savedAudioVolForMic = fromSave;
       }
       var cur = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
       var mid = cur * 0.35 + target * 0.65;
       audio.volume = Math.max(target, mid);
       rampAudioElementVolume(target, MIC_DUCK_DOWN_MS);
+    }
+
+    /**
+     * 곡 전환 등으로 브라우저가 audio.volume 을 1로 되돌리는 경우가 있어,
+     * 마이크가 켜진 동안 재생이 시작될 때마다 덕킹 목표 이하로 다시 맞춤.
+     * (ended / timeupdate 핸들러 본문은 건드리지 않음)
+     */
+    function enforceMicDuckIfNeeded() {
+      if (!micStream || !audio) return;
+      var target = getMusicDuckTargetVol();
+      if (savedAudioVolForMic == null) {
+        applyMicDuckToMusic();
+        return;
+      }
+      var cur = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
+      if (cur > target + 0.02) {
+        cancelMusicVolRamp();
+        var mid = cur * 0.35 + target * 0.65;
+        audio.volume = Math.max(target, mid);
+        rampAudioElementVolume(target, MIC_DUCK_DOWN_MS);
+      }
     }
 
     function cancelMusicVolRamp() {
@@ -1389,6 +1413,10 @@
     // ended 발화 시 폴백 플래그 초기화
     audio.addEventListener('play', function() { endedFallbackFired = false; });
 
+    audio.addEventListener('playing', function() {
+      enforceMicDuckIfNeeded();
+    });
+
     audio.addEventListener('ended', function() {
       endedFallbackFired = false; // 정상 ended 발화 시 폴백 플래그 초기화
       if (lastPlayedTrackId == null) return;
@@ -1476,6 +1504,15 @@
         try { micCtx.close(); } catch (_) {}
         micCtx = null;
       }
+      // 기본 UI: 마이크 0%, 음악 슬라이더 100%(다음 연결 전까지 풀 음악)
+      if (micVol) {
+        micVol.value = 0;
+        if (micVolTxt) micVolTxt.textContent = '0%';
+      }
+      if (musicDuck) {
+        musicDuck.value = 100;
+        if (musicDuckTxt) musicDuckTxt.textContent = '100%';
+      }
       setMicUi(false);
     }
 
@@ -1514,10 +1551,12 @@
           }
           micSource = micCtx.createMediaStreamSource(stream);
           micGain = micCtx.createGain();
-          // 연결 직후 마이크는 최대에 가깝게, 송출 곡은 슬라이더(음악 볼륨) 목표로 낮춤
+          // 연결 직후: 마이크 100%, 송출 음원 0%(슬라이더·실제 볼륨 동기)
           micVol.value = 1;
           micGain.gain.value = 1;
           if (micVolTxt) micVolTxt.textContent = '100%';
+          if (musicDuck) musicDuck.value = 0;
+          if (musicDuckTxt) musicDuckTxt.textContent = '0%';
           micAnalyser = micCtx.createAnalyser();
           micAnalyser.fftSize = 1024;
 
