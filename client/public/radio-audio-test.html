@@ -684,12 +684,12 @@
         </span>
       </div>
       <div class="row" style="margin-bottom:4px;">
-        <label for="micVol" style="margin:0;color:#9ca3af;">모니터 볼륨</label>
+        <label for="micVol" style="margin:0;color:#9ca3af;" title="마이크 입력(모니터·녹음 믹스) 크기">마이크 볼륨</label>
         <input id="micVol" type="range" min="0" max="1" step="0.01" value="0.75" />
         <span id="micVolTxt" class="pill">0%</span>
       </div>
       <div class="row" style="margin-bottom:4px;">
-        <label for="musicDuck" style="margin:0;color:#9ca3af;" title="마이크 연결 시 플레이어 음량(이어폰·녹음 모두에 적용)">마이크 ON 시 음악</label>
+        <label for="musicDuck" style="margin:0;color:#9ca3af;" title="마이크가 켜진 동안 재생 중인 곡(송출) 음량">음악 볼륨</label>
         <input id="musicDuck" type="range" min="5" max="95" step="5" value="15" />
         <span id="musicDuckTxt" class="pill">15%</span>
       </div>
@@ -900,15 +900,18 @@
       return Math.max(0.05, Math.min(0.95, p / 100));
     }
 
-    /** 마이크 ON 직후 음원 덕킹: 복구용 레벨 저장 → 즉시 한 단계 낮춤 → 목표까지 램프 */
+    /** 마이크 ON 직후 음원 덕킹: 복구용 레벨은 최초 1회만 저장 → 목표까지 램프 (중복 호출 시 저장 덮어쓰지 않음) */
     function applyMicDuckToMusic() {
       if (!audio) return;
       var target = getMusicDuckTargetVol();
       cancelMusicVolRamp();
-      var from = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
-      if (from < 0.16) from = 1;
-      savedAudioVolForMic = from;
-      var mid = from * 0.35 + target * 0.65;
+      if (savedAudioVolForMic == null) {
+        var fromSave = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
+        if (fromSave < 0.16) fromSave = 1;
+        savedAudioVolForMic = fromSave;
+      }
+      var cur = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
+      var mid = cur * 0.35 + target * 0.65;
       audio.volume = Math.max(target, mid);
       rampAudioElementVolume(target, MIC_DUCK_DOWN_MS);
     }
@@ -1511,7 +1514,10 @@
           }
           micSource = micCtx.createMediaStreamSource(stream);
           micGain = micCtx.createGain();
-          micGain.gain.value = Number(micVol.value || 0);
+          // 연결 직후 마이크는 최대에 가깝게, 송출 곡은 슬라이더(음악 볼륨) 목표로 낮춤
+          micVol.value = 1;
+          micGain.gain.value = 1;
+          if (micVolTxt) micVolTxt.textContent = '100%';
           micAnalyser = micCtx.createAnalyser();
           micAnalyser.fftSize = 1024;
 
@@ -2201,9 +2207,9 @@
     var recMicStreamClone = null;
     var recTeardownPending = false;
     var recSetupInProgress = false;
-    /** 녹음 믹스: 캡처된 음원 대비 마이크 레벨 보강 (모니터 볼륨 슬라이더와 별도 계산) */
+    /** 녹음 믹스: 캡처된 음원 대비 마이크 레벨 보강 (마이크 볼륨 슬라이더와 별도 계산) */
     var REC_MIC_MIX_BOOST = 3.35;
-    /** 녹음 전용 마이크 게인 하한(음원 캡처 대비). 모니터 슬라이더가 낮아도 파일에 목소리가 남도록 */
+    /** 녹음 전용 마이크 게인 하한(음원 캡처 대비). 마이크 볼륨 슬라이더가 낮아도 파일에 목소리가 남도록 */
     var REC_MIC_GAIN_MIN = 2.25;
     var REC_MIC_GAIN_MAX = 5;
     /** 마이크 덕킹으로 audio.volume 이 낮을 때 captureStream 레벨이 너무 작아짐 → 녹음 구간만 잠깐 복원 */
@@ -2256,6 +2262,12 @@
       btnRec.textContent = '녹음 시작';
       btnRec.style.background = '#dc2626';
       restoreRecCaptureVolume();
+      // 녹음 전용으로만 연 마이크(스튜디오 [마이크 연결] 없음)였다면 덕킹 복구
+      if (!micStream && savedAudioVolForMic != null) {
+        var restoreDuck = savedAudioVolForMic;
+        savedAudioVolForMic = null;
+        rampAudioElementVolume(restoreDuck, MIC_DUCK_UP_MS);
+      }
     }
 
     function startRecording() {
@@ -2276,7 +2288,8 @@
         recDestination = recAudioCtx.createMediaStreamDestination();
 
         var audioEl = document.getElementById('audio');
-        if (audioEl && audioEl.src) {
+        // 마이크 연결(덕킹) 중에는 재생 음량을 올리지 않음 — 녹음 시작 시 볼륨 부스트가 덕킹을 취소하던 문제 방지
+        if (audioEl && audioEl.src && !micStream) {
           var volNow = typeof audioEl.volume === 'number' ? audioEl.volume : 1;
           if (volNow < 0.22) {
             recSavedAudioVolForCapture = volNow;
@@ -2335,6 +2348,11 @@
             recMicGainNode.gain.value = Math.max(REC_MIC_GAIN_MIN, Math.min(REC_MIC_GAIN_MAX, recG));
             recMicSource.connect(recMicGainNode);
             recMicGainNode.connect(recDestination);
+          }
+
+          // [마이크 연결] 없이 녹음만 눌러 마이크를 연 경우에도 송출 음악 덕킹 적용
+          if (mStream && !micStream) {
+            applyMicDuckToMusic();
           }
 
           var combinedStream = recDestination.stream;
