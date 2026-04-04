@@ -38,6 +38,35 @@ function museScoreArgsTemplate(): { useXvfb: boolean; bin: string } {
   return { useXvfb, bin };
 }
 
+/** basic-pitch/librosa 가 포맷 추론에 확장자를 쓰는 경우가 있어 .bin 대신 실제 확장자 사용 */
+function guessAudioExtFromUrlAndType(urlStr: string, contentType: string | null): string {
+  const ct = (contentType ?? "").toLowerCase().split(";")[0]!.trim();
+  if (ct.includes("mpeg") || ct === "audio/mp3" || ct.includes("mp3")) return ".mp3";
+  if (ct.includes("wav") || ct.includes("wave")) return ".wav";
+  if (ct.includes("ogg")) return ".ogg";
+  if (ct.includes("flac")) return ".flac";
+  if (ct.includes("mp4") || ct.includes("m4a") || ct.includes("aac") || ct.includes("x-m4a")) return ".m4a";
+  try {
+    const pathLower = new URL(urlStr).pathname.toLowerCase();
+    const m = pathLower.match(/\.(mp3|wav|ogg|flac|m4a|aac|webm)(?:\?|$)/);
+    if (m) return `.${m[1]}`;
+  } catch {
+    /* ignore */
+  }
+  return ".mp3";
+}
+
+function bodyLooksLikeNonAudio(buf: Buffer): boolean {
+  const s = buf.subarray(0, Math.min(400, buf.length)).toString("utf8").trimStart().toLowerCase();
+  return (
+    s.startsWith("<!doctype") ||
+    s.startsWith("<html") ||
+    s.startsWith("<?xml") ||
+    s.startsWith("<error") ||
+    (s.startsWith("{") && (s.includes('"error"') || s.includes('"message"') || s.includes('"code"')))
+  );
+}
+
 function isHttpsUrlSafeForFetch(urlStr: string): boolean {
   try {
     const u = new URL(urlStr);
@@ -152,8 +181,16 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
         .where(and(eq(aiMusicSavedTracks.userId, userId), eq(aiMusicSavedTracks.clientId, clientId)))
         .limit(1);
       audioUrl = row?.audioUrl?.trim() || undefined;
-    } catch (e) {
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
       console.error("[ai-music score-pdf] db", e);
+      if (err?.code === "42P01" || String(err?.message || "").includes("does not exist")) {
+        return res.status(503).json({
+          message:
+            "라이브러리 DB 테이블이 없습니다. 서버에서 npm run db:deploy(또는 ai_music_saved_tracks 마이그레이션)를 실행한 뒤 다시 시도하세요.",
+          code: "AI_LIBRARY_TABLE_MISSING",
+        });
+      }
       return res.status(500).json({ message: "라이브러리 조회에 실패했습니다." });
     }
 
@@ -169,7 +206,6 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
     }
 
     const workRoot = join(tmpdir(), `veny-score-${randomUUID()}`);
-    const audioPath = join(workRoot, "source_audio.bin");
     const pdfPath = join(workRoot, "score.pdf");
 
     try {
@@ -196,13 +232,35 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
       }
 
       const buf = Buffer.from(await fetchRes.arrayBuffer());
+      const contentType = fetchRes.headers.get("content-type");
       if (buf.byteLength > MAX_AUDIO_BYTES) {
         return res.status(413).json({ message: "오디오 파일이 너무 큽니다." });
       }
+      if (bodyLooksLikeNonAudio(buf)) {
+        console.error("[ai-music score-pdf] fetched body is not audio", {
+          len: buf.byteLength,
+          contentType,
+          host: new URL(audioUrl).hostname,
+        });
+        return res.status(502).json({
+          message:
+            "오디오 URL이 실제 음원이 아니라 HTML·JSON 오류 페이지를 반환했습니다. 링크 만료, 로그인 필요 URL, 또는 브라우저 전용 주소일 수 있습니다.",
+        });
+      }
       if (buf.byteLength < 256) {
-        return res.status(400).json({ message: "오디오 데이터가 너무 짧습니다." });
+        console.error("[ai-music score-pdf] audio body too short", {
+          len: buf.byteLength,
+          contentType,
+          host: new URL(audioUrl).hostname,
+        });
+        return res.status(400).json({
+          message:
+            "서버가 받은 오디오가 너무 짧습니다. 저장된 음원 주소가 만료됐거나 빈 응답일 수 있으니, 곡을 다시 생성·다운로드한 뒤 라이브러리를 동기화한 후 다시 시도하세요.",
+        });
       }
 
+      const ext = guessAudioExtFromUrlAndType(audioUrl, contentType);
+      const audioPath = join(workRoot, `source_audio${ext}`);
       await writeFile(audioPath, buf);
 
       await runCmd(basicPitchBin(), [audioPath, workRoot], { timeoutMs: BASIC_PITCH_TIMEOUT_MS });
