@@ -6,6 +6,7 @@ import { Music, Eye, EyeOff, User, Mail, Lock, ChevronLeft } from "lucide-react"
 import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { LOGIN_PATH, REGISTER_PATH } from "@/lib/site-paths";
+import { recordSignupConversionEvent, recordSignupPageViewDeduped } from "@/lib/analytics-conversion";
 
 export default function Register() {
   const { t, i18n } = useTranslation();
@@ -40,6 +41,10 @@ export default function Register() {
   useEffect(() => {
     if (user) setLocation("/");
   }, [user, setLocation]);
+
+  useEffect(() => {
+    recordSignupPageViewDeduped();
+  }, []);
 
   if (user) return null;
 
@@ -90,6 +95,7 @@ export default function Register() {
   const goToStep2 = () => {
     if (!validateCredentials()) return;
     setStep(2);
+    void recordSignupConversionEvent("signup_step2");
     window.history.pushState({ registerStep: 2 }, "", window.location.pathname + window.location.search);
   };
 
@@ -100,6 +106,7 @@ export default function Register() {
   const runRegister = async () => {
     if (!validate()) return;
     setLoading(true);
+    void recordSignupConversionEvent("signup_submit");
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
@@ -109,13 +116,16 @@ export default function Register() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        void recordSignupConversionEvent("signup_success");
         await refreshAuthSession();
         toast({ title: t("register.successTitle", "회원가입 완료!"), description: t("register.successDesc", "환영합니다! 로그인되었습니다.") });
         window.location.href = "/";
       } else {
+        void recordSignupConversionEvent("signup_fail", { http_status: res.status });
         toast({ title: t("register.failTitle", "회원가입 실패"), description: data.error || t("login.tryAgain", "다시 시도해주세요."), variant: "destructive" });
       }
     } catch {
+      void recordSignupConversionEvent("signup_fail", { http_status: 0 });
       toast({ title: t("login.serverError", "오류"), description: t("login.serverErrorDesc", "서버에 연결할 수 없습니다."), variant: "destructive" });
     } finally {
       setLoading(false);
@@ -158,7 +168,11 @@ export default function Register() {
         <>
         <div className="space-y-3 mb-6">
           {loginOptions?.hasGoogle && (
-            <a href="/api/auth/google" className="block">
+            <a
+              href="/api/auth/google"
+              className="block"
+              onClick={() => void recordSignupConversionEvent("signup_oauth_click", { provider: "google" })}
+            >
               <button type="button" className={socialBtn}>
                 <svg width="18" height="18" viewBox="0 0 24 24">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -171,7 +185,11 @@ export default function Register() {
             </a>
           )}
           {loginOptions?.hasNaver && (
-            <a href="/api/auth/naver" className="block">
+            <a
+              href="/api/auth/naver"
+              className="block"
+              onClick={() => void recordSignupConversionEvent("signup_oauth_click", { provider: "naver" })}
+            >
               <button type="button" className={socialBtn}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <rect width="24" height="24" rx="4" fill="#03C75A" />
@@ -182,7 +200,11 @@ export default function Register() {
             </a>
           )}
           {loginOptions?.hasKakao && (
-            <a href="/api/auth/kakao" className="block">
+            <a
+              href="/api/auth/kakao"
+              className="block"
+              onClick={() => void recordSignupConversionEvent("signup_oauth_click", { provider: "kakao" })}
+            >
               <button type="button" className={socialBtn}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <rect width="24" height="24" rx="4" fill="#FEE500" />
@@ -193,7 +215,11 @@ export default function Register() {
             </a>
           )}
           {loginOptions?.hasFacebook && (
-            <a href="/api/auth/facebook" className="block">
+            <a
+              href="/api/auth/facebook"
+              className="block"
+              onClick={() => void recordSignupConversionEvent("signup_oauth_click", { provider: "facebook" })}
+            >
               <button type="button" className={socialBtn}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <rect width="24" height="24" rx="4" fill="#1877F2" />
@@ -204,7 +230,11 @@ export default function Register() {
             </a>
           )}
           {loginOptions?.hasTikTok && (
-            <a href="/api/auth/tiktok" className="block">
+            <a
+              href="/api/auth/tiktok"
+              className="block"
+              onClick={() => void recordSignupConversionEvent("signup_oauth_click", { provider: "tiktok" })}
+            >
               <button type="button" className={socialBtn}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                   <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1z" fill="currentColor"/>

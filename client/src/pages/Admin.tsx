@@ -58,10 +58,12 @@ import {
   Sparkles,
   Undo2,
   History,
+  UserPlus,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
 import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
+import { ANALYTICS_SIGNUP_CONVERSION_EVENTS } from "@shared/analytics-conversion-events";
 
 const reasonLabels: Record<string, string> = {
   unauthorized_use: "무단 사용",
@@ -434,6 +436,7 @@ export default function Admin() {
   });
 
   const [analyticsTrendDays, setAnalyticsTrendDays] = useState(7);
+  const [signupFunnelDays, setSignupFunnelDays] = useState(7);
   const ACCESS_LOG_PAGE_SIZE = 50;
   const [visitorSessionDate, setVisitorSessionDate] = useState(() =>
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
@@ -449,6 +452,23 @@ export default function Admin() {
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+    refetchInterval: 60000,
+  });
+
+  const { data: signupFunnelData } = useQuery<{
+    days: number;
+    tableExists: boolean;
+    counts: { eventName: string; count: number }[];
+  }>({
+    queryKey: ["/api/admin/analytics/signup-funnel", signupFunnelDays],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/analytics/signup-funnel?days=${signupFunnelDays}`, {
+        credentials: "include",
+      });
+      if (!res.ok) return { days: signupFunnelDays, tableExists: false, counts: [] };
+      return res.json();
     },
     enabled: adminCheck?.isAdmin === true,
     refetchInterval: 60000,
@@ -1237,6 +1257,20 @@ export default function Admin() {
     },
   });
 
+  const signupCountByEvent = new Map((signupFunnelData?.counts ?? []).map((c) => [c.eventName, c.count]));
+
+  const signupFunnelEventLabel = (ev: string) => {
+    const map: Record<string, string> = {
+      signup_page_view: t("admin.signupFunnelPageView", "가입 페이지 조회"),
+      signup_oauth_click: t("admin.signupFunnelOauthClick", "소셜 가입 클릭"),
+      signup_step2: t("admin.signupFunnelStep2", "약관 단계 진입"),
+      signup_submit: t("admin.signupFunnelSubmit", "가입 요청 전송"),
+      signup_success: t("admin.signupFunnelSuccess", "가입 성공"),
+      signup_fail: t("admin.signupFunnelFail", "가입 실패"),
+    };
+    return map[ev] ?? ev;
+  };
+
   if (checkingAdmin) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -1465,6 +1499,60 @@ export default function Admin() {
                 {loadingAnalytics ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin text-primary" /> : (analytics?.pageViewsTotal ?? 0)}
               </div>
             </Card>
+          </div>
+
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 mt-8 flex items-center gap-1.5">
+            <UserPlus size={16} />
+            {t("admin.signupFunnelTitle", "회원가입 퍼널")}
+          </h3>
+          {signupFunnelData?.tableExists === false && (
+            <Alert variant="destructive" className="mb-4 border-amber-500/50 bg-amber-500/10 text-amber-700 dark:text-amber-400 dark:bg-amber-500/10">
+              <AlertTitle>{t("admin.signupFunnelTableMissingTitle", "전환 이벤트 테이블 없음")}</AlertTitle>
+              <AlertDescription>
+                {t(
+                  "admin.signupFunnelTableMissingDesc",
+                  "서버에서 npm run db:deploy 또는 deploy/create-analytics-conversion-events.sql 을 실행하면 가입 퍼널 집계가 쌓입니다.",
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <Button
+              type="button"
+              variant={signupFunnelDays === 7 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSignupFunnelDays(7)}
+            >
+              7{t("admin.days", "일")}
+            </Button>
+            <Button
+              type="button"
+              variant={signupFunnelDays === 30 ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSignupFunnelDays(30)}
+            >
+              30{t("admin.days", "일")}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3 max-w-3xl">
+            {t(
+              "admin.signupFunnelHint",
+              "최근 선택 일수 기준 합계입니다. 소셜 버튼 클릭은 이메일 단계와 별도로 집계됩니다.",
+            )}
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-8">
+            {ANALYTICS_SIGNUP_CONVERSION_EVENTS.map((ev) => (
+              <Card
+                key={ev}
+                className="p-3 sm:p-4 text-center min-h-[88px] flex flex-col justify-center border-white/10"
+                data-testid={`signup-funnel-${ev}`}
+              >
+                <div className="text-[10px] sm:text-xs text-muted-foreground mb-1 leading-tight line-clamp-2">
+                  {signupFunnelEventLabel(ev)}
+                </div>
+                <div className="text-xl sm:text-2xl font-bold tabular-nums text-primary">{signupCountByEvent.get(ev) ?? 0}</div>
+              </Card>
+            ))}
           </div>
 
           {/* 서비스 통계 */}

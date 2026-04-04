@@ -306,6 +306,15 @@ export const analyticsVisits = pgTable("analytics_visits", {
   utmSource: text("utm_source"),
 });
 
+/** 가입 퍼널 등 전환 이벤트 (이벤트명은 서버에서 allowlist 검증) */
+export const analyticsConversionEvents = pgTable("analytics_conversion_events", {
+  id: serial("id").primaryKey(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  visitorKey: text("visitor_key").notNull(),
+  eventName: text("event_name").notNull(),
+  meta: jsonb("meta").$type<Record<string, unknown> | null>(),
+});
+
 // 사이트 공지 (관리자 설정). showAsPopup=true면 메인 접속 시 팝업, false면 /notices 게시판에만 노출
 export const siteAnnouncements = pgTable("site_announcements", {
   id: serial("id").primaryKey(),

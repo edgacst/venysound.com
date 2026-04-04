@@ -16,41 +16,12 @@ import { LoginModal } from "@/components/LoginModal";
 import { WsProvider } from "@/contexts/WsContext";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
+import { readVisitorKey, writeVisitorKey } from "@/lib/visitor-key";
 
-const VISITOR_KEY = "vkey";
 /** 체류 추정용 내부 ping 간격 (실제 페이지 path와 별도 — PV 집계에 포함되지 않음) */
 const DWELL_HEARTBEAT_MS = 8_000;
 /** 짧은 체류도 0초가 되지 않게 첫 ping (탭이 보이는 동안만) */
 const DWELL_FIRST_PING_MS = 3_000;
-
-function readVisitorKey(): string | null {
-  try {
-    const fromLocal = localStorage.getItem(VISITOR_KEY);
-    if (fromLocal && fromLocal.trim()) return fromLocal.trim();
-  } catch {
-    /* private mode / 스토리지 거부 */
-  }
-  try {
-    const fromSession = sessionStorage.getItem(VISITOR_KEY);
-    if (fromSession && fromSession.trim()) return fromSession.trim();
-  } catch {
-    /* ignore */
-  }
-  return null;
-}
-
-function writeVisitorKey(v: string) {
-  try {
-    localStorage.setItem(VISITOR_KEY, v);
-  } catch {
-    /* ignore */
-  }
-  try {
-    sessionStorage.setItem(VISITOR_KEY, v);
-  } catch {
-    /* ignore */
-  }
-}
 
 function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();

@@ -21,6 +21,7 @@ const client = new pg.Client({
 const MIGRATIONS: { file: string; name: string }[] = [
   { file: "create-analytics-table.sql", name: "analytics_visits" },
   { file: "analytics-visits-user-id.sql", name: "analytics_visits.user_id" },
+  { file: "create-analytics-conversion-events.sql", name: "analytics_conversion_events" },
   { file: "site-announcements.sql", name: "site_announcements" },
   { file: "guide-videos.sql", name: "guide_videos" },
   { file: "create-curated-playlists.sql", name: "curated_playlists" },

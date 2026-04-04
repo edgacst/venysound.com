@@ -42,6 +42,7 @@ import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
 import { fetchInternationalReleasesPage, getEnvInternationalFromUserIds } from "./spotify-international";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
+import { isAllowedSignupConversionEvent } from "@shared/analytics-conversion-events";
 import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
 import {
   normalizeSubscriptionPlanPrices,
@@ -3266,6 +3267,60 @@ export async function registerRoutes(
     res.json({ ok: true, visitorKey });
   });
 
+  function sanitizeConversionMeta(raw: unknown): Record<string, unknown> | null {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const o = raw as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    let n = 0;
+    for (const [k, v] of Object.entries(o)) {
+      if (n >= 10) break;
+      if (!/^[a-z][a-z0-9_]{0,31}$/.test(k)) continue;
+      if (typeof v === "string" && v.length <= 120) {
+        out[k] = v.slice(0, 120);
+        n++;
+      } else if (typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 1e12) {
+        out[k] = v;
+        n++;
+      } else if (typeof v === "boolean") {
+        out[k] = v;
+        n++;
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  function resolveAnalyticsVisitorKey(req: Request, res: Response, visitorKeyIn: string | null): string {
+    const fromClient =
+      typeof visitorKeyIn === "string" && visitorKeyIn.trim().length > 0 ? visitorKeyIn.trim() : null;
+    const fromClientOk = fromClient && UUID_V4_RE.test(fromClient) ? fromClient : null;
+    const fromCookieRaw = readCookie(req, VISITOR_KEY_COOKIE);
+    const fromCookieOk = fromCookieRaw && UUID_V4_RE.test(fromCookieRaw) ? fromCookieRaw : null;
+    const visitorKey = fromClientOk ?? fromCookieOk ?? crypto.randomUUID();
+    appendVisitorKeyCookie(res, visitorKey);
+    return visitorKey;
+  }
+
+  /** 가입 퍼널 등 (클라이언트 이벤트 — 재생·세션 로직과 무관) */
+  app.post("/api/analytics/conversion", async (req, res) => {
+    const eventName =
+      typeof req.body?.event === "string" && req.body.event.trim().length > 0 ? req.body.event.trim() : "";
+    if (!isAllowedSignupConversionEvent(eventName)) {
+      return res.status(400).json({ ok: false, error: "invalid_event" });
+    }
+    const vkIn =
+      typeof req.body?.visitorKey === "string" && req.body.visitorKey.trim().length > 0
+        ? req.body.visitorKey.trim()
+        : null;
+    const visitorKey = resolveAnalyticsVisitorKey(req, res, vkIn);
+    const meta = sanitizeConversionMeta(req.body?.meta);
+    try {
+      await storage.recordConversionEvent(visitorKey, eventName, meta);
+    } catch (e) {
+      console.error("[analytics/conversion] record failed:", e);
+    }
+    res.json({ ok: true, visitorKey });
+  });
+
   // === Admin Middleware ===
   const isAdmin = async (req: any, res: any, next: any) => {
     if (!req.user?.claims?.sub) {
@@ -3748,6 +3803,18 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[admin/analytics/trend]", e);
       res.json([]);
+    }
+  });
+
+  app.get("/api/admin/analytics/signup-funnel", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const days = Math.min(90, Math.max(1, parseInt(String(req.query.days), 10) || 7));
+      const tableExists = await storage.checkConversionEventsTableExists();
+      const counts = tableExists ? await storage.getAdminSignupFunnelCounts(days) : [];
+      res.json({ days, tableExists, counts });
+    } catch (e) {
+      console.error("[admin/analytics/signup-funnel]", e);
+      res.json({ days: 7, tableExists: false, counts: [] });
     }
   });
 

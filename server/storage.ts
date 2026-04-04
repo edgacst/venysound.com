@@ -3,7 +3,7 @@ import path from "path";
 import { existsSync } from "fs";
 import { 
   music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
-  analyticsVisits, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
+  analyticsVisits, analyticsConversionEvents, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
   distributionReleases, distributionSplits, distributionEarningsLedger, distributionPayouts,
   radioChannels, radioChatMessages, radioSongRequests, radioChannelStaff,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
@@ -204,6 +204,9 @@ export interface IStorage {
     total: number;
   }>;
   checkAnalyticsTableExists(): Promise<boolean>;
+  checkConversionEventsTableExists(): Promise<boolean>;
+  recordConversionEvent(visitorKey: string, eventName: string, meta?: Record<string, unknown> | null): Promise<void>;
+  getAdminSignupFunnelCounts(days: number): Promise<{ eventName: string; count: number }[]>;
   getAdminAnalytics(): Promise<{ dailyVisitors: number; totalVisitors: number; pageViewsToday: number; pageViewsTotal: number }>;
   getAdminStatsByRegion(): Promise<{ countryCode: string | null; region: string | null; count: number }[]>;
   getAdminStatsByDevice(): Promise<{ deviceType: string | null; count: number }[]>;
@@ -1911,6 +1914,42 @@ export class DatabaseStorage implements IStorage {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  async checkConversionEventsTableExists(): Promise<boolean> {
+    try {
+      await db.select({ one: sql<number>`1` }).from(analyticsConversionEvents).limit(1);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async recordConversionEvent(visitorKey: string, eventName: string, meta?: Record<string, unknown> | null): Promise<void> {
+    await db.insert(analyticsConversionEvents).values({
+      visitorKey,
+      eventName,
+      meta: meta ?? null,
+    });
+  }
+
+  async getAdminSignupFunnelCounts(days: number): Promise<{ eventName: string; count: number }[]> {
+    const safeDays = Math.min(90, Math.max(1, Math.floor(Number(days) || 7)));
+    const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
+    try {
+      const rows = await db
+        .select({
+          eventName: analyticsConversionEvents.eventName,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(analyticsConversionEvents)
+        .where(gte(analyticsConversionEvents.createdAt, since))
+        .groupBy(analyticsConversionEvents.eventName)
+        .orderBy(asc(analyticsConversionEvents.eventName));
+      return rows;
+    } catch {
+      return [];
     }
   }
 

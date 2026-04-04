@@ -13,6 +13,7 @@
     "db:site-announcements": "tsx script/run-site-announcements-table.ts",
     "db:guide-videos": "tsx script/run-guide-videos-table.ts",
     "db:analytics": "tsx script/run-analytics-table.ts",
+    "db:analytics-conversion": "tsx script/run-analytics-conversion-table.ts",
     "db:curated": "tsx script/run-curated-playlists-table.ts",
     "db:radio-current-host": "tsx script/run-radio-current-host.ts",
     "db:radio-schedule": "tsx script/run-radio-schedule.ts",
