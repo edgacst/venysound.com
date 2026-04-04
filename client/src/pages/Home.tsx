@@ -25,6 +25,15 @@ import banner4 from "@/assets/images/banner-4.png";
 const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: number) =>
   userId ? `announcement_seen_${userId}_${announcementId}` : `announcement_seen_guest_${announcementId}`;
 
+/** 홈 인사용 표시 이름: 끝 님 제거 후 템플릿에서 붙임, 흔한 붙여쓰기 보정 */
+function greetingDisplayName(raw: string): string {
+  let s = raw.trim();
+  if (!s) return "";
+  s = s.replace(/님$/u, "").trim();
+  if (/^앱개발자$/u.test(s)) s = "앱 개발자";
+  return s;
+}
+
 /** 모바일: 가로 스크롤 / md+: 그리드 (멜론·스포티파이형 행) */
 function HomeMusicRow({
   children,
@@ -83,19 +92,20 @@ export default function Home() {
   const homeGreeting = useMemo(() => {
     if (!user) return null;
     const hour = new Date().getHours();
-    const name = (user.firstName?.trim() || user.username?.trim() || "") as string;
+    const raw = (user.firstName?.trim() || user.username?.trim() || "") as string;
+    const name = greetingDisplayName(raw);
     if (hour < 12) {
       return name
-        ? t("home.greetingMorningNamed", { name, defaultValue: `좋은 아침이에요, ${name}` })
+        ? t("home.greetingMorningNamed", { name, defaultValue: `안녕하세요, ${name}님. 좋은 아침이에요.` })
         : t("home.greetingMorning", { defaultValue: "좋은 아침이에요" });
     }
     if (hour < 18) {
       return name
-        ? t("home.greetingAfternoonNamed", { name, defaultValue: `좋은 오후예요, ${name}` })
+        ? t("home.greetingAfternoonNamed", { name, defaultValue: `안녕하세요, ${name}님. 좋은 오후예요.` })
         : t("home.greetingAfternoon", { defaultValue: "좋은 오후예요" });
     }
     return name
-      ? t("home.greetingEveningNamed", { name, defaultValue: `좋은 저녁이에요, ${name}` })
+      ? t("home.greetingEveningNamed", { name, defaultValue: `안녕하세요, ${name}님. 좋은 저녁이에요.` })
       : t("home.greetingEvening", { defaultValue: "좋은 저녁이에요" });
   }, [user, t]);
 
