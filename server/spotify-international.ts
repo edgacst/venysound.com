@@ -14,6 +14,8 @@ export type InternationalReleaseDto = {
   spotifyUrl: string;
   previewUrl?: string | null;
   releaseDate?: string | null;
+  /** DB 시드 행 — routes에서 siteMusicId 프리필 후 응답에서 제거 */
+  sourceMusicId?: number;
 };
 
 type TokenCache = { token: string; expiresAt: number; credsFp: string };
@@ -371,7 +373,9 @@ function compareReleaseDateDesc(a: InternationalReleaseDto, b: InternationalRele
   const da = a.releaseDate || "";
   const db = b.releaseDate || "";
   if (da !== db) return db.localeCompare(da);
-  return a.title.localeCompare(b.title);
+  const t = a.title.localeCompare(b.title);
+  if (t !== 0) return t;
+  return (a.sourceMusicId ?? 0) - (b.sourceMusicId ?? 0);
 }
 
 /**
@@ -426,23 +430,25 @@ export type InternationalReleaseDbSeed = {
   musicId: number;
 };
 
-function seedByIdFromDb(
-  byId: Map<string, SpotifyAlbumSimplified>,
-  seeds: InternationalReleaseDbSeed[],
-): void {
+function dbSeedsToDtos(seeds: InternationalReleaseDbSeed[]): InternationalReleaseDto[] {
+  const out: InternationalReleaseDto[] = [];
   for (const row of seeds) {
     const sid = row.spotifyAlbumId.trim();
     if (!sid) continue;
     const img = row.imageUrl?.trim() ?? "";
-    byId.set(sid, {
+    out.push({
       id: sid,
-      name: row.title,
-      artists: [{ name: row.artists }],
-      images: img ? [{ url: img }] : [],
-      external_urls: { spotify: `https://open.spotify.com/album/${sid}` },
-      release_date: row.releaseDate ?? undefined,
+      title: row.title,
+      artists: row.artists,
+      albumName: row.releaseDate,
+      imageUrl: img || null,
+      spotifyUrl: `https://open.spotify.com/album/${sid}`,
+      previewUrl: null,
+      releaseDate: row.releaseDate,
+      sourceMusicId: row.musicId,
     });
   }
+  return out;
 }
 
 export async function fetchInternationalReleasesPage(
@@ -467,7 +473,7 @@ export async function fetchInternationalReleasesPage(
   }
 
   const dbKey = seeds
-    .map((s) => s.spotifyAlbumId)
+    .map((s) => `${s.musicId}:${s.spotifyAlbumId}`)
     .sort()
     .join(",");
   const cacheKey = `${artistIds.join(",")}|${[...extraAlbumIds].sort().join(",")}|${[...extraUpcs].sort().join(",")}|db:${dbKey}`;
@@ -484,13 +490,13 @@ export async function fetchInternationalReleasesPage(
   }
 
   const byId = new Map<string, SpotifyAlbumSimplified>();
-  seedByIdFromDb(byId, seeds);
+  const seedAlbumIdSet = new Set(seeds.map((s) => s.spotifyAlbumId.trim()).filter(Boolean));
 
   const needSpotify = artistIds.length > 0 || extraAlbumIds.length > 0 || extraUpcs.length > 0;
   const token = needSpotify ? await getClientCredentialsToken() : null;
 
   if (needSpotify && !token) {
-    if (byId.size === 0) {
+    if (seeds.length === 0) {
       return { data: [], total: 0 };
     }
   } else if (needSpotify && token && artistIds.length > 0) {
@@ -502,7 +508,7 @@ export async function fetchInternationalReleasesPage(
       unauthorized = second.unauthorized;
     }
     if (unauthorized && fromArtists.size === 0) {
-      if (byId.size === 0) {
+      if (seeds.length === 0) {
         if (!warnedUnauthorized) {
           warnedUnauthorized = true;
           console.warn("[spotify-international] Spotify API returned 401 after retry — check Client ID/Secret");
@@ -534,7 +540,9 @@ export async function fetchInternationalReleasesPage(
 
   if (token && extraUpcs.length > 0) {
     const fromUpcs = await resolveUpcsToAlbumIds(token, extraUpcs);
-    const toFetchIds = [...new Set([...extraAlbumIds, ...fromUpcs])].filter((id) => !byId.has(id));
+    const toFetchIds = [...new Set([...extraAlbumIds, ...fromUpcs])].filter(
+      (id) => !byId.has(id) && !seedAlbumIdSet.has(id),
+    );
     if (toFetchIds.length > 0) {
       const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
       for (const al of fetched) {
@@ -542,7 +550,7 @@ export async function fetchInternationalReleasesPage(
       }
     }
   } else if (token && extraAlbumIds.length > 0) {
-    const toFetchIds = [...new Set(extraAlbumIds)].filter((id) => !byId.has(id));
+    const toFetchIds = [...new Set(extraAlbumIds)].filter((id) => !byId.has(id) && !seedAlbumIdSet.has(id));
     if (toFetchIds.length > 0) {
       const fetched = await fetchSpotifyAlbumsByIds(token, toFetchIds);
       for (const al of fetched) {
@@ -551,11 +559,13 @@ export async function fetchInternationalReleasesPage(
     }
   }
 
-  const dtos: InternationalReleaseDto[] = [];
+  const seedDtos = dbSeedsToDtos(seeds);
+  const spotifyOnlyDtos: InternationalReleaseDto[] = [];
   for (const al of byId.values()) {
     const dto = albumToDto(al);
-    if (dto) dtos.push(dto);
+    if (dto && !seedAlbumIdSet.has(dto.id)) spotifyOnlyDtos.push(dto);
   }
+  const dtos = [...seedDtos, ...spotifyOnlyDtos];
   dtos.sort(compareReleaseDateDesc);
 
   const total = dtos.length;

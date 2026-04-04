@@ -1736,10 +1736,13 @@ export async function registerRoutes(
       const siteIds = await storage.resolveSiteMusicIdsForInternationalReleases(
         data.map((d) => ({ spotifyAlbumId: d.id, title: d.title, artists: d.artists })),
       );
-      const enriched = data.map((d, i) => ({
-        ...d,
-        siteMusicId: seedMusicByAlbum.get(d.id) ?? siteIds[i] ?? null,
-      }));
+      const enriched = data.map((d, i) => {
+        const { sourceMusicId, ...rest } = d as typeof d & { sourceMusicId?: number };
+        return {
+          ...rest,
+          siteMusicId: sourceMusicId ?? seedMusicByAlbum.get(d.id) ?? siteIds[i] ?? null,
+        };
+      });
       res.json({ data: enriched, total, page: pageNum, limit: limitNum });
     } catch (e) {
       console.error("[international-releases]", e);
@@ -2433,7 +2436,8 @@ export async function registerRoutes(
       if (imageFilename !== undefined) updateData.imageFilename = imageFilename;
       if (price !== undefined) updateData.price = isPremium ? (Number(price) || 0) : 0;
       if (isDownloadable !== undefined) updateData.isDownloadable = isPremium ? Boolean(isDownloadable) : false;
-      if (spotifyAlbumId !== undefined) {
+      /** Spotify 앨범 ID는 관리자만 설정(해외 탭 DB 연동). 일반 소유자 PATCH는 무시 */
+      if (spotifyAlbumId !== undefined && isAdminUser) {
         const raw = spotifyAlbumId == null ? "" : String(spotifyAlbumId).trim();
         if (!raw) updateData.spotifyAlbumId = null;
         else {

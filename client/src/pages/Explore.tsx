@@ -402,8 +402,11 @@ export default function Explore() {
             ) : (
               <>
                 <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                  {intlList?.map((item) => (
-                    <div key={item.id} className="transform scale-90 md:scale-90 origin-top-left">
+                  {intlList?.map((item, idx) => (
+                    <div
+                      key={item.siteMusicId != null ? `m-${item.siteMusicId}` : `${item.id}-${idx}`}
+                      className="transform scale-90 md:scale-90 origin-top-left"
+                    >
                       <InternationalReleaseCard item={item} />
                     </div>
                   ))}
