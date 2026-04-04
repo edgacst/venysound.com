@@ -15,6 +15,7 @@ import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
+import { REGISTER_PATH } from "@/lib/site-paths";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
@@ -434,16 +435,29 @@ export default function Home() {
                 {t('home.listenMusic')}
               </Button>
             </Link>
-            <Link href="/music">
-              <Button
-                size="lg"
-                variant="outline"
-                className="rounded-full px-8 border-white/25 text-white bg-white/10 backdrop-blur-sm"
-                data-testid="button-browse-music"
-              >
-                {t("home.heroBrowseMusic", "둘러보기")}
-              </Button>
-            </Link>
+            {!user ? (
+              <Link href={REGISTER_PATH}>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="rounded-full px-8 border-white/25 text-white bg-white/10 backdrop-blur-sm"
+                  data-testid="button-hero-signup"
+                >
+                  {t("home.heroSignUpCta", "무료 가입")}
+                </Button>
+              </Link>
+            ) : (
+              <Link href="/upload">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="rounded-full px-8 border-white/25 text-white bg-white/10 backdrop-blur-sm"
+                  data-testid="button-hero-upload"
+                >
+                  {t("home.uploadTrack", "음원업로드")}
+                </Button>
+              </Link>
+            )}
           </motion.div>
         </div>
       </section>
