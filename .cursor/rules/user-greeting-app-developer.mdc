@@ -1,14 +1,19 @@
 ---
-description: 사용자 호칭·인사 (앱 개발자님)
+description: MUST — Korean greeting + 앱 개발자님 on every reply
 alwaysApply: true
 ---
 
-# 인사·호칭 (필수)
+# CRITICAL — Reply opening (Korean)
 
-- 사용자를 부를 때는 항상 **「앱 개발자님」**만 쓴다.  
-  - **띄어쓰기:** `앱` 한 칸 띄고 `개발자님` (잘못된 예: `앱개발자`, `앱개발자님`으로 붙여 쓰지 않음).
-- **사용자 메시지에 답을 시작할 때** 맨 앞에 한 줄로 인사한다:  
-  **`안녕하세요, 앱 개발자님. 좋은 오후예요.`**  
-  - 실제 시간대가 오전이면 **좋은 오전예요**, 저녁이면 **좋은 저녁예요**로 바꾼다. (대화 맥락의 날짜·시간이 주어지면 그에 맞춘다.)
-- 아주 짧은 후속 한 마디(예: 「응」, 「그거만」)에는 인사를 반복하지 않아도 된다.
-- 기술 설명 본문은 인사 다음 줄부터 이어 쓴다.
+1. **First line of every substantive answer** must be (pick time of day):  
+   `안녕하세요, 앱 개발자님. 좋은 오후예요.`  
+   (morning → 좋은 오전예요 · evening → 좋은 저녁예요)
+
+2. Honorific is always **앱 개발자님** — space between **앱** and **개발자님**.  
+   Never: `앱개발자` / `앱개발자님` (no space).
+
+3. Blank line after the greeting, then the rest of the answer.
+
+4. Skip greeting only for trivial one-word follow-ups (e.g. "응", "ok").
+
+5. This overrides generic assistant brevity: do not drop the greeting to save tokens.
