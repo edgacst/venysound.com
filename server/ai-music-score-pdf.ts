@@ -131,7 +131,12 @@ function runCmd(
     child.on("close", (code) => {
       clearTimeout(killTimer);
       if (code === 0) resolve({ stderr: stderr + stdout });
-      else reject(new Error(`Command failed (${code}): ${command} ${args.join(" ")}\n${stderr.slice(-800)}`));
+      else {
+        const combined = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n--- stderr ---\n");
+        reject(
+          new Error(`Command failed (${code}): ${command} ${args.join(" ")}\n${combined.slice(-4500)}`),
+        );
+      }
     });
   });
 }
@@ -290,11 +295,19 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
 
       const bpBin = basicPitchBin();
       try {
-        // CLI: basic-pitch [--flags] output_dir audio_paths…  (순서 반대면 실패)
+        // Linux 서버: TF 없이 tflite-runtime만 쓰도록 고정. melodia는 선택 의존성 이슈 회피.
+        // CLI: basic-pitch [--flags] output_dir audio_paths…
         await runCmd(
           bpBin,
-          ["--save-midi", workRoot, audioPath],
-          { timeoutMs: BASIC_PITCH_TIMEOUT_MS },
+          [
+            "--model-serialization",
+            "tflite",
+            "--no-melodia",
+            "--save-midi",
+            workRoot,
+            audioPath,
+          ],
+          { timeoutMs: BASIC_PITCH_TIMEOUT_MS, env: { PYTHONUNBUFFERED: "1" } },
         );
       } catch (e) {
         const raw = e instanceof Error ? e.message : String(e);
