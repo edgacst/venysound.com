@@ -16,6 +16,7 @@ import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError 
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
 import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigured, type ActivityEmailKind } from "./email";
+import { registerAiMusicScorePdfRoutes } from "./ai-music-score-pdf";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { getClientIpForGeo } from "./client-ip";
 import { sendPushNotification } from "./push";
@@ -1155,6 +1156,8 @@ export async function registerRoutes(
       res.status(500).json({ message: "라이브러리를 저장하지 못했습니다." });
     }
   });
+
+  registerAiMusicScorePdfRoutes(app);
 
   app.get("/api/ai-music/check", isAuthenticated, async (_req, res) => {
     if (!AI_MUSIC_PROVIDER) {

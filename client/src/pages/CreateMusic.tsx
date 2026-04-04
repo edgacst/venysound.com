@@ -18,6 +18,7 @@ import {
   Coins,
   ChevronLeft,
   ChevronRight,
+  FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
@@ -82,6 +83,9 @@ function TrackCard({
   onRemove,
   onUpload,
   onDownload,
+  onScorePdf,
+  scorePdfLoading,
+  scorePdfEnabled,
   onPlay,
   onPublish,
   isPublishing,
@@ -93,6 +97,9 @@ function TrackCard({
   onRemove: () => void;
   onUpload: () => void;
   onDownload: () => void;
+  onScorePdf: () => void;
+  scorePdfLoading: boolean;
+  scorePdfEnabled: boolean;
   onPlay: () => void;
   onPublish: () => void;
   isPublishing: boolean;
@@ -161,6 +168,22 @@ function TrackCard({
                       </span>
                     )}
                   </button>
+                  {scorePdfEnabled && (
+                    <button
+                      type="button"
+                      onClick={onScorePdf}
+                      disabled={scorePdfLoading}
+                      className="inline-flex items-center gap-0.5 hover:underline disabled:opacity-50"
+                      title={t("createMusic.scorePdfHint", "자동 추출·참고용 PDF (서버에 basic-pitch·MuseScore 필요)")}
+                    >
+                      {scorePdfLoading ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <FileText className="w-3 h-3" />
+                      )}
+                      {t("createMusic.scorePdf", "악보 PDF")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onUpload}
@@ -728,6 +751,82 @@ export default function CreateMusic() {
     });
   }, [persistTracks]);
 
+  const [scorePdfEnabled, setScorePdfEnabled] = useState(false);
+  const [scorePdfTrackId, setScorePdfTrackId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setScorePdfEnabled(false);
+      return;
+    }
+    let cancelled = false;
+    void fetch("/api/ai-music/score-pdf/availability", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { enabled?: boolean }) => {
+        if (!cancelled) setScorePdfEnabled(!!d.enabled);
+      })
+      .catch(() => {
+        if (!cancelled) setScorePdfEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const handleScorePdf = useCallback(
+    async (track: SavedTrack) => {
+      if (!track.audio_url) return;
+      setScorePdfTrackId(track.id);
+      toast({
+        title: t("createMusic.scorePdfStarting", "악보 PDF 생성 중…"),
+        description: t("createMusic.scorePdfWait", "서버에서 전사·조판하므로 1~3분 걸릴 수 있습니다."),
+      });
+      try {
+        const res = await fetch("/api/ai-music/score-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ clientId: track.id }),
+        });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { message?: string };
+          toast({
+            title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+            description: data.message || `HTTP ${res.status}`,
+            variant: "destructive",
+          });
+          return;
+        }
+        if (!ct.includes("pdf")) {
+          toast({
+            title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+            description: t("createMusic.scorePdfBadResponse", "응답 형식이 올바르지 않습니다."),
+            variant: "destructive",
+          });
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${sanitizeFilename(track.title || "score")}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast({ title: t("createMusic.scorePdfDone", "PDF를 저장했습니다.") });
+      } catch {
+        toast({
+          title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+          description: t("createMusic.networkErrorGeneric", "네트워크 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+      } finally {
+        setScorePdfTrackId(null);
+      }
+    },
+    [t, toast],
+  );
+
   const pollTask = useCallback(
     async (tid: string, provider?: string) => {
       const q = provider ? `?provider=${encodeURIComponent(provider)}` : "";
@@ -1236,6 +1335,9 @@ export default function CreateMusic() {
                               onRemove={() => removeSavedTrack(track.id)}
                               onUpload={() => goUploadWithTrack(track)}
                               onDownload={() => handleDownloadTrack(track)}
+                              onScorePdf={() => void handleScorePdf(track)}
+                              scorePdfLoading={scorePdfTrackId === track.id}
+                              scorePdfEnabled={scorePdfEnabled}
                               onPlay={() => playTrackInGlobalPlayer(track)}
                               onPublish={() => setPublishConfirmTrack(track)}
                               isPublishing={publishingId === track.id}
