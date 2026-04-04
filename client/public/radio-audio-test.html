@@ -1608,6 +1608,11 @@
       micVolTxt.textContent = Math.round(v * 100) + '%';
       if (micGain) micGain.gain.value = v;
       if (micCtx && micCtx.state === 'suspended') micCtx.resume().catch(function() {});
+      if (recMicGainNode && recMediaRecorder && recMediaRecorder.state === 'recording') {
+        var userScale = v > 0.02 ? v : 1;
+        var recG = userScale * REC_MIC_MIX_BOOST;
+        recMicGainNode.gain.value = Math.max(REC_MIC_GAIN_MIN, Math.min(REC_MIC_GAIN_MAX, recG));
+      }
     };
     micVol.oninput();
 
@@ -2350,7 +2355,7 @@
               // 최후 수단: createMediaElementSource (audio ended 이벤트 불안정해질 수 있음)
               recAudioSource = recAudioCtx.createMediaElementSource(audioEl);
               recAudioSource.connect(recDestination);
-              recAudioSource.connect(recAudioCtx.destination);
+              // destination 에 연결하면 <audio>.volume 덕킹과 별도로 스피커에 풀레벨이 섞일 수 있음 — 모니터는 요소 기본 출력만 사용
             }
           } catch(_) {
             recAudioSource = null;
