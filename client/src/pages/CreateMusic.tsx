@@ -120,6 +120,8 @@ function TrackCard({
     "text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors";
   const publishLinkClass =
     "text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors";
+  const countBadgeClass =
+    "inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[9px] font-bold tabular-nums leading-none";
   return (
     <div className="rounded-xl border border-border/80 bg-muted/25 shadow-sm p-3 flex gap-3 items-start w-full">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
@@ -132,11 +134,11 @@ function TrackCard({
         <div className="flex items-center gap-2 h-10">
           <div className="flex-1 min-w-0 h-10 flex flex-col justify-center pr-1 gap-0.5">
             <p className="text-xs font-medium truncate leading-none">{title}</p>
-            <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[11px] ${actionLinkClass}`}>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[11px] text-muted-foreground">
               <button
                 type="button"
                 onClick={() => setShowLyrics((v) => !v)}
-                className="inline-flex items-center gap-0.5 hover:underline"
+                className={`inline-flex items-center gap-0.5 hover:underline ${actionLinkClass}`}
               >
                 {showLyrics ? t("createMusic.hideLyrics", "가사 접기") : t("createMusic.lyricsLabel", "가사")}
               </button>
@@ -144,28 +146,31 @@ function TrackCard({
                 <button
                   type="button"
                   onClick={() => setShowStyle((v) => !v)}
-                  className="inline-flex items-center gap-0.5 hover:underline"
+                  className={`inline-flex items-center gap-0.5 hover:underline ${actionLinkClass}`}
                 >
                   {showStyle ? t("createMusic.hideStyle", "스타일 접기") : t("createMusic.styleLabel", "스타일")}
                 </button>
               )}
               {track.audio_url && (
                 <>
-                  <button type="button" onClick={onPlay} className="inline-flex items-center gap-0.5 hover:underline" title={t("createMusic.play", "재생")}>
+                  <button
+                    type="button"
+                    onClick={onPlay}
+                    className={`inline-flex items-center gap-0.5 hover:underline ${actionLinkClass}`}
+                    title={t("createMusic.play", "재생")}
+                  >
                     <Play className="w-3 h-3" />
                     {t("createMusic.play", "재생")}
                   </button>
                   <button
                     type="button"
                     onClick={onDownload}
-                    className={`inline-flex items-center gap-0.5 hover:underline ${hasDownloaded ? doneActionClass : ""}`}
+                    className={`inline-flex items-center gap-1 hover:underline ${hasDownloaded ? doneActionClass : actionLinkClass}`}
                   >
-                    <Download className="w-3 h-3" />
+                    <Download className="w-3 h-3 flex-shrink-0" />
                     {t("createMusic.download", "다운로드")}
                     {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
-                      <span className={`text-[10px] ml-0.5 ${hasDownloaded ? "text-emerald-600/80 dark:text-emerald-400/90" : "text-muted-foreground"}`}>
-                        ({track.downloadCount})
-                      </span>
+                      <span className={countBadgeClass}>{track.downloadCount}</span>
                     )}
                   </button>
                   {scorePdfEnabled && (
@@ -173,7 +178,7 @@ function TrackCard({
                       type="button"
                       onClick={onScorePdf}
                       disabled={scorePdfLoading}
-                      className="inline-flex items-center gap-0.5 hover:underline disabled:opacity-50"
+                      className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
                       title={t("createMusic.scorePdfHint", "자동 추출·참고용 PDF (서버에 basic-pitch·MuseScore 필요)")}
                     >
                       {scorePdfLoading ? (
@@ -187,20 +192,21 @@ function TrackCard({
                   <button
                     type="button"
                     onClick={onUpload}
-                    className={`inline-flex items-center gap-0.5 hover:underline ${hasUploaded ? doneActionClass : ""}`}
+                    className={`inline-flex items-center gap-1 hover:underline ${hasUploaded ? doneActionClass : actionLinkClass}`}
                   >
-                    <CloudUpload className="w-3 h-3" />
+                    <CloudUpload className="w-3 h-3 flex-shrink-0" />
                     {t("createMusic.uploadThis", "업로드")}
                     {typeof track.uploadCount === "number" && track.uploadCount > 0 && (
-                      <span className={`text-[10px] ml-0.5 ${hasUploaded ? "text-emerald-600/80 dark:text-emerald-400/90" : "text-muted-foreground"}`}>
-                        ({track.uploadCount})
-                      </span>
+                      <span className={countBadgeClass}>{track.uploadCount}</span>
                     )}
                   </button>
                   {isPublished ? (
-                    <span className={`inline-flex items-center gap-0.5 ${doneActionClass}`}>
-                      <Globe className="w-3 h-3" />
+                    <span className={`inline-flex items-center gap-1 ${doneActionClass}`}>
+                      <Globe className="w-3 h-3 flex-shrink-0" />
                       {t("createMusic.published", "공개됨")}
+                      <span className={countBadgeClass} title={t("createMusic.published", "공개됨")}>
+                        1
+                      </span>
                     </span>
                   ) : (
                     <button
@@ -319,7 +325,7 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       prompt: t.prompt as string | undefined,
       original_prompt: (t.original_prompt ?? t.prompt) as string | undefined,
       custom_mode: Boolean(t.custom_mode),
-      publishedToSite: Boolean(t.publishedToSite),
+      publishedToSite: Boolean(t.publishedToSite ?? t.published_to_site),
     } as SavedTrack;
   });
 }
@@ -343,7 +349,7 @@ function preferNonEmptyMediaUrl(serverVal?: string, localVal?: string): string |
   return serverVal ?? localVal;
 }
 
-/** 서버·로컬 합집합 — 메타는 서버 우선, audio/image URL은 비어 있으면 로컬로 보완(동기화 시 URL 누락 방지) */
+/** 서버·로컬 합집합 — 메타는 서버 우선, URL은 보완. 공개·다운로드·업로드 카운트는 로컬/서버 중 더 진행된 값 유지 */
 function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTrack[] {
   const byId = new Map<string, SavedTrack>();
   for (const t of server) {
@@ -359,6 +365,9 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
         ...existing,
         audio_url: preferNonEmptyMediaUrl(existing.audio_url, t.audio_url),
         image_url: preferNonEmptyMediaUrl(existing.image_url, t.image_url),
+        uploadCount: Math.max(existing.uploadCount ?? 0, t.uploadCount ?? 0),
+        downloadCount: Math.max(existing.downloadCount ?? 0, t.downloadCount ?? 0),
+        publishedToSite: Boolean(existing.publishedToSite) || Boolean(t.publishedToSite),
       });
     }
   }
