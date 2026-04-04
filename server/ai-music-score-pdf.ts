@@ -3,7 +3,8 @@
  * 서버에 설치 필요: pip install basic-pitch, MuseScore 3 CLI (예: musescore3).
  * 활성화: .env 에 AI_SCORE_ENABLED=1
  * 선택: AI_SCORE_MUSESCORE_BIN, AI_SCORE_BASIC_PITCH_BIN, AI_SCORE_XVFB=1 (헤드리스)
- * 디버그: AI_SCORE_VERBOSE=1 이면 JSON 응답에 CLI 오류 일부(detail) 포함
+ * basic-pitch 모델: AI_SCORE_BP_MODEL=tflite(기본)|onnx|tf — tflite가 서버에서 실패하면 onnxruntime 설치 후 onnx
+ * 디버그: AI_SCORE_VERBOSE=1 이면 detail 길이 확장
  */
 import type { Express, Request, Response } from "express";
 import { spawn } from "node:child_process";
@@ -31,6 +32,14 @@ function isScoreEnabled(): boolean {
 
 function basicPitchBin(): string {
   return (process.env.AI_SCORE_BASIC_PITCH_BIN ?? "basic-pitch").trim() || "basic-pitch";
+}
+
+/** 기본 tflite; GLIBC 등으로 tflite 실패 시 venv에 onnxruntime 설치 후 AI_SCORE_BP_MODEL=onnx */
+function basicPitchModelCliArgs(): string[] {
+  const v = (process.env.AI_SCORE_BP_MODEL ?? "tflite").trim().toLowerCase();
+  if (v === "onnx" || v === "onnxruntime") return ["--model-serialization", "onnx"];
+  if (v === "tf" || v === "tensorflow") return ["--model-serialization", "tf"];
+  return ["--model-serialization", "tflite"];
 }
 
 function museScoreArgsTemplate(): { useXvfb: boolean; bin: string } {
@@ -166,7 +175,7 @@ function jsonCliFailure(
   raw: string,
   missingBinHint: string,
 ): void {
-  const hint = looksLikeMissingBinary(raw) ? missingBinHint : "아래 detail·pm2 logs 를 확인하세요.";
+  const hint = looksLikeMissingBinary(raw) ? missingBinHint : "아래 detail 또는 pm2 logs 를 확인하세요.";
   const collapsed = raw.replace(/\s+/g, " ").trim();
   const maxDetail = isVerboseScoreErrors() ? 2000 : 700;
   const payload: { message: string; detail: string } = {
@@ -297,18 +306,10 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
 
       const bpBin = basicPitchBin();
       try {
-        // Linux 서버: TF 없이 tflite-runtime만 쓰도록 고정. melodia는 선택 의존성 이슈 회피.
-        // CLI: basic-pitch [--flags] output_dir audio_paths…
+        // CLI: basic-pitch [--flags] output_dir audio_paths…  (모델은 AI_SCORE_BP_MODEL)
         await runCmd(
           bpBin,
-          [
-            "--model-serialization",
-            "tflite",
-            "--no-melodia",
-            "--save-midi",
-            workRoot,
-            audioPath,
-          ],
+          [...basicPitchModelCliArgs(), "--no-melodia", "--save-midi", workRoot, audioPath],
           { timeoutMs: BASIC_PITCH_TIMEOUT_MS, env: { PYTHONUNBUFFERED: "1" } },
         );
       } catch (e) {
