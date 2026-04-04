@@ -505,8 +505,8 @@ export default function Home() {
               {t("home.quickTileAiBadge", "AI")}
             </span>
             <Wand2 className="w-5 h-5 text-pink-300 drop-shadow-[0_0_8px_rgba(244,114,182,0.45)] group-hover:text-pink-200 shrink-0" />
-            <span className="font-semibold text-sm text-foreground leading-tight pr-6">{t("home.quickTileAi", "AI음악만들기")}</span>
-            <span className="text-[11px] text-muted-foreground group-hover:text-foreground/90 line-clamp-2 leading-snug">{t("home.quickTileAiDesc", "간단한 설명으로 세상에 없는 나만의 음악을 가지세요")}</span>
+            <span className="font-semibold text-sm text-foreground leading-tight pr-6">{t("home.quickTileAi", "AI로 음악만들고 악보까지 한방에 생성")}</span>
+            <span className="text-[11px] text-muted-foreground group-hover:text-foreground/90 line-clamp-2 leading-snug">{t("home.quickTileAiDesc", "간단한 설명으로 나만의 곡을 만들고, Premium이면 참고용 악보 PDF까지 받아 보세요")}</span>
           </Link>
           <Link
             href="/guide"
