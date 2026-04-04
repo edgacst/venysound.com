@@ -411,6 +411,8 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
   const isAdmin = adminCheck?.isAdmin === true;
   /** 관리자는 타인 음원에도 Spotify 앨범 ID만 저장 가능(API와 동일) */
   const isAdminSpotifyOnly = isAdmin && !isOwner;
+  /** 일반 업로더에게는 Spotify 필드 비노출 — 관리자만 해외 탭 DB 연동용으로 편집 */
+  const showSpotifyAlbumIdField = isAdmin;
   const canEdit = isOwner;
   const canDelete = isOwner || isAdmin;
   const canReport = !!user && !isOwner;
@@ -461,9 +463,10 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
 
   const handleEditSubmit = () => {
     const prevSpotify = ((music as { spotifyAlbumId?: string | null }).spotifyAlbumId ?? "").trim();
-    const rawSpotify = editSpotifyAlbumId.trim();
-    let nextSpotify = "";
-    if (rawSpotify) {
+
+    const parseSpotifyOrToast = (): string | null => {
+      const rawSpotify = editSpotifyAlbumId.trim();
+      if (!rawSpotify) return "";
       const parsed = parseSpotifyAlbumIdFromUserInput(rawSpotify);
       if (!parsed) {
         toast({
@@ -474,12 +477,14 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
           ),
           variant: "destructive",
         });
-        return;
+        return null;
       }
-      nextSpotify = parsed;
-    }
+      return parsed;
+    };
 
     if (isAdminSpotifyOnly) {
+      const nextSpotify = parseSpotifyOrToast();
+      if (nextSpotify === null) return;
       if (nextSpotify === prevSpotify) {
         setEditOpen(false);
         return;
@@ -500,8 +505,12 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
     if (editCoverUrl) {
       data.imageFilename = editCoverUrl;
     }
-    if (nextSpotify !== prevSpotify) {
-      data.spotifyAlbumId = nextSpotify || null;
+    if (isAdmin) {
+      const nextSpotify = parseSpotifyOrToast();
+      if (nextSpotify === null) return;
+      if (nextSpotify !== prevSpotify) {
+        data.spotifyAlbumId = nextSpotify || null;
+      }
     }
     updateMusic({ id: music.id, data }, {
       onSuccess: () => setEditOpen(false),
@@ -775,29 +784,36 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
             </div>
               </>
             )}
-            <div>
-              <Label htmlFor="edit-spotify-album-id">{t("music.spotifyAlbumIdLabel", "Spotify 앨범·싱글 ID (선택)")}</Label>
-              <Input
-                id="edit-spotify-album-id"
-                value={editSpotifyAlbumId}
-                onChange={(e) => setEditSpotifyAlbumId(e.target.value)}
-                onBlur={() => {
-                  const raw = editSpotifyAlbumId.trim();
-                  if (!raw) return;
-                  const p = parseSpotifyAlbumIdFromUserInput(raw);
-                  if (p) setEditSpotifyAlbumId(p);
-                }}
-                placeholder={t(
-                  "music.spotifyAlbumIdPlaceholder",
-                  "ID 또는 open.spotify.com/album/… 전체 링크",
-                )}
-                className="font-mono text-xs"
-                data-testid="input-edit-spotify-album-id"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("music.spotifyAlbumIdHint", "해외 출시 목록과 이 곡을 정확히 연결할 때만 입력하세요. 비우면 제목·아티스트로 자동 매칭을 시도합니다.")}
-              </p>
-            </div>
+            {showSpotifyAlbumIdField && (
+              <div>
+                <Label htmlFor="edit-spotify-album-id">
+                  {t("music.spotifyAlbumIdLabelAdmin", "Spotify 앨범·싱글 ID (관리자)")}
+                </Label>
+                <Input
+                  id="edit-spotify-album-id"
+                  value={editSpotifyAlbumId}
+                  onChange={(e) => setEditSpotifyAlbumId(e.target.value)}
+                  onBlur={() => {
+                    const raw = editSpotifyAlbumId.trim();
+                    if (!raw) return;
+                    const p = parseSpotifyAlbumIdFromUserInput(raw);
+                    if (p) setEditSpotifyAlbumId(p);
+                  }}
+                  placeholder={t(
+                    "music.spotifyAlbumIdPlaceholder",
+                    "ID 또는 open.spotify.com/album/… 전체 링크",
+                  )}
+                  className="font-mono text-xs"
+                  data-testid="input-edit-spotify-album-id"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t(
+                    "music.spotifyAlbumIdHintAdmin",
+                    "해외 출시 탭(DB)과 이 음원을 연결합니다. 일반 회원 편집 화면에는 표시되지 않습니다.",
+                  )}
+                </p>
+              </div>
+            )}
             {!isAdminSpotifyOnly && (
               <>
             <div>
