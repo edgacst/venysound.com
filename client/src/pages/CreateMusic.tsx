@@ -795,7 +795,7 @@ export default function CreateMusic() {
             [data.message, data.detail].filter(Boolean).join(" — ").trim() || `HTTP ${res.status}`;
           toast({
             title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
-            description: desc.slice(0, 500),
+            description: desc.slice(0, 1200),
             variant: "destructive",
           });
           return;

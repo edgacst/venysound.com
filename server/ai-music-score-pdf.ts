@@ -151,7 +151,9 @@ async function findMidiInDir(dir: string): Promise<string | null> {
 }
 
 function isVerboseScoreErrors(): boolean {
-  return process.env.NODE_ENV === "development" || process.env.AI_SCORE_VERBOSE === "1";
+  if (process.env.NODE_ENV === "development") return true;
+  const v = (process.env.AI_SCORE_VERBOSE ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
 }
 
 function looksLikeMissingBinary(errText: string): boolean {
@@ -164,13 +166,13 @@ function jsonCliFailure(
   raw: string,
   missingBinHint: string,
 ): void {
-  const hint = looksLikeMissingBinary(raw) ? missingBinHint : "서버 로그(pm2 logs)에 자세한 원인이 출력됩니다.";
-  const payload: { message: string; detail?: string } = {
+  const hint = looksLikeMissingBinary(raw) ? missingBinHint : "아래 detail·pm2 logs 를 확인하세요.";
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  const maxDetail = isVerboseScoreErrors() ? 2000 : 700;
+  const payload: { message: string; detail: string } = {
     message: `${title} ${hint}`,
+    detail: collapsed.slice(0, maxDetail) || "(CLI 출력 없음)",
   };
-  if (isVerboseScoreErrors()) {
-    payload.detail = raw.replace(/\s+/g, " ").trim().slice(0, 800);
-  }
   res.status(500).json(payload);
 }
 
