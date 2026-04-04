@@ -16,6 +16,7 @@ import { eq, and } from "drizzle-orm";
 import { isAuthenticated } from "./auth";
 import { db } from "./db";
 import { aiMusicSavedTracks, users } from "../shared/models/auth";
+import { hasActivePremiumSubscription } from "@shared/subscription-entitlements";
 
 const MAX_AUDIO_BYTES = 40 * 1024 * 1024;
 const BASIC_PITCH_TIMEOUT_MS = 180_000;
@@ -24,20 +25,6 @@ const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_MAX_PER_HOUR = 10;
 
 const rateBuckets = new Map<string, number[]>();
-
-/** Premium(유효 구독) 또는 관리자만 악보 PDF. 만료일 없으면 유효로 간주. */
-function isPremiumScorePdfUser(
-  row:
-    | { subscriptionTier: string | null; subscriptionExpiresAt: Date | null; role: string | null }
-    | undefined,
-): boolean {
-  if (!row) return false;
-  if (row.role === "admin") return true;
-  const tier = row.subscriptionTier ?? "free";
-  if (tier !== "premium") return false;
-  if (!row.subscriptionExpiresAt) return true;
-  return new Date(row.subscriptionExpiresAt) > new Date();
-}
 
 function isScoreEnabled(): boolean {
   const v = (process.env.AI_SCORE_ENABLED ?? "").trim().toLowerCase();
@@ -213,12 +200,13 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
         .select({
           subscriptionTier: users.subscriptionTier,
           subscriptionExpiresAt: users.subscriptionExpiresAt,
+          subscriptionEntitlements: users.subscriptionEntitlements,
           role: users.role,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      res.json({ enabled: isPremiumScorePdfUser(u) });
+      res.json({ enabled: hasActivePremiumSubscription(u, new Date()) });
     } catch (e) {
       console.error("[ai-music score-pdf] availability", e);
       res.json({ enabled: false });
@@ -244,12 +232,13 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
         .select({
           subscriptionTier: users.subscriptionTier,
           subscriptionExpiresAt: users.subscriptionExpiresAt,
+          subscriptionEntitlements: users.subscriptionEntitlements,
           role: users.role,
         })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
-      if (!isPremiumScorePdfUser(u)) {
+      if (!hasActivePremiumSubscription(u, new Date())) {
         return res.status(403).json({
           message: "악보 PDF 다운로드는 Premium 구독자만 이용할 수 있습니다.",
           code: "SCORE_PDF_PREMIUM_ONLY",

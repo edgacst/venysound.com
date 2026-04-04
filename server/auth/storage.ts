@@ -1,4 +1,5 @@
 import { users, type User, type UpsertUser } from "../../shared/models/auth";
+import { subscriptionRowNeedsSync } from "../../shared/subscription-entitlements";
 import { db } from "../db";
 import { eq } from "drizzle-orm";
 
@@ -21,17 +22,26 @@ class AuthStorage implements IAuthStorage {
     return user;
   }
 
-  /** 구독 만료일이 지난 프리미엄 회원을 일반으로 전환 */
+  /** 만료된 entitlement 정리 및 subscription_tier / expires_at 동기화 */
   async downgradeExpiredSubscription(userId: string): Promise<void> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
-    if (!user || user.subscriptionTier !== "premium" || !user.subscriptionExpiresAt) return;
+    if (!user) return;
     const now = new Date();
-    if (new Date(user.subscriptionExpiresAt) <= now) {
-      await db
-        .update(users)
-        .set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null })
-        .where(eq(users.id, userId));
-    }
+    const { subscriptionEntitlements, subscriptionTier, subscriptionExpiresAt, needsWrite } = subscriptionRowNeedsSync(
+      user,
+      now,
+    );
+    if (!needsWrite) return;
+    await db
+      .update(users)
+      .set({
+        subscriptionEntitlements,
+        subscriptionTier,
+        subscriptionExpiresAt,
+        ...(subscriptionTier === "free" ? { subscriptionPlan: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {

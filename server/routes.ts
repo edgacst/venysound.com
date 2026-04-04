@@ -52,16 +52,25 @@ import {
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
+import {
+  FREE_AI_MUSIC_LIMIT_PER_MONTH,
+  AI_MUSIC_CREDITS_PER_TRACK,
+  isUserPaidSubscriptionActive,
+  getAiMusicMonthlyUsageLimit,
+  computeDisplayedSubscriptionFromEntitlements,
+  subscriptionRowNeedsSync,
+  buildEntitlementsView,
+  mergeEntitlementExpiry,
+} from "@shared/subscription-entitlements";
 
-/** starter/basic/pro/premium 중 하나이고 구독 기간이 유효하면 true */
+/** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
 function isActivePaidSubscription(
-  user: { subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null } | undefined,
+  user:
+    | { subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null; subscriptionEntitlements?: unknown }
+    | undefined,
   now: Date,
 ): boolean {
-  if (!user) return false;
-  const t = user.subscriptionTier ?? "free";
-  if (!isPaidSubscriptionTierId(t)) return false;
-  return !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > now;
+  return isUserPaidSubscriptionActive(user, now);
 }
 
 /** 경로 파라미터를 양의 정수 id로 파싱 (NaN·0·음수·비정수면 null) */
@@ -203,22 +212,29 @@ export async function registerRoutes(
     })();
   }
 
-  /** 구독 만료 시 DB를 free로 갱신하고, 해당 유저가 현재 유료(유료 플랜 또는 admin)인지 반환 */
+  /** 만료 entitlement 정리·DB 동기화 후, 유료 활성 여부 반환 (배포·정산 등에서 사용) */
   async function ensureExpiredSubscriptionDowngrade(userId: string): Promise<{ isPremium: boolean }> {
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (!user) return { isPremium: false };
     if (user.role === "admin") return { isPremium: true };
     const now = new Date();
-    const isPaid = isActivePaidSubscription(user, now);
-    if (
-      isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
-      user.subscriptionExpiresAt &&
-      new Date(user.subscriptionExpiresAt) <= now
-    ) {
-      await db.update(users).set({ subscriptionTier: "free", subscriptionPlan: null, subscriptionExpiresAt: null }).where(eq(users.id, userId));
-      return { isPremium: false };
+    const { subscriptionEntitlements, subscriptionTier, subscriptionExpiresAt, needsWrite } = subscriptionRowNeedsSync(
+      user,
+      now,
+    );
+    if (needsWrite) {
+      await db
+        .update(users)
+        .set({
+          subscriptionEntitlements,
+          subscriptionTier,
+          subscriptionExpiresAt,
+          ...(subscriptionTier === "free" ? { subscriptionPlan: null } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
     }
-    return { isPremium: isPaid };
+    return { isPremium: subscriptionTier !== "free" };
   }
 
   // Setup Auth
@@ -899,20 +915,23 @@ export async function registerRoutes(
     }
   });
 
-  const FREE_AI_MUSIC_LIMIT_PER_MONTH = 2;
-  const STARTER_AI_MUSIC_CREDITS_PER_MONTH = 500;
-  const BASIC_AI_MUSIC_CREDITS_PER_MONTH = 1000;
-  const PRO_AI_MUSIC_CREDITS_PER_MONTH = 1500;
-  const PREMIUM_AI_MUSIC_CREDITS_PER_MONTH = 2000;
-  const AI_MUSIC_CREDITS_PER_TRACK = 20;
-
-  function getAiMusicLimit(tier: string | null, role: string | null): number {
-    if (role === "admin") return -1;
-    if (tier === "premium") return PREMIUM_AI_MUSIC_CREDITS_PER_MONTH;
-    if (tier === "pro") return PRO_AI_MUSIC_CREDITS_PER_MONTH;
-    if (tier === "basic") return BASIC_AI_MUSIC_CREDITS_PER_MONTH;
-    if (tier === "starter") return STARTER_AI_MUSIC_CREDITS_PER_MONTH;
-    return FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  async function maybePersistSubscriptionRow(userId: string, row: typeof users.$inferSelect): Promise<void> {
+    const now = new Date();
+    const { subscriptionEntitlements, subscriptionTier, subscriptionExpiresAt, needsWrite } = subscriptionRowNeedsSync(
+      row,
+      now,
+    );
+    if (!needsWrite) return;
+    await db
+      .update(users)
+      .set({
+        subscriptionEntitlements,
+        subscriptionTier,
+        subscriptionExpiresAt,
+        ...(subscriptionTier === "free" ? { subscriptionPlan: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
   }
 
   async function insertAiMusicGenerationLog(params: {
@@ -931,11 +950,15 @@ export async function registerRoutes(
   }): Promise<void> {
     try {
       const { userId, user, taskId, provider, body, walletCreditsCharged } = params;
-      const tier = user?.subscriptionTier ?? "free";
       const nowLog = new Date();
-      const subscriptionActive =
-        isPaidSubscriptionTierId(tier) &&
-        (user == null || !user.subscriptionExpiresAt || new Date(user.subscriptionExpiresAt) > nowLog);
+      const displayed = computeDisplayedSubscriptionFromEntitlements(
+        user?.subscriptionEntitlements,
+        user?.subscriptionTier,
+        user?.subscriptionExpiresAt,
+        nowLog,
+      );
+      const tier = displayed.subscriptionTier;
+      const subscriptionActive = isUserPaidSubscriptionActive(user, nowLog);
       const billingKind =
         user?.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
       const creditsCharged = Math.max(0, Math.floor(Number(walletCreditsCharged) || 0));
@@ -967,20 +990,23 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user?.claims?.sub as string;
       const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (user) await maybePersistSubscriptionRow(userId, user);
+      const [userFresh] = user ? await db.select().from(users).where(eq(users.id, userId)) : [undefined];
+      const row = userFresh ?? user;
       const now = new Date();
-      const isPaidTier = user?.role === "admin" || isActivePaidSubscription(user, now);
-      const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
+      const isPaidTier = row?.role === "admin" || isActivePaidSubscription(row, now);
+      const limit = getAiMusicMonthlyUsageLimit(row, row?.role ?? null, now);
       const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
       const usedThisMonth = usage?.count ?? 0;
-      const tier = user?.subscriptionTier ?? "free";
-      const subActive = isActivePaidSubscription(user, now);
+      const tier = row?.subscriptionTier ?? "free";
+      const subActive = isActivePaidSubscription(row, now);
       /** 유효 유료 플랜: 지갑 미차감. 만료된 유료 플랜만 지갑 차감 경로와 동일하게 UI에 표시. */
       const deductsCreditsPerCreate =
-        user?.role !== "admin" && isPaidSubscriptionTierId(tier) && !subActive;
-      const walletCredits = user?.credits ?? 0;
+        row?.role !== "admin" && isPaidSubscriptionTierId(tier) && !subActive;
+      const walletCredits = row?.credits ?? 0;
       const quotaKind: "songs" | "subscription_credits" | "unlimited" =
-        user?.role === "admin" ? "unlimited" : tier === "free" ? "songs" : "subscription_credits";
+        row?.role === "admin" ? "unlimited" : tier === "free" ? "songs" : "subscription_credits";
       return res.json({
         limit,
         usedThisMonth,
@@ -1196,14 +1222,20 @@ export async function registerRoutes(
     if (!userId || typeof userId !== "string") {
       return res.status(401).json({ message: "로그인이 필요합니다." });
     }
+    const [user0] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user0) {
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+    }
+    await maybePersistSubscriptionRow(userId, user0);
     const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const row = user!;
     const now = new Date();
-    const isPaidTier = user?.role === "admin" || isActivePaidSubscription(user, now);
-    const limit = getAiMusicLimit(user?.subscriptionTier ?? null, user?.role ?? null);
+    const isPaidTier = row.role === "admin" || isActivePaidSubscription(row, now);
+    const limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
     const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
     const used = usage?.count ?? 0;
-    const tierNow = user?.subscriptionTier ?? "free";
+    const tierNow = row.subscriptionTier ?? "free";
     /** Free: count = 곡 수. Pro/Premium 월 한도: count = 이번 달 사용한 AI 크레딧 합계(곡당 20). */
     const usageWouldExceed =
       limit >= 0 &&
@@ -1234,9 +1266,9 @@ export async function registerRoutes(
 
     /** @returns 이번 요청에서 지갑(users.credits)에서 차감한 크레딧(없으면 0). 유효 Pro/Premium은 구독 월 한도만 소모하고 지갑은 건드리지 않음. */
     async function incrementAiMusicUsageAndDeductCredits(): Promise<number> {
-      if (user?.role === "admin") return 0;
+      if (row.role === "admin") return 0;
       // Free: 월 2곡까지만, 크레딧 차감 없이 카운트만
-      if ((user?.subscriptionTier ?? "free") === "free") {
+      if ((row.subscriptionTier ?? "free") === "free") {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
           VALUES (${userId}, ${periodMonth}, 1, NOW())
@@ -4824,32 +4856,35 @@ export async function registerRoutes(
       }
 
       const now = new Date();
-      const isPaid =
-        isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
-        user.subscriptionExpiresAt &&
-        new Date(user.subscriptionExpiresAt) > now;
-      if (isPaid && user.subscriptionTier) {
+      const { subscriptionEntitlements, subscriptionTier, subscriptionExpiresAt, needsWrite } = subscriptionRowNeedsSync(
+        user,
+        now,
+      );
+      if (needsWrite) {
+        await db
+          .update(users)
+          .set({
+            subscriptionEntitlements,
+            subscriptionTier,
+            subscriptionExpiresAt,
+            ...(subscriptionTier === "free" ? { subscriptionPlan: null } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+      }
+      const [fresh] = await db.select().from(users).where(eq(users.id, userId));
+      const row = fresh ?? user;
+      const paid = isUserPaidSubscriptionActive(row, now);
+      if (paid && row.subscriptionTier && row.subscriptionTier !== "free") {
         return res.json({
-          tier: user.subscriptionTier,
-          plan: user.subscriptionPlan,
-          expiresAt: user.subscriptionExpiresAt,
-          hasBillingKey: !!user.tossBillingKey,
+          tier: row.subscriptionTier,
+          plan: row.subscriptionPlan,
+          expiresAt: row.subscriptionExpiresAt,
+          hasBillingKey: !!row.tossBillingKey,
         });
       }
 
-      if (
-        isPaidSubscriptionTierId(user.subscriptionTier ?? "") &&
-        user.subscriptionExpiresAt &&
-        new Date(user.subscriptionExpiresAt) <= now
-      ) {
-        await db.update(users).set({
-          subscriptionTier: "free",
-          subscriptionPlan: null,
-          subscriptionExpiresAt: null,
-        }).where(eq(users.id, userId));
-      }
-
-      res.json({ tier: "free", hasBillingKey: !!user.tossBillingKey });
+      res.json({ tier: "free", hasBillingKey: !!row.tossBillingKey });
     } catch (err) {
       console.error("Subscription check error:", err);
       res.status(500).json({ message: "구독 정보를 불러올 수 없습니다" });
@@ -4978,11 +5013,24 @@ export async function registerRoutes(
         billingPeriod,
       });
 
-      await db.update(users).set({
-        subscriptionTier: 'pro',
-        subscriptionPlan: billingPeriod,
-        subscriptionExpiresAt: expiresAt,
-      }).where(eq(users.id, userId));
+      const view = buildEntitlementsView(
+        user.subscriptionEntitlements,
+        user.subscriptionTier,
+        user.subscriptionExpiresAt,
+        now,
+      );
+      const merged = mergeEntitlementExpiry(view, "pro", expiresAt);
+      const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+      await db
+        .update(users)
+        .set({
+          subscriptionEntitlements: computed.subscriptionEntitlements,
+          subscriptionTier: computed.subscriptionTier,
+          subscriptionExpiresAt: computed.subscriptionExpiresAt,
+          subscriptionPlan: billingPeriod,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
 
       await storage.createNotification({
         userId,
@@ -4994,9 +5042,9 @@ export async function registerRoutes(
 
       res.json({
         success: true,
-        tier: 'pro',
+        tier: computed.subscriptionTier,
         plan: billingPeriod,
-        expiresAt,
+        expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
         amount,
       });
     } catch (err) {
@@ -5017,6 +5065,8 @@ export async function registerRoutes(
         subscriptionPlan: null,
         subscriptionTier: "free",
         subscriptionExpiresAt: null,
+        subscriptionEntitlements: {},
+        updatedAt: new Date(),
       }).where(eq(users.id, userId));
 
       res.json({
@@ -5177,14 +5227,28 @@ export async function registerRoutes(
       } else {
         expiresAt.setFullYear(expiresAt.getFullYear() + 1);
       }
-      const tier = isPaidSubscriptionTierId(payment.plan ?? "") ? (payment.plan as string) : "pro";
-      await db.update(users).set({
-        subscriptionTier: tier,
-        subscriptionPlan: payment.billingPeriod,
-        subscriptionExpiresAt: expiresAt,
-      }).where(eq(users.id, payment.userId));
+      const tierPaid = (isPaidSubscriptionTierId(payment.plan ?? "") ? payment.plan : "pro") as PaidSubscriptionTierId;
+      const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+      const view = buildEntitlementsView(
+        payUser?.subscriptionEntitlements,
+        payUser?.subscriptionTier,
+        payUser?.subscriptionExpiresAt,
+        now,
+      );
+      const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
+      const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+      await db
+        .update(users)
+        .set({
+          subscriptionEntitlements: computed.subscriptionEntitlements,
+          subscriptionTier: computed.subscriptionTier,
+          subscriptionExpiresAt: computed.subscriptionExpiresAt,
+          subscriptionPlan: payment.billingPeriod ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, payment.userId));
 
-      res.json({ success: true, expiresAt, tier });
+      res.json({ success: true, expiresAt, tier: computed.subscriptionTier });
     } catch (err) {
       console.error("Confirm bank payment error:", err);
       res.status(500).json({ message: "입금 확인 처리에 실패했습니다" });

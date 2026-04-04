@@ -45,6 +45,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "subscription-plans-canonical-prices.sql", name: "subscription_plans 4종 공급가·연간 정정" },
   { file: "subscription-plans-starter-basic.sql", name: "subscription_plans Starter/Basic 플랜" },
   { file: "subscription-plans-pro-premium-15k-22k.sql", name: "subscription_plans Pro 15k / Premium 22k 공급가" },
+  { file: "subscription-entitlements-jsonb.sql", name: "users.subscription_entitlements (복수 플랜)" },
 ];
 
 async function main() {

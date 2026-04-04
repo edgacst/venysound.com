@@ -27,6 +27,10 @@ export const users = pgTable("users", {
   subscriptionTier: varchar("subscription_tier").default("free"),
   subscriptionPlan: varchar("subscription_plan"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
+  /** tier → 구독 만료 ISO 시각. 복수 플랜 동시 유효 시 월 AI 크레딧 등 합산에 사용 */
+  subscriptionEntitlements: jsonb("subscription_entitlements")
+    .$type<Record<string, string>>()
+    .default(sql`'{}'::jsonb`),
   credits: integer("credits").default(0),
   balance: integer("balance").default(0),
   donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'

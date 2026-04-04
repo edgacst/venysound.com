@@ -2916,12 +2916,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserSubscription(id: string, tier: string, expiresAt: Date | null): Promise<void> {
+    if (tier === "free") {
+      await db
+        .update(users)
+        .set({
+          subscriptionTier: "free",
+          subscriptionPlan: null,
+          subscriptionExpiresAt: null,
+          subscriptionEntitlements: {},
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, id));
+      return;
+    }
     const subscriptionPlan = tier === "premium" ? "premium" : null;
-    await db.update(users).set({
-      subscriptionTier: tier,
-      subscriptionPlan,
-      subscriptionExpiresAt: expiresAt,
-    }).where(eq(users.id, id));
+    const iso = expiresAt ? expiresAt.toISOString() : new Date().toISOString();
+    await db
+      .update(users)
+      .set({
+        subscriptionTier: tier,
+        subscriptionPlan,
+        subscriptionExpiresAt: expiresAt,
+        subscriptionEntitlements: { [tier]: iso },
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id));
   }
 
   async getUserRole(id: string): Promise<string> {
