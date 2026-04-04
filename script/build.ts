@@ -81,6 +81,8 @@ async function buildAll() {
     minify: true,
     external: externals,
     logLevel: "info",
+    // db.ts 의 import.meta 폴백은 CJS 번들에서 __dirname 으로 이미 처리됨; 경고만 노이즈
+    logOverride: { "empty-import-meta": "silent" },
   });
 
   // connect-pg-simple이 번들 안에서 __dirname=dist 로 table.sql을 찾으므로 복사
