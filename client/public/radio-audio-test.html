@@ -902,17 +902,40 @@
       return Math.max(0, Math.min(1, p / 100));
     }
 
-    /** 마이크 ON 직후 음원 덕킹: 복구용 레벨은 최초 1회만 저장 → 목표까지 램프 (중복 호출 시 저장 덮어쓰지 않음) */
+    /**
+     * [마이크 연결] 중: 마이크 볼륨 슬라이더(0~1)에 따라 송출 음원 볼륨을 섞음.
+     * 슬라이더 0% → 연결 전 기준(saved) 풀에 가깝게, 100% → "음악 볼륨" 슬라이더 목표(보통 0).
+     * 마이크를 "올리면" 음악이 줄고, 내리면 다시 살아나도록 oninput·playing 에서 호출.
+     */
+    function refreshMicMusicMix() {
+      if (!micStream || !audio) return;
+      var baseline = savedAudioVolForMic != null ? savedAudioVolForMic : 1;
+      var floor = getMusicDuckTargetVol();
+      var v = micVol ? Number(micVol.value) : 0;
+      if (!isFinite(v)) v = 0;
+      v = Math.max(0, Math.min(1, v));
+      var out = baseline * (1 - v) + floor * v;
+      cancelMusicVolRamp();
+      audio.volume = Math.max(0, Math.min(1, out));
+    }
+
+    /**
+     * 스튜디오 마이크 스트림 연결 시: 기준 볼륨 저장 후 믹스 적용.
+     * 녹음만으로 마이크 연 경우(micStream 없음): 기존처럼 단일 목표로 램프.
+     */
     function applyMicDuckToMusic() {
       if (!audio) return;
-      var target = getMusicDuckTargetVol();
-      cancelMusicVolRamp();
       if (savedAudioVolForMic == null) {
         var fromSave = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
-        // 거의 음소거만 "복구 기준 불명"으로 보고 1로 가정 (이미 낮게 듣는 설정은 덮어쓰지 않음)
         if (fromSave < 0.04) fromSave = 1;
         savedAudioVolForMic = fromSave;
       }
+      if (micStream) {
+        refreshMicMusicMix();
+        return;
+      }
+      var target = getMusicDuckTargetVol();
+      cancelMusicVolRamp();
       var cur = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
       var mid = cur * 0.35 + target * 0.65;
       audio.volume = Math.max(target, mid);
@@ -920,24 +943,16 @@
     }
 
     /**
-     * 곡 전환 등으로 브라우저가 audio.volume 을 1로 되돌리는 경우가 있어,
-     * 마이크가 켜진 동안 재생이 시작될 때마다 덕킹 목표 이하로 다시 맞춤.
-     * (ended / timeupdate 핸들러 본문은 건드리지 않음)
+     * 곡 전환 등으로 audio.volume 이 풀리는 경우 재적용.
+     * (ended / timeupdate 본문은 건드리지 않음 — playing 리스너만 사용)
      */
     function enforceMicDuckIfNeeded() {
       if (!micStream || !audio) return;
-      var target = getMusicDuckTargetVol();
       if (savedAudioVolForMic == null) {
         applyMicDuckToMusic();
         return;
       }
-      var cur = Math.max(0, Math.min(1, typeof audio.volume === 'number' ? audio.volume : 1));
-      if (cur > target + 0.02) {
-        cancelMusicVolRamp();
-        var mid = cur * 0.35 + target * 0.65;
-        audio.volume = Math.max(target, mid);
-        rampAudioElementVolume(target, MIC_DUCK_DOWN_MS);
-      }
+      refreshMicMusicMix();
     }
 
     function cancelMusicVolRamp() {
@@ -1613,6 +1628,9 @@
         var recG = userScale * REC_MIC_MIX_BOOST;
         recMicGainNode.gain.value = Math.max(REC_MIC_GAIN_MIN, Math.min(REC_MIC_GAIN_MAX, recG));
       }
+      if (micStream && audio) {
+        refreshMicMusicMix();
+      }
     };
     micVol.oninput();
 
@@ -1620,6 +1638,8 @@
       musicDuck.oninput = function() {
         musicDuckTxt.textContent = musicDuck.value + '%';
         if (micStream && audio) {
+          refreshMicMusicMix();
+        } else if (audio && recMediaRecorder && recMediaRecorder.state === 'recording' && !micStream) {
           rampAudioElementVolume(getMusicDuckTargetVol(), 200);
         }
       };
