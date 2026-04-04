@@ -401,14 +401,12 @@ export default function Explore() {
               </div>
             ) : (
               <>
-                <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                <div className="flex flex-col gap-2 sm:gap-3 w-full">
                   {intlList?.map((item, idx) => (
-                    <div
+                    <InternationalReleaseCard
                       key={item.siteMusicId != null ? `m-${item.siteMusicId}` : `${item.id}-${idx}`}
-                      className="transform scale-90 md:scale-90 origin-top-left"
-                    >
-                      <InternationalReleaseCard item={item} />
-                    </div>
+                      item={item}
+                    />
                   ))}
                 </div>
                 {intlList?.length === 0 && (
