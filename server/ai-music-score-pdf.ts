@@ -290,7 +290,12 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
 
       const bpBin = basicPitchBin();
       try {
-        await runCmd(bpBin, [audioPath, workRoot], { timeoutMs: BASIC_PITCH_TIMEOUT_MS });
+        // CLI: basic-pitch [--flags] output_dir audio_paths…  (순서 반대면 실패)
+        await runCmd(
+          bpBin,
+          ["--save-midi", workRoot, audioPath],
+          { timeoutMs: BASIC_PITCH_TIMEOUT_MS },
+        );
       } catch (e) {
         const raw = e instanceof Error ? e.message : String(e);
         console.error("[ai-music score-pdf] basic-pitch", raw);
