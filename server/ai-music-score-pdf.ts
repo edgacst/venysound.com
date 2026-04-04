@@ -3,6 +3,7 @@
  * 서버에 설치 필요: pip install basic-pitch, MuseScore 3 CLI (예: musescore3).
  * 활성화: .env 에 AI_SCORE_ENABLED=1
  * 선택: AI_SCORE_MUSESCORE_BIN, AI_SCORE_BASIC_PITCH_BIN, AI_SCORE_XVFB=1 (헤드리스)
+ * 디버그: AI_SCORE_VERBOSE=1 이면 JSON 응답에 CLI 오류 일부(detail) 포함
  */
 import type { Express, Request, Response } from "express";
 import { spawn } from "node:child_process";
@@ -144,6 +145,30 @@ async function findMidiInDir(dir: string): Promise<string | null> {
   return join(dir, preferred!);
 }
 
+function isVerboseScoreErrors(): boolean {
+  return process.env.NODE_ENV === "development" || process.env.AI_SCORE_VERBOSE === "1";
+}
+
+function looksLikeMissingBinary(errText: string): boolean {
+  return /ENOENT|ENOTDIR|spawn .* ENOENT|command not found|No such file/i.test(errText);
+}
+
+function jsonCliFailure(
+  res: Response,
+  title: string,
+  raw: string,
+  missingBinHint: string,
+): void {
+  const hint = looksLikeMissingBinary(raw) ? missingBinHint : "서버 로그(pm2 logs)에 자세한 원인이 출력됩니다.";
+  const payload: { message: string; detail?: string } = {
+    message: `${title} ${hint}`,
+  };
+  if (isVerboseScoreErrors()) {
+    payload.detail = raw.replace(/\s+/g, " ").trim().slice(0, 800);
+  }
+  res.status(500).json(payload);
+}
+
 export function registerAiMusicScorePdfRoutes(app: Express): void {
   app.get("/api/ai-music/score-pdf/availability", isAuthenticated, (_req: Request, res: Response) => {
     res.json({ enabled: isScoreEnabled() });
@@ -263,21 +288,44 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
       const audioPath = join(workRoot, `source_audio${ext}`);
       await writeFile(audioPath, buf);
 
-      await runCmd(basicPitchBin(), [audioPath, workRoot], { timeoutMs: BASIC_PITCH_TIMEOUT_MS });
+      const bpBin = basicPitchBin();
+      try {
+        await runCmd(bpBin, [audioPath, workRoot], { timeoutMs: BASIC_PITCH_TIMEOUT_MS });
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : String(e);
+        console.error("[ai-music score-pdf] basic-pitch", raw);
+        jsonCliFailure(
+          res,
+          "MIDI 전사(basic-pitch) 단계에서 실패했습니다.",
+          raw,
+          `${bpBin} 을(를) 찾을 수 없거나 실행할 수 없습니다. venv 경로와 AI_SCORE_BASIC_PITCH_BIN 을 확인하세요.`,
+        );
+        return;
+      }
 
       const foundMid = await findMidiInDir(workRoot);
       if (!foundMid) {
-        return res.status(500).json({ message: "MIDI 변환 결과를 찾을 수 없습니다. basic-pitch 설치를 확인하세요." });
+        return res.status(500).json({ message: "MIDI 변환 결과를 찾을 수 없습니다. basic-pitch 설치·버전을 확인하세요." });
       }
 
       const { useXvfb, bin: mscoreBin } = museScoreArgsTemplate();
 
-      if (useXvfb) {
-        await runCmd("xvfb-run", ["-a", mscoreBin, foundMid, "-o", pdfPath], {
-          timeoutMs: MUSESCORE_TIMEOUT_MS,
-        });
-      } else {
-        await runCmd(mscoreBin, [foundMid, "-o", pdfPath], { timeoutMs: MUSESCORE_TIMEOUT_MS });
+      try {
+        if (useXvfb) {
+          await runCmd("xvfb-run", ["-a", mscoreBin, foundMid, "-o", pdfPath], {
+            timeoutMs: MUSESCORE_TIMEOUT_MS,
+          });
+        } else {
+          await runCmd(mscoreBin, [foundMid, "-o", pdfPath], { timeoutMs: MUSESCORE_TIMEOUT_MS });
+        }
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : String(e);
+        console.error("[ai-music score-pdf] musescore", raw);
+        const msHint = useXvfb
+          ? "xvfb-run 또는 MuseScore CLI 경로(AI_SCORE_MUSESCORE_BIN)를 확인하세요."
+          : "MuseScore CLI(musescore3 등)와 AI_SCORE_MUSESCORE_BIN 을 확인하세요. 헤드리스면 AI_SCORE_XVFB=1 과 xvfb-run 설치가 필요합니다.";
+        jsonCliFailure(res, "PDF 조판(MuseScore) 단계에서 실패했습니다.", raw, msHint);
+        return;
       }
 
       const pdfBuf = await readFile(pdfPath);
@@ -291,10 +339,13 @@ export function registerAiMusicScorePdfRoutes(app: Express): void {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("[ai-music score-pdf]", msg);
-      return res.status(500).json({
-        message: "악보 PDF 생성 중 오류가 났습니다. 서버에 basic-pitch·MuseScore가 설치되어 있는지 확인하세요.",
-        detail: process.env.NODE_ENV === "development" ? msg.slice(0, 500) : undefined,
-      });
+      const payload: { message: string; detail?: string } = {
+        message: "악보 PDF 처리 중 예기치 않은 오류가 났습니다. pm2 logs 로 전체 스택을 확인하세요.",
+      };
+      if (isVerboseScoreErrors()) {
+        payload.detail = msg.slice(0, 800);
+      }
+      return res.status(500).json(payload);
     } finally {
       try {
         await rm(workRoot, { recursive: true, force: true });

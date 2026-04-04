@@ -790,10 +790,12 @@ export default function CreateMusic() {
         });
         const ct = res.headers.get("content-type") || "";
         if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { message?: string };
+          const data = (await res.json().catch(() => ({}))) as { message?: string; detail?: string };
+          const desc =
+            [data.message, data.detail].filter(Boolean).join(" — ").trim() || `HTTP ${res.status}`;
           toast({
             title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
-            description: data.message || `HTTP ${res.status}`,
+            description: desc.slice(0, 500),
             variant: "destructive",
           });
           return;
