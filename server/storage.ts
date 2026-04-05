@@ -16,8 +16,13 @@ import {
 } from "@shared/schema";
 import { eq, desc, asc, and, or, ilike, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
-import { users, payments } from "@shared/models/auth";
+import { users, payments, aiMusicUsage } from "@shared/models/auth";
 import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
+import {
+  FREE_AI_MUSIC_LIMIT_PER_MONTH,
+  getAiMusicMonthlyUsageLimit,
+  isUserPaidSubscriptionActive,
+} from "@shared/subscription-entitlements";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 
 /**
@@ -381,6 +386,7 @@ export interface IStorage {
       username: string | null;
       firstName: string | null;
       lastName: string | null;
+      role: string | null;
       credits: number | null;
       subscriptionTier: string | null;
       subscriptionExpiresAt: Date | null;
@@ -390,6 +396,13 @@ export interface IStorage {
     creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
     creditTransactions: { total: number; rows: any[] };
     payments: { total: number; rows: any[] };
+    /** 구독 월 AI 한도 vs 충전 지갑(users.credits)은 별개 */
+    aiMusicMonthly: {
+      periodMonth: string;
+      limit: number;
+      used: number;
+      unit: "songs" | "credits" | "unlimited";
+    };
   } | null>;
 
   // Withdrawals
@@ -3180,6 +3193,7 @@ export class DatabaseStorage implements IStorage {
       username: string | null;
       firstName: string | null;
       lastName: string | null;
+      role: string | null;
       credits: number | null;
       subscriptionTier: string | null;
       subscriptionExpiresAt: Date | null;
@@ -3189,6 +3203,12 @@ export class DatabaseStorage implements IStorage {
     creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
     creditTransactions: { total: number; rows: any[] };
     payments: { total: number; rows: any[] };
+    aiMusicMonthly: {
+      periodMonth: string;
+      limit: number;
+      used: number;
+      unit: "songs" | "credits" | "unlimited";
+    };
   } | null> {
     const txLimit = Math.min(200, Math.max(1, Math.floor(Number(input.txLimit) || 50)));
     const txOffset = Math.max(0, Math.floor(Number(input.txOffset) || 0));
@@ -3202,6 +3222,7 @@ export class DatabaseStorage implements IStorage {
         username: users.username,
         firstName: users.firstName,
         lastName: users.lastName,
+        role: users.role,
         credits: users.credits,
         subscriptionTier: users.subscriptionTier,
         subscriptionExpiresAt: users.subscriptionExpiresAt,
@@ -3212,6 +3233,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .limit(1);
     if (!user) return null;
+
+    const now = new Date();
+    const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [usageRow] = await db
+      .select()
+      .from(aiMusicUsage)
+      .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+    const usedAi = usageRow?.count ?? 0;
+    const aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
+    let aiUnit: "songs" | "credits" | "unlimited" = "credits";
+    if (aiLimit === -1) aiUnit = "unlimited";
+    else if (aiLimit === FREE_AI_MUSIC_LIMIT_PER_MONTH && !isUserPaidSubscriptionActive(user, now)) aiUnit = "songs";
+    else aiUnit = "credits";
 
     const [txCountRow] = await db
       .select({ c: sql<number>`count(*)::int` })
@@ -3256,6 +3290,12 @@ export class DatabaseStorage implements IStorage {
       },
       creditTransactions: { total: txTotal, rows: txRows },
       payments: { total: payTotal, rows: payRows },
+      aiMusicMonthly: {
+        periodMonth,
+        limit: aiLimit,
+        used: usedAi,
+        unit: aiUnit,
+      },
     };
   }
 

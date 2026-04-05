@@ -88,6 +88,7 @@ type AdminUserWalletResponse = {
     username: string | null;
     firstName: string | null;
     lastName: string | null;
+    role?: string | null;
     credits: number | null;
     subscriptionTier: string | null;
     subscriptionExpiresAt: string | null;
@@ -95,6 +96,12 @@ type AdminUserWalletResponse = {
     subscriptionEntitlements: unknown;
   };
   creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
+  aiMusicMonthly?: {
+    periodMonth: string;
+    limit: number;
+    used: number;
+    unit: "songs" | "credits" | "unlimited";
+  };
   creditTransactions: { total: number; rows: Array<{ id: number; type: string; amount: number; description: string | null; createdAt: string }> };
   payments: {
     total: number;
@@ -2996,7 +3003,7 @@ export default function Admin() {
                   <th className="text-left p-3 font-medium whitespace-nowrap w-16">{t('admin.role', '권한')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.subscription', '구독')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-24 tabular-nums">
-                    {t("admin.userCreditsBalance", "크레딧 잔액")}
+                    {t("admin.userCreditsBalance", "충전 크레딧")}
                   </th>
                   <th className="text-left p-3 font-medium whitespace-nowrap">{t('admin.manage', '관리')}</th>
                 </tr>
@@ -4636,12 +4643,15 @@ export default function Admin() {
             <div className="space-y-6 text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="rounded-lg border border-border bg-muted/30 p-3">
-                  <div className="text-xs text-muted-foreground">{t("admin.walletCurrentBalance", "현재 잔액")}</div>
+                  <div className="text-xs text-muted-foreground">{t("admin.walletChargedCreditsTitle", "충전 크레딧 잔액")}</div>
                   <div className="text-lg font-semibold tabular-nums text-cyan-700 dark:text-cyan-300">
                     {(walletData.creditSummary.currentBalance ?? walletData.user.credits ?? 0).toLocaleString()}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-1">
-                    {t("admin.walletBalanceHint", "회원 크레딧 잔액(users.credits)과 동일합니다.")}
+                    {t(
+                      "admin.walletBalanceHint",
+                      "별도 충전·크레딧 결제로 쌓인 users.credits 입니다. 구독의 '월 AI 크레딧'과는 다릅니다.",
+                    )}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/30 p-3">
@@ -4681,6 +4691,39 @@ export default function Admin() {
                       ? formatDateTime(walletData.user.subscriptionExpiresAt)
                       : "—"}
                   </div>
+                  {walletData.aiMusicMonthly ? (
+                    <div className="pt-2 border-t border-border/60 mt-2 space-y-1">
+                      <div className="text-xs font-medium text-foreground">
+                        {t("admin.walletAiMonthlyTitle", "이번 달 AI 생성 한도")}{" "}
+                        <span className="font-mono text-muted-foreground">({walletData.aiMusicMonthly.periodMonth})</span>
+                      </div>
+                      <div className="text-sm tabular-nums">
+                        {walletData.aiMusicMonthly.unit === "unlimited" ? (
+                          <span>{t("admin.walletAiUnlimited", "관리자 — 제한 없음")}</span>
+                        ) : walletData.aiMusicMonthly.unit === "songs" ? (
+                          <span>
+                            {t("admin.walletAiSongsUsed", "{{used}} / {{limit}}곡 (Free)", {
+                              used: walletData.aiMusicMonthly.used,
+                              limit: walletData.aiMusicMonthly.limit,
+                            })}
+                          </span>
+                        ) : (
+                          <span>
+                            {t("admin.walletAiCreditsUsed", "{{used}} / {{limit}} 크레딧 (구독 월 한도)", {
+                              used: walletData.aiMusicMonthly.used,
+                              limit: walletData.aiMusicMonthly.limit,
+                            })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        {t(
+                          "admin.walletAiMonthlyHint",
+                          "요금제에 적힌 '○○ 크레딧/월'은 AI 음악 생성 한도로만 사용되며, 위 충전 크레딧 잔액(users.credits)에 더해지지 않습니다.",
+                        )}
+                      </p>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div>

@@ -4386,6 +4386,7 @@ export async function registerRoutes(
       res.json({
         user: { ...detail.user, subscriptionExpiresAt },
         creditSummary: detail.creditSummary,
+        aiMusicMonthly: detail.aiMusicMonthly,
         creditTransactions: {
           total: detail.creditTransactions.total,
           rows: detail.creditTransactions.rows.map((tx: any) => ({
