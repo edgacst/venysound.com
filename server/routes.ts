@@ -4408,6 +4408,51 @@ export async function registerRoutes(
     }
   });
 
+  /** 관리자: 회원 월별 AI 음악 사용량(ai_music_usage.count) 수동 설정 */
+  app.patch("/api/admin/users/:id/ai-music-usage", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const targetId = req.params.id as string;
+      const u = await storage.getUserById(targetId);
+      if (!u) return res.status(404).json({ message: "회원을 찾을 수 없습니다" });
+
+      const body = req.body as { periodMonth?: string; used?: unknown };
+      if (body.used === undefined || body.used === null) {
+        return res.status(400).json({ message: "used 필드가 필요합니다." });
+      }
+      const used = Math.max(0, Math.floor(Number(body.used)));
+      if (!Number.isFinite(used)) {
+        return res.status(400).json({ message: "used는 0 이상 정수여야 합니다." });
+      }
+
+      let periodMonth: string;
+      if (typeof body.periodMonth === "string" && /^\d{4}-\d{2}$/.test(body.periodMonth.trim())) {
+        periodMonth = body.periodMonth.trim();
+      } else {
+        const now = new Date();
+        periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      }
+
+      const [existing] = await db
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, periodMonth)));
+
+      if (existing) {
+        await db
+          .update(aiMusicUsage)
+          .set({ count: used, updatedAt: new Date() })
+          .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, periodMonth)));
+      } else {
+        await db.insert(aiMusicUsage).values({ userId: targetId, periodMonth, count: used });
+      }
+
+      res.json({ success: true, userId: targetId, periodMonth, used });
+    } catch (e: any) {
+      console.error("[admin/users/:id/ai-music-usage]", e);
+      res.status(500).json({ message: e?.message ?? "저장에 실패했습니다." });
+    }
+  });
+
   app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "200"), 10)));

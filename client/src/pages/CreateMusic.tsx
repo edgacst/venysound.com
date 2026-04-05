@@ -1333,11 +1333,11 @@ export default function CreateMusic() {
 
                   {/* 오른쪽: 생성된 곡 목록 (저장됨, 삭제할 때까지 유지) */}
                   <div className="flex flex-col p-5 md:p-7 lg:p-8 lg:min-h-[320px] min-w-0 bg-gradient-to-bl from-fuchsia-950/20 via-card/30 to-background/30">
-                    <div className="mb-4 flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/25">
+                    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/25">
                         <Music className="h-4 w-4" aria-hidden />
                       </span>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
                         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-snug">
                           <span className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/90 shrink-0">
                             {t("createMusic.sectionLibraryLabel", "생성된 곡")}
@@ -1350,10 +1350,24 @@ export default function CreateMusic() {
                           </span>
                         </div>
                       </div>
+                      {scorePdfEnabled ? (
+                        <p
+                          className="min-w-0 w-full sm:w-auto sm:flex-1 text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-snug truncate"
+                          title={t(
+                            "createMusic.sectionLibraryScoreNotice",
+                            "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
+                          )}
+                        >
+                          {t(
+                            "createMusic.sectionLibraryScoreNotice",
+                            "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
+                          )}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="rounded-2xl border-2 border-fuchsia-500/30 bg-background/80 shadow-inner shadow-black/15 p-4 md:p-6 flex-1 flex flex-col min-h-0 ring-1 ring-white/5">
-                    <div className="flex items-center justify-between gap-2 mb-3">
-                      <h2 className="text-lg font-bold">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
+                      <h2 className="text-lg font-bold shrink-0">
                         {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
                       </h2>
                       {savedTracks.length > 0 && (totalUploads > 0 || totalDownloads > 0) && (
@@ -1410,9 +1424,7 @@ export default function CreateMusic() {
                       </p>
                     ) : (
                       <>
-                        <div
-                          className={`flex flex-col gap-4 min-w-0 ${scorePdfEnabled ? "lg:flex-row lg:items-start lg:gap-5" : ""}`}
-                        >
+                        <div className="flex flex-col gap-4 min-w-0">
                           <div className="flex-1 min-w-0 space-y-3 pr-1">
                             {savedTracksPageSlice.map((track, index) => (
                               <TrackCard
@@ -1433,22 +1445,6 @@ export default function CreateMusic() {
                               />
                             ))}
                           </div>
-                          {scorePdfEnabled ? (
-                            <aside
-                              className="shrink-0 lg:sticky lg:top-4 lg:max-w-[15rem] xl:max-w-[17rem] rounded-xl border border-fuchsia-500/20 bg-muted/30 px-3 py-3 text-left"
-                              aria-label={t("createMusic.scoreExportHelpAria", "악보 다운로드 참고 안내")}
-                            >
-                              <p className="text-[10px] font-medium text-fuchsia-200/90 uppercase tracking-wide mb-1.5">
-                                {t("createMusic.scoreExportHelpTitle", "악보 다운로드 참고")}
-                              </p>
-                              <p className="text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-relaxed">
-                                {t(
-                                  "createMusic.sectionLibraryScoreNotice",
-                                  "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
-                                )}
-                              </p>
-                            </aside>
-                          ) : null}
                         </div>
                         {savedTracksTotalPages > 1 && (
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-border/50">

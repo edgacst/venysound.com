@@ -212,6 +212,8 @@ export default function Admin() {
   const [userPageSize, setUserPageSize] = useState(50);
   const [walletModalUser, setWalletModalUser] = useState<{ id: string; label: string } | null>(null);
   const [walletTxPage, setWalletTxPage] = useState(0);
+  const [aiMusicUsageEditPeriod, setAiMusicUsageEditPeriod] = useState("");
+  const [aiMusicUsageEditUsed, setAiMusicUsageEditUsed] = useState("");
   const [adminMainTab, setAdminMainTab] = useState("stats");
   const [revenuePeriod, setRevenuePeriod] = useState<"all" | "month" | "days">("all");
   const [revenueDays, setRevenueDays] = useState(30);
@@ -960,6 +962,32 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true && !!walletModalUser?.id,
     staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (walletData?.aiMusicMonthly) {
+      setAiMusicUsageEditPeriod(walletData.aiMusicMonthly.periodMonth);
+      setAiMusicUsageEditUsed(String(walletData.aiMusicMonthly.used));
+    }
+  }, [walletData?.aiMusicMonthly?.periodMonth, walletData?.aiMusicMonthly?.used]);
+
+  const patchAiMusicUsageMutation = useMutation({
+    mutationFn: async (payload: { userId: string; periodMonth: string; used: number }) => {
+      await apiRequest("PATCH", `/api/admin/users/${encodeURIComponent(payload.userId)}/ai-music-usage`, {
+        periodMonth: payload.periodMonth,
+        used: payload.used,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
+      toast({ title: t("admin.walletAiUsageSaved", "AI 사용량이 저장되었습니다") });
+    },
+    onError: (err: any) => {
+      toast({
+        title: err?.message || t("admin.walletAiUsageSaveFailed", "저장에 실패했습니다"),
+        variant: "destructive",
+      });
+    },
   });
 
   const walletTxTotalPages =
@@ -4722,6 +4750,81 @@ export default function Admin() {
                           "요금제에 적힌 '○○ 크레딧/월'은 AI 음악 생성 한도로만 사용되며, 위 충전 크레딧 잔액(users.credits)에 더해지지 않습니다.",
                         )}
                       </p>
+                      <div className="pt-3 border-t border-border/40 mt-2 space-y-2">
+                        <div className="text-xs font-medium text-foreground">
+                          {t("admin.walletAiUsageAdjust", "이번 달 사용량 수동 조정")}
+                        </div>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div className="space-y-1">
+                            <Label htmlFor="admin-ai-usage-month" className="text-[11px] text-muted-foreground">
+                              {t("admin.walletAiUsagePeriod", "월 (YYYY-MM)")}
+                            </Label>
+                            <Input
+                              id="admin-ai-usage-month"
+                              className="h-8 w-[7.5rem] font-mono text-xs"
+                              value={aiMusicUsageEditPeriod}
+                              onChange={(e) => setAiMusicUsageEditPeriod(e.target.value)}
+                              placeholder="2026-04"
+                              autoComplete="off"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label htmlFor="admin-ai-usage-used" className="text-[11px] text-muted-foreground">
+                              {t("admin.walletAiUsageUsedLabel", "사용량(count)")}
+                            </Label>
+                            <Input
+                              id="admin-ai-usage-used"
+                              type="number"
+                              min={0}
+                              className="h-8 w-[6rem] tabular-nums text-xs"
+                              value={aiMusicUsageEditUsed}
+                              onChange={(e) => setAiMusicUsageEditUsed(e.target.value)}
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8"
+                            disabled={!walletModalUser || patchAiMusicUsageMutation.isPending}
+                            onClick={() => {
+                              if (!walletModalUser) return;
+                              const pm = aiMusicUsageEditPeriod.trim();
+                              if (!/^\d{4}-\d{2}$/.test(pm)) {
+                                toast({
+                                  title: t("admin.walletAiUsageInvalidMonth", "월 형식은 YYYY-MM 이어야 합니다."),
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              const n = Math.max(0, Math.floor(Number(aiMusicUsageEditUsed)));
+                              if (!Number.isFinite(n)) {
+                                toast({
+                                  title: t("admin.walletAiUsageInvalidUsed", "사용량은 0 이상 숫자여야 합니다."),
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              patchAiMusicUsageMutation.mutate({
+                                userId: walletModalUser.id,
+                                periodMonth: pm,
+                                used: n,
+                              });
+                            }}
+                          >
+                            {patchAiMusicUsageMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              t("admin.walletAiUsageSave", "저장")
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground leading-snug">
+                          {t(
+                            "admin.walletAiUsageAdjustHint",
+                            "해당 월의 ai_music_usage.count만 바꿉니다. Free는 곡 수, 유료 플랜은 월 AI 크레딧 소모량과 동일한 카운터입니다.",
+                          )}
+                        </p>
+                      </div>
                     </div>
                   ) : null}
                 </div>
