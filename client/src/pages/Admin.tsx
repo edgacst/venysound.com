@@ -119,6 +119,27 @@ function adminPaymentKindLabel(plan: string | null | undefined): string {
   return plan;
 }
 
+/** 관리자 회원 목록·지갑 모달 — 유료면 실제 플랜명 표시 (basic 을 Premium 으로 착각시키지 않음) */
+function adminSubscriptionTierDisplayLabel(
+  tier: string | null | undefined,
+  t: (key: string, defaultValue: string) => string,
+): string {
+  const id = (tier ?? "").trim().toLowerCase();
+  if (!id || id === "free") return t("admin.subscriptionFree", "Free");
+  switch (id) {
+    case "starter":
+      return t("admin.subTierStarter", "스타터");
+    case "basic":
+      return t("admin.subTierBasic", "베이직");
+    case "pro":
+      return t("admin.subTierPro", "Pro");
+    case "premium":
+      return t("admin.subTierPremium", "프리미엄");
+    default:
+      return tier ?? id;
+  }
+}
+
 function formatAnalyticsDeviceType(deviceType: string | null | undefined, t: (key: string, defaultValue: string) => string): string {
   const d = deviceType?.trim() ?? "";
   if (!d) return "—";
@@ -2977,7 +2998,7 @@ export default function Admin() {
                   adminUsers.map((u: any) => {
                     const isSelf = u.id === user?.id;
                     const isUserAdmin = u.role === "admin";
-                    const isPremium = isPaidSubscriptionTierId(u.subscriptionTier);
+                    const hasPaidSubscription = isPaidSubscriptionTierId(u.subscriptionTier);
                     const loginLabel = u.username || u.firstName || u.id;
                     const subName =
                       u.username && u.firstName && String(u.firstName) !== String(u.username) ? u.firstName : null;
@@ -3016,14 +3037,35 @@ export default function Admin() {
                           )}
                         </td>
                         <td className="p-3 align-middle">
-                          {isPremium ? (
-                            <Badge variant="default" className="bg-purple-600 text-white no-default-hover-elevate no-default-active-elevate" data-testid={`badge-sub-${u.id}`}>Premium</Badge>
+                          {hasPaidSubscription ? (
+                            <Badge
+                              variant="default"
+                              className="bg-purple-600 text-white no-default-hover-elevate no-default-active-elevate"
+                              data-testid={`badge-sub-${u.id}`}
+                            >
+                              {adminSubscriptionTierDisplayLabel(u.subscriptionTier, t)}
+                            </Badge>
                           ) : (
-                            <Badge variant="secondary" data-testid={`badge-sub-${u.id}`}>Free</Badge>
+                            <Badge variant="secondary" data-testid={`badge-sub-${u.id}`}>
+                              {t("admin.subscriptionFree", "Free")}
+                            </Badge>
                           )}
                         </td>
-                        <td className="p-3 align-middle tabular-nums text-sm" title={t("admin.userCreditsBalance", "크레딧 잔액")}>
-                          {(u.credits ?? 0).toLocaleString()}
+                        <td className="p-3 align-middle tabular-nums text-sm">
+                          <button
+                            type="button"
+                            className="text-left font-medium text-cyan-700 dark:text-cyan-300 hover:underline underline-offset-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            title={t("admin.userWalletOpen", "잔액·내역")}
+                            onClick={() =>
+                              setWalletModalUser({
+                                id: u.id,
+                                label: String(u.username || u.firstName || u.email || u.id),
+                              })
+                            }
+                            data-testid={`button-wallet-balance-${u.id}`}
+                          >
+                            {(u.credits ?? 0).toLocaleString()}
+                          </button>
                         </td>
                         <td className="p-3 align-middle">
                           {isSelf ? (
@@ -3080,20 +3122,27 @@ export default function Admin() {
                                   <ShieldCheck size={14} className="mr-1" /> {t('admin.promoteAdmin', '관리자승격')}
                                 </Button>
                               )}
-                              {isPremium ? (
+                              {hasPaidSubscription ? (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   className="text-orange-400 border-orange-400/30"
                                   onClick={() => {
-                                    if (confirm(t('admin.confirmDowngrade', `"${u.firstName || u.id}" 회원의 프리미엄을 해제하시겠습니까?`))) {
+                                    if (
+                                      confirm(
+                                        t(
+                                          "admin.confirmDowngradePaid",
+                                          `"${u.firstName || u.id}" 회원의 유료 구독을 해제하시겠습니까?`,
+                                        ),
+                                      )
+                                    ) {
                                       updateSubscriptionMutation.mutate({ userId: u.id, tier: "free" });
                                     }
                                   }}
                                   disabled={updateSubscriptionMutation.isPending}
                                   data-testid={`button-downgrade-user-${u.id}`}
                                 >
-                                  {t('admin.downgradePremium', '프리미엄해제')}
+                                  {t("admin.downgradePaidSub", "유료구독해제")}
                                 </Button>
                               ) : (
                                 <Button
@@ -4037,218 +4086,6 @@ export default function Admin() {
             </div>
           )}
         </Card>
-        <Dialog
-          open={walletModalUser != null}
-          onOpenChange={(open) => {
-            if (!open) {
-              setWalletModalUser(null);
-              setWalletTxPage(0);
-            }
-          }}
-        >
-          <DialogContent className="max-w-4xl max-h-[min(90vh,900px)] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Wallet className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-                {t("admin.userWalletModalTitle", "크레딧·결제 내역")}
-              </DialogTitle>
-              <DialogDescription className="text-left font-mono text-xs sm:text-sm">
-                {walletModalUser ? (
-                  <>
-                    <span className="text-foreground/90">{walletModalUser.label}</span>
-                    <span className="text-muted-foreground"> · id: {walletModalUser.id}</span>
-                  </>
-                ) : null}
-              </DialogDescription>
-            </DialogHeader>
-            {walletLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </div>
-            ) : walletError ? (
-              <p className="text-sm text-destructive py-6">
-                {(walletErr as Error)?.message || t("admin.userWalletLoadError", "내역을 불러오지 못했습니다.")}
-              </p>
-            ) : walletData ? (
-              <div className="space-y-6 text-sm">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <div className="text-xs text-muted-foreground">{t("admin.walletCurrentBalance", "현재 잔액")}</div>
-                    <div className="text-lg font-semibold tabular-nums text-cyan-700 dark:text-cyan-300">
-                      {(walletData.creditSummary.currentBalance ?? walletData.user.credits ?? 0).toLocaleString()}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground mt-1">
-                      {t("admin.walletBalanceHint", "회원 크레딧 잔액(users.credits)과 동일합니다.")}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <div className="text-xs text-muted-foreground">{t("admin.walletCreditsIn", "충전 합계")}</div>
-                    <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      +{walletData.creditSummary.totalCreditsIn.toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border bg-muted/30 p-3">
-                    <div className="text-xs text-muted-foreground">{t("admin.walletCreditsOut", "사용 합계")}</div>
-                    <div className="text-lg font-semibold tabular-nums text-rose-600 dark:text-rose-400">
-                      −{walletData.creditSummary.totalCreditsOut.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border p-3 space-y-1">
-                  <div className="font-medium">{t("admin.walletSubscriptionBlock", "구독 상태")}</div>
-                  <div className="text-muted-foreground space-y-0.5">
-                    <div>
-                      {t("admin.walletTier", "티어")}:{" "}
-                      {isPaidSubscriptionTierId(walletData.user.subscriptionTier) ? (
-                        <Badge className="ml-1 bg-purple-600">Premium</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="ml-1">
-                          Free
-                        </Badge>
-                      )}
-                      {walletData.user.subscriptionPlan ? (
-                        <span className="ml-2 font-mono text-xs">{walletData.user.subscriptionPlan}</span>
-                      ) : null}
-                    </div>
-                    <div>
-                      {t("admin.walletExpires", "만료일")}:{" "}
-                      {walletData.user.subscriptionExpiresAt
-                        ? formatDateTime(walletData.user.subscriptionExpiresAt)
-                        : "—"}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <Banknote className="w-4 h-4" />
-                    {t("admin.walletPaymentsTitle", "결제 내역")}{" "}
-                    <span className="text-muted-foreground font-normal text-xs">
-                      ({t("admin.walletPaidOnly", "완료된 결제만")} · {walletData.payments.total.toLocaleString()}
-                      {t("admin.walletCountSuffix", "건")})
-                    </span>
-                  </h3>
-                  <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full text-xs min-w-[520px]">
-                      <thead>
-                        <tr className="border-b bg-muted/40 text-left">
-                          <th className="p-2 font-medium">{t("admin.walletPayKind", "유형")}</th>
-                          <th className="p-2 font-medium tabular-nums">{t("admin.walletAmountWon", "금액(원)")}</th>
-                          <th className="p-2 font-medium">{t("admin.walletBillingPeriod", "청구")}</th>
-                          <th className="p-2 font-medium">{t("admin.walletWhen", "일시")}</th>
-                          <th className="p-2 font-medium font-mono">{t("admin.walletOrderId", "주문번호")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {walletData.payments.rows.length === 0 ? (
-                          <tr>
-                            <td colSpan={5} className="p-4 text-center text-muted-foreground">
-                              {t("admin.walletNoPayments", "결제 내역이 없습니다.")}
-                            </td>
-                          </tr>
-                        ) : (
-                          walletData.payments.rows.map((p) => (
-                            <tr key={p.id} className="border-b border-border/60">
-                              <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
-                              <td className="p-2 tabular-nums">{p.amount.toLocaleString()}</td>
-                              <td className="p-2 text-muted-foreground">{p.billingPeriod || "—"}</td>
-                              <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(p.createdAt)}</td>
-                              <td className="p-2 font-mono text-[11px] break-all max-w-[140px]" title={p.orderId}>
-                                {p.orderId}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-2 flex items-center gap-2">
-                    <Coins className="w-4 h-4" />
-                    {t("admin.walletCreditTxTitle", "크레딧 거래")}{" "}
-                    <span className="text-muted-foreground font-normal text-xs">
-                      ({walletData.creditTransactions.total.toLocaleString()}
-                      {t("admin.walletCountSuffix", "건")})
-                    </span>
-                  </h3>
-                  <div className="overflow-x-auto rounded-md border border-border">
-                    <table className="w-full text-xs min-w-[480px]">
-                      <thead>
-                        <tr className="border-b bg-muted/40 text-left">
-                          <th className="p-2 font-medium">{t("admin.walletTxType", "유형")}</th>
-                          <th className="p-2 font-medium tabular-nums">{t("admin.walletTxAmount", "변동")}</th>
-                          <th className="p-2 font-medium">{t("admin.walletTxDesc", "설명")}</th>
-                          <th className="p-2 font-medium">{t("admin.walletWhen", "일시")}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {walletData.creditTransactions.rows.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="p-4 text-center text-muted-foreground">
-                              {t("admin.walletNoCreditTx", "크레딧 거래 내역이 없습니다.")}
-                            </td>
-                          </tr>
-                        ) : (
-                          walletData.creditTransactions.rows.map((tx) => (
-                            <tr key={tx.id} className="border-b border-border/60">
-                              <td className="p-2 font-mono whitespace-nowrap">{tx.type}</td>
-                              <td
-                                className={`p-2 tabular-nums font-medium ${
-                                  tx.amount > 0
-                                    ? "text-emerald-600 dark:text-emerald-400"
-                                    : tx.amount < 0
-                                      ? "text-rose-600 dark:text-rose-400"
-                                      : ""
-                                }`}
-                              >
-                                {tx.amount > 0 ? "+" : ""}
-                                {tx.amount.toLocaleString()}
-                              </td>
-                              <td className="p-2 text-muted-foreground break-words max-w-[220px]">
-                                {tx.description || "—"}
-                              </td>
-                              <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(tx.createdAt)}</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                  {walletData.creditTransactions.total > WALLET_TX_PAGE_SIZE ? (
-                    <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {t("admin.walletTxPageStatus", "페이지 {{current}} / {{total}}", {
-                          current: walletTxPage + 1,
-                          total: walletTxTotalPages,
-                        })}
-                      </span>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={walletTxPage <= 0}
-                          onClick={() => setWalletTxPage((p) => Math.max(0, p - 1))}
-                        >
-                          {t("admin.walletTxPrev", "이전")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={walletTxPage >= walletTxTotalPages - 1}
-                          onClick={() => setWalletTxPage((p) => p + 1)}
-                        >
-                          {t("admin.walletTxNext", "다음")}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
         <Dialog open={curatedTracksDialogId != null} onOpenChange={(open) => !open && setCuratedTracksDialogId(null)}>
           <DialogContent>
             <DialogHeader>
@@ -4743,6 +4580,220 @@ export default function Admin() {
             </TabsContent>
           </Tabs>
       </div>
+      <Dialog
+        open={walletModalUser != null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setWalletModalUser(null);
+            setWalletTxPage(0);
+          }
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[min(90vh,900px)] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wallet className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              {t("admin.userWalletModalTitle", "크레딧·결제 내역")}
+            </DialogTitle>
+            <DialogDescription className="text-left font-mono text-xs sm:text-sm">
+              {walletModalUser ? (
+                <>
+                  <span className="text-foreground/90">{walletModalUser.label}</span>
+                  <span className="text-muted-foreground"> · id: {walletModalUser.id}</span>
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {walletLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : walletError ? (
+            <p className="text-sm text-destructive py-6">
+              {(walletErr as Error)?.message || t("admin.userWalletLoadError", "내역을 불러오지 못했습니다.")}
+            </p>
+          ) : walletData ? (
+            <div className="space-y-6 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="text-xs text-muted-foreground">{t("admin.walletCurrentBalance", "현재 잔액")}</div>
+                  <div className="text-lg font-semibold tabular-nums text-cyan-700 dark:text-cyan-300">
+                    {(walletData.creditSummary.currentBalance ?? walletData.user.credits ?? 0).toLocaleString()}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-1">
+                    {t("admin.walletBalanceHint", "회원 크레딧 잔액(users.credits)과 동일합니다.")}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="text-xs text-muted-foreground">{t("admin.walletCreditsIn", "충전 합계")}</div>
+                  <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    +{walletData.creditSummary.totalCreditsIn.toLocaleString()}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/30 p-3">
+                  <div className="text-xs text-muted-foreground">{t("admin.walletCreditsOut", "사용 합계")}</div>
+                  <div className="text-lg font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+                    −{walletData.creditSummary.totalCreditsOut.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <div className="font-medium">{t("admin.walletSubscriptionBlock", "구독 상태")}</div>
+                <div className="text-muted-foreground space-y-0.5">
+                  <div>
+                    {t("admin.walletTier", "티어")}:{" "}
+                    {isPaidSubscriptionTierId(walletData.user.subscriptionTier) ? (
+                      <Badge className="ml-1 bg-purple-600">
+                        {adminSubscriptionTierDisplayLabel(walletData.user.subscriptionTier, t)}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="ml-1">
+                        {t("admin.subscriptionFree", "Free")}
+                      </Badge>
+                    )}
+                    {walletData.user.subscriptionPlan ? (
+                      <span className="ml-2 font-mono text-xs">{walletData.user.subscriptionPlan}</span>
+                    ) : null}
+                  </div>
+                  <div>
+                    {t("admin.walletExpires", "만료일")}:{" "}
+                    {walletData.user.subscriptionExpiresAt
+                      ? formatDateTime(walletData.user.subscriptionExpiresAt)
+                      : "—"}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 flex items-center gap-2">
+                  <Banknote className="w-4 h-4" />
+                  {t("admin.walletPaymentsTitle", "결제 내역")}{" "}
+                  <span className="text-muted-foreground font-normal text-xs">
+                    ({t("admin.walletPaidOnly", "완료된 결제만")} · {walletData.payments.total.toLocaleString()}
+                    {t("admin.walletCountSuffix", "건")})
+                  </span>
+                </h3>
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs min-w-[520px]">
+                    <thead>
+                      <tr className="border-b bg-muted/40 text-left">
+                        <th className="p-2 font-medium">{t("admin.walletPayKind", "유형")}</th>
+                        <th className="p-2 font-medium tabular-nums">{t("admin.walletAmountWon", "금액(원)")}</th>
+                        <th className="p-2 font-medium">{t("admin.walletBillingPeriod", "청구")}</th>
+                        <th className="p-2 font-medium">{t("admin.walletWhen", "일시")}</th>
+                        <th className="p-2 font-medium font-mono">{t("admin.walletOrderId", "주문번호")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {walletData.payments.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                            {t("admin.walletNoPayments", "결제 내역이 없습니다.")}
+                          </td>
+                        </tr>
+                      ) : (
+                        walletData.payments.rows.map((p) => (
+                          <tr key={p.id} className="border-b border-border/60">
+                            <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
+                            <td className="p-2 tabular-nums">{p.amount.toLocaleString()}</td>
+                            <td className="p-2 text-muted-foreground">{p.billingPeriod || "—"}</td>
+                            <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(p.createdAt)}</td>
+                            <td className="p-2 font-mono text-[11px] break-all max-w-[140px]" title={p.orderId}>
+                              {p.orderId}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 flex items-center gap-2">
+                  <Coins className="w-4 h-4" />
+                  {t("admin.walletCreditTxTitle", "크레딧 거래")}{" "}
+                  <span className="text-muted-foreground font-normal text-xs">
+                    ({walletData.creditTransactions.total.toLocaleString()}
+                    {t("admin.walletCountSuffix", "건")})
+                  </span>
+                </h3>
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs min-w-[480px]">
+                    <thead>
+                      <tr className="border-b bg-muted/40 text-left">
+                        <th className="p-2 font-medium">{t("admin.walletTxType", "유형")}</th>
+                        <th className="p-2 font-medium tabular-nums">{t("admin.walletTxAmount", "변동")}</th>
+                        <th className="p-2 font-medium">{t("admin.walletTxDesc", "설명")}</th>
+                        <th className="p-2 font-medium">{t("admin.walletWhen", "일시")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {walletData.creditTransactions.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="p-4 text-center text-muted-foreground">
+                            {t("admin.walletNoCreditTx", "크레딧 거래 내역이 없습니다.")}
+                          </td>
+                        </tr>
+                      ) : (
+                        walletData.creditTransactions.rows.map((tx) => (
+                          <tr key={tx.id} className="border-b border-border/60">
+                            <td className="p-2 font-mono whitespace-nowrap">{tx.type}</td>
+                            <td
+                              className={`p-2 tabular-nums font-medium ${
+                                tx.amount > 0
+                                  ? "text-emerald-600 dark:text-emerald-400"
+                                  : tx.amount < 0
+                                    ? "text-rose-600 dark:text-rose-400"
+                                    : ""
+                              }`}
+                            >
+                              {tx.amount > 0 ? "+" : ""}
+                              {tx.amount.toLocaleString()}
+                            </td>
+                            <td className="p-2 text-muted-foreground break-words max-w-[220px]">
+                              {tx.description || "—"}
+                            </td>
+                            <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(tx.createdAt)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {walletData.creditTransactions.total > WALLET_TX_PAGE_SIZE ? (
+                  <div className="flex items-center justify-between gap-2 mt-3 flex-wrap">
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {t("admin.walletTxPageStatus", "페이지 {{current}} / {{total}}", {
+                        current: walletTxPage + 1,
+                        total: walletTxTotalPages,
+                      })}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={walletTxPage <= 0}
+                        onClick={() => setWalletTxPage((p) => Math.max(0, p - 1))}
+                      >
+                        {t("admin.walletTxPrev", "이전")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={walletTxPage >= walletTxTotalPages - 1}
+                        onClick={() => setWalletTxPage((p) => p + 1)}
+                      >
+                        {t("admin.walletTxNext", "다음")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={creditRefundRejectId !== null}
         onOpenChange={(open) => {
