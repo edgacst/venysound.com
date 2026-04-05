@@ -22,6 +22,7 @@ import {
   verifyAccountEmailBind,
 } from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
+import { recordSignupSuccessAfterNewOauth } from "../oauthSignupAnalytics";
 
 /** .env 값 앞의 UTF-8 BOM·앞뒤 공백 제거 (redirect_uri 한 글자 불일치 방지) */
 function cleanEnvValue(s: string): string {
@@ -182,8 +183,9 @@ export async function setupAuth(app: Express) {
           clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
           callbackURL: googleCallback,
           proxy: true,
+          passReqToCallback: true,
         },
-        async (accessToken, refreshToken, profile, done) => {
+        async (req, accessToken, refreshToken, profile, done) => {
           try {
             const email = profile.emails?.[0]?.value || null;
             const firstName = profile.name?.givenName || profile.displayName?.split(" ")[0] || "";
@@ -196,6 +198,9 @@ export async function setupAuth(app: Express) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
+            }
+            if (!existing && user.id === id) {
+              recordSignupSuccessAfterNewOauth(req, "google");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
@@ -216,8 +221,9 @@ export async function setupAuth(app: Express) {
           clientID: process.env.NAVER_CLIENT_ID!,
           clientSecret: process.env.NAVER_CLIENT_SECRET!,
           callbackURL: naverCallback,
+          passReqToCallback: true,
         },
-        async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+        async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
           try {
             const email = profile.email || null;
             const firstName = profile.name || profile.nickname || "";
@@ -229,6 +235,9 @@ export async function setupAuth(app: Express) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
+            }
+            if (!existing && user.id === id) {
+              recordSignupSuccessAfterNewOauth(req, "naver");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
@@ -249,8 +258,9 @@ export async function setupAuth(app: Express) {
           clientID: process.env.KAKAO_CLIENT_ID!,
           clientSecret: process.env.KAKAO_CLIENT_SECRET!,
           callbackURL: kakaoCallback,
+          passReqToCallback: true,
         },
-        async (accessToken: string, refreshToken: string, profile: any, done: any) => {
+        async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
           try {
             const kakaoAccount = profile._json?.kakao_account || {};
             const kakaoProfile = kakaoAccount.profile || {};
@@ -264,6 +274,9 @@ export async function setupAuth(app: Express) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
+            }
+            if (!existing && user.id === id) {
+              recordSignupSuccessAfterNewOauth(req, "kakao");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
@@ -285,8 +298,9 @@ export async function setupAuth(app: Express) {
           clientSecret: process.env.FACEBOOK_APP_SECRET!,
           callbackURL: facebookCallback,
           profileFields: ["id", "displayName", "name", "emails", "photos"],
+          passReqToCallback: true,
         },
-        async (accessToken: string, _refreshToken: string, profile: any, done: any) => {
+        async (req: Request, accessToken: string, _refreshToken: string, profile: any, done: any) => {
           try {
             const email = profile.emails?.[0]?.value || null;
             const firstName = profile.name?.givenName || profile.displayName?.split(" ")[0] || "";
@@ -299,6 +313,9 @@ export async function setupAuth(app: Express) {
               sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
+            }
+            if (!existing && user.id === id) {
+              recordSignupSuccessAfterNewOauth(req, "facebook");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken));
           } catch (error) {
@@ -569,6 +586,7 @@ export async function setupAuth(app: Express) {
         const displayName = userInfo?.display_name ?? openId;
         const avatarUrl = userInfo?.avatar_url ?? "";
         const id = `tiktok_${openId}`;
+        const existingTiktok = await authStorage.getUser(id);
         const user = await authStorage.upsertUser({
           id,
           email: null,
@@ -577,6 +595,9 @@ export async function setupAuth(app: Express) {
           profileImageUrl: avatarUrl,
           registerSource: "tiktok",
         });
+        if (!existingTiktok && user.id === id) {
+          recordSignupSuccessAfterNewOauth(req, "tiktok");
+        }
         const sessionUser = buildUserSession(
           user.id,
           user.email ?? null,
