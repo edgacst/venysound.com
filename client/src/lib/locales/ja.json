@@ -1459,7 +1459,6 @@
     "scorePdfTitle": "閲覧・印刷用PDF（自動転写ドラフト）",
     "scoreMusicxmlTitle": "MuseScoreなどで開いて編集できます",
     "scoreZipTitle": "PDFとMusicXMLをZIPでまとめて取得",
-    "scoreExportHelp": "この曲の音源を自動で譜面にした参考用ドラフトです。PDFは閲覧・印刷、MusicXMLは打譜アプリで修正、PDF+XMLは両方をまとめてダウンロードできます。実際の演奏と一致しない場合があります。サーバー処理に1〜3分かかることがあります。",
     "scoreExportHint": "自動転写ドラフト — PDF・MusicXML（編集用）・ZIP",
     "scoreExportStarting": "楽譜ファイルを生成中…",
     "scorePdfWait": "サーバーで転写・組版するため1〜3分かかることがあります。",

@@ -1672,7 +1672,6 @@
     "scorePdfTitle": "PDF for viewing or printing (auto-transcribed draft)",
     "scoreMusicxmlTitle": "Open in MuseScore or similar apps to edit",
     "scoreZipTitle": "ZIP with both PDF and MusicXML",
-    "scoreExportHelp": "Draft sheet music made by automatically transcribing this track. PDF: read or print. MusicXML: edit in notation software. PDF+XML: both files in one download. It may not match the recording. Export can take 1–3 minutes on the server.",
     "scoreExportHint": "Auto-transcribed draft — PDF, MusicXML (for editing), or ZIP (server: basic-pitch & MuseScore; optional Demucs/quantize)",
     "scorePdfHint": "Auto-transcribed reference PDF (requires basic-pitch and MuseScore on the server)",
     "scorePdfStarting": "Generating score PDF…",

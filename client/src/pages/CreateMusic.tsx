@@ -239,12 +239,6 @@ function TrackCard({
                           {t("createMusic.scoreZip", "PDF+XML")}
                         </button>
                       </span>
-                      <p className="text-[10px] sm:text-[11px] text-muted-foreground leading-relaxed max-w-xl">
-                        {t(
-                          "createMusic.scoreExportHelp",
-                          "이 곡 소리를 자동으로 옮긴 참고용 악보입니다. PDF는 그대로 보기·인쇄, MusicXML은 악보 앱에서 고치기 좋고, PDF+XML은 두 파일을 묶어 받습니다. 원곡·실제 연주와 다를 수 있어요. (서버에서 1~3분 걸릴 수 있음)",
-                        )}
-                      </p>
                     </span>
                   )}
                   <button
@@ -1354,15 +1348,6 @@ export default function CreateMusic() {
                           <span className="text-muted-foreground shrink-0">
                             {t("createMusic.sectionLibraryHint", "재생·다운로드·업로드·공개")}
                           </span>
-                          <span className="text-muted-foreground/70 shrink-0 select-none" aria-hidden>
-                            ·
-                          </span>
-                          <span className="text-[10px] sm:text-[11px] text-red-600 dark:text-red-400 font-medium min-w-0">
-                            {t(
-                              "createMusic.sectionLibraryScoreNotice",
-                              "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
-                            )}
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -1425,25 +1410,45 @@ export default function CreateMusic() {
                       </p>
                     ) : (
                       <>
-                        <div className="space-y-3 pr-1">
-                          {savedTracksPageSlice.map((track, index) => (
-                            <TrackCard
-                              key={track.id}
-                              track={track}
-                              order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
-                              onRemove={() => removeSavedTrack(track.id)}
-                              onUpload={() => goUploadWithTrack(track)}
-                              onDownload={() => handleDownloadTrack(track)}
-                              onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
-                              scoreExportLoading={scorePdfTrackId === track.id}
-                              scorePdfEnabled={scorePdfEnabled}
-                              onPlay={() => playTrackInGlobalPlayer(track)}
-                              onPublish={() => setPublishConfirmTrack(track)}
-                              isPublishing={publishingId === track.id}
-                              isPublished={!!track.publishedToSite}
-                              t={t as TTranslate}
-                            />
-                          ))}
+                        <div
+                          className={`flex flex-col gap-4 min-w-0 ${scorePdfEnabled ? "lg:flex-row lg:items-start lg:gap-5" : ""}`}
+                        >
+                          <div className="flex-1 min-w-0 space-y-3 pr-1">
+                            {savedTracksPageSlice.map((track, index) => (
+                              <TrackCard
+                                key={track.id}
+                                track={track}
+                                order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
+                                onRemove={() => removeSavedTrack(track.id)}
+                                onUpload={() => goUploadWithTrack(track)}
+                                onDownload={() => handleDownloadTrack(track)}
+                                onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
+                                scoreExportLoading={scorePdfTrackId === track.id}
+                                scorePdfEnabled={scorePdfEnabled}
+                                onPlay={() => playTrackInGlobalPlayer(track)}
+                                onPublish={() => setPublishConfirmTrack(track)}
+                                isPublishing={publishingId === track.id}
+                                isPublished={!!track.publishedToSite}
+                                t={t as TTranslate}
+                              />
+                            ))}
+                          </div>
+                          {scorePdfEnabled ? (
+                            <aside
+                              className="shrink-0 lg:sticky lg:top-4 lg:max-w-[15rem] xl:max-w-[17rem] rounded-xl border border-fuchsia-500/20 bg-muted/30 px-3 py-3 text-left"
+                              aria-label={t("createMusic.scoreExportHelpAria", "악보 다운로드 참고 안내")}
+                            >
+                              <p className="text-[10px] font-medium text-fuchsia-200/90 uppercase tracking-wide mb-1.5">
+                                {t("createMusic.scoreExportHelpTitle", "악보 다운로드 참고")}
+                              </p>
+                              <p className="text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-relaxed">
+                                {t(
+                                  "createMusic.sectionLibraryScoreNotice",
+                                  "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
+                                )}
+                              </p>
+                            </aside>
+                          ) : null}
                         </div>
                         {savedTracksTotalPages > 1 && (
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-border/50">

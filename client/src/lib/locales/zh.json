@@ -1457,7 +1457,6 @@
     "scorePdfTitle": "用于查看或打印的 PDF（自动转谱草稿）",
     "scoreMusicxmlTitle": "可在 MuseScore 等软件中打开编辑",
     "scoreZipTitle": "将 PDF 与 MusicXML 打包为 ZIP 下载",
-    "scoreExportHelp": "由本曲音频自动转写的参考用乐谱草稿。PDF 适合阅读与打印，MusicXML 适合在打谱软件中修改，PDF+XML 可一次下载两种文件。可能与录音或实际演奏不一致。服务器导出可能需要 1–3 分钟。",
     "scoreExportHint": "自动转谱草稿 — PDF、MusicXML（可编辑）、ZIP",
     "scoreExportStarting": "正在生成乐谱文件…",
     "scorePdfWait": "服务器转谱与排版可能需要 1–3 分钟。",
