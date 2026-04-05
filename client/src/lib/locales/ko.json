@@ -1600,6 +1600,7 @@
     "sectionCreateHint": "프롬프트를 입력하고 생성을 누르세요",
     "sectionLibraryLabel": "곡 보관함",
     "sectionLibraryHint": "재생·다운로드·업로드·공개",
+    "sectionLibraryScoreNotice": "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
     "modeLabel": "생성 방식",
     "modeDescription": "설명으로 생성",
     "modeCustom": "가사 직접 입력",

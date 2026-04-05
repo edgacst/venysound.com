@@ -1308,11 +1308,27 @@ export default function CreateMusic() {
                       <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/25">
                         <Music className="h-4 w-4" aria-hidden />
                       </span>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/90">
-                          {t("createMusic.sectionLibraryLabel", "생성된 곡")}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">{t("createMusic.sectionLibraryHint", "재생·다운로드·업로드·공개")}</p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-snug">
+                          <span className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/90 shrink-0">
+                            {t("createMusic.sectionLibraryLabel", "생성된 곡")}
+                          </span>
+                          <span className="text-muted-foreground/70 shrink-0 select-none" aria-hidden>
+                            ·
+                          </span>
+                          <span className="text-muted-foreground shrink-0">
+                            {t("createMusic.sectionLibraryHint", "재생·다운로드·업로드·공개")}
+                          </span>
+                          <span className="text-muted-foreground/70 shrink-0 select-none" aria-hidden>
+                            ·
+                          </span>
+                          <span className="text-[10px] sm:text-[11px] text-red-600 dark:text-red-400 font-medium min-w-0">
+                            {t(
+                              "createMusic.sectionLibraryScoreNotice",
+                              "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
+                            )}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="rounded-2xl border-2 border-fuchsia-500/30 bg-background/80 shadow-inner shadow-black/15 p-4 md:p-6 flex-1 flex flex-col min-h-0 ring-1 ring-white/5">
