@@ -4319,6 +4319,46 @@ export async function registerRoutes(
     }
   });
 
+  /** 관리자: 회원 지갑 잔액·크레딧 거래·결제(구독·크레딧 충전) 내역 */
+  app.get("/api/admin/users/:id/wallet", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const targetId = req.params.id as string;
+      const txLimit = Math.min(200, Math.max(1, parseInt(String(req.query.txLimit ?? "50"), 10) || 50));
+      const txOffset = Math.max(0, parseInt(String(req.query.txOffset ?? "0"), 10) || 0);
+      const payLimit = Math.min(200, Math.max(1, parseInt(String(req.query.payLimit ?? "50"), 10) || 50));
+      const payOffset = Math.max(0, parseInt(String(req.query.payOffset ?? "0"), 10) || 0);
+      const detail = await storage.getAdminUserWalletDetail(targetId, { txLimit, txOffset, payLimit, payOffset });
+      if (!detail) return res.status(404).json({ message: "회원을 찾을 수 없습니다" });
+      const subscriptionExpiresAt =
+        detail.user.subscriptionExpiresAt instanceof Date
+          ? detail.user.subscriptionExpiresAt.toISOString()
+          : detail.user.subscriptionExpiresAt
+            ? String(detail.user.subscriptionExpiresAt)
+            : null;
+      res.json({
+        user: { ...detail.user, subscriptionExpiresAt },
+        creditSummary: detail.creditSummary,
+        creditTransactions: {
+          total: detail.creditTransactions.total,
+          rows: detail.creditTransactions.rows.map((tx: any) => ({
+            ...tx,
+            createdAt: tx.createdAt instanceof Date ? tx.createdAt.toISOString() : tx.createdAt,
+          })),
+        },
+        payments: {
+          total: detail.payments.total,
+          rows: detail.payments.rows.map((p: any) => ({
+            ...p,
+            createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+          })),
+        },
+      });
+    } catch (e: any) {
+      console.error("[admin/users/:id/wallet]", e);
+      res.status(500).json({ message: e?.message ?? "조회에 실패했습니다." });
+    }
+  });
+
   app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "200"), 10)));

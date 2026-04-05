@@ -370,6 +370,27 @@ export interface IStorage {
   deductCredits(userId: string, amount: number): Promise<boolean>;
   createCreditTransaction(tx: { userId: string; type: string; amount: number; description?: string; relatedId?: number }): Promise<any>;
   getCreditTransactions(userId: string): Promise<any[]>;
+  /** 관리자: 회원별 지갑·크레딧 거래·결제(구독·크레딧충전) 요약 */
+  getAdminUserWalletDetail(
+    userId: string,
+    input: { txLimit?: number; txOffset?: number; payLimit?: number; payOffset?: number },
+  ): Promise<{
+    user: {
+      id: string;
+      email: string | null;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      credits: number | null;
+      subscriptionTier: string | null;
+      subscriptionExpiresAt: Date | null;
+      subscriptionPlan: string | null;
+      subscriptionEntitlements: unknown;
+    };
+    creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
+    creditTransactions: { total: number; rows: any[] };
+    payments: { total: number; rows: any[] };
+  } | null>;
 
   // Withdrawals
   createWithdrawal(data: { userId: string; amount: number; fee: number; netAmount: number; bankName?: string; accountNumber?: string; accountHolder?: string }): Promise<any>;
@@ -3147,6 +3168,95 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(creditTransactions)
       .where(eq(creditTransactions.userId, userId))
       .orderBy(desc(creditTransactions.createdAt));
+  }
+
+  async getAdminUserWalletDetail(
+    userId: string,
+    input: { txLimit?: number; txOffset?: number; payLimit?: number; payOffset?: number },
+  ): Promise<{
+    user: {
+      id: string;
+      email: string | null;
+      username: string | null;
+      firstName: string | null;
+      lastName: string | null;
+      credits: number | null;
+      subscriptionTier: string | null;
+      subscriptionExpiresAt: Date | null;
+      subscriptionPlan: string | null;
+      subscriptionEntitlements: unknown;
+    };
+    creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
+    creditTransactions: { total: number; rows: any[] };
+    payments: { total: number; rows: any[] };
+  } | null> {
+    const txLimit = Math.min(200, Math.max(1, Math.floor(Number(input.txLimit) || 50)));
+    const txOffset = Math.max(0, Math.floor(Number(input.txOffset) || 0));
+    const payLimit = Math.min(200, Math.max(1, Math.floor(Number(input.payLimit) || 50)));
+    const payOffset = Math.max(0, Math.floor(Number(input.payOffset) || 0));
+
+    const [user] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        username: users.username,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        credits: users.credits,
+        subscriptionTier: users.subscriptionTier,
+        subscriptionExpiresAt: users.subscriptionExpiresAt,
+        subscriptionPlan: users.subscriptionPlan,
+        subscriptionEntitlements: users.subscriptionEntitlements,
+      })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (!user) return null;
+
+    const [txCountRow] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId));
+    const txTotal = Number(txCountRow?.c ?? 0);
+
+    const txRows = await db
+      .select()
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId))
+      .orderBy(desc(creditTransactions.createdAt))
+      .limit(txLimit)
+      .offset(txOffset);
+
+    const [aggRow] = await db
+      .select({
+        totalIn: sql<number>`COALESCE(SUM(CASE WHEN ${creditTransactions.amount} > 0 THEN ${creditTransactions.amount} ELSE 0 END), 0)::int`,
+        totalOut: sql<number>`COALESCE(SUM(CASE WHEN ${creditTransactions.amount} < 0 THEN (-${creditTransactions.amount}) ELSE 0 END), 0)::int`,
+      })
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId));
+
+    const paidCond = and(eq(payments.userId, userId), eq(payments.status, "paid"));
+    const [payCountRow] = await db.select({ c: sql<number>`count(*)::int` }).from(payments).where(paidCond);
+    const payTotal = Number(payCountRow?.c ?? 0);
+    const payRows = await db
+      .select()
+      .from(payments)
+      .where(paidCond)
+      .orderBy(desc(payments.createdAt))
+      .limit(payLimit)
+      .offset(payOffset);
+
+    const bal = user.credits ?? 0;
+    return {
+      user,
+      creditSummary: {
+        totalCreditsIn: Number(aggRow?.totalIn ?? 0),
+        totalCreditsOut: Number(aggRow?.totalOut ?? 0),
+        currentBalance: bal,
+      },
+      creditTransactions: { total: txTotal, rows: txRows },
+      payments: { total: payTotal, rows: payRows },
+    };
   }
 
   // Withdrawals
