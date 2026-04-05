@@ -83,8 +83,8 @@ function TrackCard({
   onRemove,
   onUpload,
   onDownload,
-  onScorePdf,
-  scorePdfLoading,
+  onScoreExport,
+  scoreExportLoading,
   scorePdfEnabled,
   onPlay,
   onPublish,
@@ -97,8 +97,8 @@ function TrackCard({
   onRemove: () => void;
   onUpload: () => void;
   onDownload: () => void;
-  onScorePdf: () => void;
-  scorePdfLoading: boolean;
+  onScoreExport: (format: "pdf" | "musicxml" | "zip") => void;
+  scoreExportLoading: boolean;
   scorePdfEnabled: boolean;
   onPlay: () => void;
   onPublish: () => void;
@@ -174,20 +174,43 @@ function TrackCard({
                     )}
                   </button>
                   {scorePdfEnabled && (
-                    <button
-                      type="button"
-                      onClick={onScorePdf}
-                      disabled={scorePdfLoading}
-                      className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
-                      title={t("createMusic.scorePdfHint", "자동 추출·참고용 PDF (서버에 basic-pitch·MuseScore 필요)")}
-                    >
-                      {scorePdfLoading ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <FileText className="w-3 h-3" />
+                    <span
+                      className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0"
+                      title={t(
+                        "createMusic.scoreExportHint",
+                        "자동 전사 초안 — PDF·MusicXML(편집용)·ZIP (서버: basic-pitch·MuseScore, 선택 Demucs/양자화)",
                       )}
-                      {t("createMusic.scorePdf", "악보 PDF")}
-                    </button>
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("pdf")}
+                        disabled={scoreExportLoading}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {scoreExportLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <FileText className="w-3 h-3" />
+                        )}
+                        {t("createMusic.scorePdf", "악보 PDF")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("musicxml")}
+                        disabled={scoreExportLoading}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {t("createMusic.scoreMusicxml", "MusicXML")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("zip")}
+                        disabled={scoreExportLoading}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {t("createMusic.scoreZip", "PDF+XML")}
+                      </button>
+                    </span>
                   )}
                   <button
                     type="button"
@@ -782,20 +805,34 @@ export default function CreateMusic() {
     };
   }, [user?.id]);
 
-  const handleScorePdf = useCallback(
-    async (track: SavedTrack) => {
+  const handleScoreExport = useCallback(
+    async (track: SavedTrack, format: "pdf" | "musicxml" | "zip") => {
       if (!track.audio_url) return;
       setScorePdfTrackId(track.id);
       toast({
-        title: t("createMusic.scorePdfStarting", "악보 PDF 생성 중…"),
+        title: t("createMusic.scoreExportStarting", "악보 파일 생성 중…"),
         description: t("createMusic.scorePdfWait", "서버에서 전사·조판하므로 1~3분 걸릴 수 있습니다."),
       });
+      const baseName = sanitizeFilename(track.title || "score");
+      const expectCt =
+        format === "pdf"
+          ? (ct: string) => ct.includes("pdf")
+          : format === "musicxml"
+            ? (ct: string) => ct.includes("xml") || ct.includes("musicxml")
+            : (ct: string) => ct.includes("zip");
+      const ext = format === "pdf" ? "pdf" : format === "musicxml" ? "musicxml" : "zip";
+      const doneTitle =
+        format === "pdf"
+          ? t("createMusic.scorePdfDone", "PDF를 저장했습니다.")
+          : format === "musicxml"
+            ? t("createMusic.scoreMusicxmlDone", "MusicXML을 저장했습니다.")
+            : t("createMusic.scoreZipDone", "ZIP을 저장했습니다.");
       try {
         const res = await fetch("/api/ai-music/score-pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ clientId: track.id }),
+          body: JSON.stringify({ clientId: track.id, format }),
         });
         const ct = res.headers.get("content-type") || "";
         if (!res.ok) {
@@ -803,15 +840,15 @@ export default function CreateMusic() {
           const desc =
             [data.message, data.detail].filter(Boolean).join(" — ").trim() || `HTTP ${res.status}`;
           toast({
-            title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+            title: t("createMusic.scoreExportFailed", "악보내기 실패"),
             description: desc.slice(0, 1200),
             variant: "destructive",
           });
           return;
         }
-        if (!ct.includes("pdf")) {
+        if (!expectCt(ct)) {
           toast({
-            title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+            title: t("createMusic.scoreExportFailed", "악보내기 실패"),
             description: t("createMusic.scorePdfBadResponse", "응답 형식이 올바르지 않습니다."),
             variant: "destructive",
           });
@@ -821,13 +858,13 @@ export default function CreateMusic() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${sanitizeFilename(track.title || "score")}.pdf`;
+        a.download = `${baseName}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
-        toast({ title: t("createMusic.scorePdfDone", "PDF를 저장했습니다.") });
+        toast({ title: doneTitle });
       } catch {
         toast({
-          title: t("createMusic.scorePdfFailed", "악보 PDF 실패"),
+          title: t("createMusic.scoreExportFailed", "악보내기 실패"),
           description: t("createMusic.networkErrorGeneric", "네트워크 오류가 발생했습니다."),
           variant: "destructive",
         });
@@ -1346,8 +1383,8 @@ export default function CreateMusic() {
                               onRemove={() => removeSavedTrack(track.id)}
                               onUpload={() => goUploadWithTrack(track)}
                               onDownload={() => handleDownloadTrack(track)}
-                              onScorePdf={() => void handleScorePdf(track)}
-                              scorePdfLoading={scorePdfTrackId === track.id}
+                              onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
+                              scoreExportLoading={scorePdfTrackId === track.id}
                               scorePdfEnabled={scorePdfEnabled}
                               onPlay={() => playTrackInGlobalPlayer(track)}
                               onPublish={() => setPublishConfirmTrack(track)}

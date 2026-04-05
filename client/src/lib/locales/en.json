@@ -1664,11 +1664,18 @@
     "publishDialogBullet5": "Inappropriate content may be removed by admins.",
     "publishDialogConsent": "Do you agree to publish this track?",
     "scorePdf": "Score PDF",
+    "scoreMusicxml": "MusicXML",
+    "scoreZip": "PDF + XML",
+    "scoreExportHint": "Auto-transcribed draft — PDF, MusicXML (for editing), or ZIP (server: basic-pitch & MuseScore; optional Demucs/quantize)",
     "scorePdfHint": "Auto-transcribed reference PDF (requires basic-pitch and MuseScore on the server)",
     "scorePdfStarting": "Generating score PDF…",
+    "scoreExportStarting": "Generating score export…",
     "scorePdfWait": "Transcription and typesetting on the server may take 1–3 minutes.",
     "scorePdfFailed": "Score PDF failed",
+    "scoreExportFailed": "Score export failed",
     "scorePdfDone": "PDF saved.",
+    "scoreMusicxmlDone": "MusicXML saved.",
+    "scoreZipDone": "ZIP saved.",
     "scorePdfBadResponse": "The response was not a valid PDF.",
     "aiGeneratedTrackFallback": "AI-generated track"
   }
