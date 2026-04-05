@@ -770,18 +770,11 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="relative">
-            <div
-              className="flex gap-4 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:mx-0 md:px-0"
-              data-testid="liked-tracks-horizontal-row"
-            >
+          <div className="relative max-w-4xl">
+            <div className="flex flex-col gap-2 pb-1" data-testid="liked-tracks-compact-list">
               {likedPageTracks.map((music) => (
-                <div
-                  key={music.id}
-                  className="min-w-[10.5rem] w-[42vw] max-w-[11rem] shrink-0 snap-start"
-                  data-testid={`liked-track-card-wrap-${music.id}`}
-                >
-                  <MusicCard music={music} />
+                <div key={music.id} data-testid={`liked-track-row-${music.id}`}>
+                  <MusicCard music={music} variant="homeLikedRow" />
                 </div>
               ))}
             </div>

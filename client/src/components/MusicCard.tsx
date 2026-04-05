@@ -227,9 +227,11 @@ interface MusicCardProps {
   music: Music;
   /** 홈 주간 차트 등 순위 표시 (멜론식 배지) */
   chartRank?: number;
+  /** 홈 «좋아요한 곡»: 한 줄·낮은 높이 행 (기본은 정사각 커버 카드) */
+  variant?: "card" | "homeLikedRow";
 }
 
-export function MusicCard({ music, chartRank }: MusicCardProps) {
+export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps) {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const { playMusic, activeMusicId } = usePlayerStore();
@@ -542,8 +544,138 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
 
   const showMenu = canEdit || canDelete || canReport || !!user;
 
+  const isHomeLikedRow = variant === "homeLikedRow";
+
   return (
     <>
+      {isHomeLikedRow ? (
+        <motion.div
+          whileHover={{ y: -1 }}
+          className={`group relative flex w-full items-center gap-2.5 sm:gap-3 rounded-xl border bg-card/80 px-2 py-1.5 sm:py-2 pr-2 shadow-sm cursor-pointer transition-colors ${
+            isPlaying
+              ? "border-emerald-400/70 shadow-emerald-500/15"
+              : "border-white/10 hover:border-primary/35 hover:bg-card"
+          }`}
+          data-testid={`card-music-${music.id}`}
+          data-variant="homeLikedRow"
+          onClick={() => navigate(`/music/${music.id}`)}
+        >
+          <div className="relative h-11 w-11 sm:h-12 sm:w-12 shrink-0 overflow-hidden rounded-md ring-1 ring-white/10">
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+
+          <div className="min-w-0 flex-1 flex flex-nowrap items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs overflow-hidden">
+            <span className="font-semibold text-foreground truncate shrink min-w-0 max-w-[30%] sm:max-w-[34%]" data-testid={`text-title-${music.id}`}>
+              {music.title}
+            </span>
+            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
+            <span className="text-muted-foreground truncate shrink min-w-0 max-w-[24%] sm:max-w-[28%] inline-flex items-center gap-0.5" data-testid={`text-artist-${music.id}`}>
+              {music.artist}
+              {uploaderDonationBadge ? <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" /> : null}
+            </span>
+            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+              onClick={handleLike}
+              data-testid={`button-like-${music.id}`}
+            >
+              <Heart size={12} className={isLiked ? "text-red-500 fill-red-500" : ""} />
+              <span className="tabular-nums" data-testid={`text-like-count-${music.id}`}>
+                {likeCount}
+              </span>
+            </button>
+            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground tabular-nums" data-testid={`text-play-count-${music.id}`} title={t("music.playCount", "재생 수")}>
+              <Headphones size={12} className="shrink-0" />
+              {playCount}
+            </span>
+            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
+            <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 text-muted-foreground" data-testid={`text-uploader-${music.id}`} title={music.userId}>
+              <UserIcon size={11} className="shrink-0" />
+              <span className="truncate font-mono text-[10px] sm:text-[11px]">{music.userId}</span>
+            </span>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <Button
+              size="icon"
+              variant="secondary"
+              className="h-8 w-8 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation();
+                playMusic(music.id);
+              }}
+              data-testid={`button-play-inline-${music.id}`}
+              aria-label={t("music.play", { defaultValue: "재생" })}
+            >
+              {isPlaying ? <Pause className="h-4 w-4" fill="currentColor" /> : <Play className="h-4 w-4 ml-0.5" fill="currentColor" />}
+            </Button>
+            <Link href={`/music/${music.id}`} onClick={(e) => e.stopPropagation()}>
+              <Button size="icon" variant="ghost" className="h-8 w-8" data-testid={`button-open-detail-${music.id}`} aria-label={t("music.openDetail", { defaultValue: "상세 페이지" })}>
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            </Link>
+            {showMenu && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="icon" variant="ghost" className="h-8 w-8" data-testid={`button-music-menu-${music.id}`}>
+                    <MoreVertical size={16} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {canEdit && (
+                    <DropdownMenuItem onClick={handleEdit} data-testid={`button-edit-music-${music.id}`}>
+                      <Pencil size={14} className="mr-2" />
+                      {t("music.edit")}
+                    </DropdownMenuItem>
+                  )}
+                  {isAdminSpotifyOnly && (
+                    <DropdownMenuItem onClick={handleEdit} data-testid={`button-admin-spotify-music-${music.id}`}>
+                      <Pencil size={14} className="mr-2" />
+                      {t("music.adminSpotifyLink", "Spotify 앨범 ID (관리자)")}
+                    </DropdownMenuItem>
+                  )}
+                  {canDelete && (
+                    <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-500 focus:text-red-500" data-testid={`button-delete-music-${music.id}`}>
+                      <Trash2 size={14} className="mr-2" />
+                      {`${t("music.delete")}${isAdmin && !isOwner ? ` (${t("nav.admin")})` : ""}`}
+                    </DropdownMenuItem>
+                  )}
+                  {user && (
+                    <>
+                      {(canEdit || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
+                      <DropdownMenuItem onClick={handleOpenPlaylistDialog} data-testid={`button-add-to-playlist-${music.id}`}>
+                        <ListPlus size={14} className="mr-2" />
+                        {t("music.addToPlaylist")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          usePlayerStore.getState().addToQueue(music.id);
+                          toast({ title: t("music.addedToQueue"), description: t("music.addedToQueueDesc", { title: music.title }) });
+                        }}
+                        data-testid={`button-add-to-queue-${music.id}`}
+                      >
+                        <ListPlus size={14} className="mr-2" />
+                        {t("music.addToQueue")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  {canReport && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setReportOpen(true)} className="text-orange-500 focus:text-orange-500" data-testid={`button-report-music-${music.id}`}>
+                        <Flag size={14} className="mr-2" />
+                        {t("music.copyrightReport")}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </motion.div>
+      ) : (
       <motion.div 
         whileHover={{ y: -5 }}
         className={`group relative bg-card rounded-xl overflow-hidden border transition-all duration-300 shadow-lg cursor-pointer ${
@@ -748,6 +880,7 @@ export function MusicCard({ music, chartRank }: MusicCardProps) {
           </div>
         </div>
       </motion.div>
+      )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
