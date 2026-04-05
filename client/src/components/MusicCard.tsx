@@ -564,16 +564,16 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             <img src={imageUrl} alt="" className="h-full w-full object-cover" />
           </div>
 
-          <div className="min-w-0 flex-1 flex flex-nowrap items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs overflow-hidden">
-            <span className="font-semibold text-foreground truncate shrink min-w-0 max-w-[30%] sm:max-w-[34%]" data-testid={`text-title-${music.id}`}>
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden text-[11px] sm:gap-1.5 sm:text-xs">
+            <span className="min-w-0 flex-1 truncate font-semibold text-foreground" data-testid={`text-title-${music.id}`}>
               {music.title}
             </span>
-            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
-            <span className="text-muted-foreground truncate shrink min-w-0 max-w-[24%] sm:max-w-[28%] inline-flex items-center gap-0.5" data-testid={`text-artist-${music.id}`}>
+            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
+            <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 truncate text-muted-foreground" data-testid={`text-artist-${music.id}`}>
               {music.artist}
               {uploaderDonationBadge ? <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" /> : null}
             </span>
-            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
+            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
             <button
               type="button"
               className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-muted/80 hover:text-foreground"
@@ -585,15 +585,14 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 {likeCount}
               </span>
             </button>
-            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
-            <span className="inline-flex shrink-0 items-center gap-0.5 text-muted-foreground tabular-nums" data-testid={`text-play-count-${music.id}`} title={t("music.playCount", "재생 수")}>
+            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
+            <span
+              className="inline-flex shrink-0 items-center gap-0.5 tabular-nums text-muted-foreground"
+              data-testid={`text-play-count-${music.id}`}
+              title={t("music.playCount", "재생 수")}
+            >
               <Headphones size={12} className="shrink-0" />
               {playCount}
-            </span>
-            <span className="text-muted-foreground shrink-0 opacity-50">·</span>
-            <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 text-muted-foreground" data-testid={`text-uploader-${music.id}`} title={music.userId}>
-              <UserIcon size={11} className="shrink-0" />
-              <span className="truncate font-mono text-[10px] sm:text-[11px]">{music.userId}</span>
             </span>
           </div>
 

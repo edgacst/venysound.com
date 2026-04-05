@@ -770,10 +770,10 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="relative max-w-4xl">
-            <div className="flex flex-col gap-2 pb-1" data-testid="liked-tracks-compact-list">
+          <div className="relative w-full">
+            <div className="flex w-full flex-col gap-2 pb-1" data-testid="liked-tracks-compact-list">
               {likedPageTracks.map((music) => (
-                <div key={music.id} data-testid={`liked-track-row-${music.id}`}>
+                <div key={music.id} className="w-full min-w-0" data-testid={`liked-track-row-${music.id}`}>
                   <MusicCard music={music} variant="homeLikedRow" />
                 </div>
               ))}
