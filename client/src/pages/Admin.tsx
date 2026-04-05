@@ -1212,10 +1212,30 @@ export default function Admin() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-bank-payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       toast({ title: t('admin.bankPaymentConfirmed', '입금 확인 처리되었습니다') });
     },
     onError: (err: any) => {
       toast({ title: err?.message || t('admin.updateFailed', '업데이트에 실패했습니다'), variant: "destructive" });
+    },
+  });
+
+  const repairBankSubscriptionMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      await apiRequest("POST", `/api/admin/payments/${paymentId}/repair-bank-subscription`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: t("admin.repairBankSubSuccess", "구독 정보가 결제 건에 맞게 반영되었습니다"),
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: err?.message || t("admin.repairBankSubFailed", "구독 반영에 실패했습니다"),
+        variant: "destructive",
+      });
     },
   });
 
@@ -4673,7 +4693,7 @@ export default function Admin() {
                   </span>
                 </h3>
                 <div className="overflow-x-auto rounded-md border border-border">
-                  <table className="w-full text-xs min-w-[520px]">
+                  <table className="w-full text-xs min-w-[560px]">
                     <thead>
                       <tr className="border-b bg-muted/40 text-left">
                         <th className="p-2 font-medium">{t("admin.walletPayKind", "유형")}</th>
@@ -4681,27 +4701,48 @@ export default function Admin() {
                         <th className="p-2 font-medium">{t("admin.walletBillingPeriod", "청구")}</th>
                         <th className="p-2 font-medium">{t("admin.walletWhen", "일시")}</th>
                         <th className="p-2 font-medium font-mono">{t("admin.walletOrderId", "주문번호")}</th>
+                        <th className="p-2 font-medium w-28">{t("admin.walletPayRepair", "구독 반영")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {walletData.payments.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-4 text-center text-muted-foreground">
+                          <td colSpan={6} className="p-4 text-center text-muted-foreground">
                             {t("admin.walletNoPayments", "결제 내역이 없습니다.")}
                           </td>
                         </tr>
                       ) : (
-                        walletData.payments.rows.map((p) => (
-                          <tr key={p.id} className="border-b border-border/60">
-                            <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
-                            <td className="p-2 tabular-nums">{p.amount.toLocaleString()}</td>
-                            <td className="p-2 text-muted-foreground">{p.billingPeriod || "—"}</td>
-                            <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(p.createdAt)}</td>
-                            <td className="p-2 font-mono text-[11px] break-all max-w-[140px]" title={p.orderId}>
-                              {p.orderId}
-                            </td>
-                          </tr>
-                        ))
+                        walletData.payments.rows.map((p) => {
+                          const canRepairBankSub =
+                            p.paymentKey === "bank_transfer" && isPaidSubscriptionTierId(p.plan);
+                          return (
+                            <tr key={p.id} className="border-b border-border/60">
+                              <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
+                              <td className="p-2 tabular-nums">{p.amount.toLocaleString()}</td>
+                              <td className="p-2 text-muted-foreground">{p.billingPeriod || "—"}</td>
+                              <td className="p-2 whitespace-nowrap text-muted-foreground">{formatDateTime(p.createdAt)}</td>
+                              <td className="p-2 font-mono text-[11px] break-all max-w-[140px]" title={p.orderId}>
+                                {p.orderId}
+                              </td>
+                              <td className="p-2 align-middle">
+                                {canRepairBankSub ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-[11px] px-2"
+                                    disabled={repairBankSubscriptionMutation.isPending}
+                                    onClick={() => repairBankSubscriptionMutation.mutate(p.id)}
+                                  >
+                                    {t("admin.walletPayRepairBtn", "반영")}
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

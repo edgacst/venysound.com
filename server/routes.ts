@@ -94,6 +94,54 @@ function subscriptionPaymentEmailKind(
   return getActivePaidTierIds(view, now).includes(paidTier) ? "renewed" : "started";
 }
 
+/**
+ * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
+ * plan 은 DB 대소문자 불일치를 허용하도록 정규화한다.
+ */
+async function applyBankTransferSubscriptionToUserFromPayment(payment: {
+  userId: string;
+  plan: string | null;
+  billingPeriod: string | null;
+}): Promise<{
+  computed: ReturnType<typeof computeDisplayedSubscriptionFromEntitlements>;
+  payUser: (typeof users.$inferSelect) | undefined;
+  tierPaid: PaidSubscriptionTierId;
+  expiresAt: Date;
+}> {
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(planNorm)) {
+    throw new Error("NOT_A_PAID_SUBSCRIPTION_PLAN");
+  }
+  const tierPaid = planNorm as PaidSubscriptionTierId;
+  const now = new Date();
+  const expiresAt = new Date(now);
+  if (payment.billingPeriod === "monthly") {
+    expiresAt.setMonth(expiresAt.getMonth() + 1);
+  } else {
+    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+  }
+  const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+  const view = buildEntitlementsView(
+    payUser?.subscriptionEntitlements,
+    payUser?.subscriptionTier,
+    payUser?.subscriptionExpiresAt,
+    now,
+  );
+  const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
+  const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+  await db
+    .update(users)
+    .set({
+      subscriptionEntitlements: computed.subscriptionEntitlements,
+      subscriptionTier: computed.subscriptionTier,
+      subscriptionExpiresAt: computed.subscriptionExpiresAt,
+      subscriptionPlan: payment.billingPeriod ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, payment.userId));
+  return { computed, payUser, tierPaid, expiresAt };
+}
+
 /** 경로 파라미터를 양의 정수 id로 파싱 (NaN·0·음수·비정수면 null) */
 function parsePositiveIntParam(raw: string | undefined): number | null {
   if (raw == null || raw === "") return null;
@@ -5303,9 +5351,9 @@ export async function registerRoutes(
         return res.status(400).json({ message: "계좌이체 대기 건만 확인할 수 있습니다" });
       }
 
-      await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
+      const planNorm = String(payment.plan ?? "").trim().toLowerCase();
 
-      if (payment.plan === "credit_charge") {
+      if (planNorm === "credit_charge") {
         const creditAmount = creditsFromTotalVatInclusiveWon(payment.amount);
         await storage.addCredits(payment.userId, creditAmount);
         await storage.createCreditTransaction({
@@ -5321,40 +5369,15 @@ export async function registerRoutes(
           payload: { amount: creditAmount },
           url: "/credits",
         });
+        await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
         return res.json({ success: true, credits: creditAmount });
       }
 
       const now = new Date();
-      const expiresAt = new Date(now);
-      if (payment.billingPeriod === "monthly") {
-        expiresAt.setMonth(expiresAt.getMonth() + 1);
-      } else {
-        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-      }
-      const tierPaid = (isPaidSubscriptionTierId(payment.plan ?? "") ? payment.plan : "pro") as PaidSubscriptionTierId;
-      const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
-      const view = buildEntitlementsView(
-        payUser?.subscriptionEntitlements,
-        payUser?.subscriptionTier,
-        payUser?.subscriptionExpiresAt,
-        now,
-      );
-      const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
-      const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
-      await db
-        .update(users)
-        .set({
-          subscriptionEntitlements: computed.subscriptionEntitlements,
-          subscriptionTier: computed.subscriptionTier,
-          subscriptionExpiresAt: computed.subscriptionExpiresAt,
-          subscriptionPlan: payment.billingPeriod ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, payment.userId));
+      const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+      await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
 
-      const bankSubKind = payUser
-        ? subscriptionPaymentEmailKind(payUser, now, tierPaid)
-        : "started";
+      const bankSubKind = payUser ? subscriptionPaymentEmailKind(payUser, now, tierPaid) : "started";
       const bankBp =
         payment.billingPeriod === "yearly" || payment.billingPeriod === "monthly"
           ? payment.billingPeriod
@@ -5375,6 +5398,36 @@ export async function registerRoutes(
     } catch (err) {
       console.error("Confirm bank payment error:", err);
       res.status(500).json({ message: "입금 확인 처리에 실패했습니다" });
+    }
+  });
+
+  /**
+   * 이미 paid 인 계좌이체 구독 건에 대해 users.subscription* 만 다시 적용.
+   * (과거 버그: 먼저 paid 처리 후 유저 갱신이 실패하면 결제만 남고 티어는 free 인 경우 복구)
+   */
+  app.post("/api/admin/payments/:id/repair-bank-subscription", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = req.params.id as string;
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
+      if (payment.paymentKey !== "bank_transfer") {
+        return res.status(400).json({ message: "계좌이체 건만 처리할 수 있습니다" });
+      }
+      if (payment.status !== "paid") {
+        return res.status(400).json({ message: "완료(paid)된 결제만 구독 반영 복구가 가능합니다" });
+      }
+      const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+      if (planNorm === "credit_charge" || !isPaidSubscriptionTierId(planNorm)) {
+        return res.status(400).json({ message: "구독(유료 플랜) 결제 건만 복구할 수 있습니다" });
+      }
+
+      const { computed, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+      // 복구 시에는 메일을 보내지 않음 (과거 입금 확인 메일과 중복 방지)
+      res.json({ success: true, tier: computed.subscriptionTier, expiresAt: computed.subscriptionExpiresAt ?? expiresAt });
+    } catch (err: any) {
+      console.error("[repair-bank-subscription]", err);
+      const msg = err?.message === "NOT_A_PAID_SUBSCRIPTION_PLAN" ? "유효한 구독 플랜이 아닙니다" : "구독 반영에 실패했습니다";
+      res.status(500).json({ message: msg });
     }
   });
 

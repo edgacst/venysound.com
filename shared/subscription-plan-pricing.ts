@@ -3,7 +3,9 @@ export const PAID_SUBSCRIPTION_TIER_IDS = ["starter", "basic", "pro", "premium"]
 export type PaidSubscriptionTierId = (typeof PAID_SUBSCRIPTION_TIER_IDS)[number];
 
 export function isPaidSubscriptionTierId(tier: string | null | undefined): boolean {
-  return tier != null && PAID_SUBSCRIPTION_TIER_IDS.includes(tier as PaidSubscriptionTierId);
+  if (tier == null) return false;
+  const n = String(tier).trim().toLowerCase();
+  return PAID_SUBSCRIPTION_TIER_IDS.includes(n as PaidSubscriptionTierId);
 }
 
 /** 구독 플랜 공급가(부가세 전, 원) — DB 오류·테스트 값 보정 시 사용. 연간 = 월×12×90%(할인) */
