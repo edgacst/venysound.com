@@ -147,10 +147,10 @@ function TrackCard({
         <img src={track.image_url} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
       )}
       <div className="flex-1 min-w-0 flex flex-col gap-1">
-        <div className="flex items-center gap-2 h-10">
-          <div className="flex-1 min-w-0 h-10 flex flex-col justify-center pr-1 gap-0.5">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0 flex flex-col gap-1 pr-1">
             <p className="text-xs font-medium truncate leading-none">{title}</p>
-            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
               <button
                 type="button"
                 onClick={() => setShowLyrics((v) => !v)}
@@ -190,55 +190,53 @@ function TrackCard({
                     )}
                   </button>
                   {scorePdfEnabled && (
-                    <span className="inline-flex flex-col gap-1 basis-full w-full min-w-0">
-                      <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0">
-                        <span className="inline-flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 shrink-0" aria-hidden>
-                          <FileText className="w-3 h-3" />
-                          <span className="text-[11px] font-medium">{t("createMusic.scoreLabel", "악보")}</span>
-                        </span>
-                        <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
-                          ·
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onScoreExport("pdf")}
-                          disabled={scoreExportLoading}
-                          title={t("createMusic.scorePdfTitle", "보기·인쇄용 PDF (자동 전사 초안)")}
-                          className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
-                        >
-                          {scoreExportLoading ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : null}
-                          {t("createMusic.scoreFormatPdf", "PDF")}
-                        </button>
-                        <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
-                          ·
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onScoreExport("musicxml")}
-                          disabled={scoreExportLoading}
-                          title={t(
-                            "createMusic.scoreMusicxmlTitle",
-                            "MuseScore 등에서 열어 수정할 수 있는 파일",
-                          )}
-                          className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
-                        >
-                          {t("createMusic.scoreMusicxml", "MusicXML")}
-                        </button>
-                        <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
-                          ·
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onScoreExport("zip")}
-                          disabled={scoreExportLoading}
-                          title={t("createMusic.scoreZipTitle", "PDF와 MusicXML을 ZIP으로 한 번에")}
-                          className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
-                        >
-                          {t("createMusic.scoreZip", "PDF+XML")}
-                        </button>
+                    <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className="inline-flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 shrink-0" aria-hidden>
+                        <FileText className="w-3 h-3" />
+                        <span className="text-[11px] font-medium">{t("createMusic.scoreLabel", "악보")}</span>
                       </span>
+                      <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
+                        ·
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("pdf")}
+                        disabled={scoreExportLoading}
+                        title={t("createMusic.scorePdfTitle", "보기·인쇄용 PDF (자동 전사 초안)")}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {scoreExportLoading ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : null}
+                        {t("createMusic.scoreFormatPdf", "PDF")}
+                      </button>
+                      <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
+                        ·
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("musicxml")}
+                        disabled={scoreExportLoading}
+                        title={t(
+                          "createMusic.scoreMusicxmlTitle",
+                          "MuseScore 등에서 열어 수정할 수 있는 파일",
+                        )}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {t("createMusic.scoreMusicxml", "MusicXML")}
+                      </button>
+                      <span className="text-muted-foreground/60 text-[10px] select-none" aria-hidden>
+                        ·
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onScoreExport("zip")}
+                        disabled={scoreExportLoading}
+                        title={t("createMusic.scoreZipTitle", "PDF와 MusicXML을 ZIP으로 한 번에")}
+                        className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${actionLinkClass}`}
+                      >
+                        {t("createMusic.scoreZip", "PDF+XML")}
+                      </button>
                     </span>
                   )}
                   <button
@@ -1351,13 +1349,7 @@ export default function CreateMusic() {
                         </div>
                       </div>
                       {scorePdfEnabled ? (
-                        <p
-                          className="min-w-0 w-full sm:w-auto sm:flex-1 text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-snug truncate"
-                          title={t(
-                            "createMusic.sectionLibraryScoreNotice",
-                            "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
-                          )}
-                        >
+                        <p className="w-full min-w-0 text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-relaxed break-words">
                           {t(
                             "createMusic.sectionLibraryScoreNotice",
                             "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
