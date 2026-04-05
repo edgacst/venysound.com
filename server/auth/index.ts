@@ -13,7 +13,7 @@ import { authStorage } from "./storage";
 import { db } from "../db";
 import { users } from "../../shared/models/auth";
 import { eq, or } from "drizzle-orm";
-import { sendWelcomeEmail } from "../email";
+import { sendWelcomeEmail, normalizeOutgoingEmailAddress } from "../email";
 import {
   sendCreditRefundOtp,
   verifyCreditRefundOtp,
@@ -194,8 +194,10 @@ export async function setupAuth(app: Express) {
             const id = `google_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "google" });
-            if (!existing && user.id === id && user.email) {
-              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+            const welcomeTo =
+              normalizeOutgoingEmailAddress(user.email) ?? normalizeOutgoingEmailAddress(email);
+            if (!existing && user.id === id && welcomeTo) {
+              sendWelcomeEmail(welcomeTo, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
             }
@@ -231,8 +233,10 @@ export async function setupAuth(app: Express) {
             const id = `naver_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "naver" });
-            if (!existing && user.id === id && user.email) {
-              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+            const welcomeTo =
+              normalizeOutgoingEmailAddress(user.email) ?? normalizeOutgoingEmailAddress(email);
+            if (!existing && user.id === id && welcomeTo) {
+              sendWelcomeEmail(welcomeTo, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
             }
@@ -270,8 +274,10 @@ export async function setupAuth(app: Express) {
             const id = `kakao_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName: "", profileImageUrl, registerSource: "kakao" });
-            if (!existing && user.id === id && user.email) {
-              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+            const welcomeTo =
+              normalizeOutgoingEmailAddress(user.email) ?? normalizeOutgoingEmailAddress(email);
+            if (!existing && user.id === id && welcomeTo) {
+              sendWelcomeEmail(welcomeTo, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
             }
@@ -309,8 +315,10 @@ export async function setupAuth(app: Express) {
             const id = `facebook_${profile.id}`;
             const existing = await authStorage.getUser(id);
             const user = await authStorage.upsertUser({ id, email, firstName, lastName, profileImageUrl, registerSource: "facebook" });
-            if (!existing && user.id === id && user.email) {
-              sendWelcomeEmail(user.email, { username: user.firstName || firstName || "회원" }).catch((e) =>
+            const welcomeTo =
+              normalizeOutgoingEmailAddress(user.email) ?? normalizeOutgoingEmailAddress(email);
+            if (!existing && user.id === id && welcomeTo) {
+              sendWelcomeEmail(welcomeTo, { username: user.firstName || firstName || "회원" }).catch((e) =>
                 console.error("[auth] welcome email failed:", e)
               );
             }
@@ -385,9 +393,11 @@ export async function setupAuth(app: Express) {
           registerSource: "email",
         })
         .returning();
-      if (user.email) {
+      const welcomeTo =
+        normalizeOutgoingEmailAddress(email) ?? normalizeOutgoingEmailAddress(user.email);
+      if (welcomeTo) {
         const locale = typeof req.body?.locale === "string" ? req.body.locale : undefined;
-        sendWelcomeEmail(user.email, { username: user.username, locale }).catch((e) =>
+        sendWelcomeEmail(welcomeTo, { username: user.username, locale }).catch((e) =>
           console.error("[auth] welcome email failed:", e)
         );
       }

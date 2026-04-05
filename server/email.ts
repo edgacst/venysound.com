@@ -13,6 +13,13 @@ export function isEmailConfigured(): boolean {
   return !!(SMTP_HOST && SMTP_USER && SMTP_PASS);
 }
 
+/** 발송용 수신 주소 (trim + 간단 형식 검사). 실패 시 null */
+export function normalizeOutgoingEmailAddress(to: string | null | undefined): string | null {
+  const s = String(to ?? "").trim();
+  if (!s || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) return null;
+  return s;
+}
+
 /** 환영 메일 제목·본문 언어별 텍스트 */
 const WELCOME_EMAIL: Record<string, { subject: string; greeting: string; body: string; cta: string }> = {
   ko: {
@@ -57,6 +64,11 @@ function getWelcomeContent(locale: string, username: string): { subject: string;
 /** 회원가입 환영 메일. locale(ko|en|ja|zh)에 따라 언어별 발송. */
 export async function sendWelcomeEmail(to: string, params: { username: string; locale?: string }): Promise<void> {
   if (!isEmailConfigured()) return;
+  const recipient = normalizeOutgoingEmailAddress(to);
+  if (!recipient) {
+    console.warn("[email] sendWelcomeEmail: invalid or empty recipient, skipped");
+    return;
+  }
   try {
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.default.createTransport({
@@ -66,12 +78,20 @@ export async function sendWelcomeEmail(to: string, params: { username: string; l
       auth: { user: SMTP_USER, pass: SMTP_PASS },
     });
     const { subject, html } = getWelcomeContent(params.locale || "ko", params.username);
+    const fromAddr = String(MAIL_FROM).trim();
     await transporter.sendMail({
       from: MAIL_FROM,
-      to,
+      to: recipient,
+      envelope: {
+        from: fromAddr,
+        to: [recipient],
+      },
       subject,
       html,
     });
+    if (String(process.env.SMTP_LOG_RECIPIENT || "").trim() === "1") {
+      console.log("[email] sendWelcomeEmail delivered envelope to:", recipient);
+    }
   } catch (err) {
     console.error("[email] sendWelcomeEmail error:", err);
   }
@@ -237,5 +257,111 @@ export async function sendSensitiveOtpEmail(
   } catch (err) {
     console.error("[email] sendSensitiveOtpEmail error:", err);
     throw err;
+  }
+}
+
+export type SubscriptionEmailKind = "started" | "renewed" | "cancelled";
+
+const SUBSCRIPTION_PLAN_LABEL: Record<string, string> = {
+  starter: "Starter",
+  basic: "Basic",
+  pro: "Pro",
+  premium: "Premium",
+};
+
+function subscriptionPlanDisplayName(planId: string | null | undefined): string {
+  if (!planId) return "Pro";
+  return SUBSCRIPTION_PLAN_LABEL[planId] ?? planId;
+}
+
+/** 구독 시작·갱신·즉시 해지 안내 메일 (SMTP 미설정 시 생략, 실패해도 throw 하지 않음) */
+export async function sendSubscriptionEmail(
+  to: string | null | undefined,
+  params: {
+    kind: SubscriptionEmailKind;
+    /** 표시용 플랜 id: pro, premium, … */
+    planId?: string | null;
+    billingPeriod?: "monthly" | "yearly" | null;
+    expiresAt?: Date | null;
+    amountWon?: number | null;
+    recipientName?: string | null;
+  },
+): Promise<void> {
+  if (!to || !String(to).trim()) return;
+  if (!isEmailConfigured()) return;
+
+  const planName = subscriptionPlanDisplayName(params.planId ?? "pro");
+  const cycle =
+    params.billingPeriod === "monthly" ? "월간" : params.billingPeriod === "yearly" ? "연간" : "";
+  const siteUrl = (process.env.PUBLIC_SITE_URL || process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  const expStr =
+    params.expiresAt instanceof Date && !isNaN(params.expiresAt.getTime())
+      ? params.expiresAt.toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
+      : null;
+  const amountStr =
+    params.amountWon != null && Number.isFinite(Number(params.amountWon))
+      ? `${Number(params.amountWon).toLocaleString("ko-KR")}원`
+      : null;
+
+  let subject: string;
+  let bodyLines: string[];
+
+  const greet = params.recipientName?.trim()
+    ? `<p>${escapeHtml(params.recipientName.trim())}님, 안녕하세요.</p>`
+    : `<p>안녕하세요.</p>`;
+
+  switch (params.kind) {
+    case "started":
+      subject = `[Venysound] ${planName} 구독이 완료되었습니다`;
+      bodyLines = [
+        greet,
+        `<p><strong>${escapeHtml(planName)}</strong> 구독 결제가 완료되었습니다.${cycle ? ` (${escapeHtml(cycle)})` : ""}</p>`,
+      ];
+      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)} (부가세 포함)</p>`);
+      if (expStr) bodyLines.push(`<p>이용 만료 예정: ${escapeHtml(expStr)} (KST)</p>`);
+      bodyLines.push(`<p>이용 내역·플랜 안내는 사이트에서 확인하실 수 있습니다.</p>`);
+      bodyLines.push(`<p><a href="${siteUrl}/pricing">플랜 및 혜택 보기</a></p>`);
+      break;
+    case "renewed":
+      subject = `[Venysound] ${planName} 구독이 갱신되었습니다`;
+      bodyLines = [
+        greet,
+        `<p><strong>${escapeHtml(planName)}</strong> 정기 결제가 완료되어 구독이 갱신되었습니다.${cycle ? ` (${escapeHtml(cycle)})` : ""}</p>`,
+      ];
+      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)} (부가세 포함)</p>`);
+      if (expStr) bodyLines.push(`<p>갱신 후 이용 만료 예정: ${escapeHtml(expStr)} (KST)</p>`);
+      bodyLines.push(`<p><a href="${siteUrl}/pricing">구독 정보 확인</a></p>`);
+      break;
+    case "cancelled":
+      subject = `[Venysound] 구독이 해지되었습니다`;
+      bodyLines = [
+        greet,
+        `<p>요청하신 대로 <strong>${escapeHtml(planName)}</strong> 구독이 해지되었습니다.</p>`,
+        `<p>카드 정기 결제는 더 이상 이루어지지 않으며, 혜택은 해지 시점 기준으로 종료됩니다.</p>`,
+        `<p><a href="${siteUrl}/pricing">플랜 안내</a></p>`,
+      ];
+      break;
+    default:
+      return;
+  }
+
+  const html = `${bodyLines.join("\n")}\n<p>— Venysound</p>`;
+
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: MAIL_FROM,
+      to: String(to).trim(),
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error("[email] sendSubscriptionEmail error:", err);
   }
 }

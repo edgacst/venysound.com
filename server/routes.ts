@@ -15,7 +15,13 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
-import { sendNewMusicNotificationEmail, sendSocialActivityEmail, isEmailConfigured, type ActivityEmailKind } from "./email";
+import {
+  sendNewMusicNotificationEmail,
+  sendSocialActivityEmail,
+  sendSubscriptionEmail,
+  isEmailConfigured,
+  type ActivityEmailKind,
+} from "./email";
 import { registerAiMusicScorePdfRoutes } from "./ai-music-score-pdf";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { getClientIpForGeo } from "./client-ip";
@@ -61,6 +67,8 @@ import {
   subscriptionRowNeedsSync,
   buildEntitlementsView,
   mergeEntitlementExpiry,
+  getActivePaidTierIds,
+  pruneExpiredEntitlements,
 } from "@shared/subscription-entitlements";
 
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
@@ -71,6 +79,19 @@ function isActivePaidSubscription(
   now: Date,
 ): boolean {
   return isUserPaidSubscriptionActive(user, now);
+}
+
+/** 결제 직전 기준: 해당 tier가 이미 유효하면 갱신, 아니면 신규 구독 완료로 본다 */
+function subscriptionPaymentEmailKind(
+  user: { subscriptionEntitlements?: unknown; subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null },
+  now: Date,
+  paidTier: PaidSubscriptionTierId,
+): "started" | "renewed" {
+  const view = pruneExpiredEntitlements(
+    buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now),
+    now,
+  );
+  return getActivePaidTierIds(view, now).includes(paidTier) ? "renewed" : "started";
 }
 
 /** 경로 파라미터를 양의 정수 id로 파싱 (NaN·0·음수·비정수면 null) */
@@ -5062,6 +5083,17 @@ export async function registerRoutes(
         url: "/pricing",
       });
 
+      const subEmailKind = subscriptionPaymentEmailKind(user, now, "pro");
+      const recipientName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
+      void sendSubscriptionEmail(user.email, {
+        kind: subEmailKind,
+        planId: "pro",
+        billingPeriod,
+        expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
+        amountWon: amount,
+        recipientName,
+      });
+
       res.json({
         success: true,
         tier: computed.subscriptionTier,
@@ -5082,6 +5114,10 @@ export async function registerRoutes(
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
+      const cancelPlanId = isPaidSubscriptionTierId(user.subscriptionTier ?? "") ? user.subscriptionTier : "pro";
+      const cancelRecipientName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
+      const cancelEmail = user.email;
+
       await db.update(users).set({
         tossBillingKey: null,
         subscriptionPlan: null,
@@ -5090,6 +5126,12 @@ export async function registerRoutes(
         subscriptionEntitlements: {},
         updatedAt: new Date(),
       }).where(eq(users.id, userId));
+
+      void sendSubscriptionEmail(cancelEmail, {
+        kind: "cancelled",
+        planId: cancelPlanId,
+        recipientName: cancelRecipientName,
+      });
 
       res.json({
         success: true,
@@ -5269,6 +5311,25 @@ export async function registerRoutes(
           updatedAt: new Date(),
         })
         .where(eq(users.id, payment.userId));
+
+      const bankSubKind = payUser
+        ? subscriptionPaymentEmailKind(payUser, now, tierPaid)
+        : "started";
+      const bankBp =
+        payment.billingPeriod === "yearly" || payment.billingPeriod === "monthly"
+          ? payment.billingPeriod
+          : null;
+      const bankRecipient = payUser
+        ? `${payUser.firstName || ""} ${payUser.lastName || ""}`.trim() || null
+        : null;
+      void sendSubscriptionEmail(payUser?.email, {
+        kind: bankSubKind,
+        planId: tierPaid,
+        billingPeriod: bankBp,
+        expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
+        amountWon: payment.amount,
+        recipientName: bankRecipient,
+      });
 
       res.json({ success: true, expiresAt, tier: computed.subscriptionTier });
     } catch (err) {
