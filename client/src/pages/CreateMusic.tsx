@@ -61,16 +61,32 @@ function sanitizeFilename(name: string): string {
   return s || "audio";
 }
 
-/** API·로컬 캐시에 클립마다 audioUrl / stream_audio_url 등 필드명이 달라 2곡 중 1곡만 재생되는 경우 방지 */
+function isLikelyBadAiMusicAudioUrl(u: string): boolean {
+  const s = u.trim();
+  if (s.length < 12) return true;
+  if (/\/None\.(mp3|wav|ogg)/i.test(s)) return true;
+  if (/undefined|null/i.test(s)) return true;
+  return false;
+}
+
+/** 서버 pickRemoteClipAudioUrl 과 동일 우선순위 — 임시 stream·깨진 audioUrl 로 한 곡만 나중에 무음 되는 경우 완화 */
 function pickSavedTrackAudioUrl(t: Record<string, unknown>): string | undefined {
-  for (const k of [
+  const keys = [
+    "source_audio_url",
+    "source_stream_audio_url",
     "audio_url",
     "audioUrl",
     "stream_audio_url",
     "streamAudioUrl",
-    "source_audio_url",
-    "source_stream_audio_url",
-  ] as const) {
+  ] as const;
+  for (const k of keys) {
+    const v = t[k];
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (s && !isLikelyBadAiMusicAudioUrl(s)) return s;
+    }
+  }
+  for (const k of ["stream_audio_url", "streamAudioUrl", "audio_url", "audioUrl"] as const) {
     const v = t[k];
     if (typeof v === "string" && v.trim()) return v.trim();
   }

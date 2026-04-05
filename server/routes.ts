@@ -599,18 +599,40 @@ export async function registerRoutes(
 
   const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
 
-  /** Suno/AIMusic 응답에서 클립별 오디오·이미지 URL (record-info는 audioUrl만 오고 stream_audio_url만 있는 클립이 있음) */
+  /** Suno placeholder·깨진 링크 (한 클립만 재생되는 원인 중 하나) */
+  function isLikelyBadRemoteAudioUrl(u: string): boolean {
+    const s = u.trim();
+    if (s.length < 12) return true;
+    if (/\/None\.(mp3|wav|ogg)/i.test(s)) return true;
+    if (/undefined|null/i.test(s)) return true;
+    return false;
+  }
+
+  /**
+   * Suno/AIMusic 클립 오디오 URL.
+   * source_* / audio_* 를 stream_* 보다 우선(만료 느린 파일 URL 우선). 잘못된 audioUrl은 건너뜀.
+   */
   function pickRemoteClipAudioUrl(o: Record<string, unknown>): string | undefined {
     for (const k of [
-      "audioUrl",
-      "audio_url",
-      "stream_audio_url",
-      "streamAudioUrl",
       "source_audio_url",
       "source_stream_audio_url",
+      "audio_url",
+      "audioUrl",
+      "stream_audio_url",
+      "streamAudioUrl",
     ] as const) {
       const v = o[k];
-      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "string") {
+        const t = v.trim();
+        if (t && !isLikelyBadRemoteAudioUrl(t)) return t;
+      }
+    }
+    for (const k of ["stream_audio_url", "streamAudioUrl", "audio_url", "audioUrl"] as const) {
+      const v = o[k];
+      if (typeof v === "string") {
+        const t = v.trim();
+        if (t) return t;
+      }
     }
     return undefined;
   }
@@ -622,7 +644,7 @@ export async function registerRoutes(
     return undefined;
   }
 
-  // Suno 콜백 결과 저장 (first: 30~40초, complete: 2~3분) — 폴링 시 즉시 반환해 체감 속도 개선
+  // Suno 콜백 캐시는 complete 만 저장. first 를 캐시하면 폴링이 조기 종료되며 임시 stream URL 만 저장돼 시간이 지나 한 곡만 재생 실패하는 사례가 남.
   const sunoCallbackResults = new Map<string, { state: "succeeded"; data: { clip_id?: string; audio_url?: string; image_url?: string; title?: string; tags?: string; prompt?: string; custom_mode?: boolean }[] }>();
 
   app.post("/api/ai-music/suno-callback", (req, res) => {
@@ -632,7 +654,7 @@ export async function registerRoutes(
       const cbType = body?.data?.callbackType;
       const taskId = body?.data?.task_id;
       const rawList = Array.isArray(body?.data?.data) ? body.data.data : [];
-      if ((cbType === "first" || cbType === "complete") && taskId && rawList.length > 0) {
+      if (cbType === "complete" && taskId && rawList.length > 0) {
         const tracks = rawList.map((t: unknown) => {
           const r = t as Record<string, unknown>;
           return {
