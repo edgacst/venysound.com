@@ -25,6 +25,8 @@ import banner4 from "@/assets/images/banner-4.png";
 const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: number) =>
   userId ? `announcement_seen_${userId}_${announcementId}` : `announcement_seen_guest_${announcementId}`;
 
+const LIKED_HOME_PAGE_SIZE = 10;
+
 /** 홈 인사용 표시 이름: 끝 님 제거 후 템플릿에서 붙임, 흔한 붙여쓰기 보정 */
 function greetingDisplayName(raw: string): string {
   let s = raw.trim();
@@ -109,17 +111,34 @@ export default function Home() {
       : t("home.greetingEvening", { defaultValue: "좋은 저녁이에요" });
   }, [user, t]);
 
-  const likedTracksForHome = useMemo(() => {
+  /** 홈 좋아요: 좋아요 순서 유지, 목록에 있는 트랙만 (곡 수 제한 없음 — 페이지당 10곡) */
+  const allLikedTracksForHome = useMemo(() => {
     if (!musicList?.length || !myLikeIds.length) return [] as Music[];
     const map = new Map(musicList.map((m) => [m.id, m]));
     const out: Music[] = [];
     for (const id of myLikeIds) {
       const m = map.get(id);
       if (m) out.push(m);
-      if (out.length >= 12) break;
     }
     return out;
   }, [musicList, myLikeIds]);
+
+  const [likedHomePage, setLikedHomePage] = useState(0);
+  const likedTotalPages = Math.max(1, Math.ceil(allLikedTracksForHome.length / LIKED_HOME_PAGE_SIZE));
+
+  useEffect(() => {
+    setLikedHomePage(0);
+  }, [userId]);
+
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(allLikedTracksForHome.length / LIKED_HOME_PAGE_SIZE) - 1);
+    setLikedHomePage((p) => Math.min(p, maxPage));
+  }, [allLikedTracksForHome.length]);
+
+  const likedPageTracks = useMemo(() => {
+    const start = likedHomePage * LIKED_HOME_PAGE_SIZE;
+    return allLikedTracksForHome.slice(start, start + LIKED_HOME_PAGE_SIZE);
+  }, [allLikedTracksForHome, likedHomePage]);
 
   const { data: weeklyTop } = useQuery<any[]>({
     queryKey: ["/api/music/top-weekly", 16],
@@ -739,7 +758,7 @@ export default function Home() {
 
       <WeeklyTopArtistSection />
 
-      {user && likedTracksForHome.length > 0 && (
+      {user && allLikedTracksForHome.length > 0 && (
         <section className="container px-4 py-10 pb-2" data-testid="section-liked-tracks">
           <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
             <div>
@@ -751,13 +770,57 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <HomeMusicRow>
-            {likedTracksForHome.map((music) => (
-              <HomeMusicRowItem key={music.id}>
-                <MusicCard music={music} />
-              </HomeMusicRowItem>
-            ))}
-          </HomeMusicRow>
+          <div className="relative">
+            <div
+              className="flex gap-4 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:mx-0 md:px-0"
+              data-testid="liked-tracks-horizontal-row"
+            >
+              {likedPageTracks.map((music) => (
+                <div
+                  key={music.id}
+                  className="min-w-[10.5rem] w-[42vw] max-w-[11rem] shrink-0 snap-start"
+                  data-testid={`liked-track-card-wrap-${music.id}`}
+                >
+                  <MusicCard music={music} />
+                </div>
+              ))}
+            </div>
+            {likedTotalPages > 1 && (
+              <div className="flex items-center justify-center gap-3 mt-4" data-testid="liked-tracks-pagination">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 rounded-full shrink-0"
+                  disabled={likedHomePage <= 0}
+                  onClick={() => setLikedHomePage((p) => Math.max(0, p - 1))}
+                  aria-label={t("home.likedPagePrev", "이전 페이지")}
+                  data-testid="button-liked-page-prev"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground tabular-nums min-w-[3.5rem] text-center">
+                  {t("home.likedPageIndicator", {
+                    current: likedHomePage + 1,
+                    total: likedTotalPages,
+                    defaultValue: "{{current}} / {{total}}",
+                  })}
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 rounded-full shrink-0"
+                  disabled={likedHomePage >= likedTotalPages - 1}
+                  onClick={() => setLikedHomePage((p) => Math.min(likedTotalPages - 1, p + 1))}
+                  aria-label={t("home.likedPageNext", "다음 페이지")}
+                  data-testid="button-liked-page-next"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
         </section>
       )}
 
