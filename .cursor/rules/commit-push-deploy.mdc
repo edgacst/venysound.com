@@ -1,0 +1,20 @@
+---
+description: After user-requested code changes, commit, push, and give Hostinger deploy one-liner
+alwaysApply: true
+---
+
+# 커밋·푸시·배포 안내
+
+사용자가 기능 수정·버그 수정 등 **코드 변경을 요청한 작업**을 마치면, 별도로 “커밋만 해줘”라고 하지 않아도 다음을 수행한다.
+
+1. **관련 소스만** `git add` 후 의미 있는 메시지로 `git commit` 한다. (Android 빌드 산출물·로컬 백업·무관한 파일은 스테이징하지 않는다.)
+2. `git push origin main`(또는 사용자가 쓰는 기본 브랜치)까지 완료한다.
+3. 응답 마지막에 **Hostinger VPS SSH용 한 줄 배포 명령**을 반드시 붙인다:
+
+```bash
+cd /var/www/venysound/app && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
+```
+
+(저장소 루트 경로가 다르면 사용자 안내에 맞게 `cd`만 바꾼다.)
+
+사용자가 “푸시 하지 마” 또는 “로컬만”이라고 명시한 경우에는 커밋/푸시를 생략한다.
