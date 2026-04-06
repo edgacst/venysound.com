@@ -477,6 +477,9 @@ export default function CreateMusic() {
     payload: ReturnType<typeof tracksToWirePayload>;
     removedClientIds?: string[];
   } | null>(null);
+  /** 매 렌더 최신 로그인 id — 계정 바꾼 뒤 예전 setTimeout/pagehide가 다른 계정 세션으로 PUT 하는 것 방지 */
+  const sessionUserIdRef = useRef<string | undefined>(undefined);
+  sessionUserIdRef.current = user?.id;
 
   const { data: libraryRemote, isFetched: libraryFetched } = useQuery<{ tracks?: unknown[] }>({
     queryKey: aiMusicLibraryQueryKey(user?.id),
@@ -570,6 +573,10 @@ export default function CreateMusic() {
     const flushPendingLibrary = () => {
       const p = libraryPendingSyncRef.current;
       if (!p) return;
+      if (p.userId !== sessionUserIdRef.current) {
+        libraryPendingSyncRef.current = null;
+        return;
+      }
       const body: Record<string, unknown> = { tracks: p.payload };
       if (p.removedClientIds?.length) body.removedClientIds = p.removedClientIds;
       void fetch("/api/ai-music/library", {
@@ -600,6 +607,10 @@ export default function CreateMusic() {
   }, []);
 
   useEffect(() => {
+    if (librarySyncTimerRef.current) {
+      clearTimeout(librarySyncTimerRef.current);
+      librarySyncTimerRef.current = null;
+    }
     if (!user?.id) {
       libraryHydratedForUserRef.current = null;
       libraryPendingSyncRef.current = null;
@@ -666,6 +677,7 @@ export default function CreateMusic() {
       if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
       const send = () => {
         librarySyncTimerRef.current = null;
+        if (uid !== sessionUserIdRef.current) return;
         const body: Record<string, unknown> = { tracks: payload };
         if (removedClientIds?.length) body.removedClientIds = removedClientIds;
         void fetch("/api/ai-music/library", {
