@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, Redirect } from "wouter";
-import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause } from "lucide-react";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause, Plus, Minus } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -419,7 +419,7 @@ export default function RadioChannel() {
   }, [slug, clearRadioPlayer, queryClient]);
 
   const [tipOpen, setTipOpen] = useState(false);
-  const [tipAmount, setTipAmount] = useState(500);
+  const [tipAmount, setTipAmount] = useState(100);
   const [tipMessage, setTipMessage] = useState("");
 
   const [editOpen, setEditOpen] = useState(false);
@@ -517,7 +517,7 @@ export default function RadioChannel() {
     onSuccess: () => {
       toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
       setTipOpen(false);
-      setTipAmount(500);
+      setTipAmount(100);
       setTipMessage("");
       // 후원 성공 시 크레딧/수익 관련 캐시 갱신
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -1022,14 +1022,41 @@ export default function RadioChannel() {
                       <div className="space-y-4 pt-2">
                         <div>
                           <Label>{t("music.tipAmount")}</Label>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {[100, 200, 300, 400, 500, 1000].map((amt) => (
-                              <Button key={amt} type="button" variant={tipAmount === amt ? "default" : "outline"} size="sm" onClick={() => setTipAmount(amt)}>
-                                {amt.toLocaleString()}
-                              </Button>
-                            ))}
+                          <div className="flex items-center justify-center gap-3 mt-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-10 shrink-0"
+                              disabled={tipAmount <= 100}
+                              onClick={() => setTipAmount((a) => Math.max(100, a - 100))}
+                              aria-label={t("music.tipDecrease", "100원 감소")}
+                            >
+                              <Minus className="h-4 w-4" />
+                            </Button>
+                            <div className="min-w-[100px] text-center">
+                              <span className="text-2xl font-bold tabular-nums">{tipAmount.toLocaleString()}</span>
+                              <span className="text-muted-foreground ml-1">{t("common.won", "원")}</span>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-10 w-10 shrink-0"
+                              onClick={() => setTipAmount((a) => a + 100)}
+                              aria-label={t("music.tipIncrease", "100원 증가")}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
                           </div>
-                          <Input type="number" min={100} value={tipAmount} onChange={(e) => setTipAmount(Math.max(100, parseInt(e.target.value, 10) || 100))} className="mt-2" />
+                          <Input
+                            type="number"
+                            min={100}
+                            step={100}
+                            value={tipAmount}
+                            onChange={(e) => setTipAmount(Math.max(100, Math.floor(Number(e.target.value)) || 100))}
+                            className="mt-3"
+                          />
                         </div>
                         <div>
                           <Label>{t("music.tipMessage")}</Label>
@@ -1040,7 +1067,7 @@ export default function RadioChannel() {
                           onClick={() => tipMutation.mutate({ toUserId: channel.ownerId, amount: tipAmount, message: tipMessage.trim() || undefined })}
                           disabled={tipMutation.isPending || tipAmount < 100}
                         >
-                          {tipMutation.isPending ? t("music.tipping") : `${tipAmount.toLocaleString()} ${t("credits.creditUnit")} ${t("music.tipSubmit")}`}
+                          {tipMutation.isPending ? t("music.tipping") : `${tipAmount.toLocaleString()}${t("common.won", "원")} ${t("music.tipSubmit")}`}
                         </Button>
                       </div>
                     </DialogContent>

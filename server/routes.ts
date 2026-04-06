@@ -50,7 +50,7 @@ import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-
 import { fetchInternationalReleasesPage, getEnvInternationalFromUserIds } from "./spotify-international";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import { isAllowedSignupConversionEvent } from "@shared/analytics-conversion-events";
-import { creditsFromTotalVatInclusiveWon } from "@shared/credits-pricing";
+import { walletSupplyWonFromTotalPaymentVatInclusive, WALLET_TOPUP_MIN_TOTAL_WON } from "@shared/credits-pricing";
 import {
   normalizeSubscriptionPlanPrices,
   subscriptionTotalVatInclusiveWon,
@@ -60,7 +60,7 @@ import {
 } from "@shared/subscription-plan-pricing";
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
-  AI_MUSIC_CREDITS_PER_TRACK,
+  AI_MUSIC_WON_PER_TRACK,
   isUserPaidSubscriptionActive,
   getAiMusicMonthlyUsageLimit,
   computeDisplayedSubscriptionFromEntitlements,
@@ -189,12 +189,12 @@ function parseDistributionImportCsv(
   return out;
 }
 
-// 후원 뱃지 레벨 계산 (누적 후원 크레딧 기준)
-function calculateDonationBadge(totalSent: number): string | null {
-  if (totalSent >= 200000) return "sponsor";
-  if (totalSent >= 50000) return "supporter";
-  if (totalSent >= 10000) return "sprout";
-  if (totalSent >= 100) return "seed";
+// 후원 뱃지 레벨 계산 (누적 후원 원화 기준, 구 크레딧 임계값 × 7.5)
+function calculateDonationBadge(totalSentWon: number): string | null {
+  if (totalSentWon >= 1_500_000) return "sponsor";
+  if (totalSentWon >= 375_000) return "supporter";
+  if (totalSentWon >= 75_000) return "sprout";
+  if (totalSentWon >= 750) return "seed";
   return null;
 }
 
@@ -1105,7 +1105,8 @@ export async function registerRoutes(
         walletCredits,
         creditsBalance: walletCredits,
         quota: { kind: quotaKind, used: usedThisMonth, limit },
-        creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
+        wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
+        creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
         deductsCreditsPerCreate,
       });
     } catch (e) {
@@ -1117,7 +1118,8 @@ export async function registerRoutes(
         walletCredits: 0,
         creditsBalance: 0,
         quota: { kind: "songs" as const, used: 0, limit: FREE_AI_MUSIC_LIMIT_PER_MONTH },
-        creditsPerMusicCreate: AI_MUSIC_CREDITS_PER_TRACK,
+        wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
+        creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
         deductsCreditsPerCreate: false,
       });
     }
@@ -1327,15 +1329,15 @@ export async function registerRoutes(
     const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
     const used = usage?.count ?? 0;
     const tierNow = row.subscriptionTier ?? "free";
-    /** Free: count = 곡 수. Pro/Premium 월 한도: count = 이번 달 사용한 AI 크레딧 합계(곡당 20). */
+    /** Free: count = 곡 수. 유료(활성): count = 이번 달 누적 원화 예산(곡당 AI_MUSIC_WON_PER_TRACK). */
     const usageWouldExceed =
       limit >= 0 &&
-      (tierNow === "free" ? used >= limit : used + AI_MUSIC_CREDITS_PER_TRACK > limit);
+      (tierNow === "free" ? used >= limit : used + AI_MUSIC_WON_PER_TRACK > limit);
     if (usageWouldExceed) {
       return res.status(403).json({
         message: limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
-          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 500~2,000 크레딧을 사용할 수 있습니다.`
-          : `이번 달 AI 음악 생성 한도(${limit} 크레딧)를 모두 사용했습니다.`,
+          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 AI 사용 예산(원)이 늘어납니다.`
+          : `이번 달 AI 음악 생성 한도(원화 예산 ${limit.toLocaleString("ko-KR")}원)를 모두 사용했습니다.`,
         code: "AI_MUSIC_LIMIT_REACHED",
         limit,
         usedThisMonth: used,
@@ -1355,10 +1357,10 @@ export async function registerRoutes(
     const customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
 
-    /** @returns 이번 요청에서 지갑(users.credits)에서 차감한 크레딧(없으면 0). 유효 Pro/Premium은 구독 월 한도만 소모하고 지갑은 건드리지 않음. */
+    /** @returns 이번 요청에서 지갑(users.credits, 원)에서 차감한 원화(없으면 0). 유효 유료 구독은 월 예산만 소모. */
     async function incrementAiMusicUsageAndDeductCredits(): Promise<number> {
       if (row.role === "admin") return 0;
-      // Free: 월 2곡까지만, 크레딧 차감 없이 카운트만
+      // Free: 월 2곡까지만, 지갑 차감 없이 카운트만
       if ((row.subscriptionTier ?? "free") === "free") {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
@@ -1367,49 +1369,49 @@ export async function registerRoutes(
         `);
         return 0;
       }
-      // 유효 유료 플랜: 요금제에 포함된 월 AI 크레딧 한도만 사용 — 크레딧 충전 잔액과 무관
+      // 유효 유료 플랜: 요금제에 포함된 월 AI 원화 예산만 사용 — 지갑 충전 잔액과 무관
       if (isPaidTier) {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_CREDITS_PER_TRACK}, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_CREDITS_PER_TRACK}, updated_at = NOW()
+          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
         `);
         return 0;
       }
-      // 등급은 pro/premium이나 구독 만료 등: 기존처럼 지갑 크레딧 차감 + 사용량(크레딧 단위) 반영
+      // 등급은 유료 표시이나 구독 만료 등: 지갑 원화 차감 + 사용량(원화 예산 누적) 반영
       await db.transaction(async (tx) => {
         const [u] = await tx.select().from(users).where(eq(users.id, userId));
         const currentCredits = u?.credits ?? 0;
-        if (currentCredits < AI_MUSIC_CREDITS_PER_TRACK) {
+        if (currentCredits < AI_MUSIC_WON_PER_TRACK) {
           throw new Error("INSUFFICIENT_CREDITS");
         }
         await tx
           .update(users)
-          .set({ credits: currentCredits - AI_MUSIC_CREDITS_PER_TRACK, updatedAt: new Date() })
+          .set({ credits: currentCredits - AI_MUSIC_WON_PER_TRACK, updatedAt: new Date() })
           .where(eq(users.id, userId));
         await tx.insert(creditTransactions).values({
           userId,
           type: "ai_music_create",
-          amount: -AI_MUSIC_CREDITS_PER_TRACK,
+          amount: -AI_MUSIC_WON_PER_TRACK,
           description: "AI 음악 생성",
         });
         await tx.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_CREDITS_PER_TRACK}, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_CREDITS_PER_TRACK}, updated_at = NOW()
+          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
         `);
       });
-      return AI_MUSIC_CREDITS_PER_TRACK;
+      return AI_MUSIC_WON_PER_TRACK;
     }
 
-    async function notifyCreditsDeductedForAiCreate(creditsCharged: number) {
-      if (creditsCharged <= 0) return;
+    async function notifyCreditsDeductedForAiCreate(wonCharged: number) {
+      if (wonCharged <= 0) return;
       try {
         await storage.createNotification({
           userId,
           type: "system",
-          message: `AI 음악 생성 요청으로 ${creditsCharged} 크레딧이 차감되었습니다.`,
-          payload: { creditsCharged, kind: "ai_music_create" },
+          message: `AI 음악 생성 요청으로 ${wonCharged.toLocaleString("ko-KR")}원이 차감되었습니다.`,
+          payload: { wonCharged, creditsCharged: wonCharged, kind: "ai_music_create" },
           url: "/credits",
         });
       } catch (e) {
@@ -1479,6 +1481,8 @@ export async function registerRoutes(
         return res.json({
           task_id: taskId,
           provider: "suno",
+          won_charged: creditsCharged,
+          balance_won: uAfterSuno?.credits ?? 0,
           credits_charged: creditsCharged,
           credits_balance: uAfterSuno?.credits ?? 0,
         });
@@ -1486,7 +1490,10 @@ export async function registerRoutes(
         console.error("[ai-music create suno]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
         if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
-          return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
+          return res.status(402).json({
+            message: "지갑 잔액(원)이 부족합니다. 충전 후 다시 시도해 주세요.",
+            code: "INSUFFICIENT_CREDITS",
+          });
         }
         const payload: { message: string; code: string; detail?: string } = {
           message: "음악 생성 요청 중 오류가 발생했습니다.",
@@ -1547,6 +1554,8 @@ export async function registerRoutes(
       res.json({
         task_id: taskId,
         provider: "aimusicapi",
+        won_charged: creditsCharged,
+        balance_won: uAfterAimusic?.credits ?? 0,
         credits_charged: creditsCharged,
         credits_balance: uAfterAimusic?.credits ?? 0,
       });
@@ -1554,7 +1563,10 @@ export async function registerRoutes(
       console.error("[ai-music create]", e);
       const errMsg = e instanceof Error ? e.message : String(e);
       if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
-        return res.status(402).json({ message: "크레딧이 부족합니다.", code: "INSUFFICIENT_CREDITS" });
+        return res.status(402).json({
+          message: "지갑 잔액(원)이 부족합니다. 충전 후 다시 시도해 주세요.",
+          code: "INSUFFICIENT_CREDITS",
+        });
       }
       const payload: { message: string; code: string; detail?: string } = {
         message: "음악 생성 요청 중 오류가 발생했습니다.",
@@ -2375,19 +2387,20 @@ export async function registerRoutes(
       const price = isPremium ? input.price : 0;
 
       const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
-      await storage.addCredits(userId, 20);
+      const uploadBonusWon = AI_MUSIC_WON_PER_TRACK;
+      await storage.addCredits(userId, uploadBonusWon);
       await storage.createCreditTransaction({
         userId,
         type: "music_upload_bonus",
-        amount: 20,
+        amount: uploadBonusWon,
         description: "음원 등록 보너스",
         relatedId: music.id,
       });
       await storage.createNotification({
         userId,
         type: "system",
-        message: "음원이 등록되었습니다. 20 크레딧이 지급되었습니다.",
-        payload: { musicTitle: music.title, amount: 20 },
+        message: `음원이 등록되었습니다. ${uploadBonusWon.toLocaleString("ko-KR")}원이 지갑에 지급되었습니다.`,
+        payload: { musicTitle: music.title, amount: uploadBonusWon },
         url: "/credits",
       });
       // 비동기로 "좋아할 만한 신곡" 알림 (이메일 + 푸시 + 앱 내 알림)
@@ -2647,21 +2660,21 @@ export async function registerRoutes(
         return res.status(403).json({ message: "삭제 권한이 없습니다" });
       }
 
-      // 이벤트: 음원 등록 시 지급한 20 크레딧 회수
+      // 이벤트: 음원 등록 시 지급한 보너스 원화 회수
       const ownerId = existing.userId;
-      await storage.addCredits(ownerId, -20);
+      await storage.addCredits(ownerId, -AI_MUSIC_WON_PER_TRACK);
       await storage.createCreditTransaction({
         userId: ownerId,
         type: "music_upload_bonus_reversal",
-        amount: -20,
+        amount: -AI_MUSIC_WON_PER_TRACK,
         description: "음원 삭제 시 등록 보너스 회수",
         relatedId: musicId,
       });
       await storage.createNotification({
         userId: ownerId,
         type: "system",
-        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 20 크레딧이 회수되었습니다.`,
-        payload: { musicTitle: existing.title, amount: -20 },
+        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 ${AI_MUSIC_WON_PER_TRACK.toLocaleString("ko-KR")}원이 회수되었습니다.`,
+        payload: { musicTitle: existing.title, amount: -AI_MUSIC_WON_PER_TRACK },
         url: "/credits",
       });
 
@@ -5400,23 +5413,23 @@ export async function registerRoutes(
       const planNorm = String(payment.plan ?? "").trim().toLowerCase();
 
       if (planNorm === "credit_charge") {
-        const creditAmount = creditsFromTotalVatInclusiveWon(payment.amount);
-        await storage.addCredits(payment.userId, creditAmount);
+        const supplyWon = walletSupplyWonFromTotalPaymentVatInclusive(payment.amount);
+        await storage.addCredits(payment.userId, supplyWon);
         await storage.createCreditTransaction({
           userId: payment.userId,
           type: "charge",
-          amount: creditAmount,
-          description: `${creditAmount.toLocaleString()} 크레딧 충전 (계좌이체, 총결제 ${payment.amount.toLocaleString()}원)`,
+          amount: supplyWon,
+          description: `지갑 충전 ${supplyWon.toLocaleString("ko-KR")}원 적립 (계좌이체, 총결제 ${payment.amount.toLocaleString("ko-KR")}원)`,
         });
         await storage.createNotification({
           userId: payment.userId,
           type: "system",
-          message: `${creditAmount.toLocaleString()} 크레딧 충전이 완료되었습니다`,
-          payload: { amount: creditAmount },
+          message: `지갑에 ${supplyWon.toLocaleString("ko-KR")}원이 충전되었습니다`,
+          payload: { amount: supplyWon, balanceWon: supplyWon },
           url: "/credits",
         });
         await db.update(payments).set({ status: "paid" }).where(eq(payments.id, paymentId));
-        return res.json({ success: true, credits: creditAmount });
+        return res.json({ success: true, credits: supplyWon, balanceWon: supplyWon });
       }
 
       const now = new Date();
@@ -5524,10 +5537,10 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const credits = await storage.getUserCredits(userId);
-      res.json({ credits });
+      const balanceWon = await storage.getUserCredits(userId);
+      res.json({ balanceWon, credits: balanceWon });
     } catch (err) {
-      res.status(500).json({ message: "크레딧 정보를 불러올 수 없습니다" });
+      res.status(500).json({ message: "지갑 잔액을 불러올 수 없습니다" });
     }
   });
 
@@ -5552,11 +5565,10 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const { amount, paymentKey, orderId } = req.body;
 
-      if (!amount || amount < 1000) {
-        return res.status(400).json({ message: "최소 충전 금액은 1,000원입니다" });
-      }
-
       const amountNum = Number(amount);
+      if (!amountNum || amountNum < WALLET_TOPUP_MIN_TOTAL_WON) {
+        return res.status(400).json({ message: `최소 충전 금액(총결제, 부가세 포함)은 ${WALLET_TOPUP_MIN_TOTAL_WON.toLocaleString("ko-KR")}원입니다` });
+      }
       const oid =
         orderId && String(orderId).trim()
           ? String(orderId).trim()
@@ -5565,7 +5577,7 @@ export async function registerRoutes(
       const [existingPay] = await db.select().from(payments).where(eq(payments.orderId, oid)).limit(1);
       if (existingPay?.status === "paid") {
         const newCredits = await storage.getUserCredits(userId);
-        return res.json({ credits: newCredits, message: "이미 처리된 결제입니다." });
+        return res.json({ balanceWon: newCredits, credits: newCredits, message: "이미 처리된 결제입니다." });
       }
       if (existingPay?.status === "pending") {
         return res.status(400).json({ message: "동일 주문이 입금 대기 중입니다. 중복 결제를 확인해 주세요." });
@@ -5588,9 +5600,9 @@ export async function registerRoutes(
         }
       }
 
-      const creditsToAdd = creditsFromTotalVatInclusiveWon(amountNum);
-      if (creditsToAdd < 1) {
-        return res.status(400).json({ message: "결제 금액으로 환산된 크레딧이 없습니다" });
+      const supplyWon = walletSupplyWonFromTotalPaymentVatInclusive(amountNum);
+      if (supplyWon < 1) {
+        return res.status(400).json({ message: "결제 금액이 너무 작습니다" });
       }
 
       try {
@@ -5608,18 +5620,18 @@ export async function registerRoutes(
         const code = (insErr as { code?: string })?.code;
         if (code === "23505" || /unique|duplicate/i.test(msg)) {
           const newCredits = await storage.getUserCredits(userId);
-          return res.json({ credits: newCredits, message: "이미 처리된 결제입니다." });
+          return res.json({ balanceWon: newCredits, credits: newCredits, message: "이미 처리된 결제입니다." });
         }
         throw insErr;
       }
 
       try {
-        await storage.addCredits(userId, creditsToAdd);
+        await storage.addCredits(userId, supplyWon);
         await storage.createCreditTransaction({
           userId,
           type: "charge",
-          amount: creditsToAdd,
-          description: `${creditsToAdd.toLocaleString()} 크레딧 충전 (총결제 ${amountNum.toLocaleString()}원)`,
+          amount: supplyWon,
+          description: `지갑 충전 ${supplyWon.toLocaleString("ko-KR")}원 적립 (총결제 ${amountNum.toLocaleString("ko-KR")}원)`,
         });
       } catch (credErr) {
         await db.delete(payments).where(eq(payments.orderId, oid));
@@ -5627,7 +5639,7 @@ export async function registerRoutes(
       }
 
       const newCredits = await storage.getUserCredits(userId);
-      res.json({ credits: newCredits, message: "크레딧이 충전되었습니다" });
+      res.json({ balanceWon: newCredits, credits: newCredits, message: "충전이 완료되었습니다" });
     } catch (err) {
       console.error("Credit charge error:", err);
       res.status(500).json({ message: "크레딧 충전에 실패했습니다" });
@@ -5640,8 +5652,10 @@ export async function registerRoutes(
       // @ts-ignore
       const userId = req.user.claims.sub;
       const { amount } = req.body;
-      if (!amount || amount < 1100) {
-        return res.status(400).json({ message: "최소 충전 금액은 1,000원(총결재 1,100원)입니다" });
+      if (!amount || amount < WALLET_TOPUP_MIN_TOTAL_WON) {
+        return res.status(400).json({
+          message: `최소 충전 금액(총결제, 부가세 포함)은 ${WALLET_TOPUP_MIN_TOTAL_WON.toLocaleString("ko-KR")}원입니다`,
+        });
       }
       const orderId = `CREDIT_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
       await db.insert(payments).values({
@@ -5666,7 +5680,7 @@ export async function registerRoutes(
         await storage.createNotification({
           userId: admin.id,
           type: "system",
-          message: `새 크레딧 입금 신청이 있습니다. (총 ${amount.toLocaleString()}원)`,
+          message: `새 지갑 입금 신청이 있습니다. (총 ${amount.toLocaleString()}원)`,
           payload: { amount },
           url: getAdminPagePath(),
         });
@@ -5679,7 +5693,7 @@ export async function registerRoutes(
         orderId,
         bankInfo: { bankName, bankAccount, bankHolder },
         amount,
-        message: "입금 신청이 등록되었습니다. 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.",
+        message: "입금 신청이 등록되었습니다. 아래 계좌로 입금해 주시면 확인 후 지갑에 원화가 충전됩니다.",
       });
     } catch (err: any) {
       console.error("Credits request-bank error:", err);
@@ -5701,12 +5715,12 @@ export async function registerRoutes(
       const creditsRaw = Number((req.body as { credits?: unknown }).credits);
       const reason = typeof (req.body as { reason?: unknown }).reason === "string" ? String((req.body as { reason: string }).reason).trim().slice(0, 2000) : "";
       if (!Number.isFinite(creditsRaw) || creditsRaw < 1 || !Number.isInteger(creditsRaw)) {
-        return res.status(400).json({ message: "환불 요청 크레딧은 1 이상의 정수여야 합니다" });
+        return res.status(400).json({ message: "환불 요청 금액(원)은 1 이상의 정수여야 합니다" });
       }
       const credits = Math.floor(creditsRaw);
       const balance = await storage.getUserCredits(userId);
       if (credits > balance) {
-        return res.status(400).json({ message: "보유 크레딧보다 많은 금액은 신청할 수 없습니다" });
+        return res.status(400).json({ message: "지갑 잔액보다 많은 금액은 신청할 수 없습니다" });
       }
       const [pending] = await db
         .select({ id: creditRefundRequests.id })
@@ -5734,7 +5748,7 @@ export async function registerRoutes(
       await storage.createNotification({
         userId,
         type: "system",
-        message: `크레딧 환불 신청이 접수되었습니다. (${credits.toLocaleString()} 크레딧) 검토 후 안내드립니다.`,
+        message: `지갑 환불 신청이 접수되었습니다. (${credits.toLocaleString()}원) 검토 후 안내드립니다.`,
         payload: { refundRequestId: inserted.id, credits },
         url: "/credits",
       });
@@ -5744,7 +5758,7 @@ export async function registerRoutes(
         await storage.createNotification({
           userId: admin.id,
           type: "system",
-          message: `새 크레딧 환불 신청: ${credits.toLocaleString()} 크레딧`,
+          message: `새 지갑 환불 신청: ${credits.toLocaleString()}원`,
           payload: { refundRequestId: inserted.id, userId },
           url: getAdminPagePath(),
         });
@@ -6801,7 +6815,7 @@ export async function registerRoutes(
       const { toUserId, musicId, amount, message } = req.body;
 
       if (!toUserId || !amount || amount < 100) {
-        return res.status(400).json({ message: "후원 금액은 최소 100 크레딧입니다" });
+        return res.status(400).json({ message: "후원 금액은 최소 100원입니다" });
       }
       if (fromUserId === toUserId) {
         return res.status(400).json({ message: "자기 자신에게 후원할 수 없습니다" });
@@ -6809,7 +6823,7 @@ export async function registerRoutes(
 
       const deducted = await storage.deductCredits(fromUserId, amount);
       if (!deducted) {
-        return res.status(400).json({ message: "크레딧이 부족합니다. 충전 후 다시 시도해주세요.", insufficientCredits: true });
+        return res.status(400).json({ message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.", insufficientCredits: true });
       }
 
       const tip = await storage.createTip({ fromUserId, toUserId, musicId: musicId || null, amount, message: message || null });
@@ -6836,7 +6850,7 @@ export async function registerRoutes(
       await storage.createNotification({
         userId: toUserId,
         type: "tip",
-        message: `${fromName}님이 ${amount.toLocaleString()} 크레딧을 후원했습니다${message ? `: "${message}"` : ""}`,
+        message: `${fromName}님이 ${amount.toLocaleString()}원을 후원했습니다${message ? `: "${message}"` : ""}`,
         payload: { fromName, amount, tipMessage: message || undefined },
         url: musicId ? `/explore` : undefined,
       });
@@ -6916,7 +6930,7 @@ export async function registerRoutes(
 
       const deducted = await storage.deductCredits(buyerId, musicItem.price);
       if (!deducted) {
-        return res.status(400).json({ message: "크레딧이 부족합니다. 충전 후 다시 시도해주세요.", insufficientCredits: true });
+        return res.status(400).json({ message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.", insufficientCredits: true });
       }
 
       const purchase = await storage.createPurchase({
@@ -6940,7 +6954,7 @@ export async function registerRoutes(
       await storage.createNotification({
         userId: musicItem.userId,
         type: "purchase",
-        message: `${buyerName}님이 "${musicItem.title}"을(를) ${musicItem.price.toLocaleString()} 크레딧에 구매했습니다`,
+        message: `${buyerName}님이 "${musicItem.title}"을(를) ${musicItem.price.toLocaleString()}원에 구매했습니다`,
         payload: { fromName: buyerName, musicTitle: musicItem.title, price: musicItem.price },
         url: `/explore`,
       });

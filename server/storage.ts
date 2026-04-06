@@ -401,7 +401,7 @@ export interface IStorage {
       periodMonth: string;
       limit: number;
       used: number;
-      unit: "songs" | "credits" | "unlimited";
+      unit: "songs" | "credits" | "won" | "unlimited";
     };
   } | null>;
 
@@ -3207,7 +3207,7 @@ export class DatabaseStorage implements IStorage {
       periodMonth: string;
       limit: number;
       used: number;
-      unit: "songs" | "credits" | "unlimited";
+      unit: "songs" | "credits" | "won" | "unlimited";
     };
   } | null> {
     const txLimit = Math.min(200, Math.max(1, Math.floor(Number(input.txLimit) || 50)));
@@ -3242,10 +3242,10 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
     const usedAi = usageRow?.count ?? 0;
     const aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
-    let aiUnit: "songs" | "credits" | "unlimited" = "credits";
+    let aiUnit: "songs" | "credits" | "won" | "unlimited" = "won";
     if (aiLimit === -1) aiUnit = "unlimited";
     else if (aiLimit === FREE_AI_MUSIC_LIMIT_PER_MONTH && !isUserPaidSubscriptionActive(user, now)) aiUnit = "songs";
-    else aiUnit = "credits";
+    else aiUnit = "won";
 
     const [txCountRow] = await db
       .select({ c: sql<number>`count(*)::int` })

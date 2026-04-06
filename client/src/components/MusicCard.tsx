@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Music } from "@shared/schema";
-import { Play, Pause, Heart, Headphones, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check, Sparkles } from "lucide-react";
+import { Play, Pause, Heart, Headphones, MoreVertical, Pencil, Trash2, Flag, Gift, Download, DollarSign, User as UserIcon, ListPlus, ImagePlus, Loader2 as Loader2Icon, X as XIcon, ExternalLink, Timer, RotateCcw, Check, Sparkles, Plus, Minus } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { usePlayerStore } from "./AudioPlayer";
@@ -268,7 +268,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const [reportOriginalTitle, setReportOriginalTitle] = useState("");
   const [reportDetails, setReportDetails] = useState("");
   const [tipOpen, setTipOpen] = useState(false);
-  const [tipAmount, setTipAmount] = useState(500);
+  const [tipAmount, setTipAmount] = useState(100);
   const [tipMessage, setTipMessage] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
@@ -338,7 +338,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
     onSuccess: () => {
       toast({ title: t("music.tipSuccess"), description: t("music.tipSuccessDesc", { amount: tipAmount.toLocaleString() }) });
       setTipOpen(false);
-      setTipAmount(500);
+      setTipAmount(100);
       setTipMessage("");
       // 후원 성공 시 크레딧/수익/후원 목록이 즉시 갱신되도록 캐시 무효화
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -1191,27 +1191,44 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           <div className="space-y-4">
             <div>
               <Label>{t('music.tipAmount')}</Label>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {[100, 200, 300, 400, 500, 1000].map((amt) => (
-                  <Button
-                    key={amt}
-                    type="button"
-                    variant={tipAmount === amt ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setTipAmount(amt)}
-                    data-testid={`button-tip-amount-${amt}`}
-                  >
-                    {amt.toLocaleString()} {t('credits.creditUnit')}
-                  </Button>
-                ))}
+              <div className="flex items-center justify-center gap-3 mt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  disabled={tipAmount <= 100}
+                  onClick={() => setTipAmount((a) => Math.max(100, a - 100))}
+                  data-testid="button-tip-minus"
+                  aria-label={t("music.tipDecrease", "100원 감소")}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <div className="min-w-[100px] text-center">
+                  <span className="text-2xl font-bold tabular-nums" data-testid="text-tip-amount">
+                    {tipAmount.toLocaleString()}
+                  </span>
+                  <span className="text-muted-foreground ml-1">{t("common.won", "원")}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  onClick={() => setTipAmount((a) => a + 100)}
+                  data-testid="button-tip-plus"
+                  aria-label={t("music.tipIncrease", "100원 증가")}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
               <Input
                 type="number"
                 min={100}
                 step={100}
                 value={tipAmount}
-                onChange={(e) => setTipAmount(Number(e.target.value))}
-                className="mt-2"
+                onChange={(e) => setTipAmount(Math.max(100, Math.floor(Number(e.target.value)) || 100))}
+                className="mt-3"
                 placeholder={t('music.tipCustom')}
                 data-testid="input-tip-custom-amount"
               />
@@ -1234,7 +1251,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               disabled={tipMutation.isPending || tipAmount < 100}
               data-testid="button-confirm-tip"
             >
-              {tipMutation.isPending ? t('music.tipping') : `${tipAmount.toLocaleString()} ${t('credits.creditUnit')} ${t('music.tipSubmit')}`}
+              {tipMutation.isPending ? t('music.tipping') : `${tipAmount.toLocaleString()}${t("common.won", "원")} ${t('music.tipSubmit')}`}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1251,7 +1268,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             </DialogDescription>
           </DialogHeader>
           <div className="text-center py-4">
-            <p className="text-3xl font-bold text-foreground">{(music.price || 0).toLocaleString()} {t('credits.creditUnit')}</p>
+            <p className="text-3xl font-bold text-foreground">{(music.price || 0).toLocaleString()}{t("common.won", "원")}</p>
             <p className="text-sm text-muted-foreground mt-2">{t("music.buyAfterDownloadHint", "구매 후 음원을 다운로드할 수 있습니다")}</p>
           </div>
           <DialogFooter>

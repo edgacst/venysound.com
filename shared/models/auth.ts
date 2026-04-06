@@ -31,6 +31,7 @@ export const users = pgTable("users", {
   subscriptionEntitlements: jsonb("subscription_entitlements")
     .$type<Record<string, string>>()
     .default(sql`'{}'::jsonb`),
+  /** 지갑 잔액(원, 정수). DB 컬럼명은 레거시로 credits 유지 */
   credits: integer("credits").default(0),
   balance: integer("balance").default(0),
   donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'

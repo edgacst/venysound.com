@@ -61,7 +61,7 @@ export function Navigation() {
     enabled: !!user,
   });
 
-  const { data: creditsData } = useQuery<{ credits: number }>({
+  const { data: creditsData } = useQuery<{ credits: number; balanceWon?: number }>({
     queryKey: ["/api/credits"],
     enabled: !!user,
   });
@@ -221,7 +221,10 @@ export function Navigation() {
                     <Link href="/credits">
                       <div className="flex items-center justify-between cursor-pointer w-full" data-testid="link-credits">
                         <span className="flex items-center gap-2"><Coins size={16} /> {t('nav.credits')}</span>
-                        <span className="text-xs font-medium text-primary" data-testid="text-nav-credits">{(creditsData?.credits || 0).toLocaleString()}C</span>
+                        <span className="text-xs font-medium text-primary" data-testid="text-nav-credits">
+                          {(creditsData?.balanceWon ?? creditsData?.credits ?? 0).toLocaleString()}
+                          {t("common.won", "원")}
+                        </span>
                       </div>
                     </Link>
                   </DropdownMenuItem>
@@ -318,7 +321,10 @@ export function Navigation() {
                         }
                       `}>
                       <span className="flex items-center gap-2"><Coins size={18} /> {t('nav.credits')}</span>
-                      <span className="text-xs font-medium text-primary" data-testid="text-mobile-credits">{(creditsData?.credits || 0).toLocaleString()}C</span>
+                      <span className="text-xs font-medium text-primary" data-testid="text-mobile-credits">
+                        {(creditsData?.balanceWon ?? creditsData?.credits ?? 0).toLocaleString()}
+                        {t("common.won", "원")}
+                      </span>
                     </div>
                   </Link>
                   <Link href="/messages">

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Plus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles, Undo2 } from "lucide-react";
+import { Coins, Plus, Minus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles, Undo2 } from "lucide-react";
 import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -18,19 +18,11 @@ import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import {
-  creditPackageSupplyWon,
-  creditPackageTotalVatWon,
-  type CreditPackagePricing,
+  walletSupplyWonFromTotalPaymentVatInclusive,
+  WALLET_TOPUP_DEFAULT_TOTAL_WON,
+  WALLET_TOPUP_MIN_TOTAL_WON,
+  WALLET_TOPUP_STEP_TOTAL_WON,
 } from "@shared/credits-pricing";
-
-const CREDIT_PACKAGES: (CreditPackagePricing & { label: string })[] = [
-  { amount: 500, label: "500" },
-  { amount: 1000, label: "1,000" },
-  { amount: 1500, label: "1,500" },
-  { amount: 2000, label: "2,000" },
-  { amount: 2500, label: "2,500" },
-  { amount: 3000, label: "3,000" },
-];
 
 const REFUND_OTP_PURPOSE = "credit_refund";
 
@@ -49,7 +41,7 @@ export default function Credits() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
+  const [topupTotalWon, setTopupTotalWon] = useState(WALLET_TOPUP_DEFAULT_TOTAL_WON);
   const [bankModalOpen, setBankModalOpen] = useState(false);
   const [bankRequestResult, setBankRequestResult] = useState<{
     bankInfo: { bankName: string; bankAccount: string; bankHolder: string };
@@ -73,7 +65,7 @@ export default function Credits() {
   const [bindSendingOtp, setBindSendingOtp] = useState(false);
   const [bindVerifying, setBindVerifying] = useState(false);
 
-  const { data: creditData, isLoading } = useQuery<{ credits: number }>({
+  const { data: creditData, isLoading } = useQuery<{ credits: number; balanceWon?: number }>({
     queryKey: ["/api/credits"],
     enabled: !!user,
     // 다른 사용자가 보낸 후원/구매로 값이 바뀌어도 즉시 반영되도록 함
@@ -124,8 +116,8 @@ export default function Credits() {
   const searchString = useSearch();
   const isTossAvailable = !!tossClientKey?.clientKey;
 
-  const selectedCreditPkg =
-    selectedPackage != null ? CREDIT_PACKAGES.find((p) => p.amount === selectedPackage) : undefined;
+  const balanceWon = creditData?.balanceWon ?? creditData?.credits ?? 0;
+  const topupSupplyWon = walletSupplyWonFromTotalPaymentVatInclusive(topupTotalWon);
 
   // Handle Toss redirect: successUrl returns with ?paymentKey=...&orderId=...
   useEffect(() => {
@@ -152,7 +144,13 @@ export default function Credits() {
             queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
             queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
             queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
-            toast({ title: t("credits.chargeComplete", "충전 완료"), description: t("credits.chargeCompleteDesc", "크레딧이 충전되었습니다. 현재 잔액: ") + (data.credits ?? 0).toLocaleString() });
+            toast({
+              title: t("credits.chargeComplete", "충전 완료"),
+              description:
+                t("credits.chargeCompleteDescWon", "지갑에 원화가 반영되었습니다. 현재 잔액: ") +
+                (data.balanceWon ?? data.credits ?? 0).toLocaleString() +
+                t("common.won", "원"),
+            });
           } else {
             toast({ title: t("credits.chargeFailed", "충전 실패"), description: data?.message ?? "결제 확인에 실패했습니다", variant: "destructive" });
           }
@@ -260,11 +258,17 @@ export default function Credits() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: t('credits.chargeComplete', '충전 완료'), description: t('credits.chargeCompleteDesc', '크레딧이 충전되었습니다. 현재 잔액: ') + data.credits?.toLocaleString() });
+      toast({
+        title: t("credits.chargeComplete", "충전 완료"),
+        description:
+          t("credits.chargeCompleteDescWon", "지갑에 원화가 반영되었습니다. 현재 잔액: ") +
+          (data.balanceWon ?? data.credits)?.toLocaleString() +
+          t("common.won", "원"),
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
       queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
-      setSelectedPackage(null);
+      setTopupTotalWon(WALLET_TOPUP_DEFAULT_TOTAL_WON);
     },
     onError: (error: Error) => {
       toast({ title: t('credits.chargeFailed', '충전 실패'), description: error.message, variant: "destructive" });
@@ -296,12 +300,10 @@ export default function Credits() {
   };
 
   const handleTossPayment = async () => {
-    if (!selectedPackage || !user || !tossClientKey?.clientKey) return;
-    const pkg = CREDIT_PACKAGES.find((p) => p.amount === selectedPackage);
-    if (!pkg) return;
-    const amount = creditPackageTotalVatWon(pkg);
-    const orderId = `CREDIT_${String(user.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)}_${Date.now()}`;
-    // amount는 원화 결제금액 (크레딧 수량 × 7.5원 + 부가세 10%)
+    if (!user || !tossClientKey?.clientKey) return;
+    if (topupTotalWon < WALLET_TOPUP_MIN_TOTAL_WON) return;
+    const amount = topupTotalWon;
+    const orderId = `WALLET_${String(user.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)}_${Date.now()}`;
     sessionStorage.setItem("credit_charge", JSON.stringify({ amount }));
     setTossLoading(true);
     try {
@@ -310,7 +312,7 @@ export default function Credits() {
       await tossPayments.requestPayment("카드", {
         amount,
         orderId,
-        orderName: t("credits.orderName", "크레딧 충전"),
+        orderName: t("credits.orderNameWallet", "지갑 충전"),
         successUrl: `${baseUrl}/credits?payment=success`,
         failUrl: `${baseUrl}/credits?payment=fail`,
       });
@@ -332,7 +334,7 @@ export default function Credits() {
         <Card className="p-8 text-center max-w-sm">
           <Coins className="mx-auto mb-4 text-primary" size={48} />
           <h2 className="text-xl font-bold mb-2">{t('credits.loginRequired', '로그인이 필요합니다')}</h2>
-          <p className="text-muted-foreground mb-4">{t('credits.loginRequiredDesc', '크레딧을 충전하려면 먼저 로그인해주세요')}</p>
+          <p className="text-muted-foreground mb-4">{t("credits.loginRequiredDescWon", "지갑을 충전하려면 먼저 로그인해 주세요")}</p>
           <Link href={LOGIN_PATH}>
             <Button data-testid="button-go-login">{t('credits.goLogin', '로그인하기')}</Button>
           </Link>
@@ -348,8 +350,8 @@ export default function Credits() {
         <Navigation />
         <div className="p-6 max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2" data-testid="text-credits-title">{t('credits.title', '크레딧 충전')}</h1>
-          <p className="text-muted-foreground">{t('credits.subtitle', '크레딧을 충전하여 아티스트를 후원하고 음원을 구매하세요')}</p>
+          <h1 className="text-3xl font-bold mb-2" data-testid="text-credits-title">{t("credits.titleWon", "지갑 충전")}</h1>
+          <p className="text-muted-foreground">{t("credits.subtitleWon", "원화를 충전해 후원·유료 음원 구매·AI 생성 등에 사용하세요")}</p>
           <p className="text-xs text-muted-foreground mt-1">
             {t('credits.vatNotice', '표시된 총 결제액에는 부가세 10%가 포함됩니다. 현금영수증·세금계산서 발행 가능')}
           </p>
@@ -362,14 +364,21 @@ export default function Credits() {
                 <Coins className="text-primary" size={28} />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">{t('credits.myCredits', '내 크레딧')}</p>
+                <p className="text-sm text-muted-foreground">{t("credits.myBalanceWon", "내 지갑 잔액")}</p>
                 <p className="text-3xl font-bold" data-testid="text-credit-balance">
-                  {isLoading ? <Loader2 className="animate-spin" size={24} /> : (creditData?.credits || 0).toLocaleString()}
+                  {isLoading ? (
+                    <Loader2 className="animate-spin" size={24} />
+                  ) : (
+                    <>
+                      {balanceWon.toLocaleString()}
+                      <span className="text-lg font-semibold text-muted-foreground ml-1">{t("common.won", "원")}</span>
+                    </>
+                  )}
                 </p>
               </div>
             </div>
             <Badge variant="outline" className="text-sm px-3 py-1">
-              {t('credits.exchangeRate', '1 크레딧 = 7.5원')}
+              {t("credits.vatIncludedHint", "총결제액에 부가세 10% 포함")}
             </Badge>
           </div>
         </Card>
@@ -379,12 +388,12 @@ export default function Credits() {
             <div>
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Undo2 className="text-orange-400" size={20} />
-                {t("credits.refundSectionTitle", "충전 크레딧 환불")}
+                {t("credits.refundSectionTitleWon", "충전 원화 환불")}
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
                 {t(
                   "credits.refundSectionDesc",
-                  "미사용 충전 크레딧에 대한 환불은 환불 정책(7일 이내 등)에 따라 검토됩니다. 승인 시 크레딧만 차감되며, 원화 환불은 별도로 안내됩니다.",
+                  "미사용 충전 분에 대한 환불은 환불 정책에 따라 검토됩니다. 승인 시 지갑 잔액만 차감되며, 통장 환불은 별도 안내입니다.",
                 )}
               </p>
               <Link href="/refund-policy" className="text-xs text-primary hover:underline mt-2 inline-block">
@@ -428,7 +437,10 @@ export default function Credits() {
                     data-testid={`refund-request-${r.id}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="tabular-nums whitespace-nowrap shrink-0">{r.creditsAmount.toLocaleString()} {t("credits.creditUnit", "크레딧")}</span>
+                      <span className="tabular-nums whitespace-nowrap shrink-0">
+                        {r.creditsAmount.toLocaleString()}
+                        {t("common.won", "원")}
+                      </span>
                       <Badge variant={r.status === "pending" ? "secondary" : r.status === "approved" ? "default" : "destructive"} className="shrink-0">
                         {statusText}
                       </Badge>
@@ -492,7 +504,7 @@ export default function Credits() {
         >
           <DialogContent className="sm:max-w-md max-h-[min(90vh,720px)] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{t("credits.refundDialogTitle", "충전 크레딧 환불 신청")}</DialogTitle>
+              <DialogTitle>{t("credits.refundDialogTitleWon", "충전 원화 환불 신청")}</DialogTitle>
               <p className="text-sm text-muted-foreground pt-1">
                 {t(
                   "credits.refundDialogVerifyNote",
@@ -502,19 +514,19 @@ export default function Credits() {
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="refund-credits">{t("credits.refundCreditsLabel", "환불 요청 크레딧")}</Label>
+                <Label htmlFor="refund-credits">{t("credits.refundWonLabel", "환불 요청 금액(원)")}</Label>
                 <input
                   id="refund-credits"
                   type="number"
                   min={1}
-                  max={creditData?.credits ?? 0}
+                  max={balanceWon}
                   className="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={refundCreditsInput}
                   onChange={(e) => setRefundCreditsInput(e.target.value)}
                   placeholder={t("credits.refundCreditsPlaceholder", "숫자 입력")}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t("credits.refundMaxHint", "보유: {{n}} 크레딧", { n: (creditData?.credits ?? 0).toLocaleString() })}
+                  {t("credits.refundMaxHintWon", "보유: {{n}}원", { n: balanceWon.toLocaleString() })}
                 </p>
               </div>
               <div>
@@ -735,11 +747,11 @@ export default function Credits() {
                   }
                   const n = parseInt(refundCreditsInput, 10);
                   if (!Number.isFinite(n) || n < 1) {
-                    toast({ title: t("credits.refundInvalidAmount", "올바른 크레딧 수를 입력해 주세요"), variant: "destructive" });
+                    toast({ title: t("credits.refundInvalidAmountWon", "올바른 원화 금액을 입력해 주세요"), variant: "destructive" });
                     return;
                   }
-                  if (n > (creditData?.credits ?? 0)) {
-                    toast({ title: t("credits.refundExceedsBalance", "보유 크레딧을 초과할 수 없습니다"), variant: "destructive" });
+                  if (n > balanceWon) {
+                    toast({ title: t("credits.refundExceedsBalanceWon", "지갑 잔액을 초과할 수 없습니다"), variant: "destructive" });
                     return;
                   }
                   refundRequestMutation.mutate({ credits: n, reason: refundReason.trim(), refundProofToken });
@@ -752,73 +764,81 @@ export default function Credits() {
         </Dialog>
 
         <div className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">{t('credits.selectPackage', '충전 패키지 선택')}</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {CREDIT_PACKAGES.map((pkg) => (
-              <Card
-                key={pkg.amount}
-                className={`p-5 cursor-pointer transition-all relative ${
-                  selectedPackage === pkg.amount
-                    ? "ring-2 ring-primary"
-                    : "hover-elevate"
-                }`}
-                onClick={() => setSelectedPackage(pkg.amount)}
-                data-testid={`card-package-${pkg.amount}`}
-              >
-                <div className="text-center">
-                  <div className="flex items-center justify-center gap-1 mb-2">
-                    <Coins size={18} className="text-primary" />
-                    <span className="text-2xl font-bold">{pkg.label}</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{creditPackageSupplyWon(pkg).toLocaleString()}{t('credits.won', '원')}</p>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-
-        {selectedPackage && (
-          <Card className="p-6 mb-8">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-sm text-muted-foreground">{t('credits.selectedPackage', '선택한 패키지')}</p>
-                <p className="text-xl font-bold">{selectedPackage.toLocaleString()} {t('credits.creditUnit', '크레딧')}</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {selectedCreditPkg &&
-                    t('credits.totalPaymentLine', {
-                      charge: creditPackageSupplyWon(selectedCreditPkg).toLocaleString(),
-                      total: creditPackageTotalVatWon(selectedCreditPkg).toLocaleString(),
-                      defaultValue: `충전금 ${creditPackageSupplyWon(selectedCreditPkg).toLocaleString()}원 + 부가세 10% = 총결재 ${creditPackageTotalVatWon(selectedCreditPkg).toLocaleString()}원`,
-                    })}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setSelectedPackage(null)}>{t('credits.cancel', '취소')}</Button>
+          <h2 className="text-xl font-semibold mb-4">{t("credits.topupAmountTitle", "충전 금액")}</h2>
+          <Card className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="flex items-center justify-center gap-3">
                 <Button
-                  onClick={() => {
-                    setBankRequestResult(null);
-                    setBankModalOpen(true);
-                  }}
-                  data-testid="button-charge"
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-12 w-12 shrink-0"
+                  disabled={topupTotalWon <= WALLET_TOPUP_MIN_TOTAL_WON}
+                  onClick={() => setTopupTotalWon((v) => Math.max(WALLET_TOPUP_MIN_TOTAL_WON, v - WALLET_TOPUP_STEP_TOTAL_WON))}
+                  aria-label={t("credits.decreaseTopup", "금액 감소")}
+                  data-testid="button-topup-minus"
                 >
-                  <Landmark size={16} className="mr-2" />
-                  {t('credits.bankTransferCharge', '계좌이체로 충전 신청')}
+                  <Minus className="h-5 w-5" />
+                </Button>
+                <div className="text-center min-w-[140px]">
+                  <p className="text-xs text-muted-foreground mb-1">{t("credits.totalPaymentLabel", "총 결제(부가세 포함)")}</p>
+                  <p className="text-3xl font-bold tabular-nums" data-testid="text-topup-total">
+                    {topupTotalWon.toLocaleString()}
+                    <span className="text-lg font-semibold text-muted-foreground ml-1">{t("common.won", "원")}</span>
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-12 w-12 shrink-0"
+                  onClick={() => setTopupTotalWon((v) => v + WALLET_TOPUP_STEP_TOTAL_WON)}
+                  aria-label={t("credits.increaseTopup", "금액 증가")}
+                  data-testid="button-topup-plus"
+                >
+                  <Plus className="h-5 w-5" />
                 </Button>
               </div>
+              <div className="flex-1 space-y-1 text-sm text-muted-foreground border-t sm:border-t-0 sm:border-l border-border/60 pt-4 sm:pt-0 sm:pl-6">
+                <p>
+                  {t("credits.topupSupplyLine", "지갑 적립(공급가액): {{n}}원", {
+                    n: topupSupplyWon.toLocaleString(),
+                  })}
+                </p>
+                <p className="text-xs">{t("credits.topupStepHint", "기본 3,000원에서 +를 누를 때마다 2,000원씩 증가합니다.")}</p>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
-              {t('credits.tosPaymentNotice', '현재 토스결제는 준비중에 있습니다. 지금은 계좌 이체만 가능합니다.')}
-              {bankInfo && (
-                <span className="block mt-1 font-medium"> {bankInfo.bankName} {bankInfo.bankAccount} {bankInfo.bankHolder}</span>
-              )}
-            </p>
+            <div className="flex flex-wrap gap-2 mt-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setBankRequestResult(null);
+                  setBankModalOpen(true);
+                }}
+                data-testid="button-charge-bank"
+              >
+                <Landmark size={16} className="mr-2" />
+                {t("credits.bankTransferCharge", "계좌이체로 충전 신청")}
+              </Button>
+              {isTossAvailable ? (
+                <Button onClick={() => void handleTossPayment()} disabled={tossLoading} data-testid="button-charge-toss">
+                  {tossLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <CreditCard size={16} className="mr-2" />}
+                  {t("credits.tossPay", "카드 결제")}
+                </Button>
+              ) : null}
+            </div>
+            {bankInfo && (
+              <p className="text-xs text-muted-foreground mt-3 font-medium">
+                {bankInfo.bankName} {bankInfo.bankAccount} {bankInfo.bankHolder}
+              </p>
+            )}
           </Card>
-        )}
+        </div>
 
         <Dialog open={bankModalOpen} onOpenChange={setBankModalOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>{t('credits.bankTransferTitle', '계좌이체로 크레딧 충전')}</DialogTitle>
+              <DialogTitle>{t("credits.bankTransferTitleWon", "계좌이체로 지갑 충전")}</DialogTitle>
             </DialogHeader>
             {bankRequestResult ? (
               <div className="space-y-4">
@@ -831,15 +851,17 @@ export default function Credits() {
                   <p className="text-xs text-muted-foreground">{t('pricing.orderId', '신청 번호')}: {bankRequestResult.orderId}</p>
                 </div>
               </div>
-            ) : selectedPackage != null ? (
+            ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  {selectedCreditPkg &&
-                    t('credits.modalIntro', {
-                      charge: creditPackageSupplyWon(selectedCreditPkg).toLocaleString("ko-KR"),
-                      total: creditPackageTotalVatWon(selectedCreditPkg).toLocaleString("ko-KR"),
-                      defaultValue: `충전금 ${creditPackageSupplyWon(selectedCreditPkg).toLocaleString("ko-KR")}원 + 부가세 10% = 총결재 ${creditPackageTotalVatWon(selectedCreditPkg).toLocaleString("ko-KR")}원을 아래 계좌로 입금해 주시면 확인 후 크레딧이 충전됩니다.`,
-                    })}
+                  {t(
+                    "credits.modalIntroWon",
+                    `충전금 {{charge}}원 + 부가세 10% = 총결제 {{total}}원을 아래 계좌로 입금해 주시면 확인 후 지갑에 반영됩니다.`,
+                    {
+                      charge: topupSupplyWon.toLocaleString("ko-KR"),
+                      total: topupTotalWon.toLocaleString("ko-KR"),
+                    },
+                  )}
                 </p>
                 {bankInfo && (
                   <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
@@ -847,28 +869,24 @@ export default function Credits() {
                     <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
                     <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
                     <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span>{" "}
-                      {selectedCreditPkg &&
-                        `${creditPackageTotalVatWon(selectedCreditPkg).toLocaleString("ko-KR")}${t('pricing.won', '원')} (${t('credits.depositAmountWithVat', { total: creditPackageTotalVatWon(selectedCreditPkg).toLocaleString("ko-KR"), charge: creditPackageSupplyWon(selectedCreditPkg).toLocaleString("ko-KR"), defaultValue: `${creditPackageSupplyWon(selectedCreditPkg).toLocaleString("ko-KR")}원 + 부가세 10%` })})`}
+                      {`${topupTotalWon.toLocaleString("ko-KR")}${t('pricing.won', '원')} (${t('credits.depositAmountWithVat', { total: topupTotalWon.toLocaleString("ko-KR"), charge: topupSupplyWon.toLocaleString("ko-KR"), defaultValue: `${topupSupplyWon.toLocaleString("ko-KR")}원 + 부가세 10%` })})`}
                     </p>
                   </div>
                 )}
                 <Button
                   className="w-full"
-                  onClick={() => {
-                    if (!selectedCreditPkg) return;
-                    requestBankMutation.mutate(creditPackageTotalVatWon(selectedCreditPkg));
-                  }}
-                  disabled={requestBankMutation.isPending}
+                  onClick={() => requestBankMutation.mutate(topupTotalWon)}
+                  disabled={requestBankMutation.isPending || topupTotalWon < WALLET_TOPUP_MIN_TOTAL_WON}
                 >
                   {requestBankMutation.isPending ? t('credits.processing', '처리 중...') : t('pricing.submitBankRequest', '입금 신청하기')}
                 </Button>
               </div>
-            ) : null}
+            )}
           </DialogContent>
         </Dialog>
 
         <div>
-          <h2 className="text-xl font-semibold mb-4">{t('credits.transactionHistory', '크레딧 사용 내역')}</h2>
+          <h2 className="text-xl font-semibold mb-4">{t("credits.transactionHistoryWon", "지갑 사용 내역")}</h2>
           {isLoadingTx ? (
             <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" size={24} /></div>
           ) : (!transactions || transactions.length === 0) ? (
@@ -893,7 +911,9 @@ export default function Credits() {
                       </div>
                       <div className="text-right shrink-0">
                         <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
-                          {tx.amount > 0 ? "+" : ""}{tx.amount.toLocaleString()}
+                          {tx.amount > 0 ? "+" : ""}
+                          {tx.amount.toLocaleString()}
+                          {t("common.won", "원")}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {tx.createdAt

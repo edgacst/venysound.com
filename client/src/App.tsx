@@ -67,7 +67,7 @@ function PageTitle() {
       faq: "자주 묻는 질문 | VenySound",
       notices: t("noticesPage.documentTitle"),
       community: "커뮤니티 | VenySound",
-      credits: "크레딧 | VenySound",
+      credits: "지갑 | VenySound",
       "create-music": "AI 음악 생성 | VenySound",
       "suno-guide": "음악 만들기 가이드 | VenySound",
       "global-distribution-guide": "글로벌 음원출시로 수익방법 | VenySound",

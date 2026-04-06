@@ -100,7 +100,7 @@ type AdminUserWalletResponse = {
     periodMonth: string;
     limit: number;
     used: number;
-    unit: "songs" | "credits" | "unlimited";
+    unit: "songs" | "credits" | "won" | "unlimited";
   };
   creditTransactions: { total: number; rows: Array<{ id: number; type: string; amount: number; description: string | null; createdAt: string }> };
   payments: {
@@ -1747,10 +1747,11 @@ export default function Admin() {
             </Card>
             <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-credits-charged">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
-                <Coins size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalCreditsCharged', '총 충전된 크레딧')}</span>
+                <Coins size={14} className="shrink-0" /> <span className="leading-tight">{t("admin.totalWalletChargedWon", "총 충전 적립(원)")}</span>
               </div>
               <div className="text-2xl sm:text-3xl font-bold tabular-nums min-h-[2.25rem] flex items-center justify-center text-primary">
-                {(creditsChargedData?.totalCreditsCharged ?? 0).toLocaleString()}C
+                {(creditsChargedData?.totalCreditsCharged ?? 0).toLocaleString()}
+                {t("common.won", "원")}
               </div>
             </Card>
           </div>
@@ -4737,17 +4738,17 @@ export default function Admin() {
                           </span>
                         ) : (
                           <span>
-                            {t("admin.walletAiCreditsUsed", "{{used}} / {{limit}} 크레딧 (구독 월 한도)", {
-                              used: walletData.aiMusicMonthly.used,
-                              limit: walletData.aiMusicMonthly.limit,
+                            {t("admin.walletAiWonUsed", "{{used}} / {{limit}}원 (구독 월 예산)", {
+                              used: walletData.aiMusicMonthly.used.toLocaleString(),
+                              limit: walletData.aiMusicMonthly.limit.toLocaleString(),
                             })}
                           </span>
                         )}
                       </div>
                       <p className="text-[11px] text-muted-foreground leading-snug">
                         {t(
-                          "admin.walletAiMonthlyHint",
-                          "요금제에 적힌 '○○ 크레딧/월'은 AI 음악 생성 한도로만 사용되며, 위 충전 크레딧 잔액(users.credits)에 더해지지 않습니다.",
+                          "admin.walletAiMonthlyHintWon",
+                          "구독에 포함된 AI 월 예산(원)은 생성 한도로만 쓰이며, 지갑 잔액(users.credits, 원)과 합산되지 않습니다.",
                         )}
                       </p>
                       <div className="pt-3 border-t border-border/40 mt-2 space-y-2">

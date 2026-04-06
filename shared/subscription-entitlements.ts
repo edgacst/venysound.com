@@ -4,15 +4,23 @@ import {
   PAID_SUBSCRIPTION_TIER_IDS,
 } from "./subscription-plan-pricing";
 
-/** Free 플랜 월 AI 곡 수 상한 (라우트와 동일 의미) */
+/** Free 플랜 월 AI 곡 수 상한 */
 export const FREE_AI_MUSIC_LIMIT_PER_MONTH = 2;
-export const AI_MUSIC_CREDITS_PER_TRACK = 20;
 
-export const AI_MUSIC_MONTHLY_CREDITS_BY_TIER: Record<PaidSubscriptionTierId, number> = {
-  starter: 500,
-  basic: 1000,
-  pro: 1500,
-  premium: 2000,
+/** AI 음악 1회 생성 시 지갑에서 차감하는 원(구독 만료 후 유료 등급 표시만 남은 경우 등) */
+export const AI_MUSIC_WON_PER_TRACK = 150;
+
+/** @deprecated AI_MUSIC_WON_PER_TRACK 사용 */
+export const AI_MUSIC_CREDITS_PER_TRACK = AI_MUSIC_WON_PER_TRACK;
+
+/**
+ * 유료 플랜(활성) 월간 AI 사용 예산(원). 구독에 포함된 분량(구 500~2000 크레딧 × 7.5원).
+ */
+export const AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER: Record<PaidSubscriptionTierId, number> = {
+  starter: 3750,
+  basic: 7500,
+  pro: 11250,
+  premium: 15000,
 };
 
 const TIER_RANK: Record<PaidSubscriptionTierId, number> = {
@@ -62,7 +70,7 @@ export function pruneExpiredEntitlements(map: Record<string, string>, now: Date)
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(map)) {
     const d = parseIsoDate(v);
-    if (d && d > now) out[k] = d.toISOString();
+    if (d && d > now) out[k] = v;
   }
   return out;
 }
@@ -117,18 +125,21 @@ export function isUserPaidSubscriptionActive(user: UserSubscriptionFields | unde
   return getActivePaidTierIds(pruned, now).length > 0;
 }
 
-/** 활성 유료 플랜이 있으면 각 tier 월 크레딧을 합산 (starter+premium → 2500) */
-export function sumActivePaidAiMusicMonthlyCredits(user: UserSubscriptionFields | undefined, now: Date): number {
+/** 활성 유료 플랜이 있으면 각 tier 월 AI 예산(원)을 합산 */
+export function sumActivePaidAiMusicMonthlyWonBudget(user: UserSubscriptionFields | undefined, now: Date): number {
   const view = buildEntitlementsView(user?.subscriptionEntitlements, user?.subscriptionTier, user?.subscriptionExpiresAt, now);
   const pruned = pruneExpiredEntitlements(view, now);
   const active = getActivePaidTierIds(pruned, now);
   if (active.length === 0) return FREE_AI_MUSIC_LIMIT_PER_MONTH;
-  return active.reduce((sum, t) => sum + AI_MUSIC_MONTHLY_CREDITS_BY_TIER[t], 0);
+  return active.reduce((sum, t) => sum + AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[t], 0);
 }
 
+/** @deprecated sumActivePaidAiMusicMonthlyWonBudget */
+export const sumActivePaidAiMusicMonthlyCredits = sumActivePaidAiMusicMonthlyWonBudget;
+
 /**
- * AI 월 한도(관리자 -1). 유료 활성: 합산 크레딧. 무료 문자열 tier: 곡 수 한도.
- * 만료된 유료 표시만 남은 경우 월 한도는 적용하지 않음(실질 차단은 지갑 크레딧).
+ * AI 월 한도(관리자 -1). 유료 활성: 합산 원화 예산. 무료: 곡 수 한도.
+ * 만료된 유료 표시만 남은 경우 월 한도는 적용하지 않음(실질 차단은 지갑 원화).
  */
 export function getAiMusicMonthlyUsageLimit(
   user: UserSubscriptionFields | undefined,
@@ -137,7 +148,7 @@ export function getAiMusicMonthlyUsageLimit(
 ): number {
   if (role === "admin") return -1;
   if (isUserPaidSubscriptionActive(user, now)) {
-    return sumActivePaidAiMusicMonthlyCredits(user, now);
+    return sumActivePaidAiMusicMonthlyWonBudget(user, now);
   }
   if ((user?.subscriptionTier ?? "free") === "free") return FREE_AI_MUSIC_LIMIT_PER_MONTH;
   return Number.MAX_SAFE_INTEGER;
@@ -203,3 +214,6 @@ export function hasActivePremiumSubscription(
   const pruned = pruneExpiredEntitlements(view, now);
   return getActivePaidTierIds(pruned, now).includes("premium");
 }
+
+/** @deprecated AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER */
+export const AI_MUSIC_MONTHLY_CREDITS_BY_TIER = AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER;
