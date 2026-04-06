@@ -63,19 +63,19 @@ export default function Pricing() {
 
   const STARTER_FEATURES = [
     { icon: Star, text: t("pricing.starterFeature1", "Free 모든 기능") },
-    { icon: Sparkles, text: t("pricing.starterFeatureAi", "AI 음악 생성 500 크레딧/월") },
+    { icon: Sparkles, text: t("pricing.starterFeatureAi", "입문용 약 66곡 생성 가능") },
     { icon: Shield, text: t("pricing.starterFeatureNoAds", "광고 없음") },
   ];
 
   const BASIC_FEATURES = [
     { icon: Layers, text: t("pricing.basicFeature1", "Free 모든 기능") },
-    { icon: Sparkles, text: t("pricing.basicFeatureAi", "AI 음악 생성 1,000 크레딧/월") },
+    { icon: Sparkles, text: t("pricing.basicFeatureAi", "약 120곡 생성 가능") },
     { icon: Shield, text: t("pricing.basicFeatureNoAds", "광고 없음") },
   ];
 
   const PRO_FEATURES = [
     { icon: Crown, text: t("pricing.proFeatureAllFree", "Free 모든 기능") },
-    { icon: Sparkles, text: t("pricing.proFeatureAiMusic", "AI 음악 생성 1,500 크레딧/월") },
+    { icon: Sparkles, text: t("pricing.proFeatureAiMusic", "약 200곡 생성 가능") },
     { icon: Shield, text: t("pricing.proFeatureNoAds", "광고 없음") },
     {
       icon: Globe,
@@ -88,7 +88,7 @@ export default function Pricing() {
 
   const PREMIUM_FEATURES = [
     { icon: Crown, text: t("pricing.premiumFeatureAllPro", "Pro 모든 기능") },
-    { icon: Sparkles, text: t("pricing.premiumFeatureCredits", "AI 음악 생성 2,000 크레딧/월") },
+    { icon: Sparkles, text: t("pricing.premiumFeatureCredits", "약 300곡 생성 가능") },
     { icon: FileText, text: t("pricing.premiumFeatureScorePdf", "AI 라이브러리 악보 PDF 다운로드") },
     { icon: Crown, text: t("pricing.premiumFeature6", "프리미엄 배지") },
     { icon: Shield, text: t("pricing.premiumFeatureSupport", "우선 지원") },
@@ -235,12 +235,12 @@ export default function Pricing() {
             : t("pricing.premiumPlanName", "Premium");
     const desc =
       id === "starter"
-        ? t("pricing.starterDescription", "입문용 · AI 500 크레딧/월")
+        ? t("pricing.starterDescription", "입문용 약 66곡 생성 가능")
         : id === "basic"
-          ? t("pricing.basicDescription", "부담 없이 · AI 1,000 크레딧/월")
+          ? t("pricing.basicDescription", "약 120곡 생성 가능")
           : id === "pro"
-            ? t("pricing.proDescription", "AI 음악 생성 1,500 크레딧/월")
-            : t("pricing.premiumDescription", "AI 2,000 크레딧/월, 프리미엄 배지");
+            ? t("pricing.proDescription", "약 200곡 생성 가능")
+            : t("pricing.premiumDescription", "약 300곡 생성 가능, 프리미엄 배지");
     const Icon =
       id === "starter" ? Star : id === "basic" ? Layers : id === "pro" ? Zap : Crown;
     const iconClass =
