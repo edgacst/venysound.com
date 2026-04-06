@@ -45,6 +45,10 @@ function nextAiMusicPollMs(apiState: string): number {
   return 2200;
 }
 /** 로컬 캐시 키(계정별). 서버 `GET/PUT /api/ai-music/library`와 병합해 PC·모바일 동기화. */
+/** React Query 키에 userId 포함 — 키를 공유하면 계정 전환 시 타인 라이브러리 캐시가 섞일 수 있음 */
+function aiMusicLibraryQueryKey(userId: string | undefined) {
+  return ["/api/ai-music/library", userId ?? "__none__"] as const;
+}
 
 function savedTracksStorageKey(userId: string): string {
   return `createMusic_savedTracks:${userId}`;
@@ -475,7 +479,7 @@ export default function CreateMusic() {
   } | null>(null);
 
   const { data: libraryRemote, isFetched: libraryFetched } = useQuery<{ tracks?: unknown[] }>({
-    queryKey: ["/api/ai-music/library"],
+    queryKey: aiMusicLibraryQueryKey(user?.id),
     queryFn: async () => {
       const res = await fetch("/api/ai-music/library", { credentials: "include" });
       if (!res.ok) {
@@ -625,7 +629,7 @@ export default function CreateMusic() {
     try {
       localStorage.setItem(savedTracksStorageKey(user.id), JSON.stringify(payload));
     } catch {}
-    queryClient.setQueryData(["/api/ai-music/library"], { tracks: payload });
+    queryClient.setQueryData(aiMusicLibraryQueryKey(user.id), { tracks: payload });
 
     const serverIds = new Set(serverTracks.map((t) => t.id));
     const needsPush =
@@ -658,7 +662,7 @@ export default function CreateMusic() {
       try {
         localStorage.setItem(savedTracksStorageKey(uid), JSON.stringify(payload));
       } catch {}
-      queryClient.setQueryData(["/api/ai-music/library"], { tracks: payload });
+      queryClient.setQueryData(aiMusicLibraryQueryKey(uid), { tracks: payload });
       if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
       const send = () => {
         librarySyncTimerRef.current = null;
