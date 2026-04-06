@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -476,14 +476,18 @@ export default function Home() {
                 </Button>
               </Link>
             ) : (
-              <Link href="/upload">
+              <Link href="/suno-guide">
                 <Button
                   size="lg"
                   variant="outline"
-                  className="rounded-full px-8 border-white/25 text-white bg-white/10 backdrop-blur-sm"
-                  data-testid="button-hero-upload"
+                  className="rounded-full gap-2 border border-white bg-[#161018] px-8 text-white shadow-lg hover:bg-[#1f1a24] hover:text-white"
+                  data-testid="button-hero-music-making-guide"
                 >
-                  {t("home.uploadTrack", "음원업로드")}
+                  <span className="relative flex shrink-0 items-center">
+                    <Wand2 className="h-5 w-5 -rotate-45" aria-hidden />
+                    <Sparkles className="absolute -right-1.5 -top-1 h-3.5 w-3.5 text-white/95" aria-hidden />
+                  </span>
+                  {t("home.musicMakingGuide", "음악 만들기 가이드")}
                 </Button>
               </Link>
             )}
