@@ -234,7 +234,7 @@ export default function Guide() {
                     <div>
                       <h3 className="font-semibold text-lg mb-1">{t('guide.tipAndPurchase', '후원 & 음원 구매')}</h3>
                       <p className="text-muted-foreground text-sm leading-relaxed">
-                        {t('guide.tipAndPurchaseDesc', '좋아하는 아티스트에게 크레딧으로 후원할 수 있습니다. 최소 100원부터 자유롭게 후원 금액을 선택하고 응원 메시지를 남겨보세요. 유료 다운로드가 설정된 음원은 크레딧으로 구매하여 다운로드할 수 있습니다. 크레딧은 크레딧 충전 페이지에서 구매할 수 있습니다.')}
+                        {t('guide.tipAndPurchaseDesc', '좋아하는 아티스트에게 지갑 잔액(원)으로 후원할 수 있습니다. 최소 100원부터 자유롭게 후원 금액을 선택하고 응원 메시지를 남겨보세요. 유료 다운로드가 설정된 음원은 지갑 잔액으로 구매하여 다운로드할 수 있습니다. 충전은 지갑(충전) 페이지에서 하실 수 있습니다.')}
                       </p>
                     </div>
                   </div>

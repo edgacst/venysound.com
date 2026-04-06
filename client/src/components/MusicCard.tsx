@@ -1035,7 +1035,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
                 {uploaderIsPremium
-                  ? t('upload.priceDesc', '최소 100 크레딧부터 설정 가능합니다')
+                  ? t('upload.priceDesc', '최소 100원부터 설정 가능합니다')
                   : t('music.premiumPriceHint', '판매 금액 설정은 프리미엄 업로더만 가능합니다')}
               </p>
             </div>
