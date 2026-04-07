@@ -2,7 +2,7 @@ import { db } from "./db";
 import path from "path";
 import { existsSync } from "fs";
 import { 
-  music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs,
+  music, likes, follows, reviews, playlists, playlistMusic, posts, postComments, notifications, copyrightReports, tips, purchases, creditTransactions, withdrawals, streamingLogs, creditRefundRequests,
   analyticsVisits, analyticsConversionEvents, siteAnnouncements, guideVideos, curatedPlaylists, curatedPlaylistMusic,
   distributionReleases, distributionSplits, distributionEarningsLedger, distributionPayouts,
   radioChannels, radioChatMessages, radioSongRequests, radioChannelStaff,
@@ -2877,6 +2877,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
+    await db.delete(analyticsVisits).where(eq(analyticsVisits.userId, id));
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, id));
+    await db.delete(userBlocks).where(eq(userBlocks.blockerId, id));
+    await db.delete(userBlocks).where(eq(userBlocks.blockedId, id));
+    await db.delete(userReports).where(eq(userReports.reporterId, id));
+    await db.delete(userReports).where(eq(userReports.reportedUserId, id));
+    await db.delete(creditRefundRequests).where(eq(creditRefundRequests.userId, id));
+
     await db.delete(notifications).where(eq(notifications.userId, id));
 
     const userPostIds = await db.select({ id: posts.id }).from(posts).where(eq(posts.userId, id));
