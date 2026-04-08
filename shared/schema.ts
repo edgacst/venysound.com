@@ -183,7 +183,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 export const notifications = pgTable("notifications", {
   id: serial("id").primaryKey(),
   userId: text("user_id").references(() => users.id).notNull(),
-  type: text("type").notNull(), // 'like', 'comment', 'follow', 'tip', 'badge', 'system', 'ai_publish_nudge', …
+  type: text("type").notNull(), // 'like', 'comment', 'follow', 'tip', 'badge', 'system', 'ai_publish_nudge', 'welcome', …
   message: text("message").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>(), // 번역용 파라미터 (nullable, fromName, musicTitle 등)
   url: text("url"),

@@ -858,7 +858,8 @@
     "copyright": "「{{musicTitle}}」的版权举报已受理",
     "purchase": "{{fromName}} 以 {{price}} 韩元购买了「{{musicTitle}}」",
     "new_music_for_you": "为您推荐的新曲已上线：「{{musicTitle}}」— {{artist}}",
-    "ai_publish_nudge": "{{userName}}，您创作的曲子感觉如何？如果喜欢，欢迎在 Venysound 上发布，让大家一起欣赏。"
+    "ai_publish_nudge": "{{userName}}，您创作的曲子感觉如何？如果喜欢，欢迎在 Venysound 上发布，让大家一起欣赏。",
+    "welcome": "{{userName}}，欢迎加入 Venysound！尽情体验音乐、广播与 AI 创作等功能。"
   },
   "toast": {
     "success": "成功",

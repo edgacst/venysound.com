@@ -953,7 +953,8 @@
     "copyright": "A copyright report was received for \"{{musicTitle}}\"",
     "purchase": "{{fromName}} purchased \"{{musicTitle}}\" for ₩{{price}}",
     "new_music_for_you": "A new track you might like has been added: \"{{musicTitle}}\" by {{artist}}",
-    "ai_publish_nudge": "{{userName}}, how do you like the music you made? If you love it, publish it on Venysound and share it with everyone."
+    "ai_publish_nudge": "{{userName}}, how do you like the music you made? If you love it, publish it on Venysound and share it with everyone.",
+    "welcome": "Welcome to Venysound, {{userName}}! Enjoy music, radio, AI creation, and more."
   },
   "toast": {
     "success": "Success",

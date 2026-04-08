@@ -23,6 +23,23 @@ import {
 } from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
 import { recordSignupSuccessAfterNewOauth } from "../oauthSignupAnalytics";
+import { storage } from "../storage";
+
+/** 신규 가입 시 사이트 종 알림(인앱) 환영 — 재생·라디오 로직과 무관 */
+async function createSignupWelcomeNotification(userId: string, displayName: string): Promise<void> {
+  const name = (displayName && String(displayName).trim()) || "회원";
+  try {
+    await storage.createNotification({
+      userId,
+      type: "welcome",
+      message: `${name}님, 베니사운드에 오신 것을 환영합니다! 음악·라디오·AI 생성 등 서비스를 마음껏 둘러보세요.`,
+      payload: { userName: name },
+      url: "/",
+    });
+  } catch (e) {
+    console.error("[auth] welcome notification failed:", e);
+  }
+}
 
 /** .env 값 앞의 UTF-8 BOM·앞뒤 공백 제거 (redirect_uri 한 글자 불일치 방지) */
 function cleanEnvValue(s: string): string {
@@ -202,6 +219,7 @@ export async function setupAuth(app: Express) {
               );
             }
             if (!existing && user.id === id) {
+              void createSignupWelcomeNotification(user.id, user.firstName || firstName || "회원");
               recordSignupSuccessAfterNewOauth(req, "google");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
@@ -241,6 +259,7 @@ export async function setupAuth(app: Express) {
               );
             }
             if (!existing && user.id === id) {
+              void createSignupWelcomeNotification(user.id, user.firstName || firstName || "회원");
               recordSignupSuccessAfterNewOauth(req, "naver");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
@@ -282,6 +301,7 @@ export async function setupAuth(app: Express) {
               );
             }
             if (!existing && user.id === id) {
+              void createSignupWelcomeNotification(user.id, user.firstName || firstName || "회원");
               recordSignupSuccessAfterNewOauth(req, "kakao");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
@@ -323,6 +343,7 @@ export async function setupAuth(app: Express) {
               );
             }
             if (!existing && user.id === id) {
+              void createSignupWelcomeNotification(user.id, user.firstName || firstName || "회원");
               recordSignupSuccessAfterNewOauth(req, "facebook");
             }
             done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken));
@@ -401,6 +422,7 @@ export async function setupAuth(app: Express) {
           console.error("[auth] welcome email failed:", e)
         );
       }
+      void createSignupWelcomeNotification(user.id, user.username || user.firstName || "회원");
       const sessionUser = buildUserSession(user.id, user.email || null, user.firstName || username, "", "", "local");
       req.login(sessionUser, (err) => {
         if (err) return res.status(500).json({ error: "가입 후 로그인 실패" });
@@ -606,6 +628,7 @@ export async function setupAuth(app: Express) {
           registerSource: "tiktok",
         });
         if (!existingTiktok && user.id === id) {
+          void createSignupWelcomeNotification(user.id, user.firstName || displayName || "회원");
           recordSignupSuccessAfterNewOauth(req, "tiktok");
         }
         const sessionUser = buildUserSession(
