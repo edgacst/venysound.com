@@ -20,12 +20,20 @@ export function normalizeOutgoingEmailAddress(to: string | null | undefined): st
   return s;
 }
 
+function escapeHtml(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /** 환영 메일 제목·본문 언어별 텍스트 */
 const WELCOME_EMAIL: Record<string, { subject: string; greeting: string; body: string; cta: string }> = {
   ko: {
     subject: "[Venysound] 가입을 환영합니다",
     greeting: "님, 안녕하세요.",
-    body: "베니사운드에서 이제 음악을 만들고, 업로드하고, 나만의 방송채널을 생성하여 좋은 사람들과 실시간 채팅과 함께 DJ방송도 하면서 수익을 만들어 보세요.",
+    body: "", // ko는 getWelcomeContent에서 기능 안내 목록·서명을 별도 HTML로 구성
     cta: "Venysound 바로가기",
   },
   en: {
@@ -52,8 +60,26 @@ function getWelcomeContent(locale: string, username: string): { subject: string;
   const lang = locale?.toLowerCase().slice(0, 2) || "ko";
   const t = WELCOME_EMAIL[lang] || WELCOME_EMAIL.ko;
   const siteUrl = process.env.PUBLIC_SITE_URL || "https://venysound.com";
+  const safeName = escapeHtml(username);
+
+  if (lang === "ko") {
+    const html = `
+    <p>${safeName}${t.greeting}</p>
+    <ul style="margin:16px 0;padding-left:20px;line-height:1.6;">
+      <li style="margin-bottom:8px;">음원 업로드·스트리밍: 내 곡을 올리고 누구나 재생·탐색할 수 있습니다.</li>
+      <li style="margin-bottom:8px;">라디오(베니방송): 채널 개설, 청취, 채팅 등 방송형 경험을 제공합니다.</li>
+      <li style="margin-bottom:8px;">연속 재생: 페이지를 이동해도 재생이 끊기지 않도록 글로벌 플레이어로 이어집니다.</li>
+      <li style="margin-bottom:8px;">AI 음악 생성: 프롬프트·가사 기반으로 곡을 만들고, 원하면 사이트에 공개할 수 있습니다.</li>
+      <li style="margin-bottom:8px;">후원·지갑·플랜: 아티스트 후원, 유료 다운로드·구독 혜택 등(정책·플랜에 따름)을 지원합니다.</li>
+    </ul>
+    <p style="margin-top:20px;">베니사운드 드림</p>
+    <p><a href="${siteUrl}">${t.cta}</a></p>
+  `;
+    return { subject: t.subject, html };
+  }
+
   const html = `
-    <p>${username}${t.greeting}</p>
+    <p>${safeName}${t.greeting}</p>
     <p>${t.body}</p>
     <p><a href="${siteUrl}">${t.cta}</a></p>
     <p>— Venysound</p>
