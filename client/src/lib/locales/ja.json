@@ -858,7 +858,9 @@
     "tipWithMessage": "{{fromName}}から{{amount}}ウォンの後援: 「{{tipMessage}}」",
     "badge": "おめでとうございます！{{badgeName}}後援バッジを獲得しました！",
     "copyright": "「{{musicTitle}}」の著作権報告が受理されました",
-    "purchase": "{{fromName}}が「{{musicTitle}}」を{{price}}ウォンで購入しました"
+    "purchase": "{{fromName}}が「{{musicTitle}}」を{{price}}ウォンで購入しました",
+    "new_music_for_you": "{{fromName}}さんにおすめの新曲が追加されました: 「{{musicTitle}}」— {{artist}}",
+    "ai_publish_nudge": "{{userName}}さん、作成した曲はいかがですか？気に入ったらVenysoundで公開して、みんなに聴いてもらいましょう。"
   },
   "toast": {
     "success": "成功",

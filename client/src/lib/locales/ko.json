@@ -973,7 +973,8 @@
     "badge": "축하합니다! {{badgeName}} 후원 뱃지를 획득했습니다!",
     "copyright": "\"{{musicTitle}}\" 음원에 대한 저작권 신고가 접수되었습니다",
     "purchase": "{{fromName}}님이 \"{{musicTitle}}\"을(를) {{price}}원에 구매했습니다",
-    "new_music_for_you": "{{fromName}}님이 좋아할 만한 음악이 신곡으로 등록되었어요: \"{{musicTitle}}\" - {{artist}}"
+    "new_music_for_you": "{{fromName}}님이 좋아할 만한 음악이 신곡으로 등록되었어요: \"{{musicTitle}}\" - {{artist}}",
+    "ai_publish_nudge": "{{userName}}님, 만드신 음악은 어떠신가요? 마음에 드신다면 지금 베니사운드에 공개하셔서 {{userName}}님이 만드신 음악을 모두에게 자랑해 보세요."
   },
   "toast": {
     "success": "성공",

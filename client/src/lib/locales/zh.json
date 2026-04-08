@@ -856,7 +856,9 @@
     "tipWithMessage": "{{fromName}} 打赏了你 {{amount}} 韩元：「{{tipMessage}}」",
     "badge": "恭喜！你获得了 {{badgeName}} 打赏徽章！",
     "copyright": "「{{musicTitle}}」的版权举报已受理",
-    "purchase": "{{fromName}} 以 {{price}} 韩元购买了「{{musicTitle}}」"
+    "purchase": "{{fromName}} 以 {{price}} 韩元购买了「{{musicTitle}}」",
+    "new_music_for_you": "为您推荐的新曲已上线：「{{musicTitle}}」— {{artist}}",
+    "ai_publish_nudge": "{{userName}}，您创作的曲子感觉如何？如果喜欢，欢迎在 Venysound 上发布，让大家一起欣赏。"
   },
   "toast": {
     "success": "成功",

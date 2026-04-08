@@ -963,6 +963,16 @@ export default function CreateMusic() {
           persistTracks(next, { immediate: true });
           return next;
         });
+        void fetch("/api/ai-music/publish-nudge", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId: tid }),
+        })
+          .then(() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+          })
+          .catch(() => {});
       }
       if (state === "failed") {
         generationStartRef.current = null;
@@ -973,7 +983,7 @@ export default function CreateMusic() {
         setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
-    [persistTracks]
+    [persistTracks, queryClient]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {

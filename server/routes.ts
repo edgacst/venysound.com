@@ -1823,6 +1823,64 @@ export async function registerRoutes(
     }
   });
 
+  /** AI 음악 생성 완료 후 사이트 공개 유도 — 인앱 알림만(이메일·푸시 없음). task당 1회. */
+  app.post("/api/ai-music/publish-nudge", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      const taskId = typeof req.body?.taskId === "string" ? req.body.taskId.trim() : "";
+      if (!taskId) {
+        return res.status(400).json({ message: "taskId가 필요합니다." });
+      }
+
+      const [logRow] = await db
+        .select({ id: aiMusicGenerationLogs.id })
+        .from(aiMusicGenerationLogs)
+        .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, taskId)))
+        .limit(1);
+      if (!logRow) {
+        return res.status(403).json({ message: "해당 생성 요청을 찾을 수 없습니다." });
+      }
+
+      const [dup] = await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, userId),
+            eq(notifications.type, "ai_publish_nudge"),
+            sql`coalesce(${notifications.payload}->>'taskId','') = ${taskId}`,
+          ),
+        )
+        .limit(1);
+      if (dup) {
+        return res.status(204).end();
+      }
+
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      const displayName =
+        (user?.username && String(user.username).trim()) ||
+        (user?.firstName && String(user.firstName).trim()) ||
+        (user?.email ? String(user.email).split("@")[0] : "") ||
+        "회원";
+
+      const message = `${displayName}님, 만드신 음악은 어떠신가요? 마음에 드신다면 지금 베니사운드에 공개하셔서 ${displayName}님이 만드신 음악을 모두에게 자랑해 보세요.`;
+
+      await storage.createNotification({
+        userId,
+        type: "ai_publish_nudge",
+        message,
+        payload: { userName: displayName, taskId },
+        url: "/create-music",
+      });
+
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      console.error("[ai-music publish-nudge]", e);
+      res.status(500).json({ message: "알림 등록에 실패했습니다." });
+    }
+  });
+
   // === Music Routes ===
   app.get(api.music.list.path, async (req, res) => {
     const { genre, search, tag, page, limit } = req.query as { genre?: string, search?: string, tag?: string, page?: string, limit?: string };
