@@ -75,6 +75,7 @@ import {
   syncSubscriptionAiWalletForPaidUser,
   deductSubscriptionAiWallet,
   adminSetSubscriptionAiPeriodConsumedWon,
+  adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
 
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
@@ -1181,6 +1182,9 @@ export async function registerRoutes(
             walletCredits,
             creditsBalance: walletCredits,
             quota: { kind: quotaKind, used: usedThisMonth, limit },
+            /** 플랜 월 공급가(부가세 제외) 합 — basic 단일이면 9000. 표시 한도(limit)는 이월 지갑+사용 누적 */
+            subscriptionAiPlanGrantWon: w.monthlyGrant,
+            subscriptionAiWalletRemainingWon: w.walletSum,
             wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
             creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
             deductsCreditsPerCreate,
@@ -4624,6 +4628,37 @@ export async function registerRoutes(
       res.status(500).json({ message: e?.message ?? "조회에 실패했습니다." });
     }
   });
+
+  /**
+   * 관리자: 구독 AI 지갑을 **현재 플랜 월 공급가(부가세 제외)** 기준만 남기고 재구성(이월 제거).
+   * 중복 월 충전 버그 등으로 한도가 부풀어 오른 회원 정리용.
+   */
+  app.post(
+    "/api/admin/users/:id/subscription-ai-wallet/rebuild-plan-only",
+    isAuthenticated,
+    isAdmin,
+    async (req, res) => {
+      try {
+        const targetId = req.params.id as string;
+        const now = new Date();
+        const state = await adminRebuildSubscriptionAiWalletToPlanOnly(targetId, now);
+        if (!state) {
+          return res.status(400).json({ message: "활성 유료 구독이 아니거나 재구성에 실패했습니다." });
+        }
+        res.json({
+          ok: true,
+          walletSum: state.walletSum,
+          periodConsumed: state.periodConsumed,
+          periodKey: state.periodKey,
+          monthlyGrant: state.monthlyGrant,
+          limitDisplay: state.limitDisplay,
+        });
+      } catch (e: any) {
+        console.error("[admin subscription-ai-wallet rebuild-plan-only]", e);
+        res.status(500).json({ message: e?.message ?? "재구성에 실패했습니다." });
+      }
+    },
+  );
 
   /** 관리자: 회원 월별 AI 음악 사용량(ai_music_usage.count) 수동 설정 */
   app.patch("/api/admin/users/:id/ai-music-usage", isAuthenticated, isAdmin, async (req, res) => {

@@ -101,6 +101,8 @@ type AdminUserWalletResponse = {
     limit: number;
     used: number;
     unit: "songs" | "credits" | "won" | "unlimited";
+    planGrantWon?: number | null;
+    walletRemainingWon?: number | null;
   };
   creditTransactions: { total: number; rows: Array<{ id: number; type: string; amount: number; description: string | null; createdAt: string }> };
   payments: {
@@ -989,6 +991,24 @@ export default function Admin() {
     onError: (err: any) => {
       toast({
         title: err?.message || t("admin.walletAiUsageSaveFailed", "저장에 실패했습니다"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const rebuildSubscriptionAiWalletMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", `/api/admin/users/${encodeURIComponent(userId)}/subscription-ai-wallet/rebuild-plan-only`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
+      toast({
+        title: t("admin.walletAiWalletRebuilt", "구독 AI 지갑을 플랜 공급가 기준으로 맞췄습니다."),
+      });
+    },
+    onError: (err: any) => {
+      toast({
+        title: err?.message || t("admin.walletAiWalletRebuildFailed", "재구성에 실패했습니다"),
         variant: "destructive",
       });
     },
@@ -4771,19 +4791,72 @@ export default function Admin() {
                           </span>
                         ) : (
                           <span>
-                            {t("admin.walletAiWonUsed", "{{used}} / {{limit}}원 (구독 월 예산)", {
+                            {t("admin.walletAiWonUsed", "{{used}} / {{limit}}원 (총 한도·이월 포함)", {
                               used: walletData.aiMusicMonthly.used.toLocaleString(),
                               limit: walletData.aiMusicMonthly.limit.toLocaleString(),
                             })}
                           </span>
                         )}
                       </div>
+                      {walletData.aiMusicMonthly.unit === "won" &&
+                      typeof walletData.aiMusicMonthly.planGrantWon === "number" &&
+                      typeof walletData.aiMusicMonthly.walletRemainingWon === "number" ? (
+                        <p className="text-[11px] text-muted-foreground leading-snug">
+                          {t(
+                            "admin.walletAiWonBreakdown",
+                            "플랜 월 공급가(부가세 제외) {{plan}}원 · 구독 AI 지갑 잔액 {{wallet}}원. 총 한도 {{limit}}원 = 사용 {{used}} + 잔액 {{wallet}}.",
+                            {
+                              plan: walletData.aiMusicMonthly.planGrantWon.toLocaleString(),
+                              wallet: walletData.aiMusicMonthly.walletRemainingWon.toLocaleString(),
+                              limit: walletData.aiMusicMonthly.limit.toLocaleString(),
+                              used: walletData.aiMusicMonthly.used.toLocaleString(),
+                            },
+                          )}
+                        </p>
+                      ) : null}
                       <p className="text-[11px] text-muted-foreground leading-snug">
                         {t(
                           "admin.walletAiMonthlyHintWon",
-                          "구독에 포함된 AI 월 예산(원)은 생성 한도로만 쓰이며, 지갑 잔액(users.credits, 원)과 합산되지 않습니다.",
+                          "구독에 포함된 AI 월 예산(원)은 생성 한도로만 쓰이며, 지갑 잔액(users.credits, 원)과 합산되지 않습니다. 복수 플랜이 동시에 유효하면 플랜 공급가가 합산됩니다.",
                         )}
                       </p>
+                      {walletData.aiMusicMonthly.unit === "won" ? (
+                        <div className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 space-y-2">
+                          <p className="text-[11px] text-amber-100/90 leading-snug">
+                            {t(
+                              "admin.walletAiRebuildHint",
+                              "한도가 플랜(예: 베이직 9,000원)보다 크게 보이면 과거 버그로 이월처럼 중복 충전됐을 수 있습니다. 아래를 누르면 이월을 없애고 ‘월 공급가 − 현재 사용 누적’만 남깁니다.",
+                            )}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-amber-500/50 text-amber-100 hover:bg-amber-500/20"
+                            disabled={!walletModalUser || rebuildSubscriptionAiWalletMutation.isPending}
+                            onClick={() => {
+                              if (!walletModalUser) return;
+                              if (
+                                !window.confirm(
+                                  t(
+                                    "admin.walletAiRebuildConfirm",
+                                    "정당한 이월도 삭제됩니다. 이 회원의 구독 AI 지갑을 플랜 월 공급가 기준으로 재설정할까요?",
+                                  ),
+                                )
+                              ) {
+                                return;
+                              }
+                              rebuildSubscriptionAiWalletMutation.mutate(walletModalUser.id);
+                            }}
+                          >
+                            {rebuildSubscriptionAiWalletMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              t("admin.walletAiRebuildButton", "플랜 공급가만 남기고 지갑 재설정")
+                            )}
+                          </Button>
+                        </div>
+                      ) : null}
                       <div className="pt-3 border-t border-border/40 mt-2 space-y-2">
                         <div className="text-xs font-medium text-foreground">
                           {t("admin.walletAiUsageAdjust", "이번 달 사용량 수동 조정")}

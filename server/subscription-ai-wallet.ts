@@ -236,6 +236,43 @@ export async function deductSubscriptionAiWallet(userId: string, won: number, no
 /**
  * 관리자: 활성 유료 구독자의 이번 기간 AI 사용(원) 절대값 설정. 잔액(지갑)은 총액 보존.
  */
+/**
+ * 관리자: 이월·중복 충전으로 지갑이 부풀어 오른 경우, **현재 플랜 월 공급가(부가세 제외) 한도만** 남기고 지갑을 한 청크로 재구성.
+ * 사용 누적은 min(저장값, 월 공급가)로 맞추고, 잔액 = 월 공급가 − 그 사용분. (정당한 이월을 지우므로 확인 후 실행)
+ */
+export async function adminRebuildSubscriptionAiWalletToPlanOnly(userId: string, now: Date): Promise<PaidAiWalletState | null> {
+  return await db.transaction(async (tx) => {
+    const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
+    if (!u || !isUserPaidSubscriptionActive(u, now)) return null;
+
+    const desiredKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
+    const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now);
+    if (monthlyGrant <= 0) return null;
+
+    let consumed = Math.max(0, Math.floor(Number(u.subscriptionAiPeriodConsumedWon ?? 0)));
+    if (consumed > monthlyGrant) {
+      consumed = monthlyGrant;
+    }
+    const remaining = Math.max(0, monthlyGrant - consumed);
+    const nextWallet: AiWalletChunk[] =
+      remaining > 0 ? [{ won: remaining, creditedAt: now.toISOString() }] : [];
+
+    await tx
+      .update(users)
+      .set({
+        subscriptionAiWallet: nextWallet,
+        subscriptionAiPeriodConsumedWon: consumed,
+        subscriptionAiPeriodKey: desiredKey,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+
+    const [u2] = await tx.select().from(users).where(eq(users.id, userId));
+    if (!u2) return null;
+    return performSubscriptionAiWalletSync(tx, u2, userId, now);
+  });
+}
+
 export async function adminSetSubscriptionAiPeriodConsumedWon(userId: string, usedWon: number, now: Date): Promise<boolean> {
   const used = Math.max(0, Math.floor(usedWon));
   return await db.transaction(async (tx) => {
