@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
+import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -62,27 +63,6 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
   return (
     <div className="min-w-[10.5rem] w-[42vw] max-w-[11rem] shrink-0 snap-start md:min-w-0 md:w-auto md:max-w-none md:shrink">
       {children}
-    </div>
-  );
-}
-
-const HOME_HERO_FAKE_WAVE_BARS = 40;
-
-/** 히어로 라디오 미리보기 위 장식 파형(시각용, 실제 스트림 분석 아님) */
-function HomeHeroFakeWaveform() {
-  return (
-    <div
-      className="mb-2 flex h-[3.25rem] items-end justify-center gap-[2px] rounded-xl border border-white/12 bg-gradient-to-b from-violet-950/50 via-black/55 to-black/40 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-      aria-hidden
-      data-testid="home-hero-fake-waveform"
-    >
-      {Array.from({ length: HOME_HERO_FAKE_WAVE_BARS }, (_, i) => (
-        <span
-          key={i}
-          className="home-hero-fake-wave__bar h-9 w-[2px] max-w-[3px] shrink-0 rounded-full bg-gradient-to-t from-cyan-400/50 via-violet-400/80 to-fuchsia-300/90"
-          style={{ animationDelay: `${(i % 16) * 48}ms` }}
-        />
-      ))}
     </div>
   );
 }
@@ -470,7 +450,7 @@ export default function Home() {
               className="order-2 lg:order-1"
             >
               <div className="mx-auto w-full max-w-md lg:mx-0">
-                <HomeHeroFakeWaveform />
+                <HomeHeroLiveWaveform />
                 <div className="rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md">
                 {liveTickerText ? (
                   <div className="mb-3 h-9 overflow-hidden rounded-lg bg-black/40">
@@ -598,7 +578,7 @@ export default function Home() {
               <motion.h1
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-3 text-center text-4xl font-display font-bold tracking-tight text-white drop-shadow-sm sm:text-5xl lg:text-left lg:text-6xl"
+                className="mb-2 text-center text-3xl font-display font-bold tracking-tight text-white drop-shadow-sm sm:text-4xl lg:text-left lg:text-5xl"
                 data-testid="text-hero-title"
               >
                 <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-300 bg-clip-text text-transparent">
@@ -613,7 +593,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.04 }}
-                className="mb-4 text-center text-sm text-white/80 lg:text-left"
+                className="mb-5 text-center text-sm text-white/78 lg:text-left"
                 data-testid="text-hero-brand-korean"
               >
                 {t("home.heroBrandLine")}
@@ -629,23 +609,28 @@ export default function Home() {
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.2 }}
                   >
+                    <div className="relative mx-auto mb-6 max-w-2xl text-center lg:mx-0 lg:max-w-none lg:border-l-2 lg:border-amber-400/45 lg:pl-5 lg:text-left">
+                      <h2
+                        className="mb-3 text-balance text-2xl font-display font-bold leading-[1.2] tracking-tight text-white sm:text-3xl md:text-[2.1rem] md:leading-tight lg:text-4xl"
+                        data-testid="text-hero-subtitle"
+                      >
+                        {t("home.heroHeadlineCreator", "오늘 작곡하고, 내일 가수가 되세요.")}
+                      </h2>
+                      <p
+                        className="text-pretty text-base leading-relaxed text-white/78 sm:text-lg lg:leading-snug"
+                        data-testid="text-hero-share-now"
+                      >
+                        {t(
+                          "home.heroLeadCreator",
+                          "1분 만에 AI 음악 생성부터 전 세계 음원 사이트(멜론, 스포티파이) 발매까지 한 번에!",
+                        )}
+                      </p>
+                    </div>
                     {homeGreeting && (
-                      <p className="mb-3 text-center text-base font-medium text-amber-200/95 lg:text-left" data-testid="text-hero-greeting">
+                      <p className="mb-5 text-center text-base font-medium text-amber-200/95 lg:text-left" data-testid="text-hero-greeting">
                         {homeGreeting}
                       </p>
                     )}
-                    <h2
-                      className="mb-2 text-center text-xl font-bold text-white/95 sm:text-2xl lg:text-left lg:text-3xl"
-                      data-testid="text-hero-subtitle"
-                    >
-                      {t("home.heroHeadlineCreator", "만들고, 올리고, 세상에 보내세요")}
-                    </h2>
-                    <p className="mb-6 text-center text-base text-white/72 lg:text-left" data-testid="text-hero-share-now">
-                      {t(
-                        "home.heroLeadCreator",
-                        "스트리밍 · AI 음악 · 베니방송국 · 글로벌 음원까지 한 흐름으로 이어집니다.",
-                      )}
-                    </p>
                     <div className="mx-auto mb-6 max-w-xl lg:mx-0">
                       <Link href="/music">
                         <div className="relative cursor-pointer">
