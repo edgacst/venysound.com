@@ -1,9 +1,14 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { Midi as MidiInstance } from "@tonejs/midi";
 
 /** @tonejs/midi ships CJS; Node ESM named import `{ Midi }` fails on Node 20+. */
-const requireCjs = createRequire(import.meta.url);
+/** CJS 번들: esbuild 가 import.meta.url 을 "" 로 치환 → createRequire 실패 방지 (__dirname + 단일 outfile). */
+const requireFrom =
+  typeof __dirname !== "undefined" ? path.join(__dirname, "index.cjs") : fileURLToPath(import.meta.url);
+const requireCjs = createRequire(requireFrom);
 const { Midi } = requireCjs("@tonejs/midi") as { Midi: new (data: Buffer) => MidiInstance };
 
 /**
