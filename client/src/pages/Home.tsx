@@ -79,13 +79,17 @@ export default function Home() {
   const taglineOpacity = useSpring(taglineOpacityRaw, { stiffness: 120, damping: 32, mass: 0.35 });
 
   const heroSectionRef = useRef<HTMLElement | null>(null);
-  /** 짧은 스크롤 구간에서 진행도 0→1 */
+  /** 히어로 전체 높이에 걸쳐 0→1 (천천히·넓게) */
   const { scrollYProgress: heroScrollProgress } = useScroll({
     target: heroSectionRef,
-    offset: ["start start", "center start"],
+    offset: ["start start", "end start"],
   });
-  /** 화면 밖으로 완전히 밀어냄(뷰포트의 절반+여유) + 같은 구간에서 투명도 0 */
-  const heroColExitU = useTransform(heroScrollProgress, (p) => Math.min(1, p / 0.24));
+  /** 선형 진행을 smoothstep으로 부드럽게 한 뒤 스프링으로 따라가게 */
+  const heroColExitURaw = useTransform(heroScrollProgress, (p) => {
+    const t = Math.min(1, p / 0.52);
+    return t * t * (3 - 2 * t);
+  });
+  const heroColExitU = useSpring(heroColExitURaw, { stiffness: 64, damping: 36, mass: 0.55 });
   const heroColLeftX = useTransform(heroColExitU, (u) => {
     if (typeof window === "undefined") return 0;
     return -u * (window.innerWidth * 0.52 + 48);
@@ -457,7 +461,7 @@ export default function Home() {
       )}
       <section
         ref={heroSectionRef}
-        className="relative flex min-h-[min(76vh,720px)] flex-col justify-center overflow-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(78vh,760px)] md:pt-20 md:pb-12"
+        className="relative -mb-8 flex min-h-[min(70vh,640px)] flex-col justify-start overflow-hidden border-t border-white/10 pt-16 pb-4 md:-mb-10 md:min-h-[min(72vh,680px)] md:pt-20 md:pb-5"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
       >
@@ -835,7 +839,7 @@ export default function Home() {
       </section>
 
       {/* 빠른 입구: 방송·업로드·가이드·AI (히어로 CTA 부담 분산) */}
-      <section className="container px-4 pt-2 pb-6 md:pt-3" data-testid="section-quick-tiles">
+      <section className="container relative z-10 px-4 pt-0 pb-6 md:pt-1" data-testid="section-quick-tiles">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
           {t("home.quickTilesLabel", "바로 가기")}
         </p>
