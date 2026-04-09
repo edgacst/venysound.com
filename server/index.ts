@@ -164,6 +164,10 @@ CREATE INDEX IF NOT EXISTS idx_distribution_payouts_user_status ON distribution_
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_period_key varchar;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_period_consumed_won integer NOT NULL DEFAULT 0;`,
   },
+  {
+    name: "014-subscription-entitlements",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_entitlements jsonb NOT NULL DEFAULT '{}'::jsonb;`,
+  },
 ];
 
 async function runAutoMigrations() {

@@ -24,9 +24,9 @@ export async function setupVite(server: Server, app: Express) {
     configFile: false,
     customLogger: {
       ...viteLogger,
+      /** 기본 로거는 exit 하지 않음. 여기서 exit(1)을 두면 HMR/경고성 메시지에도 dev 서버가 즉시 종료될 수 있음 */
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: serverOptions,
