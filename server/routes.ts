@@ -4104,6 +4104,7 @@ export async function registerRoutes(
           username: r.username,
           firstName: r.firstName,
           lastName: r.lastName,
+          subscriptionTier: r.subscriptionTier,
         })),
       });
     } catch (e) {

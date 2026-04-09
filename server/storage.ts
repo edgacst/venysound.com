@@ -207,6 +207,7 @@ export interface IStorage {
       username: string | null;
       firstName: string | null;
       lastName: string | null;
+      subscriptionTier: string | null;
     }[];
     total: number;
   }>;
@@ -1871,6 +1872,7 @@ export class DatabaseStorage implements IStorage {
       username: string | null;
       firstName: string | null;
       lastName: string | null;
+      subscriptionTier: string | null;
     }[];
     total: number;
   }> {
@@ -1882,11 +1884,12 @@ export class DatabaseStorage implements IStorage {
     const start = new Date(`${dateStr}T00:00:00+09:00`);
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
     try {
+      /** 같은 visitor_key 는 하루 1행으로 묶음. 비로그인 후 로그인한 경우에도 최종 user_id·구독 플랜이 붙도록 함(예전에는 v:/u: 로 이중 행). */
       const countResult = await db.execute(sql`
         SELECT count(*)::int AS c FROM (
           SELECT 1 FROM analytics_visits
           WHERE visited_at >= ${start} AND visited_at < ${end}
-          GROUP BY (CASE WHEN user_id IS NOT NULL THEN 'u:' || user_id ELSE 'v:' || visitor_key END)
+          GROUP BY visitor_key
         ) t
       `);
       const total = Number((countResult.rows[0] as { c: number })?.c ?? 0);
@@ -1904,11 +1907,12 @@ export class DatabaseStorage implements IStorage {
           u.email AS email,
           u.username AS username,
           u.first_name AS first_name,
-          u.last_name AS last_name
+          u.last_name AS last_name,
+          u.subscription_tier AS subscription_tier
         FROM (
           SELECT
-            max(v.user_id) AS user_id,
-            max(v.visitor_key) AS visitor_key,
+            v.visitor_key AS visitor_key,
+            (array_agg(v.user_id ORDER BY v.visited_at DESC) FILTER (WHERE v.user_id IS NOT NULL))[1] AS user_id,
             min(v.visited_at) AS first_at,
             max(v.visited_at) AS last_at,
             (extract(epoch FROM max(v.visited_at) - min(v.visited_at)))::int AS duration_seconds,
@@ -1917,7 +1921,7 @@ export class DatabaseStorage implements IStorage {
             max(v.region) AS region
           FROM analytics_visits v
           WHERE v.visited_at >= ${start} AND v.visited_at < ${end}
-          GROUP BY (CASE WHEN v.user_id IS NOT NULL THEN 'u:' || v.user_id ELSE 'v:' || v.visitor_key END)
+          GROUP BY v.visitor_key
         ) s
         LEFT JOIN users u ON u.id = s.user_id
         ORDER BY s.first_at DESC
@@ -1937,6 +1941,7 @@ export class DatabaseStorage implements IStorage {
         username: (r.username as string | null) ?? null,
         firstName: (r.first_name as string | null) ?? null,
         lastName: (r.last_name as string | null) ?? null,
+        subscriptionTier: (r.subscription_tier as string | null) ?? null,
       }));
       return { rows, total };
     } catch {

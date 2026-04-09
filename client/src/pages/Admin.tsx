@@ -561,6 +561,7 @@ export default function Admin() {
       username: string | null;
       firstName: string | null;
       lastName: string | null;
+      subscriptionTier: string | null;
     }[];
   }>({
     queryKey: ["/api/admin/visitor-sessions", visitorSessionDate, visitorSessionPage],
@@ -2488,6 +2489,12 @@ export default function Admin() {
                 "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류(추정)는 해당 날짜 안 첫·마지막 기록 시각 차이입니다. 탭이 보이는 동안 약 3초 뒤 한 번, 이후 약 8초마다 체류 전용 ping이 들어가 짧은 방문도 0초만 나오지 않게 합니다(페이지뷰 수에는 포함되지 않음). 탭을 바로 닫거나 JS가 막히면 여전히 짧게 보일 수 있습니다. 국가·지역은 접속 시점 IP 기준(GeoIP)입니다.",
               )}
             </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              {t(
+                "admin.visitorSessionsStitchHint",
+                "같은 방문자 쿠키(visitor_key)는 하루 한 줄로 묶습니다. 먼저 둘러보다 나중에 로그인한 경우에도, 그날 마지막으로 기록된 회원·구독 플랜이 이 표에 붙습니다.",
+              )}
+            </p>
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <label className="text-sm text-muted-foreground shrink-0">{t("admin.pickDate", "날짜")}</label>
               <Input
@@ -2517,6 +2524,9 @@ export default function Admin() {
                     <thead>
                       <tr className="border-b border-border bg-muted/30">
                         <th className="text-left p-2 font-medium">{t("admin.visitorWho", "방문자")}</th>
+                        <th className="text-left p-2 font-medium whitespace-nowrap w-[100px]">
+                          {t("admin.visitorSubscriptionTier", "구독")}
+                        </th>
                         <th className="text-left p-2 font-medium whitespace-nowrap min-w-[140px]">
                           {t("admin.visitorGeo", "국가·지역")}
                         </th>
@@ -2561,6 +2571,20 @@ export default function Admin() {
                                 </div>
                               ) : null}
                             </td>
+                            <td className="p-2 align-top text-xs">
+                              {row.subscriptionTier && row.subscriptionTier !== "free" ? (
+                                <Badge
+                                  variant={isPaidSubscriptionTierId(row.subscriptionTier) ? "default" : "secondary"}
+                                  className="text-[10px] font-normal"
+                                >
+                                  {String(row.subscriptionTier).toUpperCase()}
+                                </Badge>
+                              ) : row.userId ? (
+                                <span className="text-muted-foreground">Free</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
                             <td className="p-2 text-muted-foreground text-xs max-w-[200px]">
                               {formatGeoLabel(row.countryCode, row.region)}
                             </td>
@@ -2576,7 +2600,7 @@ export default function Admin() {
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                          <td colSpan={7} className="p-6 text-center text-muted-foreground">
                             {t("admin.noVisitorSessions", "해당 날짜 기록이 없습니다.")}
                           </td>
                         </tr>
