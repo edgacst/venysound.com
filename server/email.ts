@@ -232,14 +232,6 @@ export async function sendSocialActivityEmail(
   }
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export type SensitiveOtpEmailKind = "credit_refund" | "account_email";
 
 /** 크레딧 환불·계정 이메일 등록 등 민감 작업용 6자리 OTP 메일 */
