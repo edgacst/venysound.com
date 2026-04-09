@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { redirectToLogin } from "@/lib/queryClient";
 import { ToastAction } from "@/components/ui/toast";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
@@ -81,6 +81,63 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
+
+  const [locationPath] = useLocation();
+
+  /** PC 크로스페이드 rAF가 effect cleanup으로 끊기면 활성 트랙 볼륨이 0에 가깝게 남거나 비활성 audio가 같이 재생될 수 있음 */
+  const restoreAudibleOutput = useCallback(() => {
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.streamUrl) return;
+    const wanted = s.streamUrl;
+    const pathnameMatch = (el: HTMLAudioElement | null) => {
+      if (!el?.src) return false;
+      try {
+        return new URL(el.src, location.origin).pathname === new URL(wanted, location.origin).pathname;
+      } catch {
+        return el.src === wanted;
+      }
+    };
+    const a = audioARef.current;
+    const b = audioBRef.current;
+    let primary: HTMLAudioElement | null = null;
+    if (pathnameMatch(a) && a && !a.paused && !a.ended) primary = a;
+    else if (pathnameMatch(b) && b && !b.paused && !b.ended) primary = b;
+    else {
+      const def = getActiveAudio();
+      if (def && !def.paused && !def.ended) primary = def;
+    }
+    if (!primary) return;
+    primary.volume = 1;
+    primary.muted = false;
+    const other = primary === a ? b : a;
+    if (other) {
+      if (!other.paused) {
+        try {
+          other.pause();
+        } catch {
+          /* ignore */
+        }
+      }
+      other.volume = 1;
+    }
+    setIsMuted(false);
+  }, [getActiveAudio]);
+
+  useEffect(() => {
+    restoreAudibleOutput();
+  }, [locationPath, restoreAudibleOutput]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") restoreAudibleOutput();
+    };
+    window.addEventListener("pageshow", restoreAudibleOutput);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pageshow", restoreAudibleOutput);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [restoreAudibleOutput]);
 
   useResumeAudioWhenForeground(getActiveAudio, () => {
     const s = useRadioPlayerStore.getState();
@@ -163,7 +220,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const handleUnmute = useCallback(() => {
     const el = getActiveAudio();
-    if (el) el.muted = false;
+    if (el) {
+      el.muted = false;
+      el.volume = 1;
+    }
     setIsMuted(false);
   }, [getActiveAudio]);
 
@@ -173,7 +233,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setIsMuted(false);
     setUserStopped(false);
     const el = getActiveAudio();
-    if (el) { el.muted = false; el.play().catch(() => {}); }
+    if (el) {
+      el.muted = false;
+      el.volume = 1;
+      el.play().catch(() => {});
+    }
   }, [setUserStopped, getActiveAudio]);
 
   const handlePause = useCallback(() => {
@@ -202,6 +266,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
       const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const tryPlay = (el: HTMLAudioElement) => {
+        el.volume = 1;
         el.muted = false;
         el.play().then(() => {
           setNeedsTap(false);
@@ -264,7 +329,21 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
       if (matchSrc(active)) {
         if (userStoppedNow()) return;
-        if (active && !active.paused && !active.ended) return;
+        if (active && !active.paused && !active.ended) {
+          active.volume = 1;
+          active.muted = false;
+          if (inactive && inactive !== active) {
+            try {
+              inactive.pause();
+            } catch {
+              /* ignore */
+            }
+            inactive.volume = 1;
+          }
+          setIsMuted(false);
+          setNeedsTap(false);
+          return;
+        }
         if (active) tryPlay(active);
         return;
       }
@@ -302,6 +381,32 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (crossfadeRafRef.current != null) {
         cancelAnimationFrame(crossfadeRafRef.current);
         crossfadeRafRef.current = null;
+        const wanted = useRadioPlayerStore.getState().streamUrl;
+        const a = audioARef.current;
+        const b = audioBRef.current;
+        const pathnameMatch = (el: HTMLAudioElement | null) => {
+          if (!el?.src || !wanted) return false;
+          try {
+            return new URL(el.src, location.origin).pathname === new URL(wanted, location.origin).pathname;
+          } catch {
+            return el.src === wanted;
+          }
+        };
+        const keeper = pathnameMatch(a) ? a : pathnameMatch(b) ? b : activeIndexRef.current === 0 ? a : b;
+        const drop = keeper === a ? b : a;
+        if (keeper) {
+          keeper.volume = 1;
+          keeper.muted = false;
+          void keeper.play().catch(() => {});
+        }
+        if (drop) {
+          try {
+            drop.pause();
+          } catch {
+            /* ignore */
+          }
+          drop.volume = 1;
+        }
       }
     };
   }, [streamUrl, getActiveAudio, getInactiveAudio]);
@@ -371,6 +476,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const onAudioPlay = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target === getActiveAudio()) {
+      const el = e.target as HTMLAudioElement;
+      if (el.volume < 0.05) el.volume = 1;
       trackEndLockRef.current = false;
       setPlaying(true);
     }
