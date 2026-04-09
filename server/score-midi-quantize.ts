@@ -1,5 +1,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { Midi } from "@tonejs/midi";
+import { createRequire } from "node:module";
+import type { Midi as MidiInstance } from "@tonejs/midi";
+
+/** @tonejs/midi ships CJS; Node ESM named import `{ Midi }` fails on Node 20+. */
+const requireCjs = createRequire(import.meta.url);
+const { Midi } = requireCjs("@tonejs/midi") as { Midi: new (data: Buffer) => MidiInstance };
 
 /**
  * basic-pitch MIDI 를 16분음표 격자에 맞춰 MuseScore 에서 읽기 쉽게 정리.
