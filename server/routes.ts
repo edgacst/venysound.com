@@ -1082,6 +1082,77 @@ export async function registerRoutes(
     }
   }
 
+  type LibraryRowForLogBackfill = {
+    generationTaskId: string | null;
+    title: string | null;
+    prompt: string | null;
+    generationProvider: string | null;
+    createdAt: Date;
+  };
+
+  /**
+   * 라이브러리 동기화(PUT)만 되고 생성 직후 insertAiMusicGenerationLog 가 실패한 경우 등,
+   * 관리자 생성 로그가 비는 것을 막기 위해 task_id 기준으로 한 번만 보강한다.
+   */
+  async function backfillAiMusicGenerationLogsFromLibraryRows(
+    tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+    userId: string,
+    libraryRows: LibraryRowForLogBackfill[],
+  ): Promise<void> {
+    const seen = new Set<string>();
+    const [user] = await tx.select().from(users).where(eq(users.id, userId));
+    if (!user) return;
+    const nowLog = new Date();
+    const displayed = computeDisplayedSubscriptionFromEntitlements(
+      user.subscriptionEntitlements,
+      user.subscriptionTier,
+      user.subscriptionExpiresAt,
+      nowLog,
+    );
+    const tier = displayed.subscriptionTier;
+    const subscriptionActive = isUserPaidSubscriptionActive(user, nowLog);
+    const billingKind =
+      user.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
+
+    for (const row of libraryRows) {
+      const taskId = row.generationTaskId?.trim();
+      if (!taskId || seen.has(taskId)) continue;
+      seen.add(taskId);
+      try {
+        const [existing] = await tx
+          .select({ id: aiMusicGenerationLogs.id })
+          .from(aiMusicGenerationLogs)
+          .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, taskId)))
+          .limit(1);
+        if (existing) continue;
+        const provRaw = row.generationProvider?.trim().toLowerCase();
+        const provider: "suno" | "aimusicapi" = provRaw === "aimusicapi" ? "aimusicapi" : "suno";
+        const title = row.title?.trim().slice(0, 500) || null;
+        const promptText = row.prompt?.trim() ?? "";
+        const requestSummary = promptText
+          ? `prompt: ${promptText.slice(0, 500)}`
+          : title
+            ? `title: ${title}`
+            : null;
+        const createdAt = row.createdAt instanceof Date && !isNaN(row.createdAt.getTime()) ? row.createdAt : nowLog;
+        await tx.insert(aiMusicGenerationLogs).values({
+          userId,
+          createdAt,
+          billingKind,
+          subscriptionTierAt: tier,
+          provider,
+          taskId,
+          requestTitle: title,
+          requestSummary,
+          creditsCharged: 0,
+          publishments: [],
+        });
+      } catch (e) {
+        console.error("[ai-music library backfill generation log]", taskId, e);
+      }
+    }
+  }
+
   app.get("/api/ai-music/usage", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
@@ -1283,6 +1354,17 @@ export async function registerRoutes(
               },
             });
         }
+        await backfillAiMusicGenerationLogsFromLibraryRows(
+          tx,
+          userId,
+          rows.map((r) => ({
+            generationTaskId: r.generationTaskId ?? null,
+            title: r.title ?? null,
+            prompt: r.prompt ?? null,
+            generationProvider: r.generationProvider ?? null,
+            createdAt: r.createdAt instanceof Date ? r.createdAt : new Date(),
+          })),
+        );
         const [cntRow] = await tx
           .select({ c: sql<number>`cast(count(*) as int)` })
           .from(aiMusicSavedTracks)
