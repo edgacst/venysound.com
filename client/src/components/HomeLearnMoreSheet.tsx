@@ -106,7 +106,7 @@ export function HomeLearnMoreSheet({ open, onOpenChange }: HomeLearnMoreSheetPro
           </Link>
           <Link href="/create-music" className="w-full" onClick={close}>
             <Button variant="outline" className="w-full" data-testid="button-learn-more-create">
-              {t("home.learnMoreSheetCtaCreate", "음악 만들러 가기")}
+              {t("home.learnMoreSheetCtaCreate", "무료 가입하고 음악 만들러 가기")}
             </Button>
           </Link>
         </div>
