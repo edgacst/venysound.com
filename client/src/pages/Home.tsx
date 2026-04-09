@@ -461,7 +461,7 @@ export default function Home() {
       )}
       <section
         ref={heroSectionRef}
-        className="relative -mb-8 flex min-h-[min(70vh,640px)] flex-col justify-start overflow-hidden border-t border-white/10 pt-16 pb-4 md:-mb-10 md:min-h-[min(72vh,680px)] md:pt-20 md:pb-5"
+        className="relative flex min-h-[min(88vh,820px)] flex-col justify-start overflow-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(90vh,880px)] md:pt-20 md:pb-10"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
       >
@@ -839,7 +839,7 @@ export default function Home() {
       </section>
 
       {/* 빠른 입구: 방송·업로드·가이드·AI (히어로 CTA 부담 분산) */}
-      <section className="container relative z-10 px-4 pt-0 pb-6 md:pt-1" data-testid="section-quick-tiles">
+      <section className="container relative z-10 mt-10 px-4 pb-6 md:mt-14" data-testid="section-quick-tiles">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
           {t("home.quickTilesLabel", "바로 가기")}
         </p>
