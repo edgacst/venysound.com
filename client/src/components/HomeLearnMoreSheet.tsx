@@ -77,7 +77,7 @@ export function HomeLearnMoreSheet({
             {isBusiness
               ? t(
                   "home.learnMoreBizSheetSubtitle",
-                  "로고송·매장 송출·웹 라디오, 글로벌 발매까지 조건과 흐름을 한눈에 정리했습니다.",
+                  "2초 만에 내 매장 브랜드에 맞는 채널을 만들고 24시간 음악을 흐르게 해 보세요!",
                 )
               : t(
                   "home.learnMoreSheetSubtitle",
@@ -95,7 +95,7 @@ export function HomeLearnMoreSheet({
                   title={t("home.learnMoreBizSheetStep1Title", "1. 브랜드·매장 사운드")}
                   body={t(
                     "home.learnMoreBizSheetStep1Body",
-                    "매장·영상·캠페인에 맞는 전용 브랜드 사운드·로고송 등 음원을 활용할 수 있습니다. 범위는 플랜·권리 조건에 따릅니다.",
+                    "저작권 걱정 없이 무료 회원 가입만 하면 내 매장에서 원하는 장르별로 24시간 음악을 들을 수 있습니다.",
                   )}
                 />
                 <StepBlock
