@@ -3,13 +3,13 @@ import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
 import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles, Building2, Play } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform, useSpring } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { resolveStorageUrl, cn } from "@/lib/utils";
 import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
@@ -19,6 +19,7 @@ import { REGISTER_PATH } from "@/lib/site-paths";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
+import { HomeLearnMoreSheet } from "@/components/HomeLearnMoreSheet";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -69,6 +70,13 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
 
 export default function Home() {
   const { t, i18n } = useTranslation();
+  const { scrollY } = useScroll();
+  const taglineScaleRaw = useTransform(scrollY, [0, 220], [1, 0.62]);
+  const taglineYRaw = useTransform(scrollY, [0, 220], [0, -72]);
+  const taglineOpacityRaw = useTransform(scrollY, [0, 220], [1, 0.88]);
+  const taglineScale = useSpring(taglineScaleRaw, { stiffness: 120, damping: 32, mass: 0.35 });
+  const taglineY = useSpring(taglineYRaw, { stiffness: 120, damping: 32, mass: 0.35 });
+  const taglineOpacity = useSpring(taglineOpacityRaw, { stiffness: 120, damping: 32, mass: 0.35 });
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
@@ -269,6 +277,7 @@ export default function Home() {
   const [currentBanner, setCurrentBanner] = useState(0);
   const [heroPersona, setHeroPersona] = useState<"creator" | "business">("creator");
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
+  const [learnMoreOpen, setLearnMoreOpen] = useState(false);
 
   const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
   const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; textSize?: string; startsAt: string; endsAt: string } | null>({
@@ -427,7 +436,7 @@ export default function Home() {
         </div>
       )}
       <section
-        className="relative flex min-h-[min(88vh,840px)] flex-col justify-center overflow-hidden pt-20 pb-10 md:pt-24 md:pb-14"
+        className="relative flex min-h-[min(88vh,840px)] flex-col justify-center overflow-hidden border-t border-white/10 pt-16 pb-10 md:pt-20 md:pb-14"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
       >
@@ -442,6 +451,30 @@ export default function Home() {
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background opacity-[0.4]" />
 
         <div className="container relative z-10 mx-auto w-full max-w-6xl px-4">
+          {/* 헤더와 분리된 히어로 문구 — 스크롤 시 축소·상향 이동 */}
+          <motion.div
+            className="mb-8 w-full origin-top will-change-transform md:mb-10"
+            style={{ scale: taglineScale, y: taglineY, opacity: taglineOpacity }}
+            data-testid="home-tagline-below-nav"
+          >
+            <p className="text-center text-2xl font-extrabold leading-[1.25] tracking-tight text-white/90 sm:text-3xl sm:leading-tight md:text-4xl lg:text-5xl xl:text-6xl">
+              <Trans
+                i18nKey="home.heroTaglineBelowNav"
+                components={{
+                  coffee: (
+                    <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)]" />
+                  ),
+                  royalty: (
+                    <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-cyan-200 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(34,211,238,0.35)]" />
+                  ),
+                  composer: (
+                    <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)]" />
+                  ),
+                }}
+                defaults="커피 한 잔 값으로 평생 저작권 수익과 작곡가로 성공하세요"
+              />
+            </p>
+          </motion.div>
           <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div
               initial={{ opacity: 0, y: 16 }}
@@ -681,6 +714,16 @@ export default function Home() {
                           </Button>
                         </Link>
                       )}
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="outline"
+                        className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
+                        data-testid="button-hero-learn-more"
+                        onClick={() => setLearnMoreOpen(true)}
+                      >
+                        {t("home.heroCtaLearnMore", "자세히 알아보기")}
+                      </Button>
                     </div>
                   </motion.div>
                 ) : (
@@ -1136,6 +1179,7 @@ export default function Home() {
           </HomeMusicRow>
         )}
       </section>
+      <HomeLearnMoreSheet open={learnMoreOpen} onOpenChange={setLearnMoreOpen} />
       <Footer />
     </div>
   );
