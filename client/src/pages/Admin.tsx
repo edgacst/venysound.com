@@ -664,6 +664,9 @@ export default function Admin() {
     refetch: refetchAiMusicGenLogs,
   } = useQuery<AiMusicGenLogRow[]>({
     queryKey: ["/api/admin/ai-music-generation-logs"],
+    /** 전역 staleTime: Infinity — DB·수동 INSERT 반영이 안 보이는 문제 방지 */
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const res = await fetch("/api/admin/ai-music-generation-logs?limit=300", { credentials: "include" });
       if (!res.ok) {
