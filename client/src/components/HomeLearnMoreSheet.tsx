@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import type { LucideIcon } from "lucide-react";
-import { Wand2, Upload, Globe, Building2, Radio } from "lucide-react";
+import { Wand2, Upload, Globe, Building2, Radio, Megaphone } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -107,11 +107,11 @@ export function HomeLearnMoreSheet({
                   )}
                 />
                 <StepBlock
-                  icon={Globe}
-                  title={t("home.learnMoreBizSheetStep3Title", "3. 글로벌 스트리밍 발매")}
+                  icon={Megaphone}
+                  title={t("home.learnMoreBizSheetStep3Title", "3. 우리 매장 브랜드 광고도 만들어 보세요")}
                   body={t(
                     "home.learnMoreBizSheetStep3Body",
-                    "구독·플랜에 따라 해외 스토어 배포 신청이 가능합니다. 로고송·채널·유통은 항목별 조건이 다르므로 요금제와 가이드를 확인해 주세요.",
+                    "음악 중간에 우리 매장 광고를 삽입하여 스토어를 찾는 고객들에게 라디오 방송에서 우리 매장 홍보를 해보세요.",
                   )}
                 />
               </>
