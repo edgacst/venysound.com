@@ -110,7 +110,41 @@ async function performSubscriptionAiWalletSync(
         carried = Math.min(c, monthlyGrant * 3);
       }
     }
-    consumed = carried;
+
+    const preserved = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
+    const isCalKey = (k: string | null): k is string => !!k && /^\d{4}-\d{2}$/.test(k);
+    const parseSubMs = (k: string | null): number | null => {
+      if (!k?.startsWith("sub:")) return null;
+      const n = Number(k.slice(4));
+      return Number.isFinite(n) ? n : null;
+    };
+    const oldSubMs = parseSubMs(curKey);
+    const newSubMs = parseSubMs(desiredKey);
+    /** 구독 만료 시각(ms)이 바뀌면 새 결제·갱신 구간 → 사용 누적은 0부터 */
+    const subPeriodRenewed =
+      oldSubMs != null && newSubMs != null && oldSubMs !== newSubMs;
+    /** 연간 등 달력 버킷이 월이 바뀐 경우 → 새 달이므로 누적 리셋 */
+    const calendarMonthRolled =
+      isCalKey(curKey) && isCalKey(desiredKey) && curKey !== desiredKey;
+
+    if (calendarMonthRolled || subPeriodRenewed) {
+      consumed = carried;
+    } else if (isCalKey(curKey) && desiredKey.startsWith("sub:")) {
+      consumed = Math.max(carried, preserved);
+    } else if (curKey?.startsWith("sub:") && isCalKey(desiredKey)) {
+      /** 월간(sub:) → 연간(달력) 등: ai_music_usage 에 sub 행이 거의 없으므로 users 컬럼이 진실 */
+      const [subUsageRow] = await tx
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, curKey)));
+      const c = subUsageRow?.count ?? 0;
+      const fromUsage =
+        c >= AI_MUSIC_WON_PER_TRACK ? Math.min(c, monthlyGrant * 3) : 0;
+      consumed = Math.max(carried, preserved, fromUsage);
+    } else {
+      /** 키만 바뀌고 위에 해당하지 않으면(배포·규칙 변경 등) DB 누적을 잃지 않음 */
+      consumed = Math.max(carried, preserved);
+    }
   }
 
   await tx
