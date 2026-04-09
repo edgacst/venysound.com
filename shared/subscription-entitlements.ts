@@ -2,6 +2,7 @@ import {
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
   PAID_SUBSCRIPTION_TIER_IDS,
+  SUBSCRIPTION_PLAN_FALLBACK,
 } from "./subscription-plan-pricing";
 
 /** Free 플랜 월 AI 곡 수 상한 */
@@ -14,13 +15,14 @@ export const AI_MUSIC_WON_PER_TRACK = 150;
 export const AI_MUSIC_CREDITS_PER_TRACK = AI_MUSIC_WON_PER_TRACK;
 
 /**
- * 유료 플랜(활성) 월간 AI 사용 예산(원). 구독에 포함된 분량(구 500~2000 크레딧 × 7.5원).
+ * 유료 플랜(활성) 월간 AI 사용 예산(원). **구독 월 공급가(부가세 제외)** 와 동일.
+ * 회원 청구액은 공급가+10%이나, 음악 생성에 쓰는 월 한도는 공급가 분만 반영.
  */
 export const AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER: Record<PaidSubscriptionTierId, number> = {
-  starter: 3750,
-  basic: 7500,
-  pro: 11250,
-  premium: 15000,
+  starter: SUBSCRIPTION_PLAN_FALLBACK.starter.monthly,
+  basic: SUBSCRIPTION_PLAN_FALLBACK.basic.monthly,
+  pro: SUBSCRIPTION_PLAN_FALLBACK.pro.monthly,
+  premium: SUBSCRIPTION_PLAN_FALLBACK.premium.monthly,
 };
 
 const TIER_RANK: Record<PaidSubscriptionTierId, number> = {

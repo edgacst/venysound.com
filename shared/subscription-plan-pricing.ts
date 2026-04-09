@@ -33,9 +33,9 @@ export function normalizeSubscriptionPlanPrices(
 }
 
 /**
- * 구독 **실제 청구·입금액**(원). `subscription_plans`에 저장된 월/연 금액(공급가 표기)과 **동일**하며,
- * 여기에 부가세 10%를 **더하지 않음** (회원은 예: Basic 월 9,000원만 입금).
+ * 회원 청구·입금·토스 결제 **총액**(원). 공급가에 부가세 10%를 더한 금액(반올림).
+ * 예: Basic 월 공급가 9,000 → 청구 9,900.
  */
-export function subscriptionBilledAmountWon(supplyPriceWon: number): number {
-  return Math.round(Number(supplyPriceWon));
+export function subscriptionTotalVatInclusiveWon(supplyPriceWon: number): number {
+  return Math.round(Number(supplyPriceWon) * 1.1);
 }

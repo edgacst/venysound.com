@@ -53,7 +53,7 @@ import { isAllowedSignupConversionEvent } from "@shared/analytics-conversion-eve
 import { walletSupplyWonFromTotalPaymentVatInclusive, WALLET_TOPUP_MIN_TOTAL_WON } from "@shared/credits-pricing";
 import {
   normalizeSubscriptionPlanPrices,
-  subscriptionBilledAmountWon,
+  subscriptionTotalVatInclusiveWon,
   SUBSCRIPTION_PLAN_FALLBACK,
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
@@ -5211,7 +5211,7 @@ export async function registerRoutes(
 
       const n = normalizeSubscriptionPlanPrices("pro", plan.monthlyPrice, plan.yearlyPrice);
       const supply = billingPeriod === "monthly" ? n.monthly : n.yearly;
-      const amount = subscriptionBilledAmountWon(supply);
+      const amount = subscriptionTotalVatInclusiveWon(supply);
       const orderName = billingPeriod === 'monthly' ? 'Veny Sound Pro 월간 구독' : 'Veny Sound Pro 연간 구독';
       const orderId = `SW_${userId.substring(0, 8)}_${Date.now()}`;
 
@@ -5414,16 +5414,16 @@ export async function registerRoutes(
         const fb = SUBSCRIPTION_PLAN_FALLBACK[plan];
         if (!planRow) {
           const supply = billingPeriod === "monthly" ? fb.monthly : fb.yearly;
-          amount = subscriptionBilledAmountWon(supply);
+          amount = subscriptionTotalVatInclusiveWon(supply);
         } else {
           const n = normalizeSubscriptionPlanPrices(plan, planRow.monthlyPrice, planRow.yearlyPrice);
           const supply = billingPeriod === "monthly" ? n.monthly : n.yearly;
-          amount = subscriptionBilledAmountWon(supply);
+          amount = subscriptionTotalVatInclusiveWon(supply);
         }
       } catch {
         const fb = SUBSCRIPTION_PLAN_FALLBACK[plan];
         const supply = billingPeriod === "monthly" ? fb.monthly : fb.yearly;
-        amount = subscriptionBilledAmountWon(supply);
+        amount = subscriptionTotalVatInclusiveWon(supply);
       }
       const orderId = `BANK_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").substring(0, 20)}_${Date.now()}`;
 
