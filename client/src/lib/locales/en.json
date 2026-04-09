@@ -825,7 +825,7 @@
   },
   "refundPolicy": {
     "title": "Refund Policy",
-    "effectiveDate": "Effective date: February 27, 2026",
+    "effectiveDate": "Effective date: April 9, 2026",
     "companyName": "Company: Edgar CST Co., Ltd.",
     "contactTitle": "Refund inquiries",
     "contact": "Customer support: freecompr@naver.com / 010-8447-9973",
@@ -840,7 +840,7 @@
     "s5Title": "Article 5 (Paid Music Purchase / Download Refunds)",
     "s5Content": "① Paid music is digital content for which withdrawal is restricted under the Act on Consumer Protection in Electronic Commerce once download or streaming has commenced. Therefore, no refund is made after download completion or after streaming has started.\n② If you have not downloaded or played the content at all and the request is within 7 days of payment, we will process a refund or cancellation to the original payment method after review.\n③ If the content is defective (e.g., unplayable or not as described), we will provide a full refund or replacement upon verification.",
     "s6Title": "Article 6 (Subscription Refunds)",
-    "s6Content": "① If you cancel before use has started, the full subscription fee will be refunded. Use is deemed to have started when the service becomes available after payment.\n② After use has started, no refund is made for periods in which the service was already provided. For recurring billing, only the unused portion (excluding periods already used) may be partially refunded.\n③ Upon cancellation, the subscription will not renew after the next billing date; access continues until the end of the current period.",
+    "s6Content": "① If you cancel before use has started, the full subscription fee will be refunded. Use is deemed to have started when the service becomes available after payment.\n② After use has started, no refund is made for periods in which the service was already provided. For recurring billing, only the unused portion (excluding periods already used) may be partially refunded.\n③ Upon cancellation, the subscription will not renew after the next billing date; access continues until the end of the current period.\n④ Usage limits included in a plan (e.g., AI music generation in KRW or track counts) may be used **while your paid subscription period remains active**, according to the rules shown in the product and policies (billing cycle, monthly caps, etc.). **When the paid period ends or expires, any unused portion of those limits does not roll over, is not credited to your wallet, and is not refundable in cash.**",
     "s7Title": "Article 7 (Refunds Due to Company Fault)",
     "s7Content": "① When the Company cannot provide the goods or services (e.g., out of stock, service termination, technical error), the Company will notify the user without delay and, if payment was received, refund or take steps to refund within 3 business days of receipt.\n② In such cases, Article 14 (Refund) and Article 16 (Effects of Withdrawal) of the Terms of Service apply.",
     "s8Title": "Article 8 (How to Request a Refund and Processing Time)",
