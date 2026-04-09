@@ -103,7 +103,7 @@ export function HomeLearnMoreSheet({
                   title={t("home.learnMoreBizSheetStep2Title", "2. 웹 라디오·채널")}
                   body={t(
                     "home.learnMoreBizSheetStep2Body",
-                    "베니방송국으로 웹에 바로 연결되는 라디오 채널·페이지를 만들고, 실시간 송출·청취 경험을 제공할 수 있습니다.",
+                    "내 매장에 어울리는 음원을 직접 만들고 세상에 하나밖에 없는 나의 스토어 채널을 만들어 보세요.",
                   )}
                 />
                 <StepBlock
