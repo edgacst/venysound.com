@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { resolveStorageUrl, cn } from "@/lib/utils";
 import { useMyLikes } from "@/hooks/use-music";
@@ -77,6 +77,17 @@ export default function Home() {
   const taglineScale = useSpring(taglineScaleRaw, { stiffness: 120, damping: 32, mass: 0.35 });
   const taglineY = useSpring(taglineYRaw, { stiffness: 120, damping: 32, mass: 0.35 });
   const taglineOpacity = useSpring(taglineOpacityRaw, { stiffness: 120, damping: 32, mass: 0.35 });
+
+  const heroSectionRef = useRef<HTMLElement | null>(null);
+  const { scrollYProgress: heroScrollProgress } = useScroll({
+    target: heroSectionRef,
+    offset: ["start start", "end start"],
+  });
+  const heroColLeftXRaw = useTransform(heroScrollProgress, [0, 1], [0, -88]);
+  const heroColRightXRaw = useTransform(heroScrollProgress, [0, 1], [0, 88]);
+  const heroColLeftX = useSpring(heroColLeftXRaw, { stiffness: 90, damping: 28, mass: 0.45 });
+  const heroColRightX = useSpring(heroColRightXRaw, { stiffness: 90, damping: 28, mass: 0.45 });
+
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
@@ -437,6 +448,7 @@ export default function Home() {
         </div>
       )}
       <section
+        ref={heroSectionRef}
         className="relative flex min-h-[min(88vh,840px)] flex-col justify-center overflow-hidden border-t border-white/10 pt-16 pb-10 md:pt-20 md:pb-14"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
@@ -481,7 +493,8 @@ export default function Home() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45 }}
-              className="order-2 lg:order-1"
+              className="order-2 will-change-transform lg:order-1"
+              style={{ x: heroColLeftX }}
             >
               <div className="mx-auto w-full max-w-md lg:mx-0">
                 <HomeHeroLiveWaveform />
@@ -568,7 +581,7 @@ export default function Home() {
               </div>
             </motion.div>
 
-            <div className="order-1 lg:order-2">
+            <motion.div className="order-1 will-change-transform lg:order-2" style={{ x: heroColRightX }}>
               <div
                 className="mb-6 flex justify-center lg:justify-start"
                 role="tablist"
@@ -802,7 +815,7 @@ export default function Home() {
                   </motion.div>
                 )}
               </AnimatePresence>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
