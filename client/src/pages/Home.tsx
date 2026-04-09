@@ -16,6 +16,7 @@ import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { REGISTER_PATH } from "@/lib/site-paths";
+import { useRadioPlayerStore } from "@/stores/radio-player";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
@@ -173,6 +174,54 @@ export default function Home() {
       return res.json();
     },
   });
+
+  /** 메인 진입 시 이미 라디오를 켜두지 않았다면, 라이브 채널 하나로 자동 재생 (GlobalRadioPlayer가 재생 처리) */
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (!liveChannels?.length) return;
+    const st = useRadioPlayerStore.getState();
+    if (st.slug) return;
+    if (st.userStopped) return;
+
+    const envSlug = (import.meta.env.VITE_HOME_AUTO_RADIO_SLUG as string | undefined)?.trim().toLowerCase();
+    const fromEnv = envSlug ? liveChannels.find((c) => (c.slug || "").trim().toLowerCase() === envSlug) : undefined;
+    const pick = fromEnv ?? liveChannels[0];
+    const slug = (pick.slug || "").trim().toLowerCase();
+    if (!slug) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/radio/channels/${encodeURIComponent(slug)}`, { credentials: "include" });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as Record<string, unknown>;
+        if (cancelled) return;
+        if (data.status !== "live") return;
+        const nowPlayingId = data.nowPlayingMusicId ?? null;
+        const nowPlayingObjectPath = data.nowPlayingObjectPath ?? null;
+        if (nowPlayingId == null && !nowPlayingObjectPath) return;
+        const streamUrl =
+          nowPlayingObjectPath != null
+            ? String(nowPlayingObjectPath)
+            : nowPlayingId != null
+              ? `/api/music/${Number(nowPlayingId)}/stream`
+              : null;
+        if (!streamUrl) return;
+        const latest = useRadioPlayerStore.getState();
+        if (latest.slug || latest.userStopped) return;
+        const def = t("radio.defaultChannelName");
+        const resolvedName = String(data.name ?? pick.name ?? def).trim() || def;
+        const elapsed =
+          typeof data.nowPlayingElapsedSeconds === "number" ? (data.nowPlayingElapsedSeconds as number) : undefined;
+        latest.setStream(slug, resolvedName, streamUrl, elapsed);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveChannels, isAuthLoading, t]);
 
   const timeLocale = useMemo(() => {
     const l = (i18n.language || "ko").split("-")[0].toLowerCase();
