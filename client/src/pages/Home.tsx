@@ -19,7 +19,7 @@ import { REGISTER_PATH } from "@/lib/site-paths";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
-import { HomeLearnMoreSheet } from "@/components/HomeLearnMoreSheet";
+import { HomeLearnMoreSheet, type HomeLearnMoreSheetMode } from "@/components/HomeLearnMoreSheet";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -278,6 +278,7 @@ export default function Home() {
   const [heroPersona, setHeroPersona] = useState<"creator" | "business">("creator");
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const [learnMoreOpen, setLearnMoreOpen] = useState(false);
+  const [learnMoreMode, setLearnMoreMode] = useState<HomeLearnMoreSheetMode>("creator");
 
   const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
   const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; textSize?: string; startsAt: string; endsAt: string } | null>({
@@ -720,7 +721,10 @@ export default function Home() {
                         variant="outline"
                         className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
                         data-testid="button-hero-learn-more"
-                        onClick={() => setLearnMoreOpen(true)}
+                        onClick={() => {
+                          setLearnMoreMode("creator");
+                          setLearnMoreOpen(true);
+                        }}
                       >
                         {t("home.heroCtaLearnMore", "자세히 알아보기")}
                       </Button>
@@ -781,6 +785,19 @@ export default function Home() {
                           {t("home.heroCtaDistributionShort", "글로벌 발매 가이드")}
                         </Button>
                       </Link>
+                      <Button
+                        type="button"
+                        size="lg"
+                        variant="outline"
+                        className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
+                        data-testid="button-hero-learn-more-business"
+                        onClick={() => {
+                          setLearnMoreMode("business");
+                          setLearnMoreOpen(true);
+                        }}
+                      >
+                        {t("home.heroCtaLearnMore", "자세히 알아보기")}
+                      </Button>
                     </div>
                   </motion.div>
                 )}
@@ -1179,7 +1196,7 @@ export default function Home() {
           </HomeMusicRow>
         )}
       </section>
-      <HomeLearnMoreSheet open={learnMoreOpen} onOpenChange={setLearnMoreOpen} />
+      <HomeLearnMoreSheet open={learnMoreOpen} onOpenChange={setLearnMoreOpen} mode={learnMoreMode} />
       <Footer />
     </div>
   );
