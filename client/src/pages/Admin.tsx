@@ -4723,8 +4723,14 @@ export default function Admin() {
                   {walletData.aiMusicMonthly ? (
                     <div className="pt-2 border-t border-border/60 mt-2 space-y-1">
                       <div className="text-xs font-medium text-foreground">
-                        {t("admin.walletAiMonthlyTitle", "이번 달 AI 생성 한도")}{" "}
-                        <span className="font-mono text-muted-foreground">({walletData.aiMusicMonthly.periodMonth})</span>
+                        {t("admin.walletAiMonthlyTitle", "AI 생성 한도")}{" "}
+                        <span className="font-mono text-muted-foreground" title={walletData.aiMusicMonthly.usagePeriodKey ?? walletData.aiMusicMonthly.periodMonth}>
+                          (
+                          {String(walletData.aiMusicMonthly.periodMonth ?? "").startsWith("sub:")
+                            ? t("admin.walletAiPeriodSubKey", "월간 구독 주기")
+                            : walletData.aiMusicMonthly.periodMonth}
+                          )
+                        </span>
                       </div>
                       <div className="text-sm tabular-nums">
                         {walletData.aiMusicMonthly.unit === "unlimited" ? (
@@ -4758,11 +4764,11 @@ export default function Admin() {
                         <div className="flex flex-wrap items-end gap-2">
                           <div className="space-y-1">
                             <Label htmlFor="admin-ai-usage-month" className="text-[11px] text-muted-foreground">
-                              {t("admin.walletAiUsagePeriod", "월 (YYYY-MM)")}
+                              {t("admin.walletAiUsagePeriod", "집계 키 (YYYY-MM 또는 sub:ms)")}
                             </Label>
                             <Input
                               id="admin-ai-usage-month"
-                              className="h-8 w-[7.5rem] font-mono text-xs"
+                              className="h-8 min-w-[7.5rem] max-w-[14rem] font-mono text-xs"
                               value={aiMusicUsageEditPeriod}
                               onChange={(e) => setAiMusicUsageEditPeriod(e.target.value)}
                               placeholder="2026-04"
@@ -4790,9 +4796,12 @@ export default function Admin() {
                             onClick={() => {
                               if (!walletModalUser) return;
                               const pm = aiMusicUsageEditPeriod.trim();
-                              if (!/^\d{4}-\d{2}$/.test(pm)) {
+                              if (!/^\d{4}-\d{2}$/.test(pm) && !/^sub:\d+$/.test(pm)) {
                                 toast({
-                                  title: t("admin.walletAiUsageInvalidMonth", "월 형식은 YYYY-MM 이어야 합니다."),
+                                  title: t(
+                                    "admin.walletAiUsageInvalidMonth",
+                                    "형식은 YYYY-MM 이거나 월간 구독용 sub:<unixMs> 이어야 합니다.",
+                                  ),
                                   variant: "destructive",
                                 });
                                 return;
@@ -4822,7 +4831,7 @@ export default function Admin() {
                         <p className="text-[10px] text-muted-foreground leading-snug">
                           {t(
                             "admin.walletAiUsageAdjustHint",
-                            "해당 월의 ai_music_usage.count만 바꿉니다. Free는 곡 수, 유료 플랜은 월 AI 크레딧 소모량과 동일한 카운터입니다.",
+                            "ai_music_usage의 period_month 키에 해당하는 count만 바꿉니다. 월간 구독은 sub:만료시각ms, 연간·Free는 YYYY-MM 입니다.",
                           )}
                         </p>
                       </div>

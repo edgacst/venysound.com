@@ -63,6 +63,7 @@ import {
   AI_MUSIC_WON_PER_TRACK,
   isUserPaidSubscriptionActive,
   getAiMusicMonthlyUsageLimit,
+  getAiMusicUsagePeriodKey,
   computeDisplayedSubscriptionFromEntitlements,
   subscriptionRowNeedsSync,
   buildEntitlementsView,
@@ -1087,8 +1088,8 @@ export async function registerRoutes(
       const now = new Date();
       const isPaidTier = row?.role === "admin" || isActivePaidSubscription(row, now);
       const limit = getAiMusicMonthlyUsageLimit(row, row?.role ?? null, now);
-      const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+      const usagePeriodKey = getAiMusicUsagePeriodKey(row, row?.role ?? null, now);
+      const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
       const usedThisMonth = usage?.count ?? 0;
       const tier = row?.subscriptionTier ?? "free";
       const subActive = isActivePaidSubscription(row, now);
@@ -1101,6 +1102,7 @@ export async function registerRoutes(
       return res.json({
         limit,
         usedThisMonth,
+        usagePeriodKey,
         isPaidTier,
         walletCredits,
         creditsBalance: walletCredits,
@@ -1325,8 +1327,8 @@ export async function registerRoutes(
     const now = new Date();
     const isPaidTier = row.role === "admin" || isActivePaidSubscription(row, now);
     const limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
-    const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+    const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
+    const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
     const used = usage?.count ?? 0;
     const tierNow = row.subscriptionTier ?? "free";
     /** Free: count = 곡 수. 유료(활성): count = 이번 달 누적 원화 예산(곡당 AI_MUSIC_WON_PER_TRACK). */
@@ -1364,7 +1366,7 @@ export async function registerRoutes(
       if ((row.subscriptionTier ?? "free") === "free") {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, 1, NOW())
+          VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
           ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
         `);
         return 0;
@@ -1373,7 +1375,7 @@ export async function registerRoutes(
       if (isPaidTier) {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+          VALUES (${userId}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
           ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
         `);
         return 0;
@@ -1397,7 +1399,7 @@ export async function registerRoutes(
         });
         await tx.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${periodMonth}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+          VALUES (${userId}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
           ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
         `);
       });
@@ -4495,29 +4497,35 @@ export async function registerRoutes(
         return res.status(400).json({ message: "used는 0 이상 정수여야 합니다." });
       }
 
-      let periodMonth: string;
-      if (typeof body.periodMonth === "string" && /^\d{4}-\d{2}$/.test(body.periodMonth.trim())) {
-        periodMonth = body.periodMonth.trim();
+      let usageKey: string;
+      if (typeof body.periodMonth === "string" && body.periodMonth.trim()) {
+        const p = body.periodMonth.trim();
+        if (/^\d{4}-\d{2}$/.test(p) || /^sub:\d+$/.test(p)) usageKey = p;
+        else {
+          return res.status(400).json({
+            message: "periodMonth는 YYYY-MM 또는 월간 구독 버킷용 sub:<unixMs> 형식이어야 합니다.",
+          });
+        }
       } else {
         const now = new Date();
-        periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        usageKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
       }
 
       const [existing] = await db
         .select()
         .from(aiMusicUsage)
-        .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, periodMonth)));
+        .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, usageKey)));
 
       if (existing) {
         await db
           .update(aiMusicUsage)
           .set({ count: used, updatedAt: new Date() })
-          .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, periodMonth)));
+          .where(and(eq(aiMusicUsage.userId, targetId), eq(aiMusicUsage.periodMonth, usageKey)));
       } else {
-        await db.insert(aiMusicUsage).values({ userId: targetId, periodMonth, count: used });
+        await db.insert(aiMusicUsage).values({ userId: targetId, periodMonth: usageKey, count: used });
       }
 
-      res.json({ success: true, userId: targetId, periodMonth, used });
+      res.json({ success: true, userId: targetId, periodMonth: usageKey, used });
     } catch (e: any) {
       console.error("[admin/users/:id/ai-music-usage]", e);
       res.status(500).json({ message: e?.message ?? "저장에 실패했습니다." });

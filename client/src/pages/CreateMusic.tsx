@@ -458,6 +458,7 @@ export default function CreateMusic() {
   const { data: aiUsage } = useQuery<{
     limit: number;
     usedThisMonth: number;
+    usagePeriodKey?: string;
     isPaidTier: boolean;
     walletCredits?: number;
     creditsBalance?: number;
@@ -1210,14 +1211,23 @@ export default function CreateMusic() {
                                 })}
                               </strong>
                               <span className="text-[11px] text-violet-100/70 leading-tight px-1">
-                                {t(
-                                  "createMusic.subscriptionAiQuotaSubWon",
-                                  "남은 월 예산 {{n}}원 · 생성 1회당 {{per}}원 (충전 잔액은 AI에 사용 안 됨)",
-                                  {
-                                    n: remaining.toLocaleString(),
-                                    per: (aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150).toLocaleString(),
-                                  },
-                                )}
+                                {String(aiUsage.usagePeriodKey ?? "").startsWith("sub:")
+                                  ? t(
+                                      "createMusic.subscriptionAiQuotaSubWonMonthlyCycle",
+                                      "남은 예산 {{n}}원 · 생성 1회당 {{per}}원. 달이 바뀌어도 구독 만료 전까지 한도는 이어지며, 재결제 시 초기화됩니다.",
+                                      {
+                                        n: remaining.toLocaleString(),
+                                        per: (aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150).toLocaleString(),
+                                      },
+                                    )
+                                  : t(
+                                      "createMusic.subscriptionAiQuotaSubWon",
+                                      "남은 월 예산 {{n}}원 · 생성 1회당 {{per}}원 (충전 잔액은 AI에 사용 안 됨)",
+                                      {
+                                        n: remaining.toLocaleString(),
+                                        per: (aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150).toLocaleString(),
+                                      },
+                                    )}
                               </span>
                             </>
                           );

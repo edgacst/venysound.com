@@ -21,6 +21,7 @@ import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   getAiMusicMonthlyUsageLimit,
+  getAiMusicUsagePeriodKey,
   isUserPaidSubscriptionActive,
 } from "@shared/subscription-entitlements";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
@@ -3243,11 +3244,11 @@ export class DatabaseStorage implements IStorage {
     if (!user) return null;
 
     const now = new Date();
-    const periodMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const usagePeriodKey = getAiMusicUsagePeriodKey(user, user.role ?? null, now);
     const [usageRow] = await db
       .select()
       .from(aiMusicUsage)
-      .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, periodMonth)));
+      .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
     const usedAi = usageRow?.count ?? 0;
     const aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
     let aiUnit: "songs" | "credits" | "won" | "unlimited" = "won";
@@ -3299,7 +3300,8 @@ export class DatabaseStorage implements IStorage {
       creditTransactions: { total: txTotal, rows: txRows },
       payments: { total: payTotal, rows: payRows },
       aiMusicMonthly: {
-        periodMonth,
+        periodMonth: usagePeriodKey,
+        usagePeriodKey,
         limit: aiLimit,
         used: usedAi,
         unit: aiUnit,

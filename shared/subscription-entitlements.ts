@@ -118,6 +118,8 @@ export type UserSubscriptionFields = {
   subscriptionTier?: string | null;
   subscriptionExpiresAt?: Date | null;
   subscriptionEntitlements?: unknown;
+  /** payments.billingPeriod 등에서 온 값: `monthly` | `yearly` (계좌이체·토스 갱신 시 설정) */
+  subscriptionPlan?: string | null;
 };
 
 export function isUserPaidSubscriptionActive(user: UserSubscriptionFields | undefined, now: Date): boolean {
@@ -154,6 +156,41 @@ export function getAiMusicMonthlyUsageLimit(
   }
   if ((user?.subscriptionTier ?? "free") === "free") return FREE_AI_MUSIC_LIMIT_PER_MONTH;
   return Number.MAX_SAFE_INTEGER;
+}
+
+function calendarMonthKeyUtc(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * `ai_music_usage.period_month` 집계 키.
+ * - Free·관리자: 달력 `YYYY-MM`
+ * - 유료·연간: 달력 `YYYY-MM` (구독 유효 기간 안에서 매달 예산 리셋 — 연 1회 결제라도 월 단위 혜택)
+ * - 유료·월간(또는 billing 미설정 레거시): `sub:<구독만료 시각 ms>` — **한 번 결제한 구독 기간 동안** 달이 바뀌어도 한도 유지, 재결제·만료 후 신규 시에만 리셋
+ */
+export function getAiMusicUsagePeriodKey(
+  user: UserSubscriptionFields | undefined,
+  role: string | null | undefined,
+  now: Date,
+): string {
+  const cal = calendarMonthKeyUtc(now);
+  if (role === "admin") return cal;
+  if (!isUserPaidSubscriptionActive(user, now)) return cal;
+
+  const billing = String(user?.subscriptionPlan ?? "").trim().toLowerCase();
+  if (billing === "yearly") {
+    return cal;
+  }
+
+  const computed = computeDisplayedSubscriptionFromEntitlements(
+    user?.subscriptionEntitlements,
+    user?.subscriptionTier,
+    user?.subscriptionExpiresAt,
+    now,
+  );
+  const exp = computed.subscriptionExpiresAt;
+  if (!exp || !(exp instanceof Date) || isNaN(exp.getTime())) return cal;
+  return `sub:${exp.getTime()}`;
 }
 
 /** UI·DB 레거시 컬럼용: 최고 tier + 활성 tier 중 가장 늦은 만료 */
