@@ -2,7 +2,7 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles } from "lucide-react";
+import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles, Building2, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -217,6 +217,7 @@ export default function Home() {
   ];
 
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [heroPersona, setHeroPersona] = useState<"creator" | "business">("creator");
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
 
   const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
@@ -375,123 +376,316 @@ export default function Home() {
           </div>
         </div>
       )}
-      <section className="relative min-h-[400px] sm:min-h-[420px] flex flex-col justify-end overflow-hidden pt-20 md:pt-24 pb-5 md:pb-6">
-        <div className="absolute inset-0">
-          <img 
-            src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1200&q=80" 
-            alt={t('home.heroImageAlt')}
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-black/60" />
-          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
-        </div>
+      <section
+        className="relative flex min-h-[min(88vh,840px)] flex-col justify-center overflow-hidden pt-20 pb-10 md:pt-24 md:pb-14"
+        aria-label={t("home.heroSectionAria", "베니사운드 소개")}
+        data-testid="section-home-hero"
+      >
+        <div className="absolute inset-0 bg-gradient-to-br from-[#07050d] via-[#100818] to-[#050c14]" />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-95"
+          style={{
+            background:
+              "radial-gradient(ellipse 85% 55% at 50% -15%, rgba(139,92,246,0.32), transparent 55%), radial-gradient(ellipse 50% 45% at 95% 40%, rgba(34,211,238,0.14), transparent 50%), radial-gradient(ellipse 40% 35% at 5% 75%, rgba(244,114,182,0.1), transparent 45%)",
+          }}
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background opacity-[0.4]" />
 
-        <div className="hero-inner relative z-10 px-4 text-center">
-          <motion.h1 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-5xl md:text-7xl font-display font-bold mb-4 text-white drop-shadow-lg"
-            data-testid="text-hero-title"
-          >
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400">Veny</span>
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 via-amber-400 to-orange-400">Sound</span>
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.03 }}
-            className="text-sm md:text-base text-white/85 mb-3 drop-shadow-md font-medium"
-            data-testid="text-hero-brand-korean"
-          >
-            {t("home.heroBrandLine")}
-          </motion.p>
-          {homeGreeting && (
-            <motion.p
-              initial={{ opacity: 0, y: 10 }}
+        <div className="container relative z-10 mx-auto w-full max-w-6xl px-4">
+          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.04 }}
-              className="text-base md:text-lg text-amber-200/95 mb-3 drop-shadow-md font-medium"
-              data-testid="text-hero-greeting"
+              transition={{ duration: 0.45 }}
+              className="order-2 lg:order-1"
             >
-              {homeGreeting}
-            </motion.p>
-          )}
-          <motion.h2
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 }}
-            className="text-2xl md:text-3xl font-bold mb-4 text-white/90 drop-shadow-md"
-            data-testid="text-hero-subtitle"
-          >
-            {t('home.heroSubtitle')}
-          </motion.h2>
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="text-lg text-white/80 mb-6 drop-shadow-sm"
-            data-testid="text-hero-share-now"
-          >
-            {t("home.shareNow")}
-          </motion.p>
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="max-w-xl mx-auto mb-8"
-          >
-            <Link href="/music">
-              <div className="relative cursor-pointer">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
-                <Input 
-                  placeholder={t('home.searchPlaceholder')} 
-                  className="pl-12 h-12 rounded-full bg-white/10 backdrop-blur-md border-white/20 text-white placeholder:text-white/50 cursor-pointer"
-                  readOnly
-                  data-testid="input-hero-search"
-                />
+              <div className="mx-auto w-full max-w-md rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md lg:mx-0">
+                {liveTickerText ? (
+                  <div className="mb-3 h-9 overflow-hidden rounded-lg bg-black/40">
+                    <div className="animate-radio-ticker inline-flex whitespace-nowrap text-xs font-medium text-amber-200/95 md:text-sm">
+                      <span className="inline-block pr-[2em]">{liveTickerText}</span>
+                      <span className="inline-block pr-[2em]">{liveTickerText}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mb-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center text-xs text-white/65 md:text-sm">
+                    {t("home.heroProofNoLive", "지금 송출 중인 채널이 없을 수 있어요. 방송국에서 직접 켜 볼 수 있어요.")}
+                  </p>
+                )}
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {liveChannels?.length ? (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-500/90 text-[10px] font-bold text-white shadow-lg shadow-red-500/25">
+                        {t("home.heroProofLiveBadge", "LIVE")}
+                      </span>
+                    ) : (
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-[10px] font-bold uppercase tracking-wide text-white/85">
+                        {t("home.heroProofRadioBadge", "FM")}
+                      </span>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium uppercase tracking-wide text-white/55">
+                        {t("home.heroProofRadioLabel", "베니방송국")}
+                      </p>
+                      <Link
+                        href={liveChannels?.[0]?.slug ? `/radio/${liveChannels[0].slug}` : "/radio/channels"}
+                        className="block truncate text-sm font-semibold text-white hover:text-amber-200/95"
+                        data-testid="link-hero-live-channel"
+                      >
+                        {liveChannels?.[0]?.name
+                          ? t("home.heroProofTuneIn", "{{name}} 듣기", { name: liveChannels[0].name })
+                          : t("home.heroProofBrowseChannels", "채널 목록 보기")}
+                      </Link>
+                    </div>
+                  </div>
+                  <Link href="/radio/channels">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="shrink-0 rounded-full border-0 bg-white/15 text-white hover:bg-white/25"
+                      data-testid="button-hero-all-channels"
+                    >
+                      {t("home.heroCtaRadioBrowse", "채널")}
+                      <Play className="ml-1 h-3.5 w-3.5" aria-hidden />
+                    </Button>
+                  </Link>
+                </div>
+                {Array.isArray(weeklyTop) && weeklyTop[0] ? (
+                  <Link
+                    href={`/music/${weeklyTop[0].id}`}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 transition-colors hover:bg-white/10"
+                    data-testid="link-hero-top-track"
+                  >
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-white/10">
+                      {weeklyTop[0].imageFilename ? (
+                        <img
+                          src={resolveStorageUrl(String(weeklyTop[0].imageFilename))}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-white/40">
+                          <Play className="h-6 w-6" aria-hidden />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-white/55">
+                        {t("home.heroProofTrending", "이번 주 인기")}
+                      </p>
+                      <p className="truncate font-semibold text-white">{String(weeklyTop[0].title ?? "")}</p>
+                      <p className="truncate text-xs text-white/65">{String(weeklyTop[0].artist ?? "")}</p>
+                    </div>
+                  </Link>
+                ) : null}
               </div>
-            </Link>
-          </motion.div>
+            </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="flex gap-3 justify-center flex-wrap items-center"
-          >
-            <Link href="/music">
-              <Button size="lg" className="rounded-full px-10 bg-primary text-white shadow-lg shadow-primary/25" data-testid="button-start-listening">
-                {t('home.listenMusic')}
-              </Button>
-            </Link>
-            {!user ? (
-              <Link href={REGISTER_PATH}>
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="rounded-full px-8 border-white/25 text-white bg-white/10 backdrop-blur-sm"
-                  data-testid="button-hero-signup"
-                >
-                  {t("home.heroSignUpCta", "무료 가입")}
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/suno-guide">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="rounded-full gap-2 border border-white bg-[#161018] px-8 text-white shadow-lg hover:bg-[#1f1a24] hover:text-white"
-                  data-testid="button-hero-music-making-guide"
-                >
-                  <span className="relative flex shrink-0 items-center">
-                    <Wand2 className="h-5 w-5 -rotate-45" aria-hidden />
-                    <Sparkles className="absolute -right-1.5 -top-1 h-3.5 w-3.5 text-white/95" aria-hidden />
-                  </span>
-                  {t("home.musicMakingGuide", "음악 만들기 가이드")}
-                </Button>
-              </Link>
-            )}
-          </motion.div>
+            <div className="order-1 lg:order-2">
+              <div
+                className="mb-6 flex justify-center lg:justify-start"
+                role="tablist"
+                aria-label={t("home.heroPersonaLabel", "누구를 위한 소개인가요")}
+              >
+                <div className="inline-flex rounded-full border border-white/15 bg-black/25 p-1 backdrop-blur-sm">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={heroPersona === "creator"}
+                    onClick={() => setHeroPersona("creator")}
+                    className={cn(
+                      "rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm",
+                      heroPersona === "creator"
+                        ? "bg-white text-purple-950 shadow-sm"
+                        : "text-white/75 hover:text-white",
+                    )}
+                    data-testid="button-hero-persona-creator"
+                  >
+                    {t("home.heroPersonaCreator", "개인 · 크리에이터")}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={heroPersona === "business"}
+                    onClick={() => setHeroPersona("business")}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm",
+                      heroPersona === "business"
+                        ? "bg-white text-purple-950 shadow-sm"
+                        : "text-white/75 hover:text-white",
+                    )}
+                    data-testid="button-hero-persona-business"
+                  >
+                    <Building2 className="h-3.5 w-3.5 opacity-90 sm:h-4 sm:w-4" aria-hidden />
+                    {t("home.heroPersonaBusiness", "매장 · 비즈니스")}
+                  </button>
+                </div>
+              </div>
+
+              <motion.h1
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mb-3 text-center text-4xl font-display font-bold tracking-tight text-white drop-shadow-sm sm:text-5xl lg:text-left lg:text-6xl"
+                data-testid="text-hero-title"
+              >
+                <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-300 bg-clip-text text-transparent">
+                  Veny
+                </span>
+                <span className="bg-gradient-to-r from-amber-200 via-orange-300 to-rose-300 bg-clip-text text-transparent">
+                  Sound
+                </span>
+              </motion.h1>
+
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.04 }}
+                className="mb-4 text-center text-sm text-white/80 lg:text-left"
+                data-testid="text-hero-brand-korean"
+              >
+                {t("home.heroBrandLine")}
+              </motion.p>
+
+              <AnimatePresence mode="wait">
+                {heroPersona === "creator" ? (
+                  <motion.div
+                    key="creator"
+                    role="tabpanel"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {homeGreeting && (
+                      <p className="mb-3 text-center text-base font-medium text-amber-200/95 lg:text-left" data-testid="text-hero-greeting">
+                        {homeGreeting}
+                      </p>
+                    )}
+                    <h2
+                      className="mb-2 text-center text-xl font-bold text-white/95 sm:text-2xl lg:text-left lg:text-3xl"
+                      data-testid="text-hero-subtitle"
+                    >
+                      {t("home.heroHeadlineCreator", "만들고, 올리고, 세상에 보내세요")}
+                    </h2>
+                    <p className="mb-6 text-center text-base text-white/72 lg:text-left" data-testid="text-hero-share-now">
+                      {t(
+                        "home.heroLeadCreator",
+                        "스트리밍 · AI 음악 · 베니방송국 · 글로벌 음원까지 한 흐름으로 이어집니다.",
+                      )}
+                    </p>
+                    <div className="mx-auto mb-6 max-w-xl lg:mx-0">
+                      <Link href="/music">
+                        <div className="relative cursor-pointer">
+                          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" aria-hidden />
+                          <Input
+                            placeholder={t("home.searchPlaceholder")}
+                            className="h-12 cursor-pointer rounded-full border-white/20 bg-white/12 pl-12 text-white placeholder:text-white/45 backdrop-blur-md"
+                            readOnly
+                            data-testid="input-hero-search"
+                          />
+                        </div>
+                      </Link>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+                      <Link href="/music">
+                        <Button
+                          size="lg"
+                          className="rounded-full bg-primary px-8 text-white shadow-lg shadow-primary/30 sm:px-10"
+                          data-testid="button-start-listening"
+                        >
+                          {t("home.listenMusic")}
+                        </Button>
+                      </Link>
+                      {!user ? (
+                        <Link href={REGISTER_PATH}>
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
+                            data-testid="button-hero-signup"
+                          >
+                            {t("home.heroSignUpCta", "무료 가입")}
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link href="/suno-guide">
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="gap-2 rounded-full border border-white/35 bg-[#161018] px-8 text-white hover:bg-[#1f1a24] hover:text-white"
+                            data-testid="button-hero-music-making-guide"
+                          >
+                            <span className="relative flex shrink-0 items-center">
+                              <Wand2 className="h-5 w-5 -rotate-45" aria-hidden />
+                              <Sparkles className="absolute -right-1.5 -top-1 h-3.5 w-3.5 text-white/95" aria-hidden />
+                            </span>
+                            {t("home.musicMakingGuide", "음악 만들기 가이드")}
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="business"
+                    role="tabpanel"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <h2
+                      className="mb-2 text-center text-xl font-bold text-white/95 sm:text-2xl lg:text-left lg:text-3xl"
+                      data-testid="text-hero-subtitle-business"
+                    >
+                      {t("home.heroHeadlineBusiness", "브랜드와 매장을 위한 음악·방송")}
+                    </h2>
+                    <p className="mb-4 text-center text-base text-white/72 lg:text-left">
+                      {t(
+                        "home.heroLeadBusiness",
+                        "로고송·채널·유통은 각각 조건이 다릅니다. 요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
+                      )}
+                    </p>
+                    <ul className="mb-6 space-y-2 text-left text-sm text-white/78 lg:text-base">
+                      <li className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400/90" aria-hidden />
+                        {t("home.heroBizBullet1", "매장·영상에서 쓰기 좋은 전용 브랜드 사운드")}
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400/90" aria-hidden />
+                        {t("home.heroBizBullet2", "웹에 바로 걸 수 있는 라디오 채널·페이지")}
+                      </li>
+                      <li className="flex gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/90" aria-hidden />
+                        {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
+                      </li>
+                    </ul>
+                    <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+                      <Link href="/pricing">
+                        <Button
+                          size="lg"
+                          className="rounded-full bg-primary px-8 text-white shadow-lg shadow-primary/30 sm:px-10"
+                          data-testid="button-hero-business-pricing"
+                        >
+                          {t("home.heroCtaPricing", "요금제 보기")}
+                        </Button>
+                      </Link>
+                      <Link href="/global-distribution-guide">
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          className="max-w-full rounded-full border-cyan-400/40 bg-cyan-950/35 px-5 text-center text-cyan-100 hover:bg-cyan-900/45 hover:text-cyan-50 sm:max-w-none sm:px-6"
+                          data-testid="button-hero-business-distribution"
+                        >
+                          {t("home.heroCtaDistributionShort", "글로벌 발매 가이드")}
+                        </Button>
+                      </Link>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
       </section>
 
