@@ -6545,7 +6545,12 @@ export async function registerRoutes(
             }
             updates.playlistSnapshot = { musicIds: queueMusicIds, durationsSeconds, currentIndex };
           }
-        } else if (currentTrackDuration != null && channel.playlistSnapshot && updates.nowPlayingMusicId === undefined) {
+        } else if (
+          currentTrackDuration != null &&
+          channel.playlistSnapshot &&
+          updates.nowPlayingMusicId === undefined &&
+          (channel as any).nowPlayingObjectPath == null
+        ) {
           const snap = channel.playlistSnapshot;
           const idx = snap.currentIndex;
           const newDurations = [...snap.durationsSeconds];
@@ -6553,6 +6558,16 @@ export async function registerRoutes(
             newDurations[idx] = Math.ceil(currentTrackDuration);
             updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
           }
+        }
+        // 로컬 파일(object path) 송출: play 직후 duration 미확정이면 기본 240초로 잡혀 곡이 끝나기 전에 서버가 넘길 수 있음 → 메타데이터 로드 후 보정
+        if (
+          currentTrackDuration != null &&
+          (channel as any).nowPlayingObjectPath != null &&
+          (channel as any).nowPlayingMusicId == null &&
+          bodyNowPlayingObjectPath === undefined &&
+          updates.nowPlayingObjectPath === undefined
+        ) {
+          updates.nowPlayingTempDurationSeconds = Math.ceil(currentTrackDuration);
         }
       }
       if (isOwner || isAdminUser) {
@@ -6674,14 +6689,20 @@ export async function registerRoutes(
         if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempDurationSeconds != null) {
           durationMs = ch.nowPlayingTempDurationSeconds * 1000;
         } else if (ch.nowPlayingMusicId != null) {
-          const idx = snap.musicIds.indexOf(ch.nowPlayingMusicId);
-          const dur = idx >= 0 && snap.durationsSeconds[idx] ? snap.durationsSeconds[idx] : 240;
+          // 동일 musicId가 큐에 여러 번 있으면 indexOf는 첫 번째만 보므로, currentIndex와 일치할 때는 스냅샷 인덱스를 우선한다.
+          const idxPreferred =
+            snap.musicIds[snap.currentIndex] === ch.nowPlayingMusicId ? snap.currentIndex : snap.musicIds.indexOf(ch.nowPlayingMusicId);
+          const idx = idxPreferred >= 0 ? idxPreferred : snap.currentIndex;
+          const rawDur = idx >= 0 && idx < snap.durationsSeconds.length ? snap.durationsSeconds[idx] : 0;
+          const dur = typeof rawDur === "number" && rawDur > 0 ? rawDur : 240;
           durationMs = dur * 1000;
         } else {
           continue;
         }
 
-        if (now - started < durationMs + 1000) continue; // 1초 여유
+        // 짧게 잡힌 메타데이터·클라이언트 시계 오차 대비 여유(너무 짧으면 곡이 끝나기 전에 다음 곡으로 넘어감)
+        const AUTO_ADVANCE_END_SLACK_MS = 2500;
+        if (now - started < durationMs + AUTO_ADVANCE_END_SLACK_MS) continue;
 
         // 다음 곡 결정
         let nextIndex: number;

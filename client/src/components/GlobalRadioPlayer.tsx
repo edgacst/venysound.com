@@ -501,7 +501,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (trackEndLockRef.current) return;
       const d = el.duration;
       if (!Number.isFinite(d) || d < 2) return;
-      if (el.currentTime < d - 0.5) return;
+      // ended 미발화 대비 폴백만 유지; d-0.5는 실제 종료보다 너무 일찍 client-advance를 유발함
+      if (el.currentTime < d - 0.08) return;
       if (el.ended) return;
       processActiveTrackEnded(el);
     },

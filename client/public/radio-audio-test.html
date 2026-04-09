@@ -1405,6 +1405,33 @@
     var lastPlayedTrackId = null; // 서버곡 id 또는 로컬곡 음수 id
     var endedFallbackFired = false;
 
+    // play() 직후에는 audio.duration이 아직 없어 broadcastTrack이 큐 길이를 240초로만 보내는 경우가 많음 → 서버 자동진행이 곡 종료 전에 넘김.
+    // loadedmetadata / durationchange 후 실제 길이를 PATCH로 보정한다(기존 timeupdate·ended 핸들러는 그대로 둠).
+    var lastPatchedDurationSec = null;
+    var patchDurationDebounceTimer = null;
+    function patchCurrentTrackDurationAfterMetadata() {
+      if (!urlSlug) return;
+      if (patchDurationDebounceTimer) clearTimeout(patchDurationDebounceTimer);
+      patchDurationDebounceTimer = setTimeout(function() {
+        patchDurationDebounceTimer = null;
+        if (lastPlayedTrackId == null && (!onAirBadge || !onAirBadge.classList.contains('active'))) return;
+        if (!audio.duration || !isFinite(audio.duration) || audio.duration < 2) return;
+        var d = Math.ceil(audio.duration);
+        if (lastPatchedDurationSec === d) return;
+        lastPatchedDurationSec = d;
+        api('/api/radio/channels/' + encodeURIComponent(urlSlug), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentTrackDurationSeconds: d })
+        }).catch(function() { /* ignore */ });
+      }, 250);
+    }
+    audio.addEventListener('loadstart', function() {
+      lastPatchedDurationSec = null;
+    });
+    audio.addEventListener('loadedmetadata', patchCurrentTrackDurationAfterMetadata);
+    audio.addEventListener('durationchange', patchCurrentTrackDurationAfterMetadata);
+
     // timeupdate 기반 폴백: ended 이벤트가 발화 안 할 경우(createMediaElementSource 충돌 등) 대비
     audio.addEventListener('timeupdate', function() {
       if (endedFallbackFired) return;
