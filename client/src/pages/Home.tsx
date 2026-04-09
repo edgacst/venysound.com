@@ -79,14 +79,14 @@ export default function Home() {
   const taglineOpacity = useSpring(taglineOpacityRaw, { stiffness: 120, damping: 32, mass: 0.35 });
 
   const heroSectionRef = useRef<HTMLElement | null>(null);
+  /** 짧은 스크롤 구간에서 진행도 0→1 (카드가 빨리 양옆으로 벌어짐) */
   const { scrollYProgress: heroScrollProgress } = useScroll({
     target: heroSectionRef,
-    offset: ["start start", "end start"],
+    offset: ["start start", "center start"],
   });
-  const heroColLeftXRaw = useTransform(heroScrollProgress, [0, 1], [0, -88]);
-  const heroColRightXRaw = useTransform(heroScrollProgress, [0, 1], [0, 88]);
-  const heroColLeftX = useSpring(heroColLeftXRaw, { stiffness: 90, damping: 28, mass: 0.45 });
-  const heroColRightX = useSpring(heroColRightXRaw, { stiffness: 90, damping: 28, mass: 0.45 });
+  /** 전체 진행의 앞 30% 안에 최대 이격 — 이후 유지 → 아래 섹션이 곧바로 올라와 보임 */
+  const heroColLeftX = useTransform(heroScrollProgress, [0, 0.3, 1], [0, -168, -168]);
+  const heroColRightX = useTransform(heroScrollProgress, [0, 0.3, 1], [0, 168, 168]);
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
@@ -449,7 +449,7 @@ export default function Home() {
       )}
       <section
         ref={heroSectionRef}
-        className="relative flex min-h-[min(88vh,840px)] flex-col justify-center overflow-hidden border-t border-white/10 pt-16 pb-10 md:pt-20 md:pb-14"
+        className="relative flex min-h-[min(76vh,720px)] flex-col justify-center overflow-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(78vh,760px)] md:pt-20 md:pb-12"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
       >
