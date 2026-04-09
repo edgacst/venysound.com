@@ -97,7 +97,6 @@ async function performSubscriptionAiWalletSync(
     wallet = appendAiWalletGrant(wallet, startWon, now);
     consumed = usedLegacy;
   } else {
-    wallet = appendAiWalletGrant(wallet, monthlyGrant, now);
     /** 집계 키가 달력 → 월간 구독 sub: 로 바뀐 첫 동기화: 옛 YYYY-MM 행의 원화 누적을 이월 */
     let carried = 0;
     if (/^\d{4}-\d{2}$/.test(curKey) && desiredKey.startsWith("sub:")) {
@@ -120,14 +119,29 @@ async function performSubscriptionAiWalletSync(
     };
     const oldSubMs = parseSubMs(curKey);
     const newSubMs = parseSubMs(desiredKey);
-    /** 구독 만료 시각(ms)이 바뀌면 새 결제·갱신 구간 → 사용 누적은 0부터 */
-    const subPeriodRenewed =
-      oldSubMs != null && newSubMs != null && oldSubMs !== newSubMs;
+    /** 구독 만료가 앞으로 연장(재결제·갱신)된 경우에만 새 월분 충전 대상 */
+    const subPeriodRenewedForward =
+      oldSubMs != null && newSubMs != null && newSubMs > oldSubMs;
     /** 연간 등 달력 버킷이 월이 바뀐 경우 → 새 달이므로 누적 리셋 */
     const calendarMonthRolled =
       isCalKey(curKey) && isCalKey(desiredKey) && curKey !== desiredKey;
+    const migratingCalToSub = isCalKey(curKey) && desiredKey.startsWith("sub:");
+    const walletBeforeGrant = sumAiWallet(wallet);
+    /**
+     * 키만 바뀌었다고 매번 monthlyGrant 를 넣으면 같은 달 신규 유료도 9000+9000… 이중 충전됨.
+     * 충전: (1) 달력 월 롤오버 (2) sub 만료 시각이 실제로 늘어난 갱신 (3) 달→sub 전환인데 지갑이 비어 있을 때만 1회.
+     */
+    let grantWon = 0;
+    if (calendarMonthRolled || subPeriodRenewedForward) {
+      grantWon = monthlyGrant;
+    } else if (migratingCalToSub && walletBeforeGrant === 0) {
+      grantWon = monthlyGrant;
+    }
+    if (grantWon > 0) {
+      wallet = appendAiWalletGrant(wallet, grantWon, now);
+    }
 
-    if (calendarMonthRolled || subPeriodRenewed) {
+    if (calendarMonthRolled || subPeriodRenewedForward) {
       consumed = carried;
     } else if (isCalKey(curKey) && desiredKey.startsWith("sub:")) {
       consumed = Math.max(carried, preserved);
