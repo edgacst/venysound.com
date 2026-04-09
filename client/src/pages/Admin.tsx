@@ -4801,7 +4801,9 @@ export default function Admin() {
                           </div>
                           <div className="space-y-1">
                             <Label htmlFor="admin-ai-usage-used" className="text-[11px] text-muted-foreground">
-                              {t("admin.walletAiUsageUsedLabel", "사용량(count)")}
+                              {walletData.aiMusicMonthly.unit === "won"
+                                ? t("admin.walletAiUsageUsedLabelWon", "이번 기간 사용 누적(원)")
+                                : t("admin.walletAiUsageUsedLabel", "사용량(곡 수, Free)")}
                             </Label>
                             <Input
                               id="admin-ai-usage-used"
@@ -4853,10 +4855,15 @@ export default function Admin() {
                           </Button>
                         </div>
                         <p className="text-[10px] text-muted-foreground leading-snug">
-                          {t(
-                            "admin.walletAiUsageAdjustHint",
-                            "ai_music_usage의 period_month 키에 해당하는 count만 바꿉니다. 월간 구독은 sub:만료시각ms, 연간·Free는 YYYY-MM 입니다.",
-                          )}
+                          {walletData.aiMusicMonthly.unit === "won"
+                            ? t(
+                                "admin.walletAiUsageAdjustHintWon",
+                                "유료 구독: 위 숫자는 곡 수가 아니라 원(₩) 누적입니다. 저장 시 users.subscription_ai_period_consumed_won·지갑이 맞춰집니다. 집계 키는 화면의 sub:… 또는 YYYY-MM과 동일하게 맞추세요. (1곡≈150원이면 생성 횟수×150)",
+                              )
+                            : t(
+                                "admin.walletAiUsageAdjustHint",
+                                "Free: ai_music_usage의 period_month 키에 해당하는 count(곡 수)를 바꿉니다. 연간·Free는 YYYY-MM 입니다.",
+                              )}
                         </p>
                       </div>
                     </div>
