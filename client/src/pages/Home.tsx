@@ -79,14 +79,22 @@ export default function Home() {
   const taglineOpacity = useSpring(taglineOpacityRaw, { stiffness: 120, damping: 32, mass: 0.35 });
 
   const heroSectionRef = useRef<HTMLElement | null>(null);
-  /** 짧은 스크롤 구간에서 진행도 0→1 (카드가 빨리 양옆으로 벌어짐) */
+  /** 짧은 스크롤 구간에서 진행도 0→1 */
   const { scrollYProgress: heroScrollProgress } = useScroll({
     target: heroSectionRef,
     offset: ["start start", "center start"],
   });
-  /** 전체 진행의 앞 30% 안에 최대 이격 — 이후 유지 → 아래 섹션이 곧바로 올라와 보임 */
-  const heroColLeftX = useTransform(heroScrollProgress, [0, 0.3, 1], [0, -168, -168]);
-  const heroColRightX = useTransform(heroScrollProgress, [0, 0.3, 1], [0, 168, 168]);
+  /** 화면 밖으로 완전히 밀어냄(뷰포트의 절반+여유) + 같은 구간에서 투명도 0 */
+  const heroColExitU = useTransform(heroScrollProgress, (p) => Math.min(1, p / 0.24));
+  const heroColLeftX = useTransform(heroColExitU, (u) => {
+    if (typeof window === "undefined") return 0;
+    return -u * (window.innerWidth * 0.52 + 48);
+  });
+  const heroColRightX = useTransform(heroColExitU, (u) => {
+    if (typeof window === "undefined") return 0;
+    return u * (window.innerWidth * 0.52 + 48);
+  });
+  const heroColOutOpacity = useTransform(heroColExitU, (u) => 1 - u);
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
@@ -490,12 +498,14 @@ export default function Home() {
           </motion.div>
           <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45 }}
-              className="order-2 will-change-transform lg:order-1"
-              style={{ x: heroColLeftX }}
+              className="order-2 will-change-[transform,opacity] lg:order-1"
+              style={{ x: heroColLeftX, opacity: heroColOutOpacity }}
             >
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45 }}
+              >
               <div className="mx-auto w-full max-w-md lg:mx-0">
                 <HomeHeroLiveWaveform />
                 <div className="rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md">
@@ -579,9 +589,13 @@ export default function Home() {
                 ) : null}
                 </div>
               </div>
+              </motion.div>
             </motion.div>
 
-            <motion.div className="order-1 will-change-transform lg:order-2" style={{ x: heroColRightX }}>
+            <motion.div
+              className="order-1 will-change-[transform,opacity] lg:order-2"
+              style={{ x: heroColRightX, opacity: heroColOutOpacity }}
+            >
               <div
                 className="mb-6 flex justify-center lg:justify-start"
                 role="tablist"
