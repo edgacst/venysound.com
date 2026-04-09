@@ -66,6 +66,27 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
   );
 }
 
+const HOME_HERO_FAKE_WAVE_BARS = 40;
+
+/** 히어로 라디오 미리보기 위 장식 파형(시각용, 실제 스트림 분석 아님) */
+function HomeHeroFakeWaveform() {
+  return (
+    <div
+      className="mb-2 flex h-[3.25rem] items-end justify-center gap-[2px] rounded-xl border border-white/12 bg-gradient-to-b from-violet-950/50 via-black/55 to-black/40 px-2 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      aria-hidden
+      data-testid="home-hero-fake-waveform"
+    >
+      {Array.from({ length: HOME_HERO_FAKE_WAVE_BARS }, (_, i) => (
+        <span
+          key={i}
+          className="home-hero-fake-wave__bar h-9 w-[2px] max-w-[3px] shrink-0 rounded-full bg-gradient-to-t from-cyan-400/50 via-violet-400/80 to-fuchsia-300/90"
+          style={{ animationDelay: `${(i % 16) * 48}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function Home() {
   const { t, i18n } = useTranslation();
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -448,7 +469,9 @@ export default function Home() {
               transition={{ duration: 0.45 }}
               className="order-2 lg:order-1"
             >
-              <div className="mx-auto w-full max-w-md rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md lg:mx-0">
+              <div className="mx-auto w-full max-w-md lg:mx-0">
+                <HomeHeroFakeWaveform />
+                <div className="rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md">
                 {liveTickerText ? (
                   <div className="mb-3 h-9 overflow-hidden rounded-lg bg-black/40">
                     <div className="animate-radio-ticker inline-flex whitespace-nowrap text-xs font-medium text-amber-200/95 md:text-sm">
@@ -527,6 +550,7 @@ export default function Home() {
                     </div>
                   </Link>
                 ) : null}
+                </div>
               </div>
             </motion.div>
 

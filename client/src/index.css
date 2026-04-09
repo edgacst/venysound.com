@@ -226,3 +226,27 @@
     min-width: 28px !important;
   }
 }
+
+/* 홈 히어로 라디오 카드 위 장식용 가짜 파형(실제 오디오 분석 아님) */
+@keyframes home-hero-fake-wave {
+  0%,
+  100% {
+    transform: scaleY(0.28);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+.home-hero-fake-wave__bar {
+  transform-origin: bottom center;
+  animation: home-hero-fake-wave 0.78s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-hero-fake-wave__bar {
+    animation: none;
+    transform: scaleY(0.52);
+    opacity: 0.88;
+  }
+}
