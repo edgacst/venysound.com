@@ -5,6 +5,8 @@ import {
   isUserPaidSubscriptionActive,
   sumActivePaidAiMusicMonthlyWonBudget,
   getAiMusicUsagePeriodKey,
+  calendarMonthKeyUtc,
+  AI_MUSIC_WON_PER_TRACK,
 } from "@shared/subscription-entitlements";
 import {
   appendAiWalletGrant,
@@ -41,6 +43,22 @@ async function performSubscriptionAiWalletSync(
   const curKey = u.subscriptionAiPeriodKey ?? null;
 
   if (curKey === desiredKey) {
+    /** 구독 키는 맞는데 consumed 만 0으로 고착된 경우: 레거시 ai_music_usage(달력 YYYY-MM)에 원화 누적만 있는 케이스 복구 */
+    if (consumed === 0 && desiredKey.startsWith("sub:")) {
+      const calKey = calendarMonthKeyUtc(now);
+      const [usageCal] = await tx
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, calKey)));
+      const c = usageCal?.count ?? 0;
+      if (c >= AI_MUSIC_WON_PER_TRACK) {
+        consumed = Math.min(c, monthlyGrant * 3);
+        await tx
+          .update(users)
+          .set({ subscriptionAiPeriodConsumedWon: consumed, updatedAt: new Date() })
+          .where(eq(users.id, userId));
+      }
+    }
     if (JSON.stringify(wallet) !== JSON.stringify(parseAiWallet(u.subscriptionAiWallet))) {
       await tx
         .update(users)
@@ -58,17 +76,41 @@ async function performSubscriptionAiWalletSync(
   }
 
   if (curKey === null) {
-    const [usage] = await tx
+    const [usageDesired] = await tx
       .select()
       .from(aiMusicUsage)
       .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, desiredKey)));
-    const usedLegacy = Math.max(0, usage?.count ?? 0);
+    let usedLegacy = Math.max(0, usageDesired?.count ?? 0);
+    /** sub: 키로는 ai_music_usage 행이 없고 달력 월 행에만 원화 누적이 있는 레거시(배포 후 consumed 0 초기화 방지) */
+    if (usedLegacy === 0 && desiredKey.startsWith("sub:")) {
+      const calKey = calendarMonthKeyUtc(now);
+      const [usageCal] = await tx
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, calKey)));
+      const c = usageCal?.count ?? 0;
+      if (c >= AI_MUSIC_WON_PER_TRACK) {
+        usedLegacy = Math.min(c, monthlyGrant * 3);
+      }
+    }
     const startWon = Math.max(0, monthlyGrant - usedLegacy);
     wallet = appendAiWalletGrant(wallet, startWon, now);
     consumed = usedLegacy;
   } else {
     wallet = appendAiWalletGrant(wallet, monthlyGrant, now);
-    consumed = 0;
+    /** 집계 키가 달력 → 월간 구독 sub: 로 바뀐 첫 동기화: 옛 YYYY-MM 행의 원화 누적을 이월 */
+    let carried = 0;
+    if (/^\d{4}-\d{2}$/.test(curKey) && desiredKey.startsWith("sub:")) {
+      const [legacyRow] = await tx
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, curKey)));
+      const c = legacyRow?.count ?? 0;
+      if (c >= AI_MUSIC_WON_PER_TRACK) {
+        carried = Math.min(c, monthlyGrant * 3);
+      }
+    }
+    consumed = carried;
   }
 
   await tx

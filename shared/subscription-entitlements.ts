@@ -158,7 +158,8 @@ export function getAiMusicMonthlyUsageLimit(
   return Number.MAX_SAFE_INTEGER;
 }
 
-function calendarMonthKeyUtc(d: Date): string {
+/** AI 집계·레거시 ai_music_usage 행과 맞추기 위해 export */
+export function calendarMonthKeyUtc(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
