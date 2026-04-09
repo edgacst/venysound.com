@@ -14,7 +14,6 @@ import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-fore
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 const REFETCH_INTERVAL_MS = 8000;
-const CROSSFADE_DURATION_MS = 1500;
 
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
@@ -28,7 +27,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [activeIndex, setActiveIndex] = useState(0);
   const activeIndexRef = useRef(0);
   const pendingSeekRef = useRef<number | null>(null);
-  const crossfadeRafRef = useRef<number | null>(null);
   const [playError, setPlayError] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -249,8 +247,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
   const trackEndLockRef = useRef(false);
 
-  // streamUrl 변경 시 에러 상태 초기화 + 오디오 로드 및 크로스페이드
-  // 백그라운드에선 rAF 가 사실상 멈춰 곡 전환이 씹힘 → setTimeout(0) 으로 태스크 큐에만 맡김
+  // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
+  // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
   useEffect(() => {
     if (!streamUrl) return;
     setPlayError(false);
@@ -264,7 +262,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
       };
       const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
-      const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       const tryPlay = (el: HTMLAudioElement) => {
         el.volume = 1;
         el.muted = false;
@@ -292,39 +289,19 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           pendingSeekRef.current = null;
           useRadioPlayerStore.setState({ initialSeekSeconds: null });
         }
-        const fadeFrom = getActiveAudio();
-        if (isMobile) {
-          const oldActive = getActiveAudio();
-          activeIndexRef.current = 1 - activeIndexRef.current;
-          setActiveIndex(activeIndexRef.current);
-          if (oldActive) { oldActive.pause(); oldActive.currentTime = 0; }
-          tryPlay(inactiveEl);
-          return;
-        }
-        if (!fadeFrom?.src || fadeFrom.paused) {
-          activeIndexRef.current = 1 - activeIndexRef.current;
-          setActiveIndex(activeIndexRef.current);
-          tryPlay(inactiveEl);
-          return;
-        }
-        inactiveEl.volume = 0;
-        tryPlay(inactiveEl);
-        const start = performance.now();
-        const run = () => {
-          const t = Math.min(1, (performance.now() - start) / CROSSFADE_DURATION_MS);
-          const ease = t * (2 - t);
-          if (fadeFrom) fadeFrom.volume = (1 - ease);
-          inactiveEl.volume = ease;
-          if (t < 1) {
-            crossfadeRafRef.current = requestAnimationFrame(run);
-          } else {
-            crossfadeRafRef.current = null;
-            if (fadeFrom) { fadeFrom.pause(); fadeFrom.currentTime = 0; fadeFrom.removeAttribute("src"); fadeFrom.load(); }
-            activeIndexRef.current = 1 - activeIndexRef.current;
-            setActiveIndex(activeIndexRef.current);
+        const oldActive = getActiveAudio();
+        activeIndexRef.current = 1 - activeIndexRef.current;
+        setActiveIndex(activeIndexRef.current);
+        if (oldActive) {
+          try {
+            oldActive.pause();
+            oldActive.currentTime = 0;
+          } catch {
+            /* ignore */
           }
-        };
-        crossfadeRafRef.current = requestAnimationFrame(run);
+        }
+        inactiveEl.volume = 1;
+        tryPlay(inactiveEl);
       };
 
       if (matchSrc(active)) {
@@ -378,36 +355,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     return () => {
       cancelled = true;
       clearTimeout(tId);
-      if (crossfadeRafRef.current != null) {
-        cancelAnimationFrame(crossfadeRafRef.current);
-        crossfadeRafRef.current = null;
-        const wanted = useRadioPlayerStore.getState().streamUrl;
-        const a = audioARef.current;
-        const b = audioBRef.current;
-        const pathnameMatch = (el: HTMLAudioElement | null) => {
-          if (!el?.src || !wanted) return false;
-          try {
-            return new URL(el.src, location.origin).pathname === new URL(wanted, location.origin).pathname;
-          } catch {
-            return el.src === wanted;
-          }
-        };
-        const keeper = pathnameMatch(a) ? a : pathnameMatch(b) ? b : activeIndexRef.current === 0 ? a : b;
-        const drop = keeper === a ? b : a;
-        if (keeper) {
-          keeper.volume = 1;
-          keeper.muted = false;
-          void keeper.play().catch(() => {});
-        }
-        if (drop) {
-          try {
-            drop.pause();
-          } catch {
-            /* ignore */
-          }
-          drop.volume = 1;
-        }
-      }
     };
   }, [streamUrl, getActiveAudio, getInactiveAudio]);
 
