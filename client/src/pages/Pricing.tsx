@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   normalizeSubscriptionPlanPrices,
-  subscriptionTotalVatInclusiveWon,
+  subscriptionBilledAmountWon,
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
@@ -199,7 +199,7 @@ export default function Pricing() {
     return normalizeSubscriptionPlanPrices(id, row?.monthlyPrice, row?.yearlyPrice);
   }
 
-  const subscriptionPayAmount = subscriptionTotalVatInclusiveWon(
+  const subscriptionPayAmount = subscriptionBilledAmountWon(
     billingPeriod === "monthly" ? planNorm(selectedPlanId).monthly : planNorm(selectedPlanId).yearly,
   );
 
@@ -214,8 +214,6 @@ export default function Pricing() {
     const n = planNorm(id);
     const monthly = n.monthly;
     const yearly = n.yearly;
-    const withVat = subscriptionTotalVatInclusiveWon(monthly);
-    const withVatYearly = subscriptionTotalVatInclusiveWon(yearly);
     const isCurrent = tier === id;
     const features =
       id === "starter"
@@ -283,15 +281,21 @@ export default function Pricing() {
             {t("pricing.won", "원")}
           </span>
           <span className="text-muted-foreground text-sm">/{t("pricing.perMonth", "월")}</span>
-          <p className="text-xs text-muted-foreground mt-0.5">공급가 · {t("pricing.vatExcluded", "부가세 별도")}</p>
-          <p className="text-xs text-green-400 mt-1">{`부가세 포함 월 ${withVat.toLocaleString("ko-KR")}원`}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t(
+              "pricing.subscriptionBilledFlatNote",
+              "계좌이체·카드 결제 입금액은 위 금액과 동일합니다. (부가세 별도 가산 없음)",
+            )}
+          </p>
           {billingPeriod === "yearly" && (
             <div className="mt-1 space-y-0.5">
               <div className="text-xs text-muted-foreground">
                 {t("pricing.perYear", "년")} {yearly.toLocaleString("ko-KR")}
-                {t("pricing.won", "원")} <span className="text-muted-foreground/80">(공급가)</span>
+                {t("pricing.won", "원")}{" "}
+                <span className="text-muted-foreground/80">
+                  ({t("pricing.yearlyBilledSameNote", "연 구독료 일시 납부")})
+                </span>
               </div>
-              <p className="text-xs text-green-400">{`부가세 포함 연 ${withVatYearly.toLocaleString("ko-KR")}원`}</p>
             </div>
           )}
         </div>
@@ -492,7 +496,7 @@ export default function Pricing() {
               ) : (
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    {t("pricing.bankModalInstruction", "{{period}} 부가세 포함 {{amount}}원을 아래 계좌로 입금해 주시면 확인 후 적용됩니다.", {
+                    {t("pricing.bankModalInstruction", "{{period}} 구독료 {{amount}}원을 아래 계좌로 입금해 주시면 확인 후 적용됩니다.", {
                       period: billingPeriod === "monthly" ? t("pricing.monthly", "월간") : t("pricing.yearly", "연간"),
                       amount: subscriptionPayAmount.toLocaleString("ko-KR"),
                     })}

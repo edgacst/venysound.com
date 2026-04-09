@@ -343,7 +343,7 @@ export async function sendSubscriptionEmail(
         greet,
         `<p><strong>${escapeHtml(planName)}</strong> 구독 결제가 완료되었습니다.${cycle ? ` (${escapeHtml(cycle)})` : ""}</p>`,
       ];
-      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)} (부가세 포함)</p>`);
+      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)}</p>`);
       if (expStr) bodyLines.push(`<p>이용 만료 예정: ${escapeHtml(expStr)} (KST)</p>`);
       bodyLines.push(`<p>이용 내역·플랜 안내는 사이트에서 확인하실 수 있습니다.</p>`);
       bodyLines.push(`<p><a href="${siteUrl}/pricing">플랜 및 혜택 보기</a></p>`);
@@ -354,7 +354,7 @@ export async function sendSubscriptionEmail(
         greet,
         `<p><strong>${escapeHtml(planName)}</strong> 정기 결제가 완료되어 구독이 갱신되었습니다.${cycle ? ` (${escapeHtml(cycle)})` : ""}</p>`,
       ];
-      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)} (부가세 포함)</p>`);
+      if (amountStr) bodyLines.push(`<p>결제 금액: ${escapeHtml(amountStr)}</p>`);
       if (expStr) bodyLines.push(`<p>갱신 후 이용 만료 예정: ${escapeHtml(expStr)} (KST)</p>`);
       bodyLines.push(`<p><a href="${siteUrl}/pricing">구독 정보 확인</a></p>`);
       break;
