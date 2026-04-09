@@ -2,10 +2,9 @@ import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { MusicCard } from "@/components/MusicCard";
 import { useMusicList } from "@/hooks/use-music";
-import { Loader2, Search, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles, Building2, Play } from "lucide-react";
+import { Loader2, HelpCircle, ChevronLeft, ChevronRight, Wand2, Globe, Radio, Upload, X, Megaphone, Sparkles, Building2, Play } from "lucide-react";
 import { motion, AnimatePresence, useScroll, useTransform, useSpring } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
@@ -696,19 +695,6 @@ export default function Home() {
                         {homeGreeting}
                       </p>
                     )}
-                    <div className="mx-auto mb-6 max-w-xl lg:mx-0">
-                      <Link href="/music">
-                        <div className="relative cursor-pointer">
-                          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400" aria-hidden />
-                          <Input
-                            placeholder={t("home.searchPlaceholder")}
-                            className="h-12 cursor-pointer rounded-full border-white/20 bg-white/12 pl-12 text-white placeholder:text-white/45 backdrop-blur-md"
-                            readOnly
-                            data-testid="input-hero-search"
-                          />
-                        </div>
-                      </Link>
-                    </div>
                     <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
                       <Link href="/music">
                         <Button
