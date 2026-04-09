@@ -158,6 +158,12 @@ CREATE INDEX IF NOT EXISTS idx_distribution_payouts_user_status ON distribution_
     name: "012-music-spotify-album-id",
     sql: `ALTER TABLE music ADD COLUMN IF NOT EXISTS spotify_album_id varchar(32);`,
   },
+  {
+    name: "013-subscription-ai-wallet",
+    sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_wallet jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_period_key varchar;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_period_consumed_won integer NOT NULL DEFAULT 0;`,
+  },
 ];
 
 async function runAutoMigrations() {
