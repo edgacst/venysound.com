@@ -370,6 +370,15 @@ export default function Pricing() {
                 "Starter부터 Premium까지, 플랜별 월 AI 음악 크레딧(500~2,000)과\n광고 없음 등 혜택을 선택하세요.",
               )}
             </p>
+            <p
+              className="text-sm sm:text-base font-semibold text-red-600 dark:text-red-400 max-w-2xl mx-auto mt-4 leading-relaxed"
+              data-testid="text-pricing-ai-rollover-notice"
+            >
+              {t(
+                "pricing.aiBudgetRolloverNotice",
+                "저희 멤버십은 타사이트와 달리 월사용한도가 소멸되지 않고 다음달로 이월됩니다(이번달에 사용되지 않음 요금).",
+              )}
+            </p>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto mt-1 underline decoration-muted-foreground/50">
               {t("pricing.taxReceiptNote", "구독료에 대한 세금계산서, 현금 영수증 발행이 가능합니다.")}
             </p>

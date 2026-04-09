@@ -1394,6 +1394,7 @@
   },
   "pricing": {
     "title": "Veny Sound Membership",
+    "aiBudgetRolloverNotice": "Unlike many other sites, our membership rolls your unused monthly AI usage allowance into the next month instead of forfeiting it (unused portion of this month’s allowance).",
     "subtitle": "From Starter to Premium—about 66–300 AI song generations per month by plan,\nand ad-free benefits and more.",
     "bankName": "Bank",
     "accountNumber": "Account number",
