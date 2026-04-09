@@ -8,6 +8,12 @@ module.exports = {
       cwd: path.resolve(__dirname),
       instances: 1,
       exec_mode: "fork",
+      // pm2 restart / start 시 --env production 없이도 적용되도록 기본 env 필수.
+      // NODE_ENV 미설정 시 dist 번들이 setupVite(./vite) 분기로 들어가 즉시 종료 → 502.
+      env: {
+        NODE_ENV: "production",
+        PORT: 5000,
+      },
       env_production: {
         NODE_ENV: "production",
         PORT: 5000,
