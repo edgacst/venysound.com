@@ -71,6 +71,11 @@ import {
   getActivePaidTierIds,
   pruneExpiredEntitlements,
 } from "@shared/subscription-entitlements";
+import {
+  syncSubscriptionAiWalletForPaidUser,
+  deductSubscriptionAiWallet,
+  adminSetSubscriptionAiPeriodConsumedWon,
+} from "./subscription-ai-wallet";
 
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
 function isActivePaidSubscription(
@@ -1086,6 +1091,31 @@ export async function registerRoutes(
       const [userFresh] = user ? await db.select().from(users).where(eq(users.id, userId)) : [undefined];
       const row = userFresh ?? user;
       const now = new Date();
+      const isSubWallet = row?.role !== "admin" && isUserPaidSubscriptionActive(row, now);
+      if (isSubWallet) {
+        const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
+        if (w) {
+          const limit = w.limitDisplay;
+          const usedThisMonth = w.periodConsumed;
+          const usagePeriodKey = w.periodKey;
+          const isPaidTier = true;
+          const deductsCreditsPerCreate = false;
+          const walletCredits = row?.credits ?? 0;
+          const quotaKind: "songs" | "subscription_credits" | "unlimited" = "subscription_credits";
+          return res.json({
+            limit,
+            usedThisMonth,
+            usagePeriodKey,
+            isPaidTier,
+            walletCredits,
+            creditsBalance: walletCredits,
+            quota: { kind: quotaKind, used: usedThisMonth, limit },
+            wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
+            creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
+            deductsCreditsPerCreate,
+          });
+        }
+      }
       const isPaidTier = row?.role === "admin" || isActivePaidSubscription(row, now);
       const limit = getAiMusicMonthlyUsageLimit(row, row?.role ?? null, now);
       const usagePeriodKey = getAiMusicUsagePeriodKey(row, row?.role ?? null, now);
@@ -1325,21 +1355,55 @@ export async function registerRoutes(
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     const row = user!;
     const now = new Date();
-    const isPaidTier = row.role === "admin" || isActivePaidSubscription(row, now);
-    const limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
     const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
-    const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
-    const used = usage?.count ?? 0;
+    const isSubWallet = row.role !== "admin" && isUserPaidSubscriptionActive(row, now);
     const tierNow = row.subscriptionTier ?? "free";
-    /** Free: count = 곡 수. 유료(활성): count = 이번 달 누적 원화 예산(곡당 AI_MUSIC_WON_PER_TRACK). */
-    const usageWouldExceed =
-      limit >= 0 &&
-      (tierNow === "free" ? used >= limit : used + AI_MUSIC_WON_PER_TRACK > limit);
+
+    let used = 0;
+    let limit = 0;
+    let usageWouldExceed = false;
+
+    if (row.role === "admin") {
+      limit = -1;
+      usageWouldExceed = false;
+    } else if (tierNow === "free") {
+      limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
+      const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+      used = usage?.count ?? 0;
+      usageWouldExceed = limit >= 0 && used >= limit;
+    } else if (isSubWallet) {
+      const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
+      if (!w) {
+        return res.status(403).json({
+          message: "구독 AI 예산을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.",
+          code: "AI_MUSIC_LIMIT_REACHED",
+          limit: 0,
+          usedThisMonth: 0,
+        });
+      }
+      used = w.periodConsumed;
+      limit = w.limitDisplay;
+      usageWouldExceed = w.walletSum < AI_MUSIC_WON_PER_TRACK;
+    } else {
+      limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
+      const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+      used = usage?.count ?? 0;
+      usageWouldExceed = limit >= 0 && used + AI_MUSIC_WON_PER_TRACK > limit;
+    }
+
     if (usageWouldExceed) {
+      const msgFree = `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 AI 사용 예산(원)이 늘어납니다.`;
+      const msgPaidPeriod = `이번 기간 AI 음악 생성 한도(원화 예산)를 모두 사용했습니다. 이월·정기 충전분은 다음 갱신 주기에 안내된 방식으로 반영됩니다.`;
+      const msgCalendar = `이번 달 AI 음악 생성 한도(원화 예산 ${limit.toLocaleString("ko-KR")}원)를 모두 사용했습니다.`;
       return res.status(403).json({
-        message: limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
-          ? `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 AI 사용 예산(원)이 늘어납니다.`
-          : `이번 달 AI 음악 생성 한도(원화 예산 ${limit.toLocaleString("ko-KR")}원)를 모두 사용했습니다.`,
+        message:
+          tierNow === "free"
+            ? msgFree
+            : isSubWallet
+              ? msgPaidPeriod
+              : limit === FREE_AI_MUSIC_LIMIT_PER_MONTH
+                ? msgFree
+                : msgCalendar,
         code: "AI_MUSIC_LIMIT_REACHED",
         limit,
         usedThisMonth: used,
@@ -1371,13 +1435,10 @@ export async function registerRoutes(
         `);
         return 0;
       }
-      // 유효 유료 플랜: 요금제에 포함된 월 AI 원화 예산만 사용 — 지갑 충전 잔액과 무관
-      if (isPaidTier) {
-        await db.execute(sql`
-          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
-        `);
+      // 유효 유료 플랜: 구독 AI 이월 지갑에서 차감(자동결제 시 이월분+정기 충전분 합산은 동기화 시 반영)
+      if (isUserPaidSubscriptionActive(row, now)) {
+        const ok = await deductSubscriptionAiWallet(userId, AI_MUSIC_WON_PER_TRACK, now);
+        if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
         return 0;
       }
       // 등급은 유료 표시이나 구독 만료 등: 지갑 원화 차감 + 사용량(원화 예산 누적) 반영
@@ -4509,6 +4570,15 @@ export async function registerRoutes(
       } else {
         const now = new Date();
         usageKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
+      }
+
+      const nowPatch = new Date();
+      if (isUserPaidSubscriptionActive(u, nowPatch)) {
+        const ok = await adminSetSubscriptionAiPeriodConsumedWon(targetId, used, nowPatch);
+        if (!ok) {
+          return res.status(400).json({ message: "활성 유료 구독 AI 한도 반영에 실패했습니다. 구독 상태를 확인해 주세요." });
+        }
+        return res.json({ success: true, userId: targetId, periodMonth: usageKey, used, mode: "subscription_wallet" });
       }
 
       const [existing] = await db

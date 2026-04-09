@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { boolean, index, integer, jsonb, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import type { AiWalletChunk } from "../subscription-ai-wallet";
 
 // Session storage table (express-session + connect-pg-simple).
 export const sessions = pgTable(
@@ -41,6 +42,12 @@ export const users = pgTable("users", {
   notifyNewMusicPush: boolean("notify_new_music_push").default(true),
   /** 댓글·팔로우·쪽지·좋아요 등 활동 알림 이메일 (SMTP 설정 시) */
   notifyActivityEmail: boolean("notify_activity_email").default(true),
+  /** 유료 구독 AI 예산: [{ won, creditedAt }] — 이월·12개월 만료·기간말 월 충전 */
+  subscriptionAiWallet: jsonb("subscription_ai_wallet")
+    .$type<AiWalletChunk[]>()
+    .default(sql`'[]'::jsonb`),
+  subscriptionAiPeriodKey: varchar("subscription_ai_period_key"),
+  subscriptionAiPeriodConsumedWon: integer("subscription_ai_period_consumed_won").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

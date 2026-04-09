@@ -24,6 +24,7 @@ import {
   getAiMusicUsagePeriodKey,
   isUserPaidSubscriptionActive,
 } from "@shared/subscription-entitlements";
+import { syncSubscriptionAiWalletForPaidUser } from "./subscription-ai-wallet";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 
 /**
@@ -3244,13 +3245,29 @@ export class DatabaseStorage implements IStorage {
     if (!user) return null;
 
     const now = new Date();
-    const usagePeriodKey = getAiMusicUsagePeriodKey(user, user.role ?? null, now);
-    const [usageRow] = await db
-      .select()
-      .from(aiMusicUsage)
-      .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
-    const usedAi = usageRow?.count ?? 0;
-    const aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
+    let usagePeriodKey = getAiMusicUsagePeriodKey(user, user.role ?? null, now);
+    let usedAi = 0;
+    let aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
+    if (user.role !== "admin" && isUserPaidSubscriptionActive(user, now)) {
+      const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
+      if (w) {
+        usagePeriodKey = w.periodKey;
+        usedAi = w.periodConsumed;
+        aiLimit = w.limitDisplay;
+      } else {
+        const [usageRow] = await db
+          .select()
+          .from(aiMusicUsage)
+          .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+        usedAi = usageRow?.count ?? 0;
+      }
+    } else {
+      const [usageRow] = await db
+        .select()
+        .from(aiMusicUsage)
+        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+      usedAi = usageRow?.count ?? 0;
+    }
     let aiUnit: "songs" | "credits" | "won" | "unlimited" = "won";
     if (aiLimit === -1) aiUnit = "unlimited";
     else if (aiLimit === FREE_AI_MUSIC_LIMIT_PER_MONTH && !isUserPaidSubscriptionActive(user, now)) aiUnit = "songs";

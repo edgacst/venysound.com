@@ -47,6 +47,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "subscription-plans-pro-premium-15k-22k.sql", name: "subscription_plans Pro 15k / Premium 22k 공급가" },
   { file: "subscription-entitlements-jsonb.sql", name: "users.subscription_entitlements (복수 플랜)" },
   { file: "wallet-credits-to-won-migration.sql", name: "wallet credits → 원화 일회성 환산" },
+  { file: "subscription-ai-wallet.sql", name: "users subscription_ai_wallet 이월 지갑" },
 ];
 
 async function main() {
