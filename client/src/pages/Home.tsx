@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useRadioPlayerStore } from "@/stores/radio-player";
+import { usePlayerStore } from "@/components/AudioPlayer";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
 import { HomeLearnMoreSheet, type HomeLearnMoreSheetMode } from "@/components/HomeLearnMoreSheet";
@@ -213,6 +214,8 @@ export default function Home() {
     const st = useRadioPlayerStore.getState();
     if (st.slug) return;
     if (st.userStopped) return;
+    const ps = usePlayerStore.getState();
+    if (ps.activeMusicId != null || ps.activeExternalTrack != null) return;
 
     const envSlug = (import.meta.env.VITE_HOME_AUTO_RADIO_SLUG as string | undefined)?.trim().toLowerCase();
     const fromEnv = envSlug ? liveChannels.find((c) => (c.slug || "").trim().toLowerCase() === envSlug) : undefined;
@@ -240,6 +243,8 @@ export default function Home() {
         if (!streamUrl) return;
         const latest = useRadioPlayerStore.getState();
         if (latest.slug || latest.userStopped) return;
+        const pLatest = usePlayerStore.getState();
+        if (pLatest.activeMusicId != null || pLatest.activeExternalTrack != null) return;
         const def = t("radio.defaultChannelName");
         const resolvedName = String(data.name ?? pick.name ?? def).trim() || def;
         const elapsed =

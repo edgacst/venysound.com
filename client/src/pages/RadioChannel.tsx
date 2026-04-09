@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
+import { usePlayerStore } from "@/components/AudioPlayer";
 
 type SyncedLyricLine = { time: number; text: string };
 
@@ -180,6 +181,7 @@ export default function RadioChannel() {
   // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
     if (!channel || !listenerAudioSrc) return;
+    usePlayerStore.getState().closePlayer();
     setRadioStream(slug, channel.name, listenerAudioSrc, channel?.nowPlayingElapsedSeconds ?? undefined);
     // 스트림이 설정되자마자 재생 요청 (사용자 제스처 컨텍스트가 유효할 때 빠르게 시도)
     if (!isOwner) {

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
+import { useRadioPlayerStore } from "@/stores/radio-player";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -56,6 +57,11 @@ function shuffleArray(arr: number[]): number[] {
   return shuffled;
 }
 
+/** 라디오 글로벌 플레이어와 음악 글로벌 플레이어가 동시에 뜨지 않도록 */
+function clearGlobalRadioForOnDemandPlayback() {
+  useRadioPlayerStore.getState().clear();
+}
+
 export const usePlayerStore = create<PlayerStore>((set, get) => ({
   activeMusicId: null,
   activeExternalTrack: null,
@@ -66,9 +72,18 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   repeatMode: 'none',
   shuffleEnabled: false,
   shuffledOrder: [],
-  playMusic: (id) => set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false }),
-  playMusicWithLyrics: (id) => set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: true }),
-  playExternalTrack: (track) => set({ activeMusicId: null, activeExternalTrack: track, pauseRequested: false, lyricsRequested: false }),
+  playMusic: (id) => {
+    clearGlobalRadioForOnDemandPlayback();
+    set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
+  },
+  playMusicWithLyrics: (id) => {
+    clearGlobalRadioForOnDemandPlayback();
+    set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: true });
+  },
+  playExternalTrack: (track) => {
+    clearGlobalRadioForOnDemandPlayback();
+    set({ activeMusicId: null, activeExternalTrack: track, pauseRequested: false, lyricsRequested: false });
+  },
   togglePause: () => set((state) => ({ pauseRequested: !state.pauseRequested })),
   setPlaylist: (ids) => {
     const state = get();
