@@ -122,7 +122,7 @@ export function HomeLearnMoreSheet({
                   title={t("home.learnMoreSheetStep1Title", "1. 음악 만들기")}
                   body={t(
                     "home.learnMoreSheetStep1Body",
-                    "AI 음악 생성으로 프롬프트만으로도 곡을 만들거나, 직접 작업한 트랙을 준비합니다.",
+                    "간단한 우리말 설명만으로 2분이면 나만의 음악을 만들고 작곡가로 데뷰하세요~^^",
                   )}
                 />
                 <StepBlock
@@ -130,7 +130,7 @@ export function HomeLearnMoreSheet({
                   title={t("home.learnMoreSheetStep2Title", "2. 베니사운드에 배포")}
                   body={t(
                     "home.learnMoreSheetStep2Body",
-                    "업로드하면 VenySound에서 스트리밍·공유되고, 프로필·라이브러리에 모입니다. 방송국·커뮤니티와도 연결할 수 있어요.",
+                    "음악 생성 후 신곡으로 공개만 누르면 바로 베니사운드 최근 업로드에 배포됩니다. 업로드한 곡당 150원이 지급됩니다.",
                   )}
                 />
                 <StepBlock
