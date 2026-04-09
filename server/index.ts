@@ -313,15 +313,16 @@ app.use((req, res, next) => {
   const port = parseInt(process.env.PORT || "5000", 10);
   /** Windows에서 localhost가 IPv6(::1)만 가리키면 127.0.0.1 전용 바인딩은 연결 실패할 수 있어 기본은 전 인터페이스(IPv4). .env의 HOST로 덮어쓰기 가능 */
   const host = process.env.HOST || "0.0.0.0";
-  httpServer.listen(
-    {
-      port,
-      host,
-      ...(process.platform !== "win32" && { reusePort: true }),
-    },
-    () => {
-      log(`serving on port ${port} (host=${host})`);
-      log(`로컬: http://127.0.0.1:${port} 또는 http://localhost:${port} — 안 열리면 127.0.0.1 주소를 쓰세요.`);
-    },
-  );
-})();
+  /** 미처리 시 PM2만 online·포트 미리슨(502) — 원인 로그용 */
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    console.error("[fatal] HTTP server listen error:", err.message, err.code ?? "");
+    process.exit(1);
+  });
+  httpServer.listen(port, host, () => {
+    log(`serving on port ${port} (host=${host})`);
+    log(`로컬: http://127.0.0.1:${port} 또는 http://localhost:${port} — 안 열리면 127.0.0.1 주소를 쓰세요.`);
+  });
+})().catch((err: unknown) => {
+  console.error("[fatal] server startup failed:", err);
+  process.exit(1);
+});

@@ -20,9 +20,7 @@ module.exports = {
       },
       // 메모리 500MB 초과 시 자동 재시작
       max_memory_restart: "500M",
-      // 로그 파일 경로
-      out_file: "/var/log/venysound/out.log",
-      error_file: "/var/log/venysound/error.log",
+      // out_file 미지정 → ~/.pm2/logs/ ( /var/log/venysound 없는 VPS에서 로그 경로 오류 방지 )
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       // 예기치 않은 종료 시 자동 재시작
       autorestart: true,
