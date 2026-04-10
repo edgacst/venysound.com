@@ -51,7 +51,7 @@ function HomeMusicRow({
   return (
     <div
       className={cn(
-        "flex gap-4 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory",
+        "flex gap-3 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:gap-4",
         gridClass,
         "md:mx-0 md:px-0 md:overflow-visible md:snap-none",
       )}
@@ -63,7 +63,7 @@ function HomeMusicRow({
 
 function HomeMusicRowItem({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-[10.5rem] w-[42vw] max-w-[11rem] shrink-0 snap-start md:min-w-0 md:w-auto md:max-w-none md:shrink">
+    <div className="min-w-[8.75rem] w-[34vw] max-w-[9.5rem] shrink-0 snap-start sm:min-w-[9.25rem] sm:w-[36vw] sm:max-w-[10rem] md:min-w-0 md:w-auto md:max-w-none md:shrink">
       {children}
     </div>
   );

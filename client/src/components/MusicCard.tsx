@@ -719,11 +719,11 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           <div className={`absolute inset-0 bg-black/40 flex items-center justify-center gap-4 transition-opacity duration-300 ${isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
             <Button 
               size="icon" 
-              className="rounded-full bg-primary shadow-lg scale-90 group-hover:scale-100 transition-all duration-300"
+              className="h-9 w-9 rounded-full bg-primary shadow-lg scale-90 group-hover:scale-100 transition-all duration-300 sm:h-10 sm:w-10"
               onClick={(e) => { e.stopPropagation(); playMusic(music.id); }}
               data-testid={`button-play-${music.id}`}
             >
-              <Play fill="white" className="ml-1" />
+              <Play fill="white" className="ml-0.5 h-4 w-4 sm:ml-1 sm:h-5 sm:w-5" />
             </Button>
           </div>
 
@@ -805,11 +805,11 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           )}
         </div>
 
-        <div className="p-3.5 sm:p-4">
+        <div className="p-2.5 sm:p-3.5 md:p-4">
           <Link href={`/music/${music.id}`}>
-            <h3 className="font-semibold truncate text-lg group-hover:text-primary transition-colors cursor-pointer hover:underline" data-testid={`text-title-${music.id}`}>{music.title}</h3>
+            <h3 className="truncate text-base font-semibold group-hover:text-primary transition-colors cursor-pointer hover:underline sm:text-lg" data-testid={`text-title-${music.id}`}>{music.title}</h3>
           </Link>
-          <p className="text-xs sm:text-sm text-muted-foreground truncate flex items-center gap-1.5" data-testid={`text-artist-${music.id}`}>
+          <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 sm:text-xs md:text-sm" data-testid={`text-artist-${music.id}`}>
             <span className="truncate" title={music.artist}>{music.artist}</span>
             {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />}
           </p>
