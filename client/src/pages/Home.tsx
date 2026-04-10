@@ -789,18 +789,24 @@ export default function Home() {
                         "로고송·채널·유통은 각각 조건이 다릅니다. 요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
                       )}
                     </p>
-                    <ul className="mb-5 space-y-2 text-left text-sm text-white/78 sm:mb-6 lg:text-base">
-                      <li className="flex gap-2">
+                    <ul className="mb-5 space-y-2 text-sm text-white/78 sm:mb-6 lg:text-base">
+                      <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400/90" aria-hidden />
-                        {t("home.heroBizBullet1", "매장·영상에서 쓰기 좋은 전용 브랜드 사운드")}
+                        <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
+                          {t("home.heroBizBullet1", "매장·영상에서 쓰기 좋은 전용 브랜드 사운드")}
+                        </span>
                       </li>
-                      <li className="flex gap-2">
+                      <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400/90" aria-hidden />
-                        {t("home.heroBizBullet2", "웹에 바로 걸 수 있는 라디오 채널·페이지")}
+                        <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
+                          {t("home.heroBizBullet2", "웹에 바로 걸 수 있는 라디오 채널·페이지")}
+                        </span>
                       </li>
-                      <li className="flex gap-2">
+                      <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/90" aria-hidden />
-                        {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
+                        <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
+                          {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
+                        </span>
                       </li>
                     </ul>
                     <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
