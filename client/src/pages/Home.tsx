@@ -465,7 +465,7 @@ export default function Home() {
       )}
       <section
         ref={heroSectionRef}
-        className="relative flex min-h-[min(88vh,820px)] flex-col justify-start overflow-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(90vh,880px)] md:pt-20 md:pb-10"
+        className="relative flex min-h-[min(88vh,820px)] flex-col justify-start overflow-x-hidden overflow-y-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(90vh,880px)] md:pt-20 md:pb-10"
         aria-label={t("home.heroSectionAria", "베니사운드 소개")}
         data-testid="section-home-hero"
       >
@@ -479,32 +479,32 @@ export default function Home() {
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-background opacity-[0.4]" />
 
-        <div className="container relative z-10 mx-auto w-full max-w-6xl px-4">
+        <div className="container relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-5">
           {/* 헤더와 분리된 히어로 문구 — 스크롤 시 축소·상향 이동 */}
           <motion.div
-            className="mb-8 w-full origin-top will-change-transform md:mb-10"
+            className="mb-5 w-full origin-top will-change-transform md:mb-10"
             style={{ scale: taglineScale, y: taglineY, opacity: taglineOpacity }}
             data-testid="home-tagline-below-nav"
           >
-            <p className="text-center text-2xl font-extrabold leading-[1.25] tracking-tight text-white/90 sm:text-3xl sm:leading-tight md:text-4xl lg:text-5xl xl:text-6xl">
+            <p className="text-balance text-center text-lg font-bold leading-snug tracking-tight text-white/90 max-md:px-0.5 sm:text-2xl sm:leading-tight sm:font-extrabold md:text-4xl md:leading-tight lg:text-5xl xl:text-6xl">
               <Trans
                 i18nKey="home.heroTaglineBelowNav"
                 components={{
                   coffee: (
-                    <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)]" />
+                    <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
                   ),
                   royalty: (
-                    <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-cyan-200 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(34,211,238,0.35)]" />
+                    <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-cyan-200 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(34,211,238,0.35)] max-md:drop-shadow-none" />
                   ),
                   composer: (
-                    <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)]" />
+                    <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)] max-md:from-fuchsia-300 max-md:via-violet-300 max-md:to-purple-300 max-md:drop-shadow-none" />
                   ),
                 }}
                 defaults="커피 한 잔 값으로 평생 저작권 수익과 작곡가로 성공하세요"
               />
             </p>
           </motion.div>
-          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
+          <div className="grid items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div
               className="order-2 will-change-[transform,opacity] lg:order-1"
               style={{ x: heroColLeftX, opacity: heroColOutOpacity }}
@@ -605,18 +605,18 @@ export default function Home() {
               style={{ x: heroColRightX, opacity: heroColOutOpacity }}
             >
               <div
-                className="mb-6 flex justify-center lg:justify-start"
+                className="mb-4 flex justify-center px-0.5 sm:mb-6 lg:justify-start lg:px-0"
                 role="tablist"
                 aria-label={t("home.heroPersonaLabel", "누구를 위한 소개인가요")}
               >
-                <div className="inline-flex rounded-full border border-white/15 bg-black/25 p-1 backdrop-blur-sm">
+                <div className="inline-flex max-w-full rounded-full border border-white/15 bg-black/25 p-0.5 backdrop-blur-sm sm:p-1">
                   <button
                     type="button"
                     role="tab"
                     aria-selected={heroPersona === "creator"}
                     onClick={() => setHeroPersona("creator")}
                     className={cn(
-                      "rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm",
+                      "min-h-[2.5rem] rounded-full px-3 py-2 text-[11px] font-semibold leading-tight transition-colors sm:px-4 sm:text-xs md:text-sm",
                       heroPersona === "creator"
                         ? "bg-white text-purple-950 shadow-sm"
                         : "text-white/75 hover:text-white",
@@ -631,7 +631,7 @@ export default function Home() {
                     aria-selected={heroPersona === "business"}
                     onClick={() => setHeroPersona("business")}
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold transition-colors sm:text-sm",
+                      "inline-flex min-h-[2.5rem] items-center gap-1 rounded-full px-3 py-2 text-[11px] font-semibold leading-tight transition-colors sm:gap-1.5 sm:px-4 sm:text-xs md:text-sm",
                       heroPersona === "business"
                         ? "bg-white text-purple-950 shadow-sm"
                         : "text-white/75 hover:text-white",
@@ -647,7 +647,7 @@ export default function Home() {
               <motion.h1
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-2 text-center text-3xl font-display font-bold tracking-tight text-white drop-shadow-sm sm:text-4xl lg:text-left lg:text-5xl"
+                className="mb-1.5 text-center text-2xl font-display font-bold tracking-tight text-white drop-shadow-sm sm:mb-2 sm:text-3xl md:text-4xl lg:text-left lg:text-5xl"
                 data-testid="text-hero-title"
               >
                 <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-amber-300 bg-clip-text text-transparent">
@@ -662,7 +662,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.04 }}
-                className="mb-5 text-center text-sm text-white/78 lg:text-left"
+                className="mx-auto mb-4 max-w-full text-balance break-words text-center text-xs leading-relaxed text-white/72 sm:text-sm md:mb-5 md:text-base lg:mx-0 lg:text-left"
                 data-testid="text-hero-brand-korean"
               >
                 {t("home.heroBrandLine")}
@@ -678,15 +678,15 @@ export default function Home() {
                     exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <div className="relative mx-auto mb-6 max-w-2xl text-center lg:mx-0 lg:max-w-none lg:border-l-2 lg:border-amber-400/45 lg:pl-5 lg:text-left">
+                    <div className="relative mx-auto mb-5 max-w-2xl text-center sm:mb-6 lg:mx-0 lg:max-w-none lg:border-l-2 lg:border-amber-400/45 lg:pl-5 lg:text-left">
                       <h2
-                        className="mb-3 text-balance text-2xl font-display font-bold leading-[1.2] tracking-tight text-white sm:text-3xl md:text-[2.1rem] md:leading-tight lg:text-4xl"
+                        className="mb-2.5 text-balance text-xl font-display font-bold leading-snug tracking-tight text-white sm:mb-3 sm:text-2xl sm:leading-[1.2] md:text-[2.1rem] md:leading-tight lg:text-4xl"
                         data-testid="text-hero-subtitle"
                       >
                         {t("home.heroHeadlineCreator", "오늘 작곡하고, 내일 가수가 되세요.")}
                       </h2>
                       <p
-                        className="text-pretty text-base leading-relaxed text-white/78 sm:text-lg lg:leading-snug"
+                        className="text-pretty break-keep text-sm leading-relaxed text-white/75 sm:text-base sm:leading-relaxed md:text-lg lg:leading-snug"
                         data-testid="text-hero-share-now"
                       >
                         {t(
@@ -696,60 +696,65 @@ export default function Home() {
                       </p>
                     </div>
                     {homeGreeting && (
-                      <p className="mb-5 text-center text-base font-medium text-amber-200/95 lg:text-left" data-testid="text-hero-greeting">
+                      <p
+                        className="mb-3 text-center text-sm text-white/80 md:mb-5 md:text-base md:font-medium md:text-amber-200/95 lg:text-left"
+                        data-testid="text-hero-greeting"
+                      >
                         {homeGreeting}
                       </p>
                     )}
-                    <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                      <Link href="/music">
+                    <div className="mx-auto flex w-full max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
+                      <Link href="/music" className="block w-full shrink-0 lg:w-auto">
                         <Button
                           size="lg"
-                          className="rounded-full bg-primary px-8 text-white shadow-lg shadow-primary/30 sm:px-10"
+                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
                           data-testid="button-start-listening"
                         >
                           {t("home.listenMusic")}
                         </Button>
                       </Link>
-                      {!user ? (
-                        <Link href={REGISTER_PATH}>
-                          <Button
-                            size="lg"
-                            variant="outline"
-                            className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
-                            data-testid="button-hero-signup"
-                          >
-                            {t("home.heroSignUpCta", "무료 가입")}
-                          </Button>
-                        </Link>
-                      ) : (
-                        <Link href="/suno-guide">
-                          <Button
-                            size="lg"
-                            variant="outline"
-                            className="gap-2 rounded-full border border-white/35 bg-[#161018] px-8 text-white hover:bg-[#1f1a24] hover:text-white"
-                            data-testid="button-hero-music-making-guide"
-                          >
-                            <span className="relative flex shrink-0 items-center">
-                              <Wand2 className="h-5 w-5 -rotate-45" aria-hidden />
-                              <Sparkles className="absolute -right-1.5 -top-1 h-3.5 w-3.5 text-white/95" aria-hidden />
-                            </span>
-                            {t("home.musicMakingGuide", "음악 만들기 가이드")}
-                          </Button>
-                        </Link>
-                      )}
-                      <Button
-                        type="button"
-                        size="lg"
-                        variant="outline"
-                        className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
-                        data-testid="button-hero-learn-more"
-                        onClick={() => {
-                          setLearnMoreMode("creator");
-                          setLearnMoreOpen(true);
-                        }}
-                      >
-                        {t("home.heroCtaLearnMore", "자세히 알아보기")}
-                      </Button>
+                      <div className="grid grid-cols-2 gap-2.5 lg:contents">
+                        {!user ? (
+                          <Link href={REGISTER_PATH} className="min-w-0 lg:w-auto">
+                            <Button
+                              size="lg"
+                              variant="outline"
+                              className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-3 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-4 sm:text-sm lg:w-auto lg:px-8"
+                              data-testid="button-hero-signup"
+                            >
+                              {t("home.heroSignUpCta", "무료 가입")}
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Link href="/suno-guide" className="min-w-0 lg:w-auto">
+                            <Button
+                              size="lg"
+                              variant="outline"
+                              className="flex h-auto min-h-11 w-full items-center justify-center gap-1.5 whitespace-normal rounded-full border border-white/35 bg-[#161018] px-2 py-2.5 text-center text-[11px] font-semibold leading-snug text-white hover:bg-[#1f1a24] hover:text-white sm:min-h-12 sm:gap-2 sm:px-3 sm:text-xs md:px-8 md:text-sm lg:w-auto"
+                              data-testid="button-hero-music-making-guide"
+                            >
+                              <span className="relative flex shrink-0 items-center">
+                                <Wand2 className="h-4 w-4 -rotate-45 sm:h-5 sm:w-5" aria-hidden />
+                                <Sparkles className="absolute -right-1 -top-0.5 h-3 w-3 text-white/95 sm:-right-1.5 sm:-top-1 sm:h-3.5 sm:w-3.5" aria-hidden />
+                              </span>
+                              <span className="text-center">{t("home.musicMakingGuide", "음악 만들기 가이드")}</span>
+                            </Button>
+                          </Link>
+                        )}
+                        <Button
+                          type="button"
+                          size="lg"
+                          variant="outline"
+                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:px-8"
+                          data-testid="button-hero-learn-more"
+                          onClick={() => {
+                            setLearnMoreMode("creator");
+                            setLearnMoreOpen(true);
+                          }}
+                        >
+                          {t("home.heroCtaLearnMore", "자세히 알아보기")}
+                        </Button>
+                      </div>
                     </div>
                   </motion.div>
                 ) : (
@@ -767,13 +772,13 @@ export default function Home() {
                     >
                       {t("home.heroHeadlineBusiness", "브랜드와 매장을 위한 음악·방송")}
                     </h2>
-                    <p className="mb-4 text-center text-base text-white/72 lg:text-left">
+                    <p className="mb-4 text-balance break-words text-center text-sm leading-relaxed text-white/72 sm:text-base lg:text-left">
                       {t(
                         "home.heroLeadBusiness",
                         "로고송·채널·유통은 각각 조건이 다릅니다. 요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
                       )}
                     </p>
-                    <ul className="mb-6 space-y-2 text-left text-sm text-white/78 lg:text-base">
+                    <ul className="mb-5 space-y-2 text-left text-sm text-white/78 sm:mb-6 lg:text-base">
                       <li className="flex gap-2">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400/90" aria-hidden />
                         {t("home.heroBizBullet1", "매장·영상에서 쓰기 좋은 전용 브랜드 사운드")}
@@ -787,39 +792,41 @@ export default function Home() {
                         {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
                       </li>
                     </ul>
-                    <div className="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
-                      <Link href="/pricing">
+                    <div className="mx-auto flex w-full max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
+                      <Link href="/pricing" className="block w-full shrink-0 lg:w-auto">
                         <Button
                           size="lg"
-                          className="rounded-full bg-primary px-8 text-white shadow-lg shadow-primary/30 sm:px-10"
+                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
                           data-testid="button-hero-business-pricing"
                         >
                           {t("home.heroCtaPricing", "요금제 보기")}
                         </Button>
                       </Link>
-                      <Link href="/global-distribution-guide">
+                      <div className="grid grid-cols-2 gap-2.5 lg:contents">
+                        <Link href="/global-distribution-guide" className="min-w-0 lg:w-auto">
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="h-auto min-h-11 w-full whitespace-normal rounded-full border-cyan-400/40 bg-cyan-950/35 px-2 py-2.5 text-center text-[11px] font-medium leading-snug text-cyan-100 hover:bg-cyan-900/45 hover:text-cyan-50 sm:min-h-12 sm:px-3 sm:text-xs md:px-6 md:text-sm lg:w-auto"
+                            data-testid="button-hero-business-distribution"
+                          >
+                            {t("home.heroCtaDistributionShort", "글로벌 발매 가이드")}
+                          </Button>
+                        </Link>
                         <Button
+                          type="button"
                           size="lg"
                           variant="outline"
-                          className="max-w-full rounded-full border-cyan-400/40 bg-cyan-950/35 px-5 text-center text-cyan-100 hover:bg-cyan-900/45 hover:text-cyan-50 sm:max-w-none sm:px-6"
-                          data-testid="button-hero-business-distribution"
+                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:px-8"
+                          data-testid="button-hero-learn-more-business"
+                          onClick={() => {
+                            setLearnMoreMode("business");
+                            setLearnMoreOpen(true);
+                          }}
                         >
-                          {t("home.heroCtaDistributionShort", "글로벌 발매 가이드")}
+                          {t("home.heroCtaLearnMore", "자세히 알아보기")}
                         </Button>
-                      </Link>
-                      <Button
-                        type="button"
-                        size="lg"
-                        variant="outline"
-                        className="rounded-full border-white/30 bg-white/10 px-8 text-white backdrop-blur-sm hover:bg-white/15 hover:text-white"
-                        data-testid="button-hero-learn-more-business"
-                        onClick={() => {
-                          setLearnMoreMode("business");
-                          setLearnMoreOpen(true);
-                        }}
-                      >
-                        {t("home.heroCtaLearnMore", "자세히 알아보기")}
-                      </Button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
