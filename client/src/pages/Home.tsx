@@ -14,6 +14,7 @@ import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsLgUp } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { usePlayerStore } from "@/components/AudioPlayer";
@@ -99,6 +100,8 @@ export default function Home() {
     return u * (window.innerWidth * 0.52 + 48);
   });
   const heroColOutOpacity = useTransform(heroColExitU, (u) => 1 - u);
+  /** 모바일·태블릿에서 가로 translate 시 화면 밖으로 밀려 잘림 → lg 이상에서만 패럴랙스 */
+  const heroParallaxLg = useIsLgUp();
 
   const { user, isLoading: isAuthLoading } = useAuth();
   const userId = user?.id;
@@ -504,17 +507,21 @@ export default function Home() {
               />
             </p>
           </motion.div>
-          <div className="grid items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
+          <div className="grid min-w-0 max-w-full items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div
-              className="order-2 will-change-[transform,opacity] lg:order-1"
-              style={{ x: heroColLeftX, opacity: heroColOutOpacity }}
+              className="order-2 min-w-0 w-full max-w-full will-change-[transform,opacity] lg:order-1"
+              style={
+                heroParallaxLg
+                  ? { x: heroColLeftX, opacity: heroColOutOpacity }
+                  : { x: 0, opacity: heroColOutOpacity }
+              }
             >
               <motion.div
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.45 }}
               >
-              <div className="mx-auto w-full max-w-md lg:mx-0">
+              <div className="mx-auto w-full min-w-0 max-w-md lg:mx-0">
                 <HomeHeroLiveWaveform />
                 <div className="rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md">
                 {liveTickerText ? (
@@ -601,15 +608,19 @@ export default function Home() {
             </motion.div>
 
             <motion.div
-              className="order-1 will-change-[transform,opacity] lg:order-2"
-              style={{ x: heroColRightX, opacity: heroColOutOpacity }}
+              className="order-1 flex min-w-0 w-full max-w-full flex-col items-center will-change-[transform,opacity] lg:order-2 lg:items-stretch"
+              style={
+                heroParallaxLg
+                  ? { x: heroColRightX, opacity: heroColOutOpacity }
+                  : { x: 0, opacity: heroColOutOpacity }
+              }
             >
               <div
-                className="mb-4 flex justify-center px-0.5 sm:mb-6 lg:justify-start lg:px-0"
+                className="mb-4 flex w-full max-w-full min-w-0 justify-center sm:mb-6 lg:justify-start"
                 role="tablist"
                 aria-label={t("home.heroPersonaLabel", "누구를 위한 소개인가요")}
               >
-                <div className="inline-flex max-w-full rounded-full border border-white/15 bg-black/25 p-0.5 backdrop-blur-sm sm:p-1">
+                <div className="inline-flex max-w-[min(100%,calc(100vw-2rem))] shrink-0 rounded-full border border-white/15 bg-black/25 p-0.5 backdrop-blur-sm sm:max-w-full sm:p-1">
                   <button
                     type="button"
                     role="tab"
@@ -662,7 +673,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.04 }}
-                className="mx-auto mb-4 max-w-full text-balance break-words text-center text-xs leading-relaxed text-white/72 sm:text-sm md:mb-5 md:text-base lg:mx-0 lg:text-left"
+                className="mx-auto mb-4 w-full max-w-full min-w-0 [overflow-wrap:anywhere] text-balance break-words px-1 text-center text-xs leading-relaxed text-white/72 sm:text-sm md:mb-5 md:px-0 md:text-base lg:mx-0 lg:text-left"
                 data-testid="text-hero-brand-korean"
               >
                 {t("home.heroBrandLine")}
@@ -703,8 +714,8 @@ export default function Home() {
                         {homeGreeting}
                       </p>
                     )}
-                    <div className="mx-auto flex w-full max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
-                      <Link href="/music" className="block w-full shrink-0 lg:w-auto">
+                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
+                      <Link href="/music" className="block w-full min-w-0 shrink-0 lg:w-auto">
                         <Button
                           size="lg"
                           className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
@@ -713,7 +724,7 @@ export default function Home() {
                           {t("home.listenMusic")}
                         </Button>
                       </Link>
-                      <div className="grid grid-cols-2 gap-2.5 lg:contents">
+                      <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
                         {!user ? (
                           <Link href={REGISTER_PATH} className="min-w-0 lg:w-auto">
                             <Button
@@ -792,8 +803,8 @@ export default function Home() {
                         {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
                       </li>
                     </ul>
-                    <div className="mx-auto flex w-full max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
-                      <Link href="/pricing" className="block w-full shrink-0 lg:w-auto">
+                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
+                      <Link href="/pricing" className="block w-full min-w-0 shrink-0 lg:w-auto">
                         <Button
                           size="lg"
                           className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
@@ -802,7 +813,7 @@ export default function Home() {
                           {t("home.heroCtaPricing", "요금제 보기")}
                         </Button>
                       </Link>
-                      <div className="grid grid-cols-2 gap-2.5 lg:contents">
+                      <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
                         <Link href="/global-distribution-guide" className="min-w-0 lg:w-auto">
                           <Button
                             size="lg"
