@@ -716,11 +716,11 @@ export default function Home() {
                         {homeGreeting}
                       </p>
                     )}
-                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
-                      <Link href="/music" className="block w-full min-w-0 shrink-0 lg:w-auto">
+                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-2 xl:gap-3">
+                      <Link href="/music" className="block w-full min-w-0 shrink-0 lg:w-auto lg:shrink-0">
                         <Button
                           size="lg"
-                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
+                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
                           data-testid="button-start-listening"
                         >
                           {t("home.listenMusic")}
@@ -728,22 +728,22 @@ export default function Home() {
                       </Link>
                       <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
                         {!user ? (
-                          <Link href={REGISTER_PATH} className="min-w-0 lg:w-auto">
+                          <Link href={REGISTER_PATH} className="min-w-0 lg:w-auto lg:shrink-0">
                             <Button
                               size="lg"
                               variant="outline"
-                              className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-3 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-4 sm:text-sm lg:w-auto lg:px-8"
+                              className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-3 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-4 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-5 xl:px-8"
                               data-testid="button-hero-signup"
                             >
                               {t("home.heroSignUpCta", "무료 가입")}
                             </Button>
                           </Link>
                         ) : (
-                          <Link href="/suno-guide" className="min-w-0 lg:w-auto">
+                          <Link href="/suno-guide" className="min-w-0 lg:w-auto lg:shrink-0">
                             <Button
                               size="lg"
                               variant="outline"
-                              className="flex h-auto min-h-11 w-full items-center justify-center gap-1.5 whitespace-normal rounded-full border border-white/35 bg-[#161018] px-2 py-2.5 text-center text-[11px] font-semibold leading-snug text-white hover:bg-[#1f1a24] hover:text-white sm:min-h-12 sm:gap-2 sm:px-3 sm:text-xs md:px-8 md:text-sm lg:w-auto"
+                              className="flex h-auto min-h-11 w-full items-center justify-center gap-1.5 whitespace-normal rounded-full border border-white/35 bg-[#161018] px-2 py-2.5 text-center text-[11px] font-semibold leading-snug text-white hover:bg-[#1f1a24] hover:text-white sm:min-h-12 sm:gap-2 sm:px-3 sm:text-xs md:px-8 md:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-3 lg:text-xs xl:px-6 xl:text-sm"
                               data-testid="button-hero-music-making-guide"
                             >
                               <span className="relative flex shrink-0 items-center">
@@ -758,7 +758,7 @@ export default function Home() {
                           type="button"
                           size="lg"
                           variant="outline"
-                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:px-8"
+                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-4 xl:px-8"
                           data-testid="button-hero-learn-more"
                           onClick={() => {
                             setLearnMoreMode("creator");
@@ -805,22 +805,22 @@ export default function Home() {
                         </span>
                       </li>
                     </ul>
-                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
-                      <Link href="/pricing" className="block w-full min-w-0 shrink-0 lg:w-auto">
+                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-2 xl:gap-3">
+                      <Link href="/pricing" className="block w-full min-w-0 shrink-0 lg:w-auto lg:shrink-0">
                         <Button
                           size="lg"
-                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto"
+                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
                           data-testid="button-hero-business-pricing"
                         >
                           {t("home.heroCtaPricing", "요금제 보기")}
                         </Button>
                       </Link>
                       <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
-                        <Link href="/global-distribution-guide" className="min-w-0 lg:w-auto">
+                        <Link href="/global-distribution-guide" className="min-w-0 lg:w-auto lg:shrink-0">
                           <Button
                             size="lg"
                             variant="outline"
-                            className="h-auto min-h-11 w-full whitespace-normal rounded-full border-cyan-400/40 bg-cyan-950/35 px-2 py-2.5 text-center text-[11px] font-medium leading-snug text-cyan-100 hover:bg-cyan-900/45 hover:text-cyan-50 sm:min-h-12 sm:px-3 sm:text-xs md:px-6 md:text-sm lg:w-auto"
+                            className="h-auto min-h-11 w-full whitespace-normal rounded-full border-cyan-400/40 bg-cyan-950/35 px-2 py-2.5 text-center text-[11px] font-medium leading-snug text-cyan-100 hover:bg-cyan-900/45 hover:text-cyan-50 sm:min-h-12 sm:px-3 sm:text-xs md:px-6 md:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-3 xl:px-6"
                             data-testid="button-hero-business-distribution"
                           >
                             {t("home.heroCtaDistributionShort", "글로벌 발매 가이드")}
@@ -830,7 +830,7 @@ export default function Home() {
                           type="button"
                           size="lg"
                           variant="outline"
-                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:px-8"
+                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-4 xl:px-8"
                           data-testid="button-hero-learn-more-business"
                           onClick={() => {
                             setLearnMoreMode("business");
