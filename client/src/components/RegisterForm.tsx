@@ -261,7 +261,7 @@ export function RegisterForm({
                 </button>
               </a>
             )}
-            {loginOptions?.hasTikTok && (
+            {variant === "page" && loginOptions?.hasTikTok && (
               <a
                 href="/api/auth/tiktok"
                 className="block"
