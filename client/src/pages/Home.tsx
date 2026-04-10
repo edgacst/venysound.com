@@ -493,8 +493,8 @@ export default function Home() {
               <Trans
                 i18nKey="home.heroTaglineBelowNav"
                 components={{
-                  row1: <span className="block md:whitespace-nowrap" />,
-                  row2: <span className="mt-2 block sm:mt-2.5" />,
+                  row1: <span className="block whitespace-nowrap" />,
+                  row2: <span className="mt-2 block whitespace-nowrap sm:mt-2.5" />,
                   coffee: (
                     <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
                   ),
@@ -937,13 +937,13 @@ export default function Home() {
                 <span className="text-2xl md:text-3xl">📻</span>
               </div>
               <div className="min-w-0">
-                <p className="text-emerald-300 font-bold text-xl md:text-2xl lg:text-3xl animate-blink mb-0.5 drop-shadow-md">
+                <p className="mb-0.5 text-xl font-bold text-emerald-300 drop-shadow-md animate-blink md:text-2xl lg:text-3xl">
                   {t("home.radioBannerCampaign", "나도 DJ해볼까?")}
                 </p>
-                <h3 className="text-lg md:text-xl font-bold text-white truncate">
+                <h3 className="truncate text-lg font-bold text-white md:text-xl">
                   {t("home.radioBannerTitle", "베니방송국")}
                 </h3>
-                <p className="text-white/90 text-sm md:text-base truncate">
+                <p className="truncate text-sm text-white/90 md:text-base">
                   {t("home.radioBannerSubtitle", "나만의 방송 채널을 만들고 실시간으로 음악을 송출하세요")}
                 </p>
               </div>
