@@ -219,6 +219,7 @@ export default function Home() {
     scheduledEndAt?: string | null;
     updatedAt?: string;
     ownerDisplayName?: string;
+    homeTickerText?: string | null;
   }>>({
     queryKey: ["/api/radio/channels/live"],
     queryFn: async () => {
@@ -293,6 +294,8 @@ export default function Home() {
     const liveWord = t("home.radioLiveShort", "방송중");
     return liveChannels
       .map((ch) => {
+        const custom = typeof ch.homeTickerText === "string" ? ch.homeTickerText.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim() : "";
+        if (custom) return custom.slice(0, 200);
         const startAt = ch.scheduledStartAt ? new Date(ch.scheduledStartAt) : ch.updatedAt ? new Date(ch.updatedAt) : null;
         const endAt = ch.scheduledEndAt ? new Date(ch.scheduledEndAt) : null;
         const startStr = startAt

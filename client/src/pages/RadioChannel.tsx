@@ -21,6 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
@@ -133,6 +134,7 @@ export default function RadioChannel() {
     slug: string;
     description: string | null;
     homepageUrl?: string | null;
+    homeTickerText?: string | null;
     coverFilename: string | null;
     status: string;
     nowPlayingMusicId: number | null;
@@ -472,6 +474,7 @@ export default function RadioChannel() {
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editHomepageUrl, setEditHomepageUrl] = useState("");
+  const [editHomeTickerText, setEditHomeTickerText] = useState("");
   const [editCover, setEditCover] = useState("");
   const [editCoverPreview, setEditCoverPreview] = useState<string | null>(null);
   const [editUploading, setEditUploading] = useState(false);
@@ -483,6 +486,7 @@ export default function RadioChannel() {
     setEditName(channel.name);
     setEditDesc(channel.description ?? "");
     setEditHomepageUrl(channel.homepageUrl ?? "");
+    setEditHomeTickerText(channel.homeTickerText ?? "");
     setEditCover(channel.coverFilename ?? "");
     setEditCoverPreview(channel.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
     setEditOpen(true);
@@ -539,6 +543,7 @@ export default function RadioChannel() {
           name: editName.trim(),
           description: editDesc.trim() || null,
           homepageUrl: editHomepageUrl.trim() || null,
+          homeTickerText: editHomeTickerText.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim() || null,
           coverFilename: editCover.trim() || null,
         }),
       });
@@ -550,6 +555,7 @@ export default function RadioChannel() {
       queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
       queryClient.invalidateQueries({ queryKey: ["/api/radio/channels"] });
       queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/live"] });
       setEditOpen(false);
     } catch (err: any) {
       toast({ title: err.message ?? t("radio.channelInfoUpdateFailed", "수정 실패"), variant: "destructive" });
@@ -1342,6 +1348,18 @@ export default function RadioChannel() {
                 placeholder={t("radio.homepageUrlPlaceholder", "https://example.com")}
               />
               <p className="text-xs text-muted-foreground mt-1">{t("radio.homepageUrlHint")}</p>
+            </div>
+            <div>
+              <Label>{t("radio.homeTickerText", "홈 메인 스크롤 문구 (선택)")}</Label>
+              <Textarea
+                value={editHomeTickerText}
+                onChange={(e) => setEditHomeTickerText(e.target.value)}
+                maxLength={200}
+                rows={2}
+                className="mt-1 min-h-[4rem] resize-y bg-background border-white/10 text-sm"
+                placeholder={t("radio.homeTickerTextPlaceholder", "비우면 채널명·시간·방장으로 자동 표시됩니다.")}
+              />
+              <p className="text-xs text-muted-foreground mt-1">{t("radio.homeTickerTextHint")}</p>
             </div>
             <div>
               <Label>{t("radio.channelCover", "배경 이미지")}</Label>

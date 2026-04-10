@@ -6647,7 +6647,7 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, homepageUrl: bodyHomepageUrl, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, homepageUrl: bodyHomepageUrl, homeTickerText: bodyHomeTickerText, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
@@ -6818,6 +6818,15 @@ export async function registerRoutes(
             const n = normalizeRadioHomepageUrl(bodyHomepageUrl);
             if (!n.ok) return res.status(400).json({ message: "올바른 홈페이지 주소(URL)를 입력해 주세요." });
             (updates as any).homepageUrl = n.value;
+          }
+        }
+        if (bodyHomeTickerText !== undefined) {
+          if (bodyHomeTickerText === null || bodyHomeTickerText === "") {
+            (updates as any).homeTickerText = null;
+          } else {
+            const raw = typeof bodyHomeTickerText === "string" ? bodyHomeTickerText : "";
+            const oneLine = raw.replace(/\r?\n/g, " ").replace(/\s+/g, " ").trim();
+            (updates as any).homeTickerText = oneLine ? oneLine.slice(0, 200) : null;
           }
         }
         if (bodyCoverFilename !== undefined) {

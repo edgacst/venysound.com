@@ -99,6 +99,8 @@ export const radioChannels = pgTable("radio_channels", {
   description: text("description"),
   /** 카페/채널 외부 홈페이지 (http/https) */
   homepageUrl: text("homepage_url"),
+  /** 홈 메인·배너 라이브 티커 한 줄 (비우면 자동 문구) */
+  homeTickerText: text("home_ticker_text"),
   coverFilename: text("cover_filename"),
   visibility: text("visibility").default("public").notNull(), // public | link_only | private
   inviteToken: text("invite_token"),

@@ -304,9 +304,9 @@ export interface IStorage {
   getCuratedPlaylistTrackIds(curatedPlaylistId: number): Promise<number[]>;
 
   // Radio channels (베니방송국)
-  createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; homepageUrl?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
-  getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; homepageUrl: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
-  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; homepageUrl: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } | undefined>;
+  createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
+  getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; homepageUrl: string | null; homeTickerText: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
+  getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; homepageUrl: string | null; homeTickerText: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } | undefined>;
   listLiveRadioChannels(): Promise<{
     id: number;
     ownerId: string;
@@ -319,6 +319,7 @@ export interface IStorage {
     notice: string | null;
     updatedAt: Date | null;
     ownerDisplayName: string;
+    homeTickerText: string | null;
   }[]>;
   listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
   listAllRadioChannels(): Promise<{
@@ -333,7 +334,7 @@ export interface IStorage {
     ownerDisplayName: string;
     updatedAt: Date | null;
   }[]>;
-  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
+  updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
@@ -3945,13 +3946,14 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
   }
 
   // Radio channels
-  async createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; homepageUrl?: string | null; coverFilename?: string | null }): Promise<{ id: number }> {
+  async createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null }): Promise<{ id: number }> {
     const [row] = await db.insert(radioChannels).values({
       ownerId: data.ownerId,
       name: data.name,
       slug: data.slug,
       description: data.description ?? null,
       homepageUrl: data.homepageUrl ?? null,
+      homeTickerText: data.homeTickerText ?? null,
       coverFilename: data.coverFilename ?? null,
     }).returning({ id: radioChannels.id });
     return { id: row!.id };
@@ -3964,6 +3966,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       slug: radioChannels.slug,
       description: radioChannels.description,
       homepageUrl: radioChannels.homepageUrl,
+      homeTickerText: radioChannels.homeTickerText,
       coverFilename: radioChannels.coverFilename,
       status: radioChannels.status,
       visibility: radioChannels.visibility,
@@ -3981,6 +3984,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       slug: radioChannels.slug,
       description: radioChannels.description,
       homepageUrl: radioChannels.homepageUrl,
+      homeTickerText: radioChannels.homeTickerText,
       coverFilename: radioChannels.coverFilename,
       status: radioChannels.status,
       visibility: radioChannels.visibility,
@@ -4008,6 +4012,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       slug: row.slug,
       description: row.description,
       homepageUrl: row.homepageUrl ?? null,
+      homeTickerText: row.homeTickerText ?? null,
       coverFilename: row.coverFilename,
       status: row.status,
       visibility: row.visibility,
@@ -4038,6 +4043,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
         scheduledEndAt: radioChannels.scheduledEndAt,
         notice: radioChannels.notice,
         updatedAt: radioChannels.updatedAt,
+        homeTickerText: radioChannels.homeTickerText,
         ownerUsername: users.username,
         ownerFirstName: users.firstName,
       })
@@ -4061,6 +4067,7 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
         notice: r.notice ?? null,
         updatedAt: r.updatedAt ?? null,
         ownerDisplayName: display,
+        homeTickerText: r.homeTickerText ?? null,
       };
     });
   }
@@ -4153,12 +4160,13 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
     });
   }
 
-  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
+  async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (data.name !== undefined) set.name = data.name;
     if (data.slug !== undefined) set.slug = data.slug;
     if (data.description !== undefined) set.description = data.description;
     if (data.homepageUrl !== undefined) set.homepageUrl = data.homepageUrl;
+    if (data.homeTickerText !== undefined) set.homeTickerText = data.homeTickerText;
     if (data.coverFilename !== undefined) set.coverFilename = data.coverFilename;
     if (data.status !== undefined) set.status = data.status;
     if (data.visibility !== undefined) set.visibility = data.visibility;
