@@ -51,7 +51,7 @@ function HomeMusicRow({
   return (
     <div
       className={cn(
-        "flex gap-3 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:gap-4",
+        "flex gap-2 overflow-x-auto pb-2 pt-1 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:gap-4",
         gridClass,
         "md:mx-0 md:px-0 md:overflow-visible md:snap-none",
       )}
@@ -63,7 +63,7 @@ function HomeMusicRow({
 
 function HomeMusicRowItem({ children }: { children: ReactNode }) {
   return (
-    <div className="min-w-[8.75rem] w-[34vw] max-w-[9.5rem] shrink-0 snap-start sm:min-w-[9.25rem] sm:w-[36vw] sm:max-w-[10rem] md:min-w-0 md:w-auto md:max-w-none md:shrink">
+    <div className="min-w-[7.25rem] w-[30vw] max-w-[8rem] shrink-0 snap-start md:min-w-0 md:w-auto md:max-w-none md:shrink">
       {children}
     </div>
   );
@@ -377,16 +377,16 @@ export default function Home() {
     if (artists.length === 0) return null;
 
     return (
-      <section className="container px-4 pt-8 pb-4" data-testid="section-weekly-artists">
-        <div className="mb-6">
-          <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-weekly-artist-section-title">
+      <section className="container px-4 pb-4 pt-6 md:pt-8" data-testid="section-weekly-artists">
+        <div className="mb-4 md:mb-6">
+          <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-weekly-artist-section-title">
             {t("home.weeklyArtistLabel", "이번주 뮤직크리에이터")}
           </h2>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="mt-1 text-xs text-muted-foreground md:text-sm">
             {t("home.weeklyArtistDesc", "최근 7일 동안 가장 많이 재생된 뮤직크리에이터입니다.")}
           </p>
         </div>
-        <div className="flex gap-3 md:gap-4 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 md:grid md:grid-cols-8 md:overflow-visible scroll-smooth snap-x snap-mandatory md:snap-none">
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 scroll-smooth snap-x snap-mandatory md:mx-0 md:grid md:grid-cols-8 md:gap-4 md:overflow-visible md:px-0 md:snap-none">
           {artists.map((a) => {
             const displayName = a.firstName?.trim() || t("home.unknownArtist", "아티스트");
             const avatarSrc =
@@ -400,10 +400,10 @@ export default function Home() {
               <Link
                 key={a.userId}
                 href={`/profile/${a.userId}`}
-                className="group flex flex-col items-center rounded-xl border border-border/60 bg-card/30 p-2 md:p-3 text-center transition-colors hover:bg-muted/40 hover:border-primary/30 min-w-[4.5rem] w-[22%] max-w-[5.5rem] shrink-0 snap-start md:min-w-0 md:w-auto md:max-w-none md:shrink"
+                className="group flex min-w-[3.875rem] w-[19vw] max-w-[4.75rem] shrink-0 snap-start flex-col items-center rounded-lg border border-border/60 bg-card/30 p-1.5 text-center transition-colors hover:bg-muted/40 hover:border-primary/30 md:min-w-0 md:w-auto md:max-w-none md:shrink md:rounded-xl md:p-3"
                 data-testid={`link-weekly-artist-${a.userId}`}
               >
-                <Avatar className="w-12 h-12 md:w-14 md:h-14 mb-2 ring-2 ring-transparent group-hover:ring-primary/20">
+                <Avatar className="mb-1.5 h-10 w-10 ring-2 ring-transparent group-hover:ring-primary/20 md:mb-2 md:h-14 md:w-14">
                   <AvatarImage src={avatarSrc} alt="" className="object-cover" />
                   <AvatarFallback className="text-xs font-medium">{initials}</AvatarFallback>
                 </Avatar>
@@ -858,45 +858,45 @@ export default function Home() {
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
           {t("home.quickTilesLabel", "바로 가기")}
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
           <Link
             href="/radio/channels"
-            className="rounded-xl border-2 border-border/90 bg-card/50 p-3 flex flex-col gap-1 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35"
+            className="flex flex-col gap-0.5 rounded-lg border-2 border-border/90 bg-card/50 p-2 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35 md:gap-1 md:rounded-xl md:p-3"
             data-testid="quick-tile-radio"
           >
-            <Radio className="w-5 h-5 text-purple-400 shrink-0" />
-            <span className="font-semibold text-sm leading-tight">{t("home.quickTileRadio", "베니방송국")}</span>
-            <span className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">{t("home.quickTileRadioDesc", "회원이면 누구든 나의 방송국을 만들 수 있습니다.")}</span>
+            <Radio className="h-4 w-4 shrink-0 text-purple-400 md:h-5 md:w-5" />
+            <span className="text-xs font-semibold leading-tight md:text-sm">{t("home.quickTileRadio", "베니방송국")}</span>
+            <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground md:text-[11px]">{t("home.quickTileRadioDesc", "회원이면 누구든 나의 방송국을 만들 수 있습니다.")}</span>
           </Link>
           <Link
             href="/upload"
-            className="rounded-xl border-2 border-border/90 bg-card/50 p-3 flex flex-col gap-1 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35"
+            className="flex flex-col gap-0.5 rounded-lg border-2 border-border/90 bg-card/50 p-2 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35 md:gap-1 md:rounded-xl md:p-3"
             data-testid="quick-tile-upload"
           >
-            <Upload className="w-5 h-5 text-emerald-400 shrink-0" />
-            <span className="font-semibold text-sm leading-tight">{t("home.uploadTrack", "음원업로드")}</span>
-            <span className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">{t("home.quickTileUploadDesc", "나만의 음악을 만들고 업로드하여 수익화 해보세요")}</span>
+            <Upload className="h-4 w-4 shrink-0 text-emerald-400 md:h-5 md:w-5" />
+            <span className="text-xs font-semibold leading-tight md:text-sm">{t("home.uploadTrack", "음원업로드")}</span>
+            <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground md:text-[11px]">{t("home.quickTileUploadDesc", "나만의 음악을 만들고 업로드하여 수익화 해보세요")}</span>
           </Link>
           <Link
             href="/create-music"
-            className="group relative rounded-xl border-2 border-pink-400/70 bg-gradient-to-br from-pink-500/25 via-fuchsia-500/15 to-purple-600/18 p-3 flex flex-col gap-1 shadow-md shadow-pink-500/20 ring-2 ring-pink-400/45 transition-all hover:border-pink-300/85 hover:from-pink-500/32 hover:via-fuchsia-500/22 hover:shadow-lg hover:shadow-fuchsia-500/25 hover:ring-pink-300/55"
+            className="group relative flex flex-col gap-0.5 rounded-lg border-2 border-pink-400/70 bg-gradient-to-br from-pink-500/25 via-fuchsia-500/15 to-purple-600/18 p-2 shadow-md shadow-pink-500/20 ring-2 ring-pink-400/45 transition-all hover:border-pink-300/85 hover:from-pink-500/32 hover:via-fuchsia-500/22 hover:shadow-lg hover:shadow-fuchsia-500/25 hover:ring-pink-300/55 md:gap-1 md:rounded-xl md:p-3"
             data-testid="quick-tile-ai"
           >
-            <span className="absolute top-1.5 right-1.5 text-[9px] font-semibold uppercase tracking-wide px-1 py-0.5 rounded-full bg-pink-500/90 text-white shadow-sm">
+            <span className="absolute right-1 top-1 rounded-full bg-pink-500/90 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-white shadow-sm md:right-1.5 md:top-1.5 md:text-[9px]">
               {t("home.quickTileAiBadge", "AI")}
             </span>
-            <Wand2 className="w-5 h-5 text-pink-300 drop-shadow-[0_0_8px_rgba(244,114,182,0.45)] group-hover:text-pink-200 shrink-0" />
-            <span className="font-semibold text-sm text-foreground leading-tight pr-6">{t("home.quickTileAi", "AI로 음악만들고 악보까지 한방에 생성")}</span>
-            <span className="text-[11px] text-muted-foreground group-hover:text-foreground/90 line-clamp-2 leading-snug">{t("home.quickTileAiDesc", "간단한 설명으로 나만의 곡을 만들고, Premium이면 참고용 악보 PDF까지 받아 보세요")}</span>
+            <Wand2 className="h-4 w-4 shrink-0 text-pink-300 drop-shadow-[0_0_8px_rgba(244,114,182,0.45)] group-hover:text-pink-200 md:h-5 md:w-5" />
+            <span className="pr-5 text-xs font-semibold leading-tight text-foreground md:pr-6 md:text-sm">{t("home.quickTileAi", "AI로 음악만들고 악보까지 한방에 생성")}</span>
+            <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground group-hover:text-foreground/90 md:text-[11px]">{t("home.quickTileAiDesc", "간단한 설명으로 나만의 곡을 만들고, Premium이면 참고용 악보 PDF까지 받아 보세요")}</span>
           </Link>
           <Link
             href="/guide"
-            className="rounded-xl border-2 border-border/90 bg-card/50 p-3 flex flex-col gap-1 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35"
+            className="flex flex-col gap-0.5 rounded-lg border-2 border-border/90 bg-card/50 p-2 shadow-sm ring-2 ring-border/55 transition-colors hover:bg-muted/50 hover:border-primary/55 hover:ring-primary/35 md:gap-1 md:rounded-xl md:p-3"
             data-testid="quick-tile-guide"
           >
-            <HelpCircle className="w-5 h-5 text-amber-400 shrink-0" />
-            <span className="font-semibold text-sm leading-tight">{t("home.newHere")}</span>
-            <span className="text-[11px] text-muted-foreground line-clamp-2 leading-snug">{t("home.quickTileGuideDesc", "베니사운드의 모든 것을 알아보세요.")}</span>
+            <HelpCircle className="h-4 w-4 shrink-0 text-amber-400 md:h-5 md:w-5" />
+            <span className="text-xs font-semibold leading-tight md:text-sm">{t("home.newHere")}</span>
+            <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground md:text-[11px]">{t("home.quickTileGuideDesc", "베니사운드의 모든 것을 알아보세요.")}</span>
           </Link>
         </div>
         <div className="mt-3 flex justify-center">
@@ -1051,16 +1051,16 @@ export default function Home() {
       </section>
 
       {curatedPlaylists.length > 0 && (
-        <section className="container px-4 pt-10 pb-4" data-testid="section-curated-playlists">
-          <div className="mb-4">
-            <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-curated-section-title">
+        <section className="container px-4 pb-4 pt-8 md:pt-10" data-testid="section-curated-playlists">
+          <div className="mb-3 md:mb-4">
+            <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-curated-section-title">
               {t("home.curatedSectionTitle", "테마 플레이리스트")}
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="mt-1 text-xs text-muted-foreground md:text-sm">
               {t("home.curatedSectionDesc", "에디터가 고른 플레이리스트를 만나 보세요.")}
             </p>
           </div>
-          <div className="flex gap-4 overflow-x-auto pb-2 -mx-4 px-4 scroll-smooth snap-x snap-mandatory md:mx-0 md:px-0">
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 scroll-smooth snap-x snap-mandatory md:mx-0 md:gap-4 md:px-0">
             {[...curatedPlaylists]
               .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
               .slice(0, 12)
@@ -1072,16 +1072,16 @@ export default function Home() {
                   <Link
                     key={pl.id}
                     href={`/curated/${encodeURIComponent(pl.slug)}`}
-                    className="min-w-[9.5rem] max-w-[10rem] shrink-0 snap-start rounded-xl border border-border/60 bg-card/30 overflow-hidden hover:border-primary/40 transition-colors group"
+                    className="w-[28vw] min-w-[6.5rem] max-w-[7.5rem] shrink-0 snap-start rounded-lg border border-border/60 bg-card/30 overflow-hidden transition-colors hover:border-primary/40 group md:w-auto md:min-w-[9.5rem] md:max-w-[10rem] md:rounded-xl"
                     data-testid={`link-curated-${pl.slug}`}
                   >
                     <div className="aspect-square relative overflow-hidden">
-                      <img src={cover} alt="" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      <img src={cover} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
                     </div>
-                    <div className="p-2.5">
-                      <p className="font-semibold text-sm line-clamp-2 leading-tight">{pl.name}</p>
+                    <div className="p-1.5 md:p-2.5">
+                      <p className="line-clamp-2 text-[11px] font-semibold leading-tight md:text-sm">{pl.name}</p>
                       {pl.description ? (
-                        <p className="text-xs text-muted-foreground line-clamp-2 mt-1">{pl.description}</p>
+                        <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground md:mt-1 md:text-xs">{pl.description}</p>
                       ) : null}
                     </div>
                   </Link>
@@ -1092,13 +1092,13 @@ export default function Home() {
       )}
 
       {Array.isArray(weeklyTop) && weeklyTop.length > 0 && (
-        <section className="container px-4 pt-16 pb-4">
-          <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <section className="container px-4 pb-4 pt-12 md:pt-16">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4 md:mb-6">
             <div>
-              <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-weekly-top-section">
+              <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-weekly-top-section">
                 {t('home.weeklyTop', '이번 주 많이 들은 곡')}
               </h2>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mt-1 text-xs text-muted-foreground md:text-sm">
                 {t('home.weeklyTopDesc', '최근 7일 동안 재생이 많았던 트랙입니다.')}
               </p>
             </div>
@@ -1121,13 +1121,13 @@ export default function Home() {
       <WeeklyTopArtistSection />
 
       {user && allLikedTracksForHome.length > 0 && (
-        <section className="container px-4 py-10 pb-2" data-testid="section-liked-tracks">
-          <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <section className="container px-4 py-8 pb-2 md:py-10" data-testid="section-liked-tracks">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4 md:mb-6">
             <div>
-              <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-liked-section-title">
+              <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-liked-section-title">
                 {t("home.likedSectionTitle", "좋아요한 곡")}
               </h2>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mt-1 text-xs text-muted-foreground md:text-sm">
                 {t("home.likedSectionDesc", "내가 하트 누른 트랙입니다.")}
               </p>
             </div>
@@ -1180,13 +1180,13 @@ export default function Home() {
       )}
 
       {!newReleasesLoading && homeNewReleases.length > 0 && (
-        <section className="container px-4 py-10 pb-2" data-testid="section-new-releases">
-          <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <section className="container px-4 py-8 pb-2 md:py-10" data-testid="section-new-releases">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4 md:mb-6">
             <div>
-              <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-new-releases-title">
+              <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-new-releases-title">
                 {t("home.newReleasesTitle", "신곡 · 공식 발매")}
               </h2>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mt-1 text-xs text-muted-foreground md:text-sm">
                 {t(
                   "home.newReleasesDesc",
                   "글로벌 배포 발매일·승인일 기준입니다. 부족 시 Spotify 앨범이 연결된 곡이 이어서 표시됩니다.",
@@ -1209,13 +1209,13 @@ export default function Home() {
         </section>
       )}
 
-      <section className="container px-4 py-12">
-        <div className="flex items-center justify-between gap-4 mb-8 flex-wrap">
+      <section className="container px-4 py-8 md:py-12">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 md:mb-8">
           <div>
-            <h2 className="text-2xl md:text-3xl font-display font-bold" data-testid="text-recent-section">
+            <h2 className="text-xl font-display font-bold md:text-3xl" data-testid="text-recent-section">
               {t("home.recentUploadsByUploadTitle", "최근 업로드")}
             </h2>
-            <p className="text-sm text-muted-foreground mt-1">
+            <p className="mt-1 text-xs text-muted-foreground md:text-sm">
               {t("home.recentUploadsByUploadDesc", "사이트에 파일이 올라온 순서(업로드 시간)입니다. 발매일과 다를 수 있어요.")}
             </p>
           </div>

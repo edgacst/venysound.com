@@ -805,11 +805,11 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           )}
         </div>
 
-        <div className="p-2.5 sm:p-3.5 md:p-4">
+        <div className="p-2 md:p-3.5 lg:p-4">
           <Link href={`/music/${music.id}`}>
-            <h3 className="truncate text-base font-semibold group-hover:text-primary transition-colors cursor-pointer hover:underline sm:text-lg" data-testid={`text-title-${music.id}`}>{music.title}</h3>
+            <h3 className="truncate text-sm font-semibold group-hover:text-primary transition-colors cursor-pointer hover:underline md:text-lg" data-testid={`text-title-${music.id}`}>{music.title}</h3>
           </Link>
-          <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5 sm:text-xs md:text-sm" data-testid={`text-artist-${music.id}`}>
+          <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground md:text-xs lg:text-sm" data-testid={`text-artist-${music.id}`}>
             <span className="truncate" title={music.artist}>{music.artist}</span>
             {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />}
           </p>
