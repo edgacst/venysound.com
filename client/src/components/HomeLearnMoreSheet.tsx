@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useLoginModalStore } from "@/stores/login-modal";
 
 export type HomeLearnMoreSheetMode = "creator" | "business";
 
@@ -56,6 +57,7 @@ export function HomeLearnMoreSheet({
   mode = "creator",
 }: HomeLearnMoreSheetProps) {
   const { t } = useTranslation();
+  const openRegisterModal = useLoginModalStore((s) => s.openRegister);
 
   const close = () => onOpenChange(false);
   const isBusiness = mode === "business";
@@ -149,11 +151,18 @@ export function HomeLearnMoreSheet({
         <div className="flex flex-col gap-2 border-t border-border/60 bg-muted/20 px-4 py-4">
           {isBusiness ? (
             <>
-              <Link href="/pricing" className="w-full" onClick={close}>
-                <Button variant="default" className="w-full" data-testid="button-learn-more-biz-pricing">
-                  {t("home.heroCtaPricing", "요금제 보기")}
-                </Button>
-              </Link>
+              <Button
+                type="button"
+                variant="default"
+                className="w-full"
+                data-testid="button-learn-more-biz-pricing"
+                onClick={() => {
+                  openRegisterModal();
+                  close();
+                }}
+              >
+                {t("home.heroCtaPricing", "무료 시작하기")}
+              </Button>
               <Link href="/radio/channels" className="w-full" onClick={close}>
                 <Button variant="outline" className="w-full" data-testid="button-learn-more-biz-radio">
                   {t("home.learnMoreBizSheetCtaRadio", "방송국 둘러보기")}

@@ -1,18 +1,18 @@
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Music, CheckCircle, User, Eye, EyeOff, Loader2 } from "lucide-react";
-import { Link } from "wouter";
+import { Music, User, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useToast } from "@/hooks/use-toast";
-import { REGISTER_PATH } from "@/lib/site-paths";
+import { RegisterForm } from "@/components/RegisterForm";
+import { cn } from "@/lib/utils";
 
 export function LoginModal() {
   const { t } = useTranslation();
   const { user, isLoading } = useAuth();
-  const { isOpen, close } = useLoginModalStore();
+  const { isOpen, close, mode, setMode } = useLoginModalStore();
   const { toast } = useToast();
   const [devLoggingIn, setDevLoggingIn] = useState(false);
   const [form, setForm] = useState({ username: "", password: "" });
@@ -22,7 +22,7 @@ export function LoginModal() {
   const { data: loginOptions } = useQuery({
     queryKey: ["/api/auth/login-options"],
     queryFn: () => fetch("/api/auth/login-options").then((r) => r.json()),
-    enabled: isOpen,
+    enabled: isOpen && mode === "login",
   });
 
   const optionsLoaded = !!loginOptions;
@@ -98,10 +98,22 @@ export function LoginModal() {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && close()}>
       <DialogContent
-        className="max-w-[420px] w-[calc(100%-2rem)] !gap-0 !border-[#333] !bg-[#1a1a1a] !p-6 !text-white sm:rounded-xl [&>button]:hidden overflow-y-auto max-h-[90vh]"
+        className={cn(
+          "w-[calc(100%-2rem)] !gap-0 !border-[#333] !bg-[#1a1a1a] !p-6 !text-white sm:rounded-xl [&>button]:hidden overflow-y-auto max-h-[90vh]",
+          mode === "register" ? "max-w-[480px]" : "max-w-[420px]",
+        )}
         aria-describedby={undefined}
       >
         <div className="flex flex-col items-center w-full">
+          {mode === "register" ? (
+            <RegisterForm
+              variant="modal"
+              loginOptionsEnabled={isOpen}
+              onRegisterSuccess={close}
+              onRequestLogin={() => setMode("login")}
+            />
+          ) : (
+            <>
           {/* 로고 */}
           <div className="flex flex-col items-center text-center mb-5">
             <div className="w-12 h-12 rounded-xl bg-[#7c3aed] flex items-center justify-center mb-2">
@@ -241,14 +253,14 @@ export function LoginModal() {
           {/* 회원가입 링크 */}
           <div className="w-full mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-sm">
             <span className="text-white/50">{t("login.noAccount", "계정이 없으신가요?")}</span>
-            <Link
-              href={REGISTER_PATH}
-              onClick={close}
+            <button
+              type="button"
+              onClick={() => setMode("register")}
               className="text-[#a78bfa] hover:text-white font-medium transition-colors"
               data-testid="link-modal-register"
             >
               {t("login.register", "회원가입")}
-            </Link>
+            </button>
           </div>
 
           {/* 약관 */}
@@ -263,6 +275,8 @@ export function LoginModal() {
             </a>
             {t("login.agreementSuffix", "에 동의합니다.")}
           </p>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

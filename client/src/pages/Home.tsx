@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsLgUp } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
+import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
@@ -119,6 +120,7 @@ export default function Home() {
   const heroParallaxLg = useIsLgUp();
 
   const { user, isLoading: isAuthLoading } = useAuth();
+  const openRegisterModal = useLoginModalStore((s) => s.openRegister);
   const userId = user?.id;
   const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
   const musicList = musicResult?.data;
@@ -818,15 +820,15 @@ export default function Home() {
                       </li>
                     </ul>
                     <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-2 xl:gap-3">
-                      <Link href="/pricing" className="block w-full min-w-0 shrink-0 lg:w-auto lg:shrink-0">
-                        <Button
-                          size="lg"
-                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
-                          data-testid="button-hero-business-pricing"
-                        >
-                          {t("home.heroCtaPricing", "요금제 보기")}
-                        </Button>
-                      </Link>
+                      <Button
+                        type="button"
+                        size="lg"
+                        className="h-11 w-full min-w-0 shrink-0 rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
+                        data-testid="button-hero-business-pricing"
+                        onClick={() => openRegisterModal()}
+                      >
+                        {t("home.heroCtaPricing", "무료 시작하기")}
+                      </Button>
                       <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
                         <Link href="/global-distribution-guide" className="min-w-0 lg:w-auto lg:shrink-0">
                           <Button
