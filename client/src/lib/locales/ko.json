@@ -25,7 +25,7 @@
     "userSuffix": "님"
   },
   "home": {
-    "heroTaglineBelowNav": "<row1><coffee>커피 한 잔 값</coffee>으로 <royalty>평생 저작권</royalty></row1><row2><composer>수익과 작곡가</composer>로 여러분의 재능을 확인해 보세요</row2>",
+    "heroTaglineBelowNav": "<row1><coffee>커피 한 잔 값</coffee>으로 작사, <composer>작곡가로서의 재능</composer>과</row1><row2>내가 만든 앨범 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>",
     "heroSubtitle": "음악으로 연결되는 우리만의 공간",
     "heroBrandLine": "베니사운드(VenySound) — 음원 공유·스트리밍, AI음악생성·AI음악만들기",
     "shareNow": "지금바로 당신의 음악을 전세계에 공유해 보세요",
