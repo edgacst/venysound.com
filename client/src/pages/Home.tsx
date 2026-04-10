@@ -31,6 +31,21 @@ const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: numbe
 
 const LIKED_HOME_PAGE_SIZE = 10;
 
+/** 히어로 상단 태그라인 — coffee / royalty / composer 그라데이션 + row1·row2 */
+const heroTaglineTransComponents = {
+  row1: <span className="block whitespace-nowrap" />,
+  row2: <span className="mt-2 block whitespace-nowrap sm:mt-2.5" />,
+  coffee: (
+    <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
+  ),
+  royalty: (
+    <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-cyan-200 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(34,211,238,0.35)] max-md:drop-shadow-none" />
+  ),
+  composer: (
+    <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)] max-md:from-fuchsia-300 max-md:via-violet-300 max-md:to-purple-300 max-md:drop-shadow-none" />
+  ),
+};
+
 /** 홈 인사용 표시 이름: 끝 님 제거 후 템플릿에서 붙임, 흔한 붙여쓰기 보정 */
 function greetingDisplayName(raw: string): string {
   let s = raw.trim();
@@ -489,25 +504,22 @@ export default function Home() {
             style={{ scale: taglineScale, y: taglineY, opacity: taglineOpacity }}
             data-testid="home-tagline-below-nav"
           >
-            <p className="max-md:text-balance text-center text-lg font-bold leading-snug tracking-tight text-white/90 max-md:px-0.5 sm:text-2xl sm:leading-tight sm:font-extrabold md:text-4xl md:leading-[1.12] lg:text-4xl xl:text-5xl">
-              <Trans
-                i18nKey="home.heroTaglineBelowNav"
-                components={{
-                  row1: <span className="block whitespace-nowrap" />,
-                  row2: <span className="mt-2 block whitespace-nowrap sm:mt-2.5" />,
-                  coffee: (
-                    <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
-                  ),
-                  royalty: (
-                    <span className="bg-gradient-to-r from-cyan-300 via-sky-400 to-cyan-200 bg-clip-text text-transparent drop-shadow-[0_0_20px_rgba(34,211,238,0.35)] max-md:drop-shadow-none" />
-                  ),
-                  composer: (
-                    <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)] max-md:from-fuchsia-300 max-md:via-violet-300 max-md:to-purple-300 max-md:drop-shadow-none" />
-                  ),
-                }}
-                defaults="<row1><coffee>커피 한 잔 값</coffee>으로 작사, <composer>작곡가로서의 재능</composer>과</row1><row2>내가 만든 앨범 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>"
-              />
-            </p>
+            <div className="max-md:text-balance text-center text-lg font-bold leading-snug tracking-tight text-white/90 max-md:px-0.5 sm:text-2xl sm:leading-tight sm:font-extrabold md:text-4xl md:leading-[1.12] lg:text-4xl xl:text-5xl">
+              <div className="md:hidden">
+                <Trans
+                  i18nKey="home.heroTaglineBelowNavMobile"
+                  components={heroTaglineTransComponents}
+                  defaults="<row1><coffee>커피 한 잔 값</coffee>으로 <composer>작곡가로서</composer></row1><row2>내 음악 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>"
+                />
+              </div>
+              <div className="hidden md:block">
+                <Trans
+                  i18nKey="home.heroTaglineBelowNav"
+                  components={heroTaglineTransComponents}
+                  defaults="<row1><coffee>커피 한 잔 값</coffee>으로 작사, <composer>작곡가로서의 재능</composer>과</row1><row2>내가 만든 앨범 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>"
+                />
+              </div>
+            </div>
           </motion.div>
           <div className="grid min-w-0 max-w-full items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div

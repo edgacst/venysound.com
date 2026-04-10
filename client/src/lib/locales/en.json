@@ -26,6 +26,7 @@
   },
   "home": {
     "heroTaglineBelowNav": "<row1><coffee>For the price of a cup of coffee</coffee>, your talent as a lyricist and <composer>composer</composer></row1><row2>Release your own album and earn <royalty>lifetime royalty income</royalty> — ready to try?</row2>",
+    "heroTaglineBelowNavMobile": "<row1><coffee>For the price of a cup of coffee</coffee>, as a <composer>composer</composer></row1><row2>Release your music and build <royalty>lifetime royalty income</royalty> — want to try?</row2>",
     "heroSubtitle": "A Space Connected Through Music",
     "heroBrandLine": "VenySound (베니사운드) — Music sharing & streaming, AI music creation",
     "shareNow": "Share your music with the whole world right now.",
