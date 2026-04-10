@@ -4,7 +4,8 @@ import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Radio as RadioIcon, Mic2, Users, ChevronLeft } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Radio as RadioIcon, Mic2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from "react-i18next";
@@ -50,7 +51,7 @@ export default function RadioChannels() {
         <Navigation />
 
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="container max-w-6xl px-4 py-6 mx-auto flex-1 flex flex-col gap-6 pb-24 lg:pb-12">
+          <div className="container max-w-4xl px-4 py-6 mx-auto flex-1 flex flex-col gap-6 pb-24 lg:pb-12">
             <header className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <Button variant="ghost" size="icon" className="shrink-0 text-muted-foreground hover:text-foreground" asChild>
@@ -84,7 +85,20 @@ export default function RadioChannels() {
 
             <section className="flex-1 min-h-0">
               {isLoading ? (
-                <p className="text-sm text-muted-foreground">{t("radio.loadingChannels", "채널 목록을 불러오는 중입니다…")}</p>
+                <div className="flex flex-col gap-2.5" aria-busy>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex h-[4.75rem] w-full animate-pulse gap-3 overflow-hidden rounded-xl border border-white/5 bg-white/[0.04] p-2"
+                    >
+                      <div className="h-full w-28 shrink-0 rounded-lg bg-white/10 sm:w-32" />
+                      <div className="flex flex-1 flex-col justify-center gap-2 py-0.5">
+                        <div className="h-3.5 w-[42%] max-w-[12rem] rounded bg-white/10" />
+                        <div className="h-2.5 w-[58%] max-w-[18rem] rounded bg-white/[0.07]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : channels.length === 0 ? (
                 <Card className="border-[rgba(148,163,184,0.3)] bg-[rgba(15,23,42,0.96)]">
                   <CardContent className="py-10 text-center space-y-2">
@@ -98,7 +112,7 @@ export default function RadioChannels() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-4">
+                <ul className="flex flex-col gap-2.5">
                   {channels.map((ch) => {
                     const isOwner = myUserId && ch.ownerId === myUserId;
                     const statusLabel =
@@ -116,64 +130,92 @@ export default function RadioChannels() {
                       ? resolveStorageUrl(ch.coverFilename)
                       : "/dj-studio-banner.jpg";
 
+                    const statusClass =
+                      ch.status === "live"
+                        ? "border-emerald-500/35 bg-emerald-500/15 text-emerald-200"
+                        : ch.status === "paused"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                          : ch.status === "ended"
+                            ? "border-white/15 bg-white/5 text-muted-foreground"
+                            : "border-white/15 bg-white/5 text-muted-foreground";
+
+                    const subline =
+                      (ch.description && ch.description.trim()) ||
+                      (ch.ownerUsername ? t("radio.channelByOwner", { name: ch.ownerUsername }) : null);
+
                     return (
-                      <div
-                        key={ch.id}
-                        className="cursor-pointer"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setLocation(`/radio/${ch.slug}`)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setLocation(`/radio/${ch.slug}`);
-                          }
-                        }}
-                      >
-                        <Card className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-[0_16px_40px_rgba(0,0,0,0.8)]">
-                            <div className="relative w-full aspect-video">
-                            {/* 배경 이미지 (커버 없으면 기본 이미지) */}
-                            <img
-                              src={coverUrl}
-                              alt={ch.name}
-                              className="w-full h-full object-cover"
-                            />
+                      <li key={ch.id}>
+                        <div
+                          className={cn(
+                            "group flex w-full cursor-pointer items-stretch overflow-hidden rounded-xl border border-white/10 bg-black/35 shadow-sm transition",
+                            "hover:border-primary/35 hover:bg-black/50 hover:shadow-[0_8px_28px_rgba(0,0,0,0.45)]",
+                            "focus-within:ring-2 focus-within:ring-primary/40",
+                          )}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setLocation(`/radio/${ch.slug}`)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setLocation(`/radio/${ch.slug}`);
+                            }
+                          }}
+                        >
+                          <div className="relative h-[4.75rem] w-28 shrink-0 sm:h-[5.25rem] sm:w-36">
+                            <img src={coverUrl} alt="" className="h-full w-full object-cover" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-black/55" />
+                            {ch.status === "live" && (
+                              <span className="absolute left-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 shadow-md ring-2 ring-black/40">
+                                <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                              </span>
+                            )}
+                          </div>
 
-                              {/* 상단 왼쪽: 방송 중일 때만 빨간 동그라미 */}
-                              {ch.status === "live" && (
-                                <div className="absolute top-1.5 left-1.5 flex items-center gap-1">
-                                  <span className="w-4 h-4 rounded-full bg-red-500 animate-pulse" />
-                                </div>
-                              )}
-
-                              {/* 하단: 채널명(가운데) + 스튜디오 버튼 (이미지 위) */}
-                              <div className="absolute inset-x-1.5 bottom-1.5 space-y-1.5">
-                                <div className="px-1.5 py-1 rounded-md bg-black/65 backdrop-blur-sm">
-                                  <p className="text-[11px] font-semibold text-white truncate text-center">
-                                    {ch.name}
-                                  </p>
-                                </div>
-                                {isOwner && (
-                                <div className="flex justify-center">
-                                    <Button
-                                      asChild
-                                      size="icon"
-                                      className="h-7 w-7 rounded-full bg-violet-500 text-white hover:bg-violet-500/90"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Link href={`/radio/${encodeURIComponent(ch.slug)}/studio`}>
-                                        <Mic2 size={14} />
-                                      </Link>
-                                    </Button>
-                                  </div>
+                          <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 px-3 py-2 sm:px-4">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                              <h2 className="truncate text-sm font-semibold tracking-tight text-foreground sm:text-base">
+                                {ch.name}
+                              </h2>
+                              <span
+                                className={cn(
+                                  "inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide sm:text-[11px]",
+                                  statusClass,
                                 )}
-                              </div>
+                              >
+                                {statusLabel}
+                              </span>
                             </div>
-                        </Card>
-                      </div>
+                            {subline ? (
+                              <p className="line-clamp-1 text-xs text-muted-foreground sm:text-[13px]">{subline}</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground/80 sm:text-[13px]">{t("radio.channelTapToListen")}</p>
+                            )}
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-1.5 pr-2 sm:pr-3">
+                            {isOwner && (
+                              <Button
+                                asChild
+                                size="icon"
+                                variant="secondary"
+                                className="h-8 w-8 rounded-full border border-white/10 bg-violet-600/90 text-white shadow-sm hover:bg-violet-600"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Link href={`/radio/${encodeURIComponent(ch.slug)}/studio`} aria-label={t("radio.openStudio")}>
+                                  <Mic2 size={15} />
+                                </Link>
+                              </Button>
+                            )}
+                            <ChevronRight
+                              className="h-5 w-5 text-muted-foreground/50 transition group-hover:text-primary group-hover:opacity-100 sm:opacity-70"
+                              aria-hidden
+                            />
+                          </div>
+                        </div>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               )}
             </section>
 
