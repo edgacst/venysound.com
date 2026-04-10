@@ -799,10 +799,10 @@ export default function Home() {
                     >
                       {t("home.heroHeadlineBusiness", "브랜드와 매장을 위한 음악·방송")}
                     </h2>
-                    <p className="mb-4 whitespace-pre-line text-balance break-words text-center text-sm leading-relaxed text-white/72 sm:text-base lg:text-left">
+                    <p className="mb-4 whitespace-pre-line text-balance break-words text-center text-xs leading-relaxed text-white/72 sm:text-sm lg:text-left">
                       {t(
                         "home.heroLeadBusiness",
-                        "누구나 나만의 음악을 만들어 우리 스토어 채널을 만들고, 광고비 없이 중간 광고를 넣어\n소비자의 스토어 방문을 유도할 수 있습니다.",
+                        "누구나 나만의 음악을 만들어 우리 스토어 채널을 만들고,\n광고비 없이 중간 광고를 넣어 소비자의 스토어 방문을 유도할 수 있습니다.",
                       )}
                     </p>
                     <ul className="mb-5 space-y-2 text-sm text-white/78 sm:mb-6 lg:text-base">
