@@ -802,20 +802,20 @@ export default function Home() {
                     <p className="mb-4 whitespace-pre-line text-balance break-words text-center text-sm leading-relaxed text-white/72 sm:text-base lg:text-left">
                       {t(
                         "home.heroLeadBusiness",
-                        "로고송·채널·유통은 각각 조건이 다릅니다.\n요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
+                        "누구나 나만의 음악을 만들어 우리 스토어 채널을 만들고, 광고비 없이 중간 광고를 넣어\n소비자의 스토어 방문을 유도할 수 있습니다.",
                       )}
                     </p>
                     <ul className="mb-5 space-y-2 text-sm text-white/78 sm:mb-6 lg:text-base">
                       <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400/90" aria-hidden />
                         <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
-                          {t("home.heroBizBullet1", "매장·영상에서 쓰기 좋은 전용 브랜드 사운드")}
+                          {t("home.heroBizBullet1", "저작권 걱정 없는 100% 독점 브랜드 음원")}
                         </span>
                       </li>
                       <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
                         <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400/90" aria-hidden />
                         <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
-                          {t("home.heroBizBullet2", "웹에 바로 걸 수 있는 라디오 채널·페이지")}
+                          {t("home.heroBizBullet2", "클릭 한 번으로 생성되는 우리 가게 전용 방송국")}
                         </span>
                       </li>
                     </ul>
