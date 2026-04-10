@@ -371,12 +371,12 @@ export default function Pricing() {
               )}
             </p>
             <p
-              className="text-sm sm:text-base font-semibold text-red-600 dark:text-red-400 max-w-2xl mx-auto mt-4 leading-relaxed"
+              className="text-sm sm:text-base font-semibold text-red-600 dark:text-red-400 max-w-2xl mx-auto mt-4 leading-relaxed whitespace-pre-line"
               data-testid="text-pricing-ai-rollover-notice"
             >
               {t(
                 "pricing.aiBudgetRolloverNotice",
-                "저희 멤버십은 타사이트와 달리 월사용한도가 소멸되지 않고 다음달로 이월됩니다(이번달에 사용되지 않음 요금).",
+                "저희 멤버십은 타사이트와 달리 월사용한도가 소멸되지 않고 다음달로 이월됩니다.\n(이번달에 사용하지 않음 금액).",
               )}
             </p>
             <p className="text-sm text-muted-foreground max-w-2xl mx-auto mt-1 underline decoration-muted-foreground/50">

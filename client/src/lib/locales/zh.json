@@ -1259,6 +1259,7 @@
   },
   "pricing": {
     "title": "Veny Sound 会员",
+    "aiBudgetRolloverNotice": "与其他网站不同，我们的会员月度使用额度不会作废，会顺延至下月。\n（本月未使用金额）。",
     "subtitle": "从 Starter 到 Premium，按方案每月约可生成 66~300 首 AI 歌曲，\n以及无广告等权益。",
     "bankName": "银行",
     "accountNumber": "账号",

@@ -1261,6 +1261,7 @@
   },
   "pricing": {
     "title": "Veny Sound メンバーシップ",
+    "aiBudgetRolloverNotice": "他のサービスと異なり、月次の利用上限は失効せず翌月へ繰り越されます。\n（今月使わなかった分）。",
     "subtitle": "StarterからPremiumまで、プランに応じて月あたり約66〜300曲のAI楽曲生成、\n広告なしなどの特典をお選びください。",
     "bankName": "銀行",
     "accountNumber": "口座番号",
