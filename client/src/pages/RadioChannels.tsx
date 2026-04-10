@@ -4,12 +4,11 @@ import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { Radio as RadioIcon, Mic2, ChevronLeft, ChevronRight } from "lucide-react";
+import { cn, resolveStorageUrl } from "@/lib/utils";
+import { Radio as RadioIcon, Mic2, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from "react-i18next";
-import { resolveStorageUrl } from "@/lib/utils";
 
 type RadioChannelSummary = {
   id: number;
@@ -194,17 +193,33 @@ export default function RadioChannels() {
 
                           <div className="flex shrink-0 items-center gap-1.5 pr-2 sm:pr-3">
                             {isOwner && (
-                              <Button
-                                asChild
-                                size="icon"
-                                variant="secondary"
-                                className="h-8 w-8 rounded-full border border-white/10 bg-violet-600/90 text-white shadow-sm hover:bg-violet-600"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <Link href={`/radio/${encodeURIComponent(ch.slug)}/studio`} aria-label={t("radio.openStudio")}>
-                                  <Mic2 size={15} />
-                                </Link>
-                              </Button>
+                              <>
+                                <Button
+                                  asChild
+                                  size="icon"
+                                  variant="secondary"
+                                  className="h-8 w-8 rounded-full border border-white/10 bg-violet-600/90 text-white shadow-sm hover:bg-violet-600"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Link href={`/radio/${encodeURIComponent(ch.slug)}/studio`} aria-label={t("radio.openStudio")}>
+                                    <Mic2 size={15} />
+                                  </Link>
+                                </Button>
+                                <Button
+                                  asChild
+                                  size="icon"
+                                  variant="outline"
+                                  className="h-8 w-8 shrink-0 border-white/15 bg-black/30 text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Link
+                                    href={`/radio/${encodeURIComponent(ch.slug)}?edit=1`}
+                                    aria-label={t("radio.editChannelInfo", "채널 정보 수정")}
+                                  >
+                                    <Settings size={15} />
+                                  </Link>
+                                </Button>
+                              </>
                             )}
                             <ChevronRight
                               className="h-5 w-5 text-muted-foreground/50 transition group-hover:text-primary group-hover:opacity-100 sm:opacity-70"

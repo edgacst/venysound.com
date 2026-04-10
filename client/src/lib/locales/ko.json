@@ -199,6 +199,8 @@
     "uploadingCoverImage": "업로드 중...",
     "coverFormatHint": "JPG, PNG 권장",
     "editChannelTitleAttr": "채널 수정",
+    "editChannel": "채널 수정",
+    "editChannelInfo": "채널 정보 수정",
     "globalPlaybackError": "재생 오류",
     "globalListeningTo": "현재 {{name}} 방송 청취중",
     "goToChannel": "채널 가기",

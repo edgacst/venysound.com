@@ -4,7 +4,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, useLocation } from "wouter";
-import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, Play, Trash2, Users } from "lucide-react";
+import { Radio as RadioIcon, Mic2, PlusCircle, Megaphone, ChevronRight, Pause, Play, Trash2, Users, Settings } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -338,6 +338,12 @@ export default function Radio() {
                         <Link href={`/radio/${myChannel.slug}`}>
                           <Mic2 size={16} />
                           {t("radio.goToMyChannel", "내 채널 들어가기")}
+                        </Link>
+                      </Button>
+                      <Button asChild variant="secondary" className="gap-2 w-full" size="default">
+                        <Link href={`/radio/${encodeURIComponent(myChannel.slug)}?edit=1`}>
+                          <Settings size={16} />
+                          {t("radio.editChannelInfo", "채널 정보 수정")}
                         </Link>
                       </Button>
                       <span className="text-xs text-muted-foreground">/radio/{myChannel.slug}</span>

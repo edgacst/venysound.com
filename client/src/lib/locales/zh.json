@@ -242,6 +242,8 @@
     "uploadingCoverImage": "上传中...",
     "coverFormatHint": "建议 JPG / PNG",
     "editChannelTitleAttr": "编辑频道",
+    "editChannel": "编辑频道",
+    "editChannelInfo": "编辑频道信息",
     "globalPlaybackError": "播放错误",
     "globalListeningTo": "正在收听 {{name}}",
     "goToChannel": "进入频道",

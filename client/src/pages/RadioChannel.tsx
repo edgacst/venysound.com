@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect, useMemo } from "react";
-import { useRoute } from "wouter";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { useRoute, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -75,6 +75,7 @@ export default function RadioChannel() {
   const [, params] = useRoute("/radio/:slug");
   const slug = params?.slug ?? "";
   const reservedTo = slug ? reservedRadioPathRedirect(slug) : null;
+  const searchString = useSearch();
 
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -433,14 +434,30 @@ export default function RadioChannel() {
   const [editSaving, setEditSaving] = useState(false);
   const editFileRef = useRef<HTMLInputElement>(null);
 
-  const openEditDialog = () => {
+  const openEditDialog = useCallback(() => {
     if (!channel) return;
     setEditName(channel.name);
     setEditDesc(channel.description ?? "");
     setEditCover(channel.coverFilename ?? "");
     setEditCoverPreview(channel.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
     setEditOpen(true);
-  };
+  }, [channel]);
+
+  const autoEditFromQueryRef = useRef(false);
+  /** 방송국·목록 등에서 `/radio/slug?edit=1` 로 진입 시 수정 창 자동 오픈 (한 번만) */
+  useEffect(() => {
+    if (!channel || !isOwner || autoEditFromQueryRef.current) return;
+    const raw = searchString || "";
+    const params = new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
+    if (params.get("edit") !== "1") return;
+    autoEditFromQueryRef.current = true;
+    openEditDialog();
+    try {
+      window.history.replaceState(null, "", `/radio/${encodeURIComponent(channel.slug)}`);
+    } catch {
+      /* ignore */
+    }
+  }, [channel, isOwner, searchString, openEditDialog]);
 
   const handleEditCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -485,6 +502,8 @@ export default function RadioChannel() {
       }
       toast({ title: t("radio.channelInfoUpdated", "채널 정보가 수정되었습니다.") });
       queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/radio/channels/me"] });
       setEditOpen(false);
     } catch (err: any) {
       toast({ title: err.message ?? t("radio.channelInfoUpdateFailed", "수정 실패"), variant: "destructive" });
@@ -968,13 +987,20 @@ export default function RadioChannel() {
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <h1 className="text-2xl font-bold">{channel.name}</h1>
                   {isOwner && (
-                    <button
-                      onClick={openEditDialog}
-                      className="p-1 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-foreground"
-                      title={t("radio.editChannelTitleAttr", "채널 수정")}
-                    >
-                      <Settings size={16} />
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={openEditDialog}
+                        className="p-1 rounded-md hover:bg-white/10 transition-colors text-muted-foreground hover:text-foreground"
+                        title={t("radio.editChannelTitleAttr", "채널 수정")}
+                      >
+                        <Settings size={16} />
+                      </button>
+                      <Button type="button" variant="outline" size="sm" className="gap-1.5 h-8" onClick={openEditDialog}>
+                        <Settings size={14} />
+                        {t("radio.editChannelInfo", "채널 정보 수정")}
+                      </Button>
+                    </>
                   )}
                   {channel.status === "live" && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
@@ -1193,7 +1219,7 @@ export default function RadioChannel() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("radio.editChannel", "채널 수정")}</DialogTitle>
+            <DialogTitle>{t("radio.editChannel")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>

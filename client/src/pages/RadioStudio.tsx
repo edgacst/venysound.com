@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { PageTransition } from "@/components/PageTransition";
 import { Navigation } from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -77,11 +77,17 @@ export default function RadioStudio() {
         <Navigation />
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="shrink-0 px-4 pt-3 pb-2">
-            <div className="max-w-6xl mx-auto flex justify-start pl-2">
+            <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-start gap-2 pl-2">
               <Link href={`/radio/${encodeURIComponent(slug)}`} className="inline-block">
                 <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
                   <ArrowLeft size={16} />
                   {t("radio.backToChannel", "방송 채널로 돌아가기")}
+                </Button>
+              </Link>
+              <Link href={`/radio/${encodeURIComponent(slug)}?edit=1`} className="inline-block">
+                <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+                  <Settings size={16} />
+                  {t("radio.editChannelInfo", "채널 정보 수정")}
                 </Button>
               </Link>
             </div>

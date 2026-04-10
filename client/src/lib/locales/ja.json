@@ -178,6 +178,8 @@
     "uploadingCoverImage": "アップロード中...",
     "coverFormatHint": "JPG / PNG 推奨",
     "editChannelTitleAttr": "チャンネルを編集",
+    "editChannel": "チャンネルを編集",
+    "editChannelInfo": "チャンネル情報を編集",
     "globalPlaybackError": "再生エラー",
     "globalListeningTo": "「{{name}}」を視聴中",
     "goToChannel": "チャンネルへ",

@@ -198,6 +198,8 @@
     "uploadingCoverImage": "Uploading...",
     "coverFormatHint": "JPG or PNG recommended",
     "editChannelTitleAttr": "Edit channel",
+    "editChannel": "Edit channel",
+    "editChannelInfo": "Edit channel info",
     "globalPlaybackError": "Playback error",
     "globalListeningTo": "Listening to {{name}}",
     "goToChannel": "Open channel",
