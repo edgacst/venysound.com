@@ -493,6 +493,8 @@ export default function Home() {
               <Trans
                 i18nKey="home.heroTaglineBelowNav"
                 components={{
+                  row1: <span className="block" />,
+                  row2: <span className="mt-2 block sm:mt-2.5" />,
                   coffee: (
                     <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
                   ),
@@ -503,7 +505,7 @@ export default function Home() {
                     <span className="bg-gradient-to-r from-fuchsia-400 via-purple-400 to-pink-400 bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(232,121,249,0.35)] max-md:from-fuchsia-300 max-md:via-violet-300 max-md:to-purple-300 max-md:drop-shadow-none" />
                   ),
                 }}
-                defaults="커피 한 잔 값으로 평생 저작권 수익과 작곡가로 성공하세요"
+                defaults="<row1><coffee>커피 한 잔 값</coffee>으로 <royalty>평생 저작권</royalty></row1><row2><composer>수익과 작곡가</composer>로 여러분의 재능을 확인해 보세요</row2>"
               />
             </p>
           </motion.div>
