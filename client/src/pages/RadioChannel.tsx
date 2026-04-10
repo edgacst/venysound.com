@@ -78,43 +78,24 @@ function CafeHomepageLink({
   href,
   tone = "default",
   visitText,
-  variant = "stack",
 }: {
   href: string;
   tone?: "default" | "onMedia";
-  /** e.g. i18n "홈페이지 방문" — stack: above URL; inline: same row as URL */
+  /** i18n — 주소 위 한 줄, 강조 색 */
   visitText: string;
-  variant?: "stack" | "inline";
 }) {
   const label = formatChannelHomepageDisplayLabel(href);
   const captionCls =
     tone === "onMedia"
-      ? "text-[10px] sm:text-[11px] leading-tight text-white/90 drop-shadow-sm text-center max-w-[min(100%,28rem)] truncate px-1"
-      : "text-[10px] sm:text-[11px] leading-tight text-muted-foreground text-center max-w-[min(100%,28rem)] truncate px-1";
+      ? "inline-block text-center max-w-[min(100%,28rem)] truncate px-2 py-0.5 rounded-md font-semibold text-[11px] sm:text-xs tracking-tight text-amber-100 bg-amber-500/35 border border-amber-300/50 shadow-[0_1px_8px_rgba(0,0,0,0.45)]"
+      : "inline-block text-center max-w-[min(100%,28rem)] truncate px-2 py-0.5 rounded-md font-semibold text-[11px] sm:text-xs tracking-tight text-sky-600 dark:text-sky-300 bg-sky-500/15 dark:bg-sky-400/20 border border-sky-500/40 dark:border-sky-400/45";
   const rowCls =
     tone === "onMedia"
       ? "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] min-w-0 text-xs sm:text-sm font-medium text-white drop-shadow-md hover:underline"
       : "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] min-w-0 text-xs sm:text-sm font-medium text-primary hover:underline";
 
-  if (variant === "inline") {
-    const visitCls =
-      tone === "onMedia"
-        ? "shrink-0 text-[10px] sm:text-[11px] font-normal text-white/95 drop-shadow-sm"
-        : "shrink-0 text-[10px] sm:text-[11px] font-normal text-primary/85";
-    return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={rowCls}>
-        <span className={visitCls}>{visitText}</span>
-        <span className={`shrink-0 opacity-50 ${tone === "onMedia" ? "text-white" : ""}`} aria-hidden>
-          ·
-        </span>
-        <ExternalLink className="size-3 shrink-0" aria-hidden />
-        <span className="truncate min-w-0">{label}</span>
-      </a>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center gap-0.5 max-w-full min-w-0">
+    <div className="flex flex-col items-center gap-1 max-w-full min-w-0">
       <span className={captionCls}>{visitText}</span>
       <a href={href} target="_blank" rel="noopener noreferrer" className={rowCls}>
         <ExternalLink className="size-3 shrink-0" aria-hidden />
@@ -1031,7 +1012,14 @@ export default function RadioChannel() {
                   </div>
                 </div>
               )}
-              <div ref={waveformWrapRef} className="h-12 sm:h-14 md:h-16 bg-muted/30 flex items-center justify-center relative overflow-hidden">
+              <div
+                ref={waveformWrapRef}
+                className={
+                  homepageHref
+                    ? "h-14 sm:h-16 md:h-[4.25rem] bg-muted/30 flex items-center justify-center relative overflow-hidden"
+                    : "h-12 sm:h-14 md:h-16 bg-muted/30 flex items-center justify-center relative overflow-hidden"
+                }
+              >
                 {isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && !isOwner ? (
                   <>
                     <canvas
@@ -1052,7 +1040,7 @@ export default function RadioChannel() {
                 ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && isOwner ? (
                   <div className="flex items-center justify-center px-2 text-center z-[1] max-w-full min-w-0">
                     {homepageHref ? (
-                      <CafeHomepageLink href={homepageHref} visitText={t("radio.homepageVisit", "홈페이지 방문")} variant="inline" />
+                      <CafeHomepageLink href={homepageHref} visitText={t("radio.homepageVisit", "홈페이지 방문")} />
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
