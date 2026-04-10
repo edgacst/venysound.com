@@ -78,6 +78,28 @@ import {
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
 
+/** 라디오 채널 카페 홈페이지 — http/https만 허용, 스킴 생략 시 https 부여 */
+function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | null } | { ok: false } {
+  if (input === null || input === undefined) return { ok: true, value: null };
+  const s = typeof input === "string" ? input.trim() : "";
+  if (!s) return { ok: true, value: null };
+  let urlStr = s;
+  if (!/^https?:\/\//i.test(urlStr)) {
+    urlStr = "https://" + urlStr.replace(/^\/+/, "");
+  }
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false };
+    u.username = "";
+    u.password = "";
+    const out = u.toString();
+    if (out.length > 500) return { ok: false };
+    return { ok: true, value: out };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
 function isActivePaidSubscription(
   user:
@@ -6558,16 +6580,23 @@ export async function registerRoutes(
       if (existing) {
         return res.status(400).json({ message: "이미 채널이 있습니다. 한 계정당 하나의 채널만 만들 수 있습니다." });
       }
-      const { name, slug, description, coverFilename } = req.body || {};
+      const { name, slug, description, coverFilename, homepageUrl: bodyHomepageUrl } = req.body || {};
       if (!name || !slug || typeof name !== "string" || typeof slug !== "string") {
         return res.status(400).json({ message: "채널 이름과 슬러그를 입력하세요." });
       }
       const safeSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "channel";
+      let homepageUrl: string | null = null;
+      if (bodyHomepageUrl !== undefined && bodyHomepageUrl !== null && String(bodyHomepageUrl).trim()) {
+        const n = normalizeRadioHomepageUrl(bodyHomepageUrl);
+        if (!n.ok) return res.status(400).json({ message: "올바른 홈페이지 주소(URL)를 입력해 주세요." });
+        homepageUrl = n.value;
+      }
       const { id } = await storage.createRadioChannel({
         ownerId: userId,
         name: name.trim(),
         slug: safeSlug,
         description: description?.trim() || null,
+        homepageUrl,
         coverFilename: coverFilename || null,
       });
       res.status(201).json({ id, slug: safeSlug });
@@ -6618,7 +6647,7 @@ export async function registerRoutes(
       const isAdminUser = role === "admin";
       const canManage = isOwner || isCurrentHost || isAdminUser;
 
-      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
+      const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, homepageUrl: bodyHomepageUrl, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
 
       if (bodyCurrentHostId !== undefined) {
@@ -6781,6 +6810,15 @@ export async function registerRoutes(
         if (bodyDescription !== undefined) {
           const trimmed = typeof bodyDescription === "string" ? bodyDescription.trim() : "";
           (updates as any).description = trimmed ? trimmed.slice(0, 200) : null;
+        }
+        if (bodyHomepageUrl !== undefined) {
+          if (bodyHomepageUrl === null || bodyHomepageUrl === "") {
+            (updates as any).homepageUrl = null;
+          } else {
+            const n = normalizeRadioHomepageUrl(bodyHomepageUrl);
+            if (!n.ok) return res.status(400).json({ message: "올바른 홈페이지 주소(URL)를 입력해 주세요." });
+            (updates as any).homepageUrl = n.value;
+          }
         }
         if (bodyCoverFilename !== undefined) {
           (updates as any).coverFilename = typeof bodyCoverFilename === "string" && bodyCoverFilename.trim() ? bodyCoverFilename.trim() : null;

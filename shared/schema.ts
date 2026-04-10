@@ -97,6 +97,8 @@ export const radioChannels = pgTable("radio_channels", {
   name: text("name").notNull(),
   slug: text("slug").notNull(),
   description: text("description"),
+  /** 카페/채널 외부 홈페이지 (http/https) */
+  homepageUrl: text("homepage_url"),
   coverFilename: text("cover_filename"),
   visibility: text("visibility").default("public").notNull(), // public | link_only | private
   inviteToken: text("invite_token"),

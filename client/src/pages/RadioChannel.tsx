@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, Redirect } from "wouter";
-import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause, Plus, Minus, UserCircle } from "lucide-react";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause, Plus, Minus, UserCircle, ExternalLink } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -63,6 +63,31 @@ function parseLrcToSyncedLines(lyrics?: string | null): SyncedLyricLine[] {
   return result;
 }
 
+function formatChannelHomepageDisplayLabel(href: string): string {
+  try {
+    const u = new URL(href);
+    const path = u.pathname === "/" ? "" : u.pathname;
+    const base = u.hostname + path;
+    return base.length > 56 ? `${base.slice(0, 54)}…` : base;
+  } catch {
+    return href.length > 56 ? `${href.slice(0, 54)}…` : href;
+  }
+}
+
+function CafeHomepageLink({ href, tone = "default" }: { href: string; tone?: "default" | "onMedia" }) {
+  const label = formatChannelHomepageDisplayLabel(href);
+  const cls =
+    tone === "onMedia"
+      ? "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] truncate text-xs sm:text-sm font-medium text-white drop-shadow-md hover:underline"
+      : "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] truncate text-xs sm:text-sm font-medium text-primary hover:underline";
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+      <ExternalLink className="size-3 shrink-0" aria-hidden />
+      <span className="truncate">{label}</span>
+    </a>
+  );
+}
+
 /** /radio/channels·/radio/create 와 충돌 시 :slug 가 잡히는 경우 방지 */
 function reservedRadioPathRedirect(slug: string) {
   const s = slug.trim().toLowerCase();
@@ -90,6 +115,7 @@ export default function RadioChannel() {
     name: string;
     slug: string;
     description: string | null;
+    homepageUrl?: string | null;
     coverFilename: string | null;
     status: string;
     nowPlayingMusicId: number | null;
@@ -428,6 +454,7 @@ export default function RadioChannel() {
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [editHomepageUrl, setEditHomepageUrl] = useState("");
   const [editCover, setEditCover] = useState("");
   const [editCoverPreview, setEditCoverPreview] = useState<string | null>(null);
   const [editUploading, setEditUploading] = useState(false);
@@ -438,6 +465,7 @@ export default function RadioChannel() {
     if (!channel) return;
     setEditName(channel.name);
     setEditDesc(channel.description ?? "");
+    setEditHomepageUrl(channel.homepageUrl ?? "");
     setEditCover(channel.coverFilename ?? "");
     setEditCoverPreview(channel.coverFilename ? resolveStorageUrl(channel.coverFilename) : null);
     setEditOpen(true);
@@ -493,6 +521,7 @@ export default function RadioChannel() {
         body: JSON.stringify({
           name: editName.trim(),
           description: editDesc.trim() || null,
+          homepageUrl: editHomepageUrl.trim() || null,
           coverFilename: editCover.trim() || null,
         }),
       });
@@ -757,6 +786,8 @@ export default function RadioChannel() {
     );
   }
 
+  const homepageHref = channel.homepageUrl?.trim() || null;
+
   return (
     <PageTransition>
       <div
@@ -966,21 +997,46 @@ export default function RadioChannel() {
               )}
               <div ref={waveformWrapRef} className="h-12 sm:h-14 md:h-16 bg-muted/30 flex items-center justify-center relative overflow-hidden">
                 {isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && !isOwner ? (
-                  <canvas
-                    ref={canvasRef}
-                    className="absolute inset-0 w-full h-full"
-                    width={1}
-                    height={1}
-                    style={{ width: "100%", height: "100%", display: "block" }}
-                  />
+                  <>
+                    <canvas
+                      ref={canvasRef}
+                      className="absolute inset-0 w-full h-full"
+                      width={1}
+                      height={1}
+                      style={{ width: "100%", height: "100%", display: "block" }}
+                    />
+                    {homepageHref && (
+                      <div className="absolute bottom-0 left-0 right-0 z-10 flex justify-center px-2 pb-0.5 pt-6 bg-gradient-to-t from-black/70 to-transparent pointer-events-none">
+                        <div className="pointer-events-auto">
+                          <CafeHomepageLink href={homepageHref} tone="onMedia" />
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && isOwner ? (
-                  <p className="text-xs text-muted-foreground text-center px-3">
-                    {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
-                  </p>
+                  <div className="flex items-center justify-center px-2 text-center z-[1] max-w-full min-w-0">
+                    {homepageHref ? (
+                      <CafeHomepageLink href={homepageHref} />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
+                      </p>
+                    )}
+                  </div>
                 ) : channel.coverFilename ? (
-                  <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />
+                  <div className="relative w-full h-full min-h-[3rem]">
+                    <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />
+                    {homepageHref && (
+                      <div className="absolute bottom-0 left-0 right-0 flex justify-center px-2 py-1 bg-gradient-to-t from-black/75 to-transparent">
+                        <CafeHomepageLink href={homepageHref} tone="onMedia" />
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <RadioIcon size={64} className="text-muted-foreground" />
+                  <div className="flex flex-col items-center justify-center gap-1 px-2">
+                    <RadioIcon size={homepageHref ? 40 : 64} className="text-muted-foreground shrink-0" />
+                    {homepageHref && <CafeHomepageLink href={homepageHref} />}
+                  </div>
                 )}
               </div>
               <div className="p-4">
@@ -1248,6 +1304,20 @@ export default function RadioChannel() {
                 className="mt-1 bg-background border-white/10"
                 placeholder={t("radio.descriptionPlaceholder", "예: 편하게 들을 수 있는 음악방")}
               />
+            </div>
+            <div>
+              <Label>{t("radio.homepageUrl", "카페 홈페이지 (선택)")}</Label>
+              <Input
+                value={editHomepageUrl}
+                onChange={(e) => setEditHomepageUrl(e.target.value)}
+                maxLength={500}
+                type="url"
+                inputMode="url"
+                autoComplete="url"
+                className="mt-1 bg-background border-white/10"
+                placeholder={t("radio.homepageUrlPlaceholder", "https://example.com")}
+              />
+              <p className="text-xs text-muted-foreground mt-1">{t("radio.homepageUrlHint")}</p>
             </div>
             <div>
               <Label>{t("radio.channelCover", "배경 이미지")}</Label>
