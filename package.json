@@ -20,7 +20,7 @@
     "db:radio-schedule": "tsx script/run-radio-schedule.ts",
     "db:radio-now-playing-object-path": "tsx script/run-radio-now-playing-object-path.ts",
     "db:push-notify": "tsx script/run-push-notify-prefs.ts",
-    "db:deploy": "tsx script/run-all-deploy-migrations.ts",
+    "db:deploy": "npx tsx script/run-all-deploy-migrations.ts",
     "download-files": "tsx script/download-from-production.ts",
     "make-deploy": "tsx script/make-deploy.ts",
     "twa:init": "node script/twa-init.cjs"

@@ -19,7 +19,7 @@ cd /var/www/venysound/app && git pull && npm install --include=dev && npm run bu
    - `git pull`
    - 의존성: **`npm install --include=dev`**(답변 예시 한 줄) 또는 **`npm ci --include=dev`** — `npm run build`가 `tsx`(devDependency)를 쓰므로, 서버에 `NODE_ENV=production` 또는 `production=true`가 잡혀 있으면 dev를 생략하면 `tsx: not found`로 빌드가 실패한다. 반드시 `--include=dev`를 쓴다. (빌드 후 용량을 줄이려면 선택적으로 `npm prune --omit=dev`.)
    - `npm run build`
-   - **`deploy/` SQL 추가·`shared/schema.ts`·`run-all-deploy-migrations.ts`·DB 마이그레이션 스크립트를 건드린 경우**: `npm run db:deploy` 또는 해당 `npm run db:…` / `deploy/*.sql` 적용 방법을 명시
+   - **`deploy/` SQL 추가·`shared/schema.ts`·`run-all-deploy-migrations.ts`·DB 마이그레이션 스크립트를 건드린 경우**: `npm run db:deploy` 또는 해당 `npm run db:…` / `deploy/*.sql` 적용 방법을 명시. **`db:deploy`는 반드시 `npm install --include=dev` 다음**에 둔다(`tsx: not found` 방지).
    - 프로세스 재시작: 예시처럼 `pm2 restart venysound` 등 사용자가 쓰는 방식
 4. **이번 변경에 DB 마이그레이션이 없으면** `db:deploy`는 생략해도 된다고 짧게 적어도 된다.
 5. `.env`는 **`source .env`로 쉘에 넣지 말 것** — DB 스크립트는 `npm run db:…` 또는 따옴표로 감싼 `export DATABASE_URL='…'` 후 `psql`을 권장한다고 필요 시 한 줄 덧붙인다.
