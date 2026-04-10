@@ -233,6 +233,7 @@
     "homepageUrl": "咖啡厅主页（选填）",
     "homepageUrlPlaceholder": "https://example.com",
     "homepageUrlHint": "填写后，频道顶部波形区域会显示链接。",
+    "homepageVisit": "访问主页",
     "descriptionPlaceholder": "例：轻松音乐直播",
     "creating": "创建中...",
     "createSuccess": "频道已创建！",

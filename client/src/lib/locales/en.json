@@ -189,6 +189,7 @@
     "homepageUrl": "Cafe homepage (optional)",
     "homepageUrlPlaceholder": "https://example.com",
     "homepageUrlHint": "If set, a link appears in the top waveform strip on your channel page.",
+    "homepageVisit": "Visit homepage",
     "descriptionPlaceholder": "e.g. Relaxing music stream",
     "creating": "Creating...",
     "createSuccess": "Channel created!",

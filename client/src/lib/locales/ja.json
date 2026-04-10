@@ -169,6 +169,7 @@
     "homepageUrl": "カフェのホームページ（任意）",
     "homepageUrlPlaceholder": "https://example.com",
     "homepageUrlHint": "入力するとチャンネル上部の波形エリアにリンクが表示されます。",
+    "homepageVisit": "ホームページへ",
     "descriptionPlaceholder": "例：ゆったり聴ける音楽配信",
     "creating": "作成中...",
     "createSuccess": "チャンネルが作成されました！",

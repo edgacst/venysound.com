@@ -74,17 +74,53 @@ function formatChannelHomepageDisplayLabel(href: string): string {
   }
 }
 
-function CafeHomepageLink({ href, tone = "default" }: { href: string; tone?: "default" | "onMedia" }) {
+function CafeHomepageLink({
+  href,
+  tone = "default",
+  visitText,
+  variant = "stack",
+}: {
+  href: string;
+  tone?: "default" | "onMedia";
+  /** e.g. i18n "홈페이지 방문" — stack: above URL; inline: same row as URL */
+  visitText: string;
+  variant?: "stack" | "inline";
+}) {
   const label = formatChannelHomepageDisplayLabel(href);
-  const cls =
+  const captionCls =
     tone === "onMedia"
-      ? "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] truncate text-xs sm:text-sm font-medium text-white drop-shadow-md hover:underline"
-      : "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] truncate text-xs sm:text-sm font-medium text-primary hover:underline";
+      ? "text-[10px] sm:text-[11px] leading-tight text-white/90 drop-shadow-sm text-center max-w-[min(100%,28rem)] truncate px-1"
+      : "text-[10px] sm:text-[11px] leading-tight text-muted-foreground text-center max-w-[min(100%,28rem)] truncate px-1";
+  const rowCls =
+    tone === "onMedia"
+      ? "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] min-w-0 text-xs sm:text-sm font-medium text-white drop-shadow-md hover:underline"
+      : "inline-flex items-center justify-center gap-1 max-w-[min(100%,28rem)] min-w-0 text-xs sm:text-sm font-medium text-primary hover:underline";
+
+  if (variant === "inline") {
+    const visitCls =
+      tone === "onMedia"
+        ? "shrink-0 text-[10px] sm:text-[11px] font-normal text-white/95 drop-shadow-sm"
+        : "shrink-0 text-[10px] sm:text-[11px] font-normal text-primary/85";
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={rowCls}>
+        <span className={visitCls}>{visitText}</span>
+        <span className={`shrink-0 opacity-50 ${tone === "onMedia" ? "text-white" : ""}`} aria-hidden>
+          ·
+        </span>
+        <ExternalLink className="size-3 shrink-0" aria-hidden />
+        <span className="truncate min-w-0">{label}</span>
+      </a>
+    );
+  }
+
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
-      <ExternalLink className="size-3 shrink-0" aria-hidden />
-      <span className="truncate">{label}</span>
-    </a>
+    <div className="flex flex-col items-center gap-0.5 max-w-full min-w-0">
+      <span className={captionCls}>{visitText}</span>
+      <a href={href} target="_blank" rel="noopener noreferrer" className={rowCls}>
+        <ExternalLink className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">{label}</span>
+      </a>
+    </div>
   );
 }
 
@@ -1008,7 +1044,7 @@ export default function RadioChannel() {
                     {homepageHref && (
                       <div className="absolute bottom-0 left-0 right-0 z-10 flex justify-center px-2 pb-0.5 pt-6 bg-gradient-to-t from-black/70 to-transparent pointer-events-none">
                         <div className="pointer-events-auto">
-                          <CafeHomepageLink href={homepageHref} tone="onMedia" />
+                          <CafeHomepageLink href={homepageHref} tone="onMedia" visitText={t("radio.homepageVisit", "홈페이지 방문")} />
                         </div>
                       </div>
                     )}
@@ -1016,7 +1052,7 @@ export default function RadioChannel() {
                 ) : isLive && (nowPlayingId != null || nowPlayingObjectPath) && listenerAudioSrc && isOwner ? (
                   <div className="flex items-center justify-center px-2 text-center z-[1] max-w-full min-w-0">
                     {homepageHref ? (
-                      <CafeHomepageLink href={homepageHref} />
+                      <CafeHomepageLink href={homepageHref} visitText={t("radio.homepageVisit", "홈페이지 방문")} variant="inline" />
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         {t("radio.waveformListenerHint", "파형은 청취자로 접속하면 표시됩니다.")}
@@ -1028,14 +1064,14 @@ export default function RadioChannel() {
                     <img src={resolveStorageUrl(channel.coverFilename)} alt={channel.name} className="w-full h-full object-cover" />
                     {homepageHref && (
                       <div className="absolute bottom-0 left-0 right-0 flex justify-center px-2 py-1 bg-gradient-to-t from-black/75 to-transparent">
-                        <CafeHomepageLink href={homepageHref} tone="onMedia" />
+                        <CafeHomepageLink href={homepageHref} tone="onMedia" visitText={t("radio.homepageVisit", "홈페이지 방문")} />
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center gap-1 px-2">
                     <RadioIcon size={homepageHref ? 40 : 64} className="text-muted-foreground shrink-0" />
-                    {homepageHref && <CafeHomepageLink href={homepageHref} />}
+                    {homepageHref && <CafeHomepageLink href={homepageHref} visitText={t("radio.homepageVisit", "홈페이지 방문")} />}
                   </div>
                 )}
               </div>

@@ -190,6 +190,7 @@
     "homepageUrl": "카페 홈페이지 (선택)",
     "homepageUrlPlaceholder": "https://example.com",
     "homepageUrlHint": "입력 시 채널 상단 파형 영역에 링크로 표시됩니다.",
+    "homepageVisit": "홈페이지 방문",
     "descriptionPlaceholder": "예: 편하게 들을 수 있는 음악방",
     "creating": "생성 중...",
     "createSuccess": "채널이 생성되었습니다!",
