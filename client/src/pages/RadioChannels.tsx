@@ -5,7 +5,7 @@ import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn, resolveStorageUrl } from "@/lib/utils";
-import { Radio as RadioIcon, Mic2, ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { Radio as RadioIcon, Mic2, ChevronLeft, ChevronRight, Settings, UserCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from "react-i18next";
@@ -19,6 +19,7 @@ type RadioChannelSummary = {
   description: string | null;
   coverFilename: string | null;
   ownerUsername: string | null;
+  ownerDisplayName?: string;
   updatedAt: string | null;
 };
 
@@ -138,9 +139,11 @@ export default function RadioChannels() {
                             ? "border-white/15 bg-white/5 text-muted-foreground"
                             : "border-white/15 bg-white/5 text-muted-foreground";
 
-                    const subline =
-                      (ch.description && ch.description.trim()) ||
-                      (ch.ownerUsername ? t("radio.channelByOwner", { name: ch.ownerUsername }) : null);
+                    const descLine = ch.description?.trim() || null;
+                    const hostName =
+                      (ch.ownerDisplayName && ch.ownerDisplayName.trim()) ||
+                      (ch.ownerUsername && ch.ownerUsername.trim()) ||
+                      `${ch.ownerId.slice(0, 8)}…`;
 
                     return (
                       <li key={ch.id}>
@@ -184,11 +187,13 @@ export default function RadioChannels() {
                                 {statusLabel}
                               </span>
                             </div>
-                            {subline ? (
-                              <p className="line-clamp-1 text-xs text-muted-foreground sm:text-[13px]">{subline}</p>
-                            ) : (
-                              <p className="text-xs text-muted-foreground/80 sm:text-[13px]">{t("radio.channelTapToListen")}</p>
-                            )}
+                            {descLine ? (
+                              <p className="line-clamp-1 text-xs text-muted-foreground sm:text-[13px]">{descLine}</p>
+                            ) : null}
+                            <p className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground/90 sm:text-xs">
+                              <UserCircle className="h-3.5 w-3.5 shrink-0 opacity-80" aria-hidden />
+                              <span className="truncate">{t("radio.channelOwnerBy", { name: hostName })}</span>
+                            </p>
                           </div>
 
                           <div className="flex shrink-0 items-center gap-1.5 pr-2 sm:pr-3">

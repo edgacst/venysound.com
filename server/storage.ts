@@ -307,7 +307,19 @@ export interface IStorage {
   createRadioChannel(data: { ownerId: string; name: string; slug: string; description?: string | null; coverFilename?: string | null }): Promise<{ id: number }>;
   getRadioChannelByOwnerId(ownerId: string): Promise<{ id: number; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null } | undefined>;
   getRadioChannelBySlug(slug: string): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; status: string; visibility: string; nowPlayingMusicId: number | null; nowPlayingStartedAt: Date | null; currentHostId: string | null; currentHostUsername?: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } | undefined>;
-  listLiveRadioChannels(): Promise<{ id: number; ownerId: string; name: string; slug: string; description: string | null; coverFilename: string | null; scheduledStartAt: Date | null; scheduledEndAt: Date | null; notice: string | null }[]>;
+  listLiveRadioChannels(): Promise<{
+    id: number;
+    ownerId: string;
+    name: string;
+    slug: string;
+    description: string | null;
+    coverFilename: string | null;
+    scheduledStartAt: Date | null;
+    scheduledEndAt: Date | null;
+    notice: string | null;
+    updatedAt: Date | null;
+    ownerDisplayName: string;
+  }[]>;
   listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
   listAllRadioChannels(): Promise<{
     id: number;
@@ -318,6 +330,7 @@ export interface IStorage {
     description: string | null;
     coverFilename: string | null;
     ownerUsername: string | null;
+    ownerDisplayName: string;
     updatedAt: Date | null;
   }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
@@ -405,6 +418,10 @@ export interface IStorage {
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";
+      /** 활성 유료 구독 지갑 경로만: 플랜 월 공급가 합(부가세 제외) — basic 단일이면 9000 */
+      planGrantWon?: number | null;
+      /** 구독 AI 이월 지갑 잔액(원). limit(총 한도) ≈ used + walletRemaining 아님 — limit = walletRemaining + used */
+      walletRemainingWon?: number | null;
     };
   } | null>;
 
@@ -3223,6 +3240,8 @@ export class DatabaseStorage implements IStorage {
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";
+      planGrantWon?: number | null;
+      walletRemainingWon?: number | null;
     };
   } | null> {
     const txLimit = Math.min(200, Math.max(1, Math.floor(Number(input.txLimit) || 50)));
@@ -3253,12 +3272,16 @@ export class DatabaseStorage implements IStorage {
     let usagePeriodKey = getAiMusicUsagePeriodKey(user, user.role ?? null, now);
     let usedAi = 0;
     let aiLimit = getAiMusicMonthlyUsageLimit(user, user.role ?? null, now);
+    let planGrantWon: number | null = null;
+    let walletRemainingWon: number | null = null;
     if (user.role !== "admin" && isUserPaidSubscriptionActive(user, now)) {
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (w) {
         usagePeriodKey = w.periodKey;
         usedAi = w.periodConsumed;
         aiLimit = w.limitDisplay;
+        planGrantWon = w.monthlyGrant;
+        walletRemainingWon = w.walletSum;
       } else {
         const [usageRow] = await db
           .select()
@@ -3327,6 +3350,9 @@ export class DatabaseStorage implements IStorage {
         limit: aiLimit,
         used: usedAi,
         unit: aiUnit,
+        ...(planGrantWon != null && walletRemainingWon != null
+          ? { planGrantWon, walletRemainingWon }
+          : {}),
       },
     };
   }
@@ -3996,18 +4022,43 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
   }
 
   async listLiveRadioChannels() {
-    return db.select({
-      id: radioChannels.id,
-      ownerId: radioChannels.ownerId,
-      name: radioChannels.name,
-      slug: radioChannels.slug,
-      description: radioChannels.description,
-      coverFilename: radioChannels.coverFilename,
-      scheduledStartAt: radioChannels.scheduledStartAt,
-      scheduledEndAt: radioChannels.scheduledEndAt,
-      notice: radioChannels.notice,
-      updatedAt: radioChannels.updatedAt,
-    }).from(radioChannels).where(eq(radioChannels.status, "live")).orderBy(desc(radioChannels.updatedAt));
+    const rows = await db
+      .select({
+        id: radioChannels.id,
+        ownerId: radioChannels.ownerId,
+        name: radioChannels.name,
+        slug: radioChannels.slug,
+        description: radioChannels.description,
+        coverFilename: radioChannels.coverFilename,
+        scheduledStartAt: radioChannels.scheduledStartAt,
+        scheduledEndAt: radioChannels.scheduledEndAt,
+        notice: radioChannels.notice,
+        updatedAt: radioChannels.updatedAt,
+        ownerUsername: users.username,
+        ownerFirstName: users.firstName,
+      })
+      .from(radioChannels)
+      .leftJoin(users, eq(radioChannels.ownerId, users.id))
+      .where(eq(radioChannels.status, "live"))
+      .orderBy(desc(radioChannels.updatedAt));
+    return rows.map((r) => {
+      const display =
+        `${(r.ownerFirstName || "").trim() || (r.ownerUsername || "").trim() || ""}`.trim() ||
+        `${String(r.ownerId).slice(0, 8)}…`;
+      return {
+        id: r.id,
+        ownerId: r.ownerId,
+        name: r.name,
+        slug: r.slug,
+        description: r.description ?? null,
+        coverFilename: r.coverFilename ?? null,
+        scheduledStartAt: r.scheduledStartAt ?? null,
+        scheduledEndAt: r.scheduledEndAt ?? null,
+        notice: r.notice ?? null,
+        updatedAt: r.updatedAt ?? null,
+        ownerDisplayName: display,
+      };
+    });
   }
 
   async listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number | null; nowPlayingObjectPath: string | null; nowPlayingStartedAt: Date; nowPlayingTempDurationSeconds: number | null; nowPlayingTempNextSnapshotIndex: number | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }[]> {
@@ -4076,19 +4127,26 @@ const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premi
       description: radioChannels.description,
       coverFilename: radioChannels.coverFilename,
       ownerUsername: users.username,
+      ownerFirstName: users.firstName,
       updatedAt: radioChannels.updatedAt,
     }).from(radioChannels).leftJoin(users, eq(radioChannels.ownerId, users.id)).orderBy(desc(radioChannels.updatedAt));
-    return rows.map((r) => ({
-      id: r.id,
-      ownerId: r.ownerId,
-      name: r.name,
-      slug: r.slug,
-      status: r.status,
-      description: r.description ?? null,
-      coverFilename: r.coverFilename ?? null,
-      ownerUsername: r.ownerUsername ?? null,
-      updatedAt: r.updatedAt ?? null,
-    }));
+    return rows.map((r) => {
+      const display =
+        `${(r.ownerFirstName || "").trim() || (r.ownerUsername || "").trim() || ""}`.trim() ||
+        `${String(r.ownerId).slice(0, 8)}…`;
+      return {
+        id: r.id,
+        ownerId: r.ownerId,
+        name: r.name,
+        slug: r.slug,
+        status: r.status,
+        description: r.description ?? null,
+        coverFilename: r.coverFilename ?? null,
+        ownerUsername: r.ownerUsername ?? null,
+        ownerDisplayName: display,
+        updatedAt: r.updatedAt ?? null,
+      };
+    });
   }
 
   async updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void> {

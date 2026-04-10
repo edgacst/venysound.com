@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, Redirect } from "wouter";
-import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause, Plus, Minus } from "lucide-react";
+import { Radio as RadioIcon, ArrowLeft, Headphones, Mic2, Users, Gift, MessageCircle, Music2, UserPlus, UserMinus, Settings, ImagePlus, Loader2, Play, Pause, Plus, Minus, UserCircle } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
@@ -98,7 +98,7 @@ export default function RadioChannel() {
     nowPlayingLocalTitle?: string | null;
     nowPlayingElapsedSeconds?: number | null;
     canManage?: boolean;
-    ownerDisplayName?: string;
+    ownerDisplayName?: string | null;
     currentHostId?: string | null;
     currentHostUsername?: string | null;
     scheduledStartAt?: string | null;
@@ -1015,6 +1015,14 @@ export default function RadioChannel() {
                     </span>
                   )}
                 </div>
+                <p className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <UserCircle className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                  <span>
+                    {t("radio.channelOwnerBy", {
+                      name: channel.ownerDisplayName?.trim() || t("radio.channelOwnerUnknown"),
+                    })}
+                  </span>
+                </p>
                 {channel.description && (
                   <p className="text-muted-foreground text-sm mb-4">{channel.description}</p>
                 )}

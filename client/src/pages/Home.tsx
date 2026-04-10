@@ -218,6 +218,7 @@ export default function Home() {
     scheduledStartAt?: string | null;
     scheduledEndAt?: string | null;
     updatedAt?: string;
+    ownerDisplayName?: string;
   }>>({
     queryKey: ["/api/radio/channels/live"],
     queryFn: async () => {
@@ -298,18 +299,21 @@ export default function Home() {
           ? startAt.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit", hour12: false })
           : "";
         const endStr = endAt ? endAt.toLocaleTimeString(timeLocale, { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+        const host = ch.ownerDisplayName?.trim() ? ` · ${ch.ownerDisplayName.trim()}` : "";
         if (startStr && endStr) {
-          return t("home.liveTickerScheduled", "{{name}} 채널 {{start}}~{{end}} {{live}}", {
-            name: ch.name,
-            start: startStr,
-            end: endStr,
-            live: liveWord,
-          });
+          return (
+            t("home.liveTickerScheduled", "{{name}} 채널 {{start}}~{{end}} {{live}}", {
+              name: ch.name,
+              start: startStr,
+              end: endStr,
+              live: liveWord,
+            }) + host
+          );
         }
         if (startStr) {
-          return t("home.liveTickerFrom", "{{name}} 채널 {{start}}부터 {{live}}", { name: ch.name, start: startStr, live: liveWord });
+          return t("home.liveTickerFrom", "{{name}} 채널 {{start}}부터 {{live}}", { name: ch.name, start: startStr, live: liveWord }) + host;
         }
-        return t("home.liveTickerNow", "{{name}} 채널 지금 {{live}}", { name: ch.name, live: liveWord });
+        return t("home.liveTickerNow", "{{name}} 채널 지금 {{live}}", { name: ch.name, live: liveWord }) + host;
       })
       .join("    ★    ");
   }, [liveChannels, t, timeLocale]);
@@ -576,6 +580,11 @@ export default function Home() {
                           ? t("home.heroProofTuneIn", "{{name}} 듣기", { name: liveChannels[0].name })
                           : t("home.heroProofBrowseChannels", "채널 목록 보기")}
                       </Link>
+                      {liveChannels?.[0]?.ownerDisplayName?.trim() ? (
+                        <p className="truncate text-[11px] text-white/50" data-testid="text-hero-live-channel-host">
+                          {t("home.heroProofChannelHost", "방장 {{name}}", { name: liveChannels[0].ownerDisplayName.trim() })}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <Link href="/radio/channels">
