@@ -81,7 +81,7 @@ export default function Pricing() {
       icon: Globe,
       text: t(
         "pricing.proPremiumGlobalDistribution",
-        "✓ DistroKid 연동 포함, 다수 스토어 글로벌 유통 무료 배포",
+        "✓ DistroKid 연동 포함, 다수 스토어 글로벌유통 대행(무료, 유료)",
       ),
     },
   ];
@@ -96,7 +96,7 @@ export default function Pricing() {
       icon: Globe,
       text: t(
         "pricing.proPremiumGlobalDistribution",
-        "✓ DistroKid 연동 포함, 다수 스토어 글로벌 유통 무료 배포",
+        "✓ DistroKid 연동 포함, 다수 스토어 글로벌유통 대행(무료, 유료)",
       ),
     },
   ];
