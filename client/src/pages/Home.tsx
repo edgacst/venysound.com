@@ -698,13 +698,16 @@ export default function Home() {
               </motion.h1>
 
               <motion.p
+                key={heroPersona}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.04 }}
                 className="mx-auto mb-4 w-full max-w-full min-w-0 [overflow-wrap:anywhere] text-balance break-words px-1 text-center text-xs leading-relaxed text-white/72 sm:text-sm md:mb-5 md:px-0 md:text-base lg:mx-0 lg:text-left"
                 data-testid="text-hero-brand-korean"
               >
-                {t("home.heroBrandLine")}
+                {heroPersona === "creator"
+                  ? t("home.heroBrandLineCreator", "전세계에 내 음원을 출시해 보세요")
+                  : t("home.heroBrandLine")}
               </motion.p>
 
               <AnimatePresence mode="wait">
