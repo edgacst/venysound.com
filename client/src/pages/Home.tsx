@@ -489,12 +489,12 @@ export default function Home() {
             style={{ scale: taglineScale, y: taglineY, opacity: taglineOpacity }}
             data-testid="home-tagline-below-nav"
           >
-            <p className="text-balance text-center text-lg font-bold leading-snug tracking-tight text-white/90 max-md:px-0.5 sm:text-2xl sm:leading-tight sm:font-extrabold md:text-4xl md:leading-tight lg:text-5xl xl:text-6xl">
+            <p className="max-md:text-balance text-center text-lg font-bold leading-snug tracking-tight text-white/90 max-md:px-0.5 sm:text-2xl sm:leading-tight sm:font-extrabold md:text-4xl md:leading-[1.12] lg:text-4xl xl:text-5xl">
               <Trans
                 i18nKey="home.heroTaglineBelowNav"
                 components={{
-                  row1: <span className="block" />,
-                  row2: <span className="mt-2 block sm:mt-2.5" />,
+                  row1: <span className="block md:whitespace-nowrap" />,
+                  row2: <span className="mt-2 block sm:mt-2.5 md:whitespace-nowrap" />,
                   coffee: (
                     <span className="bg-gradient-to-r from-amber-300 via-orange-300 to-amber-200 bg-clip-text text-transparent drop-shadow-[0_0_24px_rgba(251,191,36,0.35)] max-md:drop-shadow-none" />
                   ),
