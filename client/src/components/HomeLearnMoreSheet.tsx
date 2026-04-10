@@ -154,11 +154,6 @@ export function HomeLearnMoreSheet({
                   {t("home.heroCtaPricing", "요금제 보기")}
                 </Button>
               </Link>
-              <Link href="/global-distribution-guide" className="w-full" onClick={close}>
-                <Button variant="outline" className="w-full" data-testid="button-learn-more-biz-guide">
-                  {t("home.learnMoreSheetCtaGuide", "글로벌 발매 가이드 전체 보기")}
-                </Button>
-              </Link>
               <Link href="/radio/channels" className="w-full" onClick={close}>
                 <Button variant="outline" className="w-full" data-testid="button-learn-more-biz-radio">
                   {t("home.learnMoreBizSheetCtaRadio", "방송국 둘러보기")}
@@ -166,18 +161,11 @@ export function HomeLearnMoreSheet({
               </Link>
             </>
           ) : (
-            <>
-              <Link href="/global-distribution-guide" className="w-full" onClick={close}>
-                <Button variant="default" className="w-full" data-testid="button-learn-more-open-guide">
-                  {t("home.learnMoreSheetCtaGuide", "글로벌 발매 가이드 전체 보기")}
-                </Button>
-              </Link>
-              <Link href="/create-music" className="w-full" onClick={close}>
-                <Button variant="outline" className="w-full" data-testid="button-learn-more-create">
-                  {t("home.learnMoreSheetCtaCreate", "무료 가입하고 음악 만들러 가기")}
-                </Button>
-              </Link>
-            </>
+            <Link href="/create-music" className="w-full" onClick={close}>
+              <Button variant="default" className="w-full" data-testid="button-learn-more-create">
+                {t("home.learnMoreSheetCtaCreate", "무료 가입하고 음악 만들러 가기")}
+              </Button>
+            </Link>
           )}
         </div>
       </SheetContent>
