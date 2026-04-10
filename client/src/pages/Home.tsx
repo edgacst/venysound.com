@@ -804,12 +804,6 @@ export default function Home() {
                           {t("home.heroBizBullet2", "웹에 바로 걸 수 있는 라디오 채널·페이지")}
                         </span>
                       </li>
-                      <li className="flex items-start justify-center gap-2 text-left lg:justify-start">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400/90" aria-hidden />
-                        <span className="max-w-[min(100%,18rem)] sm:max-w-[20rem] lg:max-w-none">
-                          {t("home.heroBizBullet3", "글로벌 스트리밍 발매(조건·플랜별)")}
-                        </span>
-                      </li>
                     </ul>
                     <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-wrap lg:justify-start lg:gap-3">
                       <Link href="/pricing" className="block w-full min-w-0 shrink-0 lg:w-auto">
