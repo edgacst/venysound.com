@@ -699,12 +699,12 @@ export default function Home() {
                         {t("home.heroHeadlineCreator", "오늘 작곡하고, 내일 가수가 되세요.")}
                       </h2>
                       <p
-                        className="text-pretty break-keep text-sm leading-relaxed text-white/75 sm:text-base sm:leading-relaxed md:text-lg lg:leading-snug"
+                        className="whitespace-pre-line text-pretty break-keep text-sm leading-relaxed text-white/75 sm:text-base sm:leading-relaxed md:text-lg lg:leading-snug"
                         data-testid="text-hero-share-now"
                       >
                         {t(
                           "home.heroLeadCreator",
-                          "3분 만에 AI 음악 생성부터 전 세계 음원 사이트(유튜브 뮤직, 스포티파이) 발매까지 한 번에!",
+                          "3분 만에 AI 음악 생성부터 전 세계 음원 사이트\n(유튜브 뮤직, 스포티파이)에 무료 발매까지 한 번에!",
                         )}
                       </p>
                     </div>
@@ -785,10 +785,10 @@ export default function Home() {
                     >
                       {t("home.heroHeadlineBusiness", "브랜드와 매장을 위한 음악·방송")}
                     </h2>
-                    <p className="mb-4 text-balance break-words text-center text-sm leading-relaxed text-white/72 sm:text-base lg:text-left">
+                    <p className="mb-4 whitespace-pre-line text-balance break-words text-center text-sm leading-relaxed text-white/72 sm:text-base lg:text-left">
                       {t(
                         "home.heroLeadBusiness",
-                        "로고송·채널·유통은 각각 조건이 다릅니다. 요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
+                        "로고송·채널·유통은 각각 조건이 다릅니다.\n요금제와 가이드에서 범위를 확인한 뒤 도입해 보세요.",
                       )}
                     </p>
                     <ul className="mb-5 space-y-2 text-sm text-white/78 sm:mb-6 lg:text-base">
