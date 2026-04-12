@@ -39,7 +39,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 
 /** 생성된 곡 목록 페이지당 개수 */
-const SAVED_TRACKS_LIST_PAGE_SIZE = 6;
+const SAVED_TRACKS_LIST_PAGE_SIZE = 15;
 
 /** 장르 칩 → API/스타일 문자열(영문 위주로 모델에 전달) */
 const GENRE_PRESET_IDS = [
