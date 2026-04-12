@@ -1487,7 +1487,11 @@
       "soul": "灵魂乐",
       "latin": "拉丁",
       "ambient": "氛围",
-      "gospel": "福音"
+      "gospel": "福音",
+      "worship_praise": "赞美诗 / 敬拜",
+      "pop_ballad": "流行抒情",
+      "world_music": "世界音乐",
+      "cafe_music": "咖啡馆音乐"
     },
     "styleSectionLabel": "风格",
     "styleHint": "点击人声、乐器、节奏等预设，或在下方补充说明。同一时间最多可选 {{n}} 个预设。",

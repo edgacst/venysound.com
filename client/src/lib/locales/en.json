@@ -1684,7 +1684,11 @@
       "soul": "Soul",
       "latin": "Latin",
       "ambient": "Ambient",
-      "gospel": "Gospel"
+      "gospel": "Gospel",
+      "worship_praise": "Hymn / worship",
+      "pop_ballad": "Pop ballad",
+      "world_music": "World music",
+      "cafe_music": "Cafe music"
     },
     "styleSectionLabel": "Style",
     "styleHint": "Pick vocals, instruments, or tempo from chips, or add your own text below. Up to {{n}} presets at once.",

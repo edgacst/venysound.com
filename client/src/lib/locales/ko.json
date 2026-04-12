@@ -1706,7 +1706,11 @@
       "soul": "소울",
       "latin": "라틴",
       "ambient": "앰비언트",
-      "gospel": "가스펠"
+      "gospel": "가스펠",
+      "worship_praise": "찬송 / 찬양",
+      "pop_ballad": "팝 발라드",
+      "world_music": "월드뮤직",
+      "cafe_music": "카페음악"
     },
     "styleSectionLabel": "스타일",
     "styleHint": "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력하세요. 프리셋은 최대 {{n}}개까지 선택됩니다.",

@@ -60,6 +60,10 @@ const GENRE_PRESET_IDS = [
   "latin",
   "ambient",
   "gospel",
+  "worship_praise",
+  "pop_ballad",
+  "world_music",
+  "cafe_music",
 ] as const;
 type GenrePresetId = (typeof GENRE_PRESET_IDS)[number];
 
@@ -82,6 +86,10 @@ const GENRE_API_TOKEN: Record<GenrePresetId, string> = {
   latin: "Latin",
   ambient: "Ambient",
   gospel: "Gospel",
+  worship_praise: "Christian worship / hymn",
+  pop_ballad: "Pop ballad",
+  world_music: "World music",
+  cafe_music: "Cafe-style mellow acoustic",
 };
 
 /** 동시에 고를 수 있는 장르 프리셋 개수(늘리려면 상수만 올리면 됨) */

@@ -1489,7 +1489,11 @@
       "soul": "ソウル",
       "latin": "ラテン",
       "ambient": "アンビエント",
-      "gospel": "ゴスペル"
+      "gospel": "ゴスペル",
+      "worship_praise": "賛美歌 / ワーシップ",
+      "pop_ballad": "ポップ・バラード",
+      "world_music": "ワールドミュージック",
+      "cafe_music": "カフェ音楽"
     },
     "styleSectionLabel": "スタイル",
     "styleHint": "ボーカル・楽器・テンポなどをタップするか、下に自由入力してください。プリセットは同時に最大{{n}}つまで。",
