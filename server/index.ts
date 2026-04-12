@@ -18,6 +18,7 @@ dotenv.config({ path: path.join(APP_ROOT, ".env"), override: isBundledDist });
 
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { registerPayupRoutes } from "./payup/routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
@@ -279,6 +280,7 @@ app.use((req, res, next) => {
     console.error("[seed] DB 연결 실패 시 .env의 DATABASE_URL 비밀번호를 확인하세요.");
   }
   await registerRoutes(httpServer, app);
+  registerPayupRoutes(app);
 
   const sunoRaw = (process.env.SUNOAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
   const aimusicRaw = (process.env.AIMUSICAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
