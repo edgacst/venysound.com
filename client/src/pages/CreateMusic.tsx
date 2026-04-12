@@ -39,7 +39,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 
 /** 생성된 곡 목록 페이지당 개수 */
-const SAVED_TRACKS_LIST_PAGE_SIZE = 15;
+const SAVED_TRACKS_LIST_PAGE_SIZE = 10;
 
 /** 장르 칩 → API/스타일 문자열(영문 위주로 모델에 전달) */
 const GENRE_PRESET_IDS = [
@@ -1616,7 +1616,8 @@ export default function CreateMusic() {
                             { n: MAX_GENRE_PRESETS },
                           )}
                         </p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
+                          <div className="flex flex-nowrap gap-2 w-max">
                           {GENRE_PRESET_IDS.map((id) => {
                             const token = GENRE_API_TOKEN[id];
                             const selected = fieldHasPresetToken(genreOther, token);
@@ -1645,7 +1646,7 @@ export default function CreateMusic() {
                                   });
                                 }}
                                 className={cn(
-                                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                  "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
                                     ? "border-primary/70 bg-primary/25 text-primary-foreground shadow-sm shadow-primary/10"
                                     : "border-border/80 bg-background/70 text-muted-foreground hover:border-primary/35 hover:bg-muted/40",
@@ -1655,6 +1656,7 @@ export default function CreateMusic() {
                               </button>
                             );
                           })}
+                          </div>
                         </div>
                         <input
                           type="text"
@@ -1687,7 +1689,8 @@ export default function CreateMusic() {
                             { n: MAX_STYLE_PRESETS },
                           )}
                         </p>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
+                          <div className="flex flex-nowrap gap-2 w-max">
                           {STYLE_PRESET_IDS.map((id) => {
                             const token = STYLE_API_TOKEN[id];
                             const selected = fieldHasPresetToken(styleOther, token);
@@ -1716,7 +1719,7 @@ export default function CreateMusic() {
                                   });
                                 }}
                                 className={cn(
-                                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                  "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
                                     ? "border-fuchsia-500/70 bg-fuchsia-500/20 text-fuchsia-100 shadow-sm shadow-fuchsia-500/10"
                                     : "border-border/80 bg-background/70 text-muted-foreground hover:border-fuchsia-500/35 hover:bg-muted/40",
@@ -1726,6 +1729,7 @@ export default function CreateMusic() {
                               </button>
                             );
                           })}
+                          </div>
                         </div>
                         <input
                           type="text"
