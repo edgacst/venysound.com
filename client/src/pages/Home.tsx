@@ -733,7 +733,7 @@ export default function Home() {
                       >
                         {t(
                           "home.heroLeadCreator",
-                          "3분 만에 AI 음악 생성부터 전 세계 음원 사이트\n(유튜브 뮤직, 스포티파이)에 무료 발매까지 한 번에!",
+                          "3분 만에 AI 음악 생성부터 전 세계 음원 사이트\n(유튜브 뮤직, 스포티파이)에 발매까지 한 번에!",
                         )}
                       </p>
                     </div>

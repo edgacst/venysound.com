@@ -30,7 +30,7 @@ export default function GlobalDistributionGuide() {
             <h2 className="text-xl font-semibold">2) 이용 가능 구독자</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
               글로벌 출시 신청은 Pro, Premium 구독자를 대상으로 제공합니다. 신청 시점 및 승인 시점에 구독 상태가 유효해야 하며,
-              정책 변경 시 적용 조건이 업데이트될 수 있습니다.(글로벌무료배포는 월 4곡으로 한정합니다.)
+              정책 변경 시 적용 조건이 업데이트될 수 있습니다.(글로벌 배포는 월 4곡으로 한정합니다.)
             </p>
           </section>
 
@@ -64,7 +64,7 @@ export default function GlobalDistributionGuide() {
           <section className="rounded-xl border border-border/70 p-5 space-y-2">
             <h2 className="text-xl font-semibold">5) 고지 사항 및 법적 유의점</h2>
             <p className="text-sm font-medium leading-relaxed text-red-600 dark:text-red-400">
-              해외 무료 배포는 본사의 서비스 업무일 뿐이며, 수익을 보장하는 것은 아닙니다.
+              해외 배포는 본사의 서비스 업무일 뿐이며, 수익을 보장하는 것은 아닙니다.
             </p>
             <ul className="list-disc pl-5 space-y-2 text-sm text-muted-foreground leading-relaxed">
               <li>신청자는 음원, 아트워크, 메타데이터에 대한 배포 권리를 보유하거나 적법한 허락을 받아야 합니다.</li>

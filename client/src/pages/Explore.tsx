@@ -191,7 +191,7 @@ export default function Explore() {
               <p className="text-[12px] sm:text-[13px] text-muted-foreground leading-tight max-w-3xl py-0">
                 {t(
                   "explore.internationalIntroLead",
-                  "VenySound는 회원 아티스트의 음원을 해외 스트리밍 플랫폼에 출시할 수 있도록 무료로 돕고 있습니다. 다만 해당 플랫폼에서 정책상 거절되거나 삭제될 수 있음을 알려드립니다. 이 사이트에 표시되는 내용은 Spotify 출시 내역만 해당됩니다.",
+                  "VenySound는 회원 아티스트의 음원을 해외 스트리밍 플랫폼에 출시할 수 있도록 지원하고 있습니다. 다만 해당 플랫폼에서 정책상 거절되거나 삭제될 수 있음을 알려드립니다. 이 사이트에 표시되는 내용은 Spotify 출시 내역만 해당됩니다.",
                 )}
               </p>
             ) : null}
