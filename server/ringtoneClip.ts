@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-export const RINGTONE_CLIP_SECONDS = 30;
+export const RINGTONE_CLIP_SECONDS = 50;
 /** 비소유자 벨소리 다운로드 시 차감·업로더 지급액(원) */
 export const RINGTONE_FEE_WON = 200;
 const FFMPEG_BIN = (process.env.FFMPEG_PATH || "ffmpeg").trim() || "ffmpeg";

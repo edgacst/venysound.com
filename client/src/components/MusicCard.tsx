@@ -602,7 +602,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
       a.download = filename.includes(".mp3") ? filename : `${filename}.mp3`;
       a.click();
       URL.revokeObjectURL(url);
-      if (!isOwner && Number(music.price || 0) > 0) {
+      if (!isOwner) {
         queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
         queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -1408,7 +1408,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               <span className="block">
                 {t(
                   "music.ringtoneCardDialogBody",
-                  "벨소리 다운로드입니다. 앞 30초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.",
+                  "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.",
                 )}
               </span>
               {!user ? (
@@ -1422,15 +1422,10 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               ) : (
                 <>
                   <span className="block text-muted-foreground">
-                    {Number(music.price || 0) > 0
-                      ? t(
-                          "music.ringtoneCardFeeLine",
-                          "타인 음원은 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다.",
-                        )
-                      : t(
-                          "music.ringtoneCardFreeOtherLine",
-                          "무료로 받을 수 있는 타인 음원은 벨소리 추가 차감이 없습니다.",
-                        )}
+                    {t(
+                      "music.ringtoneCardFeeLine",
+                      "타인 음원은(유료·무료 음원 다운로드 여부와 관계없이) 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다.",
+                    )}
                   </span>
                   {!canRingtonePermission && (
                     <span className="block text-amber-600/90 dark:text-amber-400/90">
