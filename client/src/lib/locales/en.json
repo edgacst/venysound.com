@@ -741,9 +741,12 @@
     "otherTracksGeneric": "Other tracks",
     "ringtoneDownload": "Ringtone",
     "ringtoneHint": "After downloading, set as ringtone in your phone settings",
+    "ringtoneFeeHover": "200 KRW will be charged; the amount is paid to the uploader.",
     "ringtoneNotice": "※ Set ringtone in your device settings.",
+    "ringtoneNoticeFee": "※ Ringtone download for others' tracks costs 200 KRW; the amount goes to the uploader. The first 30 seconds are delivered as MP3. Set as ringtone in your device settings.",
     "ringtoneDownloadComplete": "Ringtone file downloaded",
-    "ringtoneDownloadFailed": "Ringtone download failed"
+    "ringtoneDownloadFailed": "Ringtone download failed",
+    "ringtoneInsufficientCredits": "Insufficient wallet balance"
   },
   "myLibrary": {
     "title": "My Library",
@@ -1009,6 +1012,8 @@
     "badge": "Congratulations! You earned the {{badgeName}} donor badge!",
     "copyright": "A copyright report was received for \"{{musicTitle}}\"",
     "purchase": "{{fromName}} purchased \"{{musicTitle}}\" for ₩{{price}}",
+    "ringtone_paid": "₩{{amount}} was charged for the \"{{musicTitle}}\" ringtone download.",
+    "ringtone_earned": "{{fromName}} paid ₩{{amount}} for the \"{{musicTitle}}\" ringtone.",
     "new_music_for_you": "A new track you might like has been added: \"{{musicTitle}}\" by {{artist}}",
     "ai_publish_nudge": "{{userName}}, how do you like the music you made? If you love it, publish it on Venysound and share it with everyone.",
     "welcome": "Welcome to Venysound, {{userName}}! Enjoy music, radio, AI creation, and more."

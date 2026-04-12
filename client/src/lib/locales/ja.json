@@ -685,9 +685,12 @@
     "otherTracksGeneric": "他の楽曲",
     "ringtoneDownload": "着信音用",
     "ringtoneHint": "ダウンロード後、スマートフォンの設定で着信音に指定してください",
+    "ringtoneFeeHover": "200ウォンが課金されます。差し引き分はアップローダーに支払われます。",
     "ringtoneNotice": "※ 着信音の設定は各端末の設定メニューで行ってください。",
+    "ringtoneNoticeFee": "※ 他人の楽曲の着信音は有料（200ウォン）で、差し引き分はアップローダーに支払われます。先頭30秒をMP3でダウンロードします。端末設定で着信音に指定してください。",
     "ringtoneDownloadComplete": "着信音用ファイルをダウンロードしました",
-    "ringtoneDownloadFailed": "着信音のダウン로ードに失敗しました"
+    "ringtoneDownloadFailed": "着信音のダウンロードに失敗しました",
+    "ringtoneInsufficientCredits": "ウォレット残高が不足しています"
   },
   "myLibrary": {
     "title": "マイライブラリ",
@@ -919,6 +922,8 @@
     "badge": "おめでとうございます！{{badgeName}}後援バッジを獲得しました！",
     "copyright": "「{{musicTitle}}」の著作権報告が受理されました",
     "purchase": "{{fromName}}が「{{musicTitle}}」を{{price}}ウォンで購入しました",
+    "ringtone_paid": "「{{musicTitle}}」着信音のダウンロードで{{amount}}ウォンが差し引かれました。",
+    "ringtone_earned": "{{fromName}}が「{{musicTitle}}」着信音で{{amount}}ウォンを支払いました。",
     "new_music_for_you": "{{fromName}}さんにおすめの新曲が追加されました: 「{{musicTitle}}」— {{artist}}",
     "ai_publish_nudge": "{{userName}}さん、作成した曲はいかがですか？気に入ったらVenysoundで公開して、みんなに聴いてもらいましょう。",
     "welcome": "{{userName}}さん、Venysoundへようこそ。音楽・ラジオ・AI作曲などをお楽しみください。"

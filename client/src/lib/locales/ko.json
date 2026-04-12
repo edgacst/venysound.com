@@ -762,9 +762,12 @@
     "otherTracksGeneric": "다른 음원",
     "ringtoneDownload": "벨소리용",
     "ringtoneHint": "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요",
+    "ringtoneFeeHover": "유료로 200원이 차감됩니다. 차감 금액은 업로더에게 지급됩니다.",
     "ringtoneNotice": "※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.",
+    "ringtoneNoticeFee": "※ 타인 음원 벨소리는 유료(200원)이며 차감액은 업로더에게 지급됩니다. 앞 30초 구간이 MP3로 내려받아집니다. 휴대폰 설정에서 벨소리로 지정해 주세요.",
     "ringtoneDownloadComplete": "벨소리용 파일이 다운로드되었습니다",
-    "ringtoneDownloadFailed": "벨소리 다운로드 실패"
+    "ringtoneDownloadFailed": "벨소리 다운로드 실패",
+    "ringtoneInsufficientCredits": "지갑 잔액이 부족합니다"
   },
   "myLibrary": {
     "title": "내 라이브러리",
@@ -1030,6 +1033,8 @@
     "badge": "축하합니다! {{badgeName}} 후원 뱃지를 획득했습니다!",
     "copyright": "\"{{musicTitle}}\" 음원에 대한 저작권 신고가 접수되었습니다",
     "purchase": "{{fromName}}님이 \"{{musicTitle}}\"을(를) {{price}}원에 구매했습니다",
+    "ringtone_paid": "「{{musicTitle}}」 벨소리 다운로드로 {{amount}}원이 차감되었습니다.",
+    "ringtone_earned": "{{fromName}}님이 「{{musicTitle}}」 벨소리로 {{amount}}원을 지급했습니다.",
     "new_music_for_you": "{{fromName}}님이 좋아할 만한 음악이 신곡으로 등록되었어요: \"{{musicTitle}}\" - {{artist}}",
     "ai_publish_nudge": "{{userName}}님, 만드신 음악은 어떠신가요? 마음에 드신다면 지금 베니사운드에 공개하셔서 {{userName}}님이 만드신 음악을 모두에게 자랑해 보세요.",
     "welcome": "{{userName}}님, 베니사운드에 오신 것을 환영합니다! 음악·라디오·AI 생성 등 서비스를 마음껏 둘러보세요."

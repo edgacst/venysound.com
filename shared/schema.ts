@@ -538,7 +538,7 @@ export const streamingLogsRelations = relations(streamingLogs, ({ one }) => ({
 export const creditTransactions = pgTable("credit_transactions", {
   id: serial("id").primaryKey(),
   userId: text("user_id").references(() => users.id).notNull(),
-  type: text("type").notNull(), // 'charge', 'tip_sent', 'purchase', 'tip_received', 'sale_received'
+  type: text("type").notNull(), // 'charge', 'tip_sent', 'purchase', 'tip_received', 'sale_received', 'ringtone_fee', 'ringtone_income'
   amount: integer("amount").notNull(), // positive for additions, negative for deductions
   description: text("description"),
   relatedId: integer("related_id"), // tip or purchase id

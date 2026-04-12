@@ -326,8 +326,10 @@ export default function MusicDetail() {
     try {
       const res = await fetch(endpoint, { credentials: "include" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || (asRingtone ? "벨소리 다운로드 실패" : "다운로드 실패"));
+        const errBody = await res.json().catch(() => ({}));
+        const msg =
+          errBody.message || (asRingtone ? "벨소리 다운로드 실패" : "다운로드 실패");
+        throw { message: msg, insufficientCredits: errBody.insufficientCredits === true };
       }
       const cd = res.headers.get("Content-Disposition");
       let filename = musicData?.title || "music";
@@ -345,6 +347,11 @@ export default function MusicDetail() {
       a.download = filename + (filename.includes(".mp3") ? "" : ".mp3");
       a.click();
       URL.revokeObjectURL(url);
+      if (asRingtone && !isOwner) {
+        queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      }
       toast({
         title: asRingtone
           ? t("musicDetail.ringtoneDownloadComplete", "벨소리용 파일이 다운로드되었습니다")
@@ -352,10 +359,13 @@ export default function MusicDetail() {
         description: musicData?.title,
       });
     } catch (err: any) {
+      const insufficient = err?.insufficientCredits === true;
       toast({
-        title: asRingtone
-          ? t("musicDetail.ringtoneDownloadFailed", "벨소리 다운로드 실패")
-          : t("myLibrary.downloadFailed", "다운로드 실패"),
+        title: insufficient
+          ? t("musicDetail.ringtoneInsufficientCredits", "지갑 잔액이 부족합니다")
+          : asRingtone
+            ? t("musicDetail.ringtoneDownloadFailed", "벨소리 다운로드 실패")
+            : t("myLibrary.downloadFailed", "다운로드 실패"),
         description: err?.message,
         variant: "destructive",
       });
@@ -619,7 +629,11 @@ export default function MusicDetail() {
                       disabled={isRingtoneDownloading}
                       onClick={() => handleDownload(true)}
                       data-testid="button-ringtone"
-                      title={t('musicDetail.ringtoneHint', '다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요')}
+                      title={
+                        isOwner
+                          ? t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")
+                          : `${t("musicDetail.ringtoneFeeHover", "유료로 200원이 차감됩니다. 차감 금액은 업로더에게 지급됩니다.")} ${t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")}`
+                      }
                     >
                       {isRingtoneDownloading ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
                       {t('musicDetail.ringtoneDownload', '벨소리용')}
@@ -629,7 +643,12 @@ export default function MusicDetail() {
               </div>
               {user && canDownload && (
                 <p className="text-xs text-muted-foreground mt-2" data-testid="text-ringtone-notice">
-                  {t('musicDetail.ringtoneNotice', '※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.')}
+                  {isOwner
+                    ? t("musicDetail.ringtoneNotice", "※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.")
+                    : t(
+                        "musicDetail.ringtoneNoticeFee",
+                        "※ 타인 음원 벨소리는 유료(200원)이며 차감액은 업로더에게 지급됩니다. 앞 30초 구간이 MP3로 내려받아집니다. 휴대폰 설정에서 벨소리로 지정해 주세요.",
+                      )}
                 </p>
               )}
             </div>

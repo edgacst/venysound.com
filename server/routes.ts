@@ -25,6 +25,7 @@ import {
 import { registerAiMusicScorePdfRoutes } from "./ai-music-score-pdf";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { getClientIpForGeo } from "./client-ip";
+import { encodeRingtoneClipMp3, RINGTONE_FEE_WON } from "./ringtoneClip";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
 import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs, aiMusicSavedTracks } from "../shared/models/auth";
@@ -7166,25 +7167,69 @@ export async function registerRoutes(
       const localPath = candidates.find((p) => existsSync(p));
       const safeTitle = (musicItem.title || "music").replace(/[^\w\s가-힣-]/g, "").trim();
       const ringtoneBase = `${safeTitle}_벨소리`;
-      const extFromFileId = path.extname(fileId).toLowerCase() || ".mp3";
 
-      if (localPath) {
-        const ext = path.extname(localPath).toLowerCase();
-        const mime: Record<string, string> = {
-          ".mp3": "audio/mpeg",
-          ".wav": "audio/wav",
-          ".ogg": "audio/ogg",
-        };
-        res.set("Content-Type", mime[ext] || "audio/mpeg");
-        res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(ringtoneBase + ext)}`);
-        const fileStat = statSync(localPath);
-        res.set("Content-Length", String(fileStat.size));
-        createReadStream(localPath).pipe(res);
-        return;
+      if (!localPath) {
+        return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
       }
 
-      return res.status(404).json({ message: "음원 파일을 찾을 수 없습니다" });
+      let mp3Buf: Buffer;
+      try {
+        mp3Buf = await encodeRingtoneClipMp3(localPath);
+      } catch (encErr) {
+        console.error("ringtone clip encode:", encErr);
+        return res.status(500).json({ message: "벨소리 파일을 만들 수 없습니다. 잠시 후 다시 시도해 주세요." });
+      }
+
+      const fee = RINGTONE_FEE_WON;
+      if (!isOwner) {
+        const deducted = await storage.deductCredits(userId, fee);
+        if (!deducted) {
+          return res.status(400).json({
+            message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.",
+            insufficientCredits: true,
+          });
+        }
+        const sellerId = String(musicItem.userId);
+        await storage.addToBalance(sellerId, fee);
+        const musicTitleEsc = musicItem.title || "음원";
+        await storage.createCreditTransaction({
+          userId,
+          type: "ringtone_fee",
+          amount: -fee,
+          description: `「${musicTitleEsc}」 벨소리`,
+          relatedId: musicId,
+        });
+        await storage.createCreditTransaction({
+          userId: sellerId,
+          type: "ringtone_income",
+          amount: fee,
+          description: "벨소리 수익",
+          relatedId: musicId,
+        });
+        const buyer = await storage.getUserById(userId);
+        const buyerName = buyer?.firstName || "리스너";
+        await storage.createNotification({
+          userId,
+          type: "ringtone_paid",
+          message: `「${musicTitleEsc}」 벨소리 다운로드로 ${fee.toLocaleString()}원이 차감되었습니다.`,
+          payload: { musicTitle: musicTitleEsc, amount: fee },
+          url: `/music/${musicId}`,
+        });
+        await storage.createNotification({
+          userId: sellerId,
+          type: "ringtone_earned",
+          message: `${buyerName}님이 「${musicTitleEsc}」 벨소리로 ${fee.toLocaleString()}원을 지급했습니다.`,
+          payload: { fromName: buyerName, musicTitle: musicTitleEsc, amount: fee },
+          url: `/music/${musicId}`,
+        });
+      }
+
+      res.set("Content-Type", "audio/mpeg");
+      res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(ringtoneBase + ".mp3")}`);
+      res.set("Content-Length", String(mp3Buf.length));
+      res.send(mp3Buf);
     } catch (err) {
+      console.error("ringtone route:", err);
       res.status(500).json({ message: "다운로드에 실패했습니다" });
     }
   });

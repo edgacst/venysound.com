@@ -683,9 +683,12 @@
     "otherTracksGeneric": "其他曲目",
     "ringtoneDownload": "铃声",
     "ringtoneHint": "下载后请在手机设置中设为铃声",
+    "ringtoneFeeHover": "将扣除 200 韩元；该金额将支付给上传者。",
     "ringtoneNotice": "※ 请在您的设备设置中设置铃声。",
+    "ringtoneNoticeFee": "※ 他人作品的铃声下载收费 200 韩元，金额支付给上传者。将下载前 30 秒 MP3。请在设备设置中设为铃声。",
     "ringtoneDownloadComplete": "铃声文件已下载",
-    "ringtoneDownloadFailed": "铃声下载失败"
+    "ringtoneDownloadFailed": "铃声下载失败",
+    "ringtoneInsufficientCredits": "钱包余额不足"
   },
   "myLibrary": {
     "title": "我的音乐库",
@@ -917,6 +920,8 @@
     "badge": "恭喜！你获得了 {{badgeName}} 打赏徽章！",
     "copyright": "「{{musicTitle}}」的版权举报已受理",
     "purchase": "{{fromName}} 以 {{price}} 韩元购买了「{{musicTitle}}」",
+    "ringtone_paid": "「{{musicTitle}}」铃声下载已扣除 {{amount}} 韩元。",
+    "ringtone_earned": "{{fromName}} 为「{{musicTitle}}」铃声支付了 {{amount}} 韩元。",
     "new_music_for_you": "为您推荐的新曲已上线：「{{musicTitle}}」— {{artist}}",
     "ai_publish_nudge": "{{userName}}，您创作的曲子感觉如何？如果喜欢，欢迎在 Venysound 上发布，让大家一起欣赏。",
     "welcome": "{{userName}}，欢迎加入 Venysound！尽情体验音乐、广播与 AI 创作等功能。"
