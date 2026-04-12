@@ -74,12 +74,55 @@ const GENRE_API_TOKEN: Record<GenrePresetId, string> = {
 
 const MAX_GENRE_PRESETS = 3;
 
-/** 장르(칩·직접입력) + 기존 스타일 입력을 서버 `tags`(스타일)로 합침 */
-function buildTagsForApi(genreIds: GenrePresetId[], genreOther: string, styleTags: string): string {
-  const fromPresets = genreIds.map((id) => GENRE_API_TOKEN[id]).filter(Boolean);
-  const other = genreOther.trim();
-  const g = [...fromPresets, other].filter(Boolean).join(", ");
-  const s = styleTags.trim();
+/** 스타일 칩 → API 문자열 */
+const STYLE_PRESET_IDS = [
+  "male_vocal",
+  "female_vocal",
+  "duet",
+  "piano",
+  "acoustic_guitar",
+  "electric_guitar",
+  "strings",
+  "synth",
+  "drums_808",
+  "bass",
+  "slow_tempo",
+  "upbeat",
+] as const;
+type StylePresetId = (typeof STYLE_PRESET_IDS)[number];
+
+const STYLE_API_TOKEN: Record<StylePresetId, string> = {
+  male_vocal: "male vocal",
+  female_vocal: "female vocal",
+  duet: "duet vocals",
+  piano: "piano",
+  acoustic_guitar: "acoustic guitar",
+  electric_guitar: "electric guitar",
+  strings: "strings",
+  synth: "synth",
+  drums_808: "808 drums",
+  bass: "prominent bass",
+  slow_tempo: "slow tempo",
+  upbeat: "upbeat",
+};
+
+const MAX_STYLE_PRESETS = 3;
+
+/** 장르 블록 + 스타일 블록(각 칩·직접입력)을 서버 `tags` 한 줄로 합침 */
+function buildTagsForApi(
+  genreIds: GenrePresetId[],
+  genreOther: string,
+  styleIds: StylePresetId[],
+  styleOther: string,
+): string {
+  const genreFromPresets = genreIds.map((id) => GENRE_API_TOKEN[id]).filter(Boolean);
+  const go = genreOther.trim();
+  const g = [...genreFromPresets, go].filter(Boolean).join(", ");
+
+  const styleFromPresets = styleIds.map((id) => STYLE_API_TOKEN[id]).filter(Boolean);
+  const so = styleOther.trim();
+  const s = [...styleFromPresets, so].filter(Boolean).join(", ");
+
   if (g && s) return `${g} · ${s}`;
   return g || s;
 }
@@ -551,7 +594,8 @@ export default function CreateMusic() {
   const [title, setTitle] = useState("");
   const [selectedGenreIds, setSelectedGenreIds] = useState<GenrePresetId[]>([]);
   const [genreOther, setGenreOther] = useState("");
-  const [tags, setTags] = useState("");
+  const [selectedStyleIds, setSelectedStyleIds] = useState<StylePresetId[]>([]);
+  const [styleOther, setStyleOther] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -1059,7 +1103,7 @@ export default function CreateMusic() {
     submitModeRef.current = mode;
     if (mode === "custom") submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
-    const mergedTags = buildTagsForApi(selectedGenreIds, genreOther, tags);
+    const mergedTags = buildTagsForApi(selectedGenreIds, genreOther, selectedStyleIds, styleOther);
     submittedTagsRef.current = mergedTags;
     try {
       const body: Record<string, unknown> = {
@@ -1393,7 +1437,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.genreHint",
-                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 최대 3개까지 선택됩니다. 선택·입력한 내용은 음악 스타일 앞에 붙여 AI에 전달됩니다.",
+                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 프리셋은 최대 3개까지 선택됩니다. 아래 스타일과 합쳐져 AI에 전달됩니다.",
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -1436,14 +1480,66 @@ export default function CreateMusic() {
                           maxLength={120}
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">{t("createMusic.styleLabel", "음악스타일 작성")}</label>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-end justify-between gap-2">
+                          <label className="block text-sm font-medium">{t("createMusic.styleSectionLabel", "스타일")}</label>
+                          {(selectedStyleIds.length > 0 || styleOther.trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedStyleIds([]);
+                                setStyleOther("");
+                              }}
+                              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                            >
+                              {t("createMusic.styleClear", "스타일 초기화")}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {t(
+                            "createMusic.styleHint",
+                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력하세요. 프리셋은 최대 3개까지 선택됩니다.",
+                          )}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {STYLE_PRESET_IDS.map((id) => {
+                            const selected = selectedStyleIds.includes(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedStyleIds((prev) => {
+                                    if (prev.includes(id)) return prev.filter((x) => x !== id);
+                                    if (prev.length >= MAX_STYLE_PRESETS) {
+                                      toast({
+                                        title: t("createMusic.styleMaxNote", "스타일 프리셋은 최대 3개까지 선택할 수 있습니다."),
+                                      });
+                                      return prev;
+                                    }
+                                    return [...prev, id];
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                  selected
+                                    ? "border-fuchsia-500/70 bg-fuchsia-500/20 text-fuchsia-100 shadow-sm shadow-fuchsia-500/10"
+                                    : "border-border/80 bg-background/70 text-muted-foreground hover:border-fuchsia-500/35 hover:bg-muted/40",
+                                )}
+                              >
+                                {t(`createMusic.styleChip.${id}`, STYLE_API_TOKEN[id])}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <input
                           type="text"
-                          value={tags}
-                          onChange={(e) => setTags(e.target.value)}
-                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2"
-                          placeholder={t("createMusic.stylePlaceholder", "예: K-ballad, 남성 보컬, 피아노와 스트링")}
+                          value={styleOther}
+                          onChange={(e) => setStyleOther(e.target.value)}
+                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2 text-sm"
+                          placeholder={t("createMusic.styleOtherPlaceholder", "예: reverb-heavy mix, lo-fi crackle")}
+                          maxLength={160}
                         />
                       </div>
                       <div>
