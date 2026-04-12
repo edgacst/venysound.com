@@ -697,6 +697,8 @@ export async function registerRoutes(
     .trim() || undefined;
 
   const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
+  /** Suno/AIMusic 조회 — 업스트림이 응답 없이 걸리면 클라이언트 폴링 한 번이 수 분 단위로 멈춤 */
+  const AI_MUSIC_UPSTREAM_FETCH_MS = 28_000;
 
   /** Suno placeholder·깨진 링크 (한 클립만 재생되는 원인 중 하나) */
   function isLikelyBadRemoteAudioUrl(u: string): boolean {
@@ -1765,16 +1767,36 @@ export async function registerRoutes(
           sunoCallbackResults.delete(taskId);
           return res.json(cached);
         }
-        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
-          headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
-        });
+        const upstreamCtrl = new AbortController();
+        const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
+        let apiRes: Response;
+        try {
+          apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
+            headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+            signal: upstreamCtrl.signal,
+          });
+        } catch (e) {
+          if ((e as Error)?.name === "AbortError") {
+            console.warn("[ai-music task suno] record-info upstream timeout:", String(taskId).slice(0, 20));
+            return res.json({ state: "pending", data: null });
+          }
+          throw e;
+        } finally {
+          clearTimeout(upstreamTimer);
+        }
         const data = await apiRes.json().catch(() => ({}));
         if (!apiRes.ok) {
           return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: (data as { msg?: string }).msg ?? "조회 실패" });
         }
-        const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[] }; errorMessage?: string; param?: string } }).data;
+        const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[]; suno_data?: unknown[] }; errorMessage?: string; param?: string } }).data;
         const status = d?.status ?? "PENDING";
-        if (status === "SUCCESS" && Array.isArray(d?.response?.sunoData)) {
+        const resp = d?.response as { sunoData?: unknown[]; suno_data?: unknown[] } | undefined;
+        const sunoMerged = resp?.sunoData ?? resp?.suno_data;
+        const sunoList = Array.isArray(sunoMerged) ? sunoMerged : [];
+        if (status === "SUCCESS") {
+          if (sunoList.length === 0) {
+            return res.json({ state: "running", data: null });
+          }
           let customMode = false;
           try {
             if (typeof d?.param === "string") {
@@ -1782,7 +1804,7 @@ export async function registerRoutes(
               customMode = param.customMode === true;
             }
           } catch {}
-          const list = (d.response.sunoData as Record<string, unknown>[]).map((raw) => {
+          const list = (sunoList as Record<string, unknown>[]).map((raw) => {
             const t = raw;
             const id = t.id;
             return {
@@ -1808,9 +1830,23 @@ export async function registerRoutes(
     }
 
     try {
-      const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
-        headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
-      });
+      const upstreamCtrl = new AbortController();
+      const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
+      let apiRes: Response;
+      try {
+        apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
+          headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
+          signal: upstreamCtrl.signal,
+        });
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") {
+          console.warn("[ai-music task] aimusicapi upstream timeout:", String(taskId).slice(0, 20));
+          return res.json({ state: "pending", data: null });
+        }
+        throw e;
+      } finally {
+        clearTimeout(upstreamTimer);
+      }
       const data = await apiRes.json().catch(() => ({}));
       if (!apiRes.ok) {
         return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: (data as { message?: string }).message ?? "조회 실패" });
