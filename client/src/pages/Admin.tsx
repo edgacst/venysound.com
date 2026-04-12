@@ -5,6 +5,7 @@ import { Navigation } from "@/components/Navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -1639,32 +1640,12 @@ export default function Admin() {
             {t('admin.visitorAndPageViews', '방문자 · 페이지뷰')}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
-            <Card className="p-3 sm:p-4 border-primary/30 min-h-[100px] flex flex-col justify-center text-center" data-testid="stat-visitor-count">
+            <Card className="p-3 sm:p-4 text-center border-primary/30 min-h-[100px] flex flex-col justify-center" data-testid="stat-visitor-count">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
                 <Activity size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.currentVisitors', '현재 접속자')}</span>
               </div>
               <div className="text-2xl sm:text-3xl font-bold tabular-nums">{currentVisitorsData?.count ?? 0}</div>
               <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
-              {currentVisitorsData?.visitors && currentVisitorsData.visitors.length > 0 ? (
-                <ul className="mt-3 max-h-36 overflow-y-auto text-left text-[11px] sm:text-xs space-y-1 border-t border-border/60 pt-2 pl-0 list-none mx-0" data-testid="list-current-visitors">
-                  {currentVisitorsData.visitors.map((v, idx) => (
-                    <li
-                      key={`${v.userId ?? "anon"}-${v.lastSeenAt}-${idx}`}
-                      className="truncate text-muted-foreground"
-                      title={v.lastPath ? `${v.displayName} — ${v.lastPath}` : v.displayName}
-                    >
-                      <span className="font-medium text-foreground">{v.displayName}</span>
-                      {v.lastPath ? (
-                        <span className="text-muted-foreground"> · {v.lastPath.length > 28 ? `${v.lastPath.slice(0, 28)}…` : v.lastPath}</span>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              ) : (currentVisitorsData?.count ?? 0) === 0 ? (
-                <p className="mt-2 text-[10px] sm:text-xs text-muted-foreground text-left">
-                  {t("admin.currentVisitorsEmpty", "최근 15분 내 기록된 고유 방문이 없습니다.")}
-                </p>
-              ) : null}
             </Card>
             <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-daily-visitors">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
@@ -1699,6 +1680,75 @@ export default function Admin() {
               </div>
             </Card>
           </div>
+
+          <Card className="mb-8 overflow-hidden border-border/80" data-testid="card-current-visitors-list">
+            <div className="border-b border-border/60 bg-muted/30 px-3 sm:px-4 py-3">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Users size={16} className="text-primary shrink-0" />
+                {t("admin.currentVisitorsListTitle", "현재 접속자 리스트")}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                {t(
+                  "admin.currentVisitorsListSubtitle",
+                  "최근 15분 이내 기록 기준 고유 방문(브라우저·기기). 아래 표는 많아져도 스크롤 영역 안에서만 늘어납니다.",
+                )}
+              </p>
+            </div>
+            <div className="max-h-[min(55vh,520px)] overflow-y-auto overflow-x-auto">
+              {currentVisitorsData?.visitors && currentVisitorsData.visitors.length > 0 ? (
+                <Table data-testid="table-current-visitors">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[120px] whitespace-nowrap">
+                        {t("admin.currentVisitorsColDisplay", "표시 이름")}
+                      </TableHead>
+                      <TableHead className="min-w-[100px] whitespace-nowrap">
+                        {t("admin.currentVisitorsColAccount", "회원 ID")}
+                      </TableHead>
+                      <TableHead className="min-w-[160px]">
+                        {t("admin.currentVisitorsColPath", "마지막 경로")}
+                      </TableHead>
+                      <TableHead className="min-w-[130px] whitespace-nowrap">
+                        {t("admin.currentVisitorsColSeen", "최근 활동")}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {currentVisitorsData.visitors.map((v, idx) => (
+                      <TableRow key={`${v.userId ?? "anon"}-${v.lastSeenAt}-${idx}`}>
+                        <TableCell className="font-medium align-top">{v.displayName}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground align-top max-w-[200px]">
+                          {v.userId ? (
+                            <span className="break-all" title={v.userId}>
+                              {v.userId.length > 14 ? `${v.userId.slice(0, 14)}…` : v.userId}
+                            </span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs align-top max-w-[min(40vw,320px)]">
+                          {v.lastPath ? (
+                            <span className="break-all" title={v.lastPath}>
+                              {v.lastPath}
+                            </span>
+                          ) : (
+                            <span className="italic">{t("admin.currentVisitorsPathDwell", "체류/하트비트만")}</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs whitespace-nowrap align-top text-muted-foreground">
+                          {formatDateTime(v.lastSeenAt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <p className="px-4 py-8 text-sm text-muted-foreground text-center" data-testid="text-current-visitors-empty">
+                  {t("admin.currentVisitorsEmpty", "최근 15분 내 기록된 고유 방문이 없습니다.")}
+                </p>
+              )}
+            </div>
+          </Card>
 
           <h3 className="text-sm font-medium text-muted-foreground mb-3 mt-8 flex items-center gap-1.5">
             <UserPlus size={16} />
