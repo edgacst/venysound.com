@@ -1686,6 +1686,7 @@
     "statusPublish": "Publish",
     "statusDone": "Done",
     "statusPending": "Pending",
+    "trackRuntimeTitle": "Duration",
     "sectionLibraryScoreNotice": "※ Sheet exports are auto-generated drafts for reference only. They may not match the recording and are usually not ready for practice or performance as-is.",
     "modeLabel": "Generation mode",
     "modeDescription": "Generate from description",

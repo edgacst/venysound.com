@@ -745,8 +745,34 @@ export async function registerRoutes(
     return undefined;
   }
 
+  /** Suno/AIMusic 클립 재생 길이(초) — API 필드명 제각각 */
+  function pickClipDurationSec(o: Record<string, unknown>): number | undefined {
+    const v = o.duration ?? o.duration_seconds ?? o.durationSeconds;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+    if (typeof v === "string") {
+      const n = parseFloat(v.replace(/,/g, ""));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return undefined;
+  }
+
   // Suno 콜백 캐시는 complete 만 저장. first 를 캐시하면 폴링이 조기 종료되며 임시 stream URL 만 저장돼 시간이 지나 한 곡만 재생 실패하는 사례가 남.
-  const sunoCallbackResults = new Map<string, { state: "succeeded"; data: { clip_id?: string; audio_url?: string; image_url?: string; title?: string; tags?: string; prompt?: string; custom_mode?: boolean }[] }>();
+  const sunoCallbackResults = new Map<
+    string,
+    {
+      state: "succeeded";
+      data: {
+        clip_id?: string;
+        audio_url?: string;
+        image_url?: string;
+        title?: string;
+        tags?: string;
+        prompt?: string;
+        custom_mode?: boolean;
+        duration?: number;
+      }[];
+    }
+  >();
 
   app.post("/api/ai-music/suno-callback", (req, res) => {
     res.status(200).json({ received: true });
@@ -766,6 +792,7 @@ export async function registerRoutes(
             tags: r.tags as string | undefined,
             prompt: r.prompt as string | undefined,
             custom_mode: undefined as boolean | undefined,
+            duration: pickClipDurationSec(r),
           };
         });
         sunoCallbackResults.set(taskId, { state: "succeeded", data: tracks });
@@ -1815,6 +1842,7 @@ export async function registerRoutes(
               tags: typeof t.tags === "string" ? t.tags : undefined,
               prompt: typeof t.prompt === "string" ? t.prompt : undefined,
               custom_mode: customMode,
+              duration: pickClipDurationSec(t),
             };
           });
           return res.json({ state: "succeeded", data: list });
@@ -1859,6 +1887,8 @@ export async function registerRoutes(
         const list = rawList.map((item: any) => {
           const t = item?.full ?? item?.extended ?? item;
           const clip = t && typeof t === "object" ? (t as Record<string, unknown>) : {};
+          const itemRec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+          const dur = pickClipDurationSec(clip) ?? pickClipDurationSec(itemRec);
           return {
             clip_id: (t as { clip_id?: string; id?: string })?.clip_id ?? (t as { id?: string })?.id,
             audio_url: pickRemoteClipAudioUrl(clip),
@@ -1870,6 +1900,7 @@ export async function registerRoutes(
               (t as { lyrics?: string })?.lyrics ??
               (t as { gpt_description_prompt?: string })?.gpt_description_prompt,
             custom_mode: false,
+            duration: dur,
           };
         });
         return res.json({ state: "succeeded", data: list });

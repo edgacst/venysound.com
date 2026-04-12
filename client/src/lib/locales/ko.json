@@ -1708,6 +1708,7 @@
     "statusPublish": "공개",
     "statusDone": "완료",
     "statusPending": "대기",
+    "trackRuntimeTitle": "재생 길이",
     "sectionLibraryScoreNotice": "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
     "modeLabel": "생성 방식",
     "modeDescription": "설명으로 생성",

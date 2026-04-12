@@ -256,6 +256,18 @@ function pickSavedTrackAudioUrl(t: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+/** 생성 곡 재생 길이(초) → 표시용 m:ss (1시간 이상이면 h:mm:ss) */
+function formatAiTrackDurationMmss(sec: number | undefined): string | null {
+  if (sec == null || !Number.isFinite(sec) || sec <= 0) return null;
+  let total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  total %= 3600;
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function TrackCard({
   track,
   order,
@@ -288,6 +300,7 @@ function TrackCard({
   const [showLyrics, setShowLyrics] = useState(false);
   const [showStyle, setShowStyle] = useState(false);
   const title = track.title || t("createMusic.untitled", "제목 없음");
+  const durationLabel = formatAiTrackDurationMmss(track.duration);
   const isLyricsMode = track.custom_mode === true;
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
@@ -312,7 +325,17 @@ function TrackCard({
       <div className="flex-1 min-w-0 flex flex-col gap-1">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0 flex flex-col gap-1 pr-1">
-            <p className="text-xs font-medium truncate leading-none">{title}</p>
+            <p className="text-xs font-medium min-w-0 flex flex-wrap items-baseline gap-x-1.5 gap-y-0 leading-snug">
+              <span className="truncate">{title}</span>
+              {durationLabel ? (
+                <span
+                  className="text-muted-foreground font-normal tabular-nums shrink-0"
+                  title={t("createMusic.trackRuntimeTitle", "재생 길이")}
+                >
+                  {durationLabel}
+                </span>
+              ) : null}
+            </p>
             <div
               className="flex flex-wrap gap-1 text-[10px]"
               data-testid={`track-status-${track.id}`}
@@ -559,12 +582,20 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       typeof t.createdAt === "number" ? t.createdAt : typeof t.created_at === "number" ? t.created_at : Date.now();
     const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
     const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
+    const durRaw = t.duration ?? t.duration_seconds;
+    let duration: number | undefined;
+    if (typeof durRaw === "number" && Number.isFinite(durRaw) && durRaw > 0) duration = durRaw;
+    else if (typeof durRaw === "string") {
+      const n = parseFloat(durRaw.replace(/,/g, ""));
+      if (Number.isFinite(n) && n > 0) duration = n;
+    }
     return {
       ...(item as object),
       id,
       createdAt,
       uploadCount,
       downloadCount,
+      duration,
       generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
       generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
       audio_url: pickSavedTrackAudioUrl(t),
@@ -618,6 +649,12 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
         uploadCount: Math.max(existing.uploadCount ?? 0, t.uploadCount ?? 0),
         downloadCount: Math.max(existing.downloadCount ?? 0, t.downloadCount ?? 0),
         publishedToSite: Boolean(existing.publishedToSite) || Boolean(t.publishedToSite),
+        duration:
+          typeof existing.duration === "number" && existing.duration > 0
+            ? existing.duration
+            : typeof t.duration === "number" && t.duration > 0
+              ? t.duration
+              : undefined,
       });
     }
   }
@@ -642,6 +679,7 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
     uploadCount: t.uploadCount,
     downloadCount: t.downloadCount,
     publishedToSite: t.publishedToSite,
+    ...(typeof t.duration === "number" && Number.isFinite(t.duration) && t.duration > 0 ? { duration: t.duration } : {}),
   }));
 }
 

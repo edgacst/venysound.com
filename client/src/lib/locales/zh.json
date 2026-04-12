@@ -1489,6 +1489,7 @@
     "statusPublish": "公开",
     "statusDone": "已完成",
     "statusPending": "待完成",
+    "trackRuntimeTitle": "时长",
     "sectionLibraryScoreNotice": "※ 乐谱为自动生成的参考草稿，可能与录音或实际演奏不一致，通常不宜直接用于练习或演出。",
     "modeLabel": "生成方式",
     "modeDescription": "按描述生成",

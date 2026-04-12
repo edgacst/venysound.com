@@ -1491,6 +1491,7 @@
     "statusPublish": "公開",
     "statusDone": "完了",
     "statusPending": "未完了",
+    "trackRuntimeTitle": "再生時間",
     "sectionLibraryScoreNotice": "※ 楽譜は自動抽出の参考用ドラフトです。実際の音源・演奏と一致しないことがあり、そのまま練習・演奏には向かない場合があります。",
     "modeLabel": "生成方式",
     "modeDescription": "説明で生成",
