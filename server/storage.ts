@@ -191,6 +191,11 @@ export interface IStorage {
     totalComments: number;
   }>;
   recordVisit(visitorKey: string, path: string, extra?: { userId?: string; ipHash?: string; countryCode?: string; region?: string; deviceType?: string; refererDomain?: string; utmSource?: string }): Promise<void>;
+  /** 최근 N분 analytics_visits 기준 고유 방문자( visitor_key )별 최신 활동 — 관리자 현재 접속자 목록 */
+  getCurrentVisitorsDetail(lastMinutes: number): Promise<{
+    count: number;
+    visitors: { userId: string | null; displayName: string; lastPath: string | null; lastSeenAt: string }[];
+  }>;
   getAdminUserAccessLogs(userId: string, limit: number, offset: number): Promise<{ logs: { id: number; visitedAt: Date; path: string; deviceType: string | null }[]; total: number }>;
   /** 일자(Asia/Seoul)별 방문자 단위: 첫·마지막 페이지뷰 시각 및 그 간격(초), 페이지뷰 수, GeoIP(국가·지역) */
   getAdminVisitorSessionsByDate(dateStr: string, limit: number, offset: number): Promise<{
@@ -2773,6 +2778,66 @@ export class DatabaseStorage implements IStorage {
       return row?.count ?? 0;
     } catch {
       return 0;
+    }
+  }
+
+  async getCurrentVisitorsDetail(lastMinutes: number): Promise<{
+    count: number;
+    visitors: { userId: string | null; displayName: string; lastPath: string | null; lastSeenAt: string }[];
+  }> {
+    const safe = Math.min(60, Math.max(1, Math.floor(lastMinutes)));
+    try {
+      const rowsResult = await db.execute(sql`
+        SELECT
+          s.user_id AS user_id,
+          s.visitor_key AS visitor_key,
+          s.last_path AS last_path,
+          s.last_seen_at AS last_seen_at,
+          u.username AS username,
+          u.first_name AS first_name,
+          u.email AS email
+        FROM (
+          SELECT
+            visitor_key,
+            (array_agg(user_id ORDER BY visited_at DESC) FILTER (WHERE user_id IS NOT NULL))[1] AS user_id,
+            (array_agg(path ORDER BY visited_at DESC))[1] AS last_path,
+            max(visited_at) AS last_seen_at
+          FROM analytics_visits
+          WHERE visited_at >= now() - make_interval(mins => ${safe})
+          GROUP BY visitor_key
+        ) s
+        LEFT JOIN users u ON u.id = s.user_id
+        ORDER BY s.last_seen_at DESC
+      `);
+
+      const rows = rowsResult.rows as Record<string, unknown>[];
+      const visitors = rows.map((r) => {
+        const userId = (r.user_id as string | null) ?? null;
+        const vk = String(r.visitor_key ?? "");
+        const lastAt = r.last_seen_at instanceof Date ? r.last_seen_at : new Date(String(r.last_seen_at));
+        const rawPath = (r.last_path as string | null) ?? null;
+        const lastPath =
+          rawPath === ANALYTICS_DWELL_HEARTBEAT_PATH ? null : rawPath;
+        let displayName: string;
+        if (userId) {
+          const fn = (r.first_name as string | null)?.trim();
+          const un = (r.username as string | null)?.trim();
+          const em = (r.email as string | null)?.trim();
+          displayName = fn || un || em || `${userId.slice(0, 10)}…`;
+        } else {
+          const tail = vk.length > 6 ? vk.slice(-6) : vk || "?";
+          displayName = `비로그인 ·${tail}`;
+        }
+        return {
+          userId,
+          displayName,
+          lastPath,
+          lastSeenAt: lastAt.toISOString(),
+        };
+      });
+      return { count: visitors.length, visitors };
+    } catch {
+      return { count: 0, visitors: [] };
     }
   }
 

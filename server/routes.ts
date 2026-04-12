@@ -4111,11 +4111,11 @@ export async function registerRoutes(
   app.get("/api/admin/current-visitors", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const minutes = Math.min(60, Math.max(1, parseInt(String(req.query?.minutes), 10) || 15));
-      const count = await storage.getCurrentVisitorsCount(minutes);
-      res.json({ count });
+      const detail = await storage.getCurrentVisitorsDetail(minutes);
+      res.json({ count: detail.count, visitors: detail.visitors });
     } catch (e) {
       console.error("[admin/current-visitors]", e);
-      res.json({ count: 0 });
+      res.json({ count: 0, visitors: [] });
     }
   });
 

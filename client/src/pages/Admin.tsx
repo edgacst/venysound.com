@@ -355,11 +355,14 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
-  const { data: currentVisitorsData } = useQuery<{ count: number }>({
+  const { data: currentVisitorsData } = useQuery<{
+    count: number;
+    visitors?: { userId: string | null; displayName: string; lastPath: string | null; lastSeenAt: string }[];
+  }>({
     queryKey: ["/api/admin/current-visitors", 15],
     queryFn: async () => {
       const res = await fetch("/api/admin/current-visitors?minutes=15", { credentials: "include" });
-      if (!res.ok) return { count: 0 };
+      if (!res.ok) return { count: 0, visitors: [] };
       return res.json();
     },
     enabled: adminCheck?.isAdmin === true,
@@ -1636,12 +1639,32 @@ export default function Admin() {
             {t('admin.visitorAndPageViews', '방문자 · 페이지뷰')}
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
-            <Card className="p-3 sm:p-4 text-center border-primary/30 min-h-[100px] flex flex-col justify-center" data-testid="stat-visitor-count">
+            <Card className="p-3 sm:p-4 border-primary/30 min-h-[100px] flex flex-col justify-center text-center" data-testid="stat-visitor-count">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
                 <Activity size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.currentVisitors', '현재 접속자')}</span>
               </div>
               <div className="text-2xl sm:text-3xl font-bold tabular-nums">{currentVisitorsData?.count ?? 0}</div>
               <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5">{t('admin.visitorsRefresh', '15초마다 갱신')}</div>
+              {currentVisitorsData?.visitors && currentVisitorsData.visitors.length > 0 ? (
+                <ul className="mt-3 max-h-36 overflow-y-auto text-left text-[11px] sm:text-xs space-y-1 border-t border-border/60 pt-2 pl-0 list-none mx-0" data-testid="list-current-visitors">
+                  {currentVisitorsData.visitors.map((v, idx) => (
+                    <li
+                      key={`${v.userId ?? "anon"}-${v.lastSeenAt}-${idx}`}
+                      className="truncate text-muted-foreground"
+                      title={v.lastPath ? `${v.displayName} — ${v.lastPath}` : v.displayName}
+                    >
+                      <span className="font-medium text-foreground">{v.displayName}</span>
+                      {v.lastPath ? (
+                        <span className="text-muted-foreground"> · {v.lastPath.length > 28 ? `${v.lastPath.slice(0, 28)}…` : v.lastPath}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (currentVisitorsData?.count ?? 0) === 0 ? (
+                <p className="mt-2 text-[10px] sm:text-xs text-muted-foreground text-left">
+                  {t("admin.currentVisitorsEmpty", "최근 15분 내 기록된 고유 방문이 없습니다.")}
+                </p>
+              ) : null}
             </Card>
             <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-daily-visitors">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
