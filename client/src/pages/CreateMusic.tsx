@@ -54,6 +54,12 @@ const GENRE_PRESET_IDS = [
   "folk",
   "trot",
   "ost",
+  "metal",
+  "reggae",
+  "soul",
+  "latin",
+  "ambient",
+  "gospel",
 ] as const;
 type GenrePresetId = (typeof GENRE_PRESET_IDS)[number];
 
@@ -70,9 +76,16 @@ const GENRE_API_TOKEN: Record<GenrePresetId, string> = {
   folk: "Folk / acoustic",
   trot: "Trot",
   ost: "TV / film soundtrack",
+  metal: "Metal",
+  reggae: "Reggae",
+  soul: "Soul",
+  latin: "Latin",
+  ambient: "Ambient",
+  gospel: "Gospel",
 };
 
-const MAX_GENRE_PRESETS = 3;
+/** 동시에 고를 수 있는 장르 프리셋 개수(늘리려면 상수만 올리면 됨) */
+const MAX_GENRE_PRESETS = 6;
 
 /** 스타일 칩 → API 문자열 */
 const STYLE_PRESET_IDS = [
@@ -88,6 +101,12 @@ const STYLE_PRESET_IDS = [
   "bass",
   "slow_tempo",
   "upbeat",
+  "orchestral",
+  "brass",
+  "lo_fi",
+  "emotional",
+  "chant",
+  "harp",
 ] as const;
 type StylePresetId = (typeof STYLE_PRESET_IDS)[number];
 
@@ -104,9 +123,16 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
   bass: "prominent bass",
   slow_tempo: "slow tempo",
   upbeat: "upbeat",
+  orchestral: "orchestral arrangement",
+  brass: "brass section",
+  lo_fi: "lo-fi texture",
+  emotional: "emotional delivery",
+  chant: "chant / choir layers",
+  harp: "harp",
 };
 
-const MAX_STYLE_PRESETS = 3;
+/** 동시에 고를 수 있는 스타일 프리셋 개수 */
+const MAX_STYLE_PRESETS = 6;
 
 /** 장르 블록 + 스타일 블록(각 칩·직접입력)을 서버 `tags` 한 줄로 합침 */
 function buildTagsForApi(
@@ -1437,7 +1463,8 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.genreHint",
-                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 프리셋은 최대 3개까지 선택됩니다. 아래 스타일과 합쳐져 AI에 전달됩니다.",
+                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 프리셋은 최대 {{n}}개까지 선택됩니다. 아래 스타일과 합쳐져 AI에 전달됩니다.",
+                            { n: MAX_GENRE_PRESETS },
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -1452,7 +1479,11 @@ export default function CreateMusic() {
                                     if (prev.includes(id)) return prev.filter((x) => x !== id);
                                     if (prev.length >= MAX_GENRE_PRESETS) {
                                       toast({
-                                        title: t("createMusic.genreMaxNote", "장르는 최대 3개까지 선택할 수 있습니다."),
+                                        title: t(
+                                          "createMusic.genreMaxNote",
+                                          "장르 프리셋은 최대 {{n}}개까지 선택할 수 있습니다.",
+                                          { n: MAX_GENRE_PRESETS },
+                                        ),
                                       });
                                       return prev;
                                     }
@@ -1499,7 +1530,8 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.styleHint",
-                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력하세요. 프리셋은 최대 3개까지 선택됩니다.",
+                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력하세요. 프리셋은 최대 {{n}}개까지 선택됩니다.",
+                            { n: MAX_STYLE_PRESETS },
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -1514,7 +1546,11 @@ export default function CreateMusic() {
                                     if (prev.includes(id)) return prev.filter((x) => x !== id);
                                     if (prev.length >= MAX_STYLE_PRESETS) {
                                       toast({
-                                        title: t("createMusic.styleMaxNote", "스타일 프리셋은 최대 3개까지 선택할 수 있습니다."),
+                                        title: t(
+                                          "createMusic.styleMaxNote",
+                                          "스타일 프리셋은 최대 {{n}}개까지 선택할 수 있습니다.",
+                                          { n: MAX_STYLE_PRESETS },
+                                        ),
                                       });
                                       return prev;
                                     }
