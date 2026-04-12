@@ -1467,7 +1467,7 @@
     "styleLabel": "スタイル",
     "stylePlaceholder": "例: K-ballad, 男性ボーカル, ピアノとストリングス",
     "genreSectionLabel": "ジャンル",
-    "genreHint": "よく使うジャンルをタップするか、下に自由入力してください。プリセットは同時に最大{{n}}つまで。下のスタイルと合わせてモデルへ送ります。",
+    "genreHint": "プリセットをタップすると下の入力欄にトークンが入り、編集・追記できます。同時に最大{{n}}トークンまで。下のスタイルと合わせてモデルへ送ります。",
     "genreOtherPlaceholder": "例: city pop, synthwave",
     "genreClear": "ジャンルをクリア",
     "genreMaxNote": "ジャンルのプリセットは最大{{n}}つまで選べます。",
@@ -1496,7 +1496,7 @@
       "cafe_music": "カフェ音楽"
     },
     "styleSectionLabel": "スタイル",
-    "styleHint": "ボーカル・楽器・テンポなどをタップするか、下に自由入力してください。プリセットは同時に最大{{n}}つまで。",
+    "styleHint": "プリセットをタップすると下の欄にトークンが入り、編集できます。同時に最大{{n}}トークンまで。",
     "styleOtherPlaceholder": "例: リバーブ多め、lo-fi のノイズ",
     "styleClear": "スタイルをクリア",
     "styleMaxNote": "スタイルのプリセットは最大{{n}}つまで選べます。",

@@ -1465,7 +1465,7 @@
     "styleLabel": "风格",
     "stylePlaceholder": "例：K-ballad, 男声, 钢琴与弦乐",
     "genreSectionLabel": "曲风",
-    "genreHint": "点击常用曲风或在下方自行填写。同一时间最多可选 {{n}} 个预设。与下方风格合并后发送给模型。",
+    "genreHint": "点击预设会把对应英文词填入下方输入框，可继续编辑。同一时间最多 {{n}} 个预设词。与下方风格合并后发给模型。",
     "genreOtherPlaceholder": "例如：city pop、synthwave",
     "genreClear": "清除曲风",
     "genreMaxNote": "曲风预设最多可选 {{n}} 个。",
@@ -1494,7 +1494,7 @@
       "cafe_music": "咖啡馆音乐"
     },
     "styleSectionLabel": "风格",
-    "styleHint": "点击人声、乐器、节奏等预设，或在下方补充说明。同一时间最多可选 {{n}} 个预设。",
+    "styleHint": "点击预设会填入下方输入框，可自行修改补充。同一时间最多 {{n}} 个预设词。",
     "styleOtherPlaceholder": "例如：混响偏重、lo-fi 底噪",
     "styleClear": "清除风格",
     "styleMaxNote": "风格预设最多可选 {{n}} 个。",

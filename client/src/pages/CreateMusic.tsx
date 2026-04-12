@@ -143,21 +143,57 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 /** 동시에 고를 수 있는 스타일 프리셋 개수 */
 const MAX_STYLE_PRESETS = 6;
 
-/** 장르 블록 + 스타일 블록(각 칩·직접입력)을 서버 `tags` 한 줄로 합침 */
-function buildTagsForApi(
-  genreIds: GenrePresetId[],
-  genreOther: string,
-  styleIds: StylePresetId[],
-  styleOther: string,
-): string {
-  const genreFromPresets = genreIds.map((id) => GENRE_API_TOKEN[id]).filter(Boolean);
-  const go = genreOther.trim();
-  const g = [...genreFromPresets, go].filter(Boolean).join(", ");
+function splitCommaList(s: string): string[] {
+  return s
+    .split(/[,，、]/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
 
-  const styleFromPresets = styleIds.map((id) => STYLE_API_TOKEN[id]).filter(Boolean);
-  const so = styleOther.trim();
-  const s = [...styleFromPresets, so].filter(Boolean).join(", ");
+function joinCommaUnique(parts: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const k = p.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(p);
+  }
+  return out.join(", ");
+}
 
+/** 필드에 들어 있는 문자열 중, 프리셋 맵 값과 동일(대소문자 무시)인 토큰 개수 */
+function countPresetTokensInField(field: string, presetMap: Record<string, string>): number {
+  const parts = splitCommaList(field);
+  const vals = new Set(Object.values(presetMap).map((v) => v.toLowerCase()));
+  return parts.filter((p) => vals.has(p.toLowerCase())).length;
+}
+
+function fieldHasPresetToken(field: string, token: string): boolean {
+  const t = token.toLowerCase();
+  return splitCommaList(field).some((p) => p.toLowerCase() === t);
+}
+
+/** 칩 토글: 있으면 제거, 없으면 맨 뒤에 추가(프리셋 상한 초과 시 atMax) */
+function togglePresetTokenInField(
+  field: string,
+  token: string,
+  maxPresets: number,
+  presetMap: Record<string, string>,
+): { next: string; atMax: boolean } {
+  const parts = splitCommaList(field);
+  const tLower = token.toLowerCase();
+  if (parts.some((p) => p.toLowerCase() === tLower)) {
+    return { next: joinCommaUnique(parts.filter((p) => p.toLowerCase() !== tLower)), atMax: false };
+  }
+  if (countPresetTokensInField(field, presetMap) >= maxPresets) return { next: field, atMax: true };
+  return { next: joinCommaUnique([...parts, token]), atMax: false };
+}
+
+/** 장르 입력란 + 스타일 입력란(칩이 채운 토큰 포함)을 서버 `tags` 한 줄로 합침 */
+function buildTagsForApi(genreOther: string, styleOther: string): string {
+  const g = joinCommaUnique(splitCommaList(genreOther));
+  const s = joinCommaUnique(splitCommaList(styleOther));
   if (g && s) return `${g} · ${s}`;
   return g || s;
 }
@@ -627,9 +663,7 @@ export default function CreateMusic() {
 
   const [mode, setMode] = useState<CreateMode>("description");
   const [title, setTitle] = useState("");
-  const [selectedGenreIds, setSelectedGenreIds] = useState<GenrePresetId[]>([]);
   const [genreOther, setGenreOther] = useState("");
-  const [selectedStyleIds, setSelectedStyleIds] = useState<StylePresetId[]>([]);
   const [styleOther, setStyleOther] = useState("");
   /** 서버 `make_instrumental` — 무보컬(연주) 생성 요청 */
   const [instrumentalOnly, setInstrumentalOnly] = useState(false);
@@ -1140,7 +1174,7 @@ export default function CreateMusic() {
     submitModeRef.current = mode;
     if (mode === "custom") submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
-    const mergedTags = buildTagsForApi(selectedGenreIds, genreOther, selectedStyleIds, styleOther);
+    const mergedTags = buildTagsForApi(genreOther, styleOther);
     submittedTagsRef.current = mergedTags;
     try {
       const body: Record<string, unknown> = {
@@ -1459,11 +1493,10 @@ export default function CreateMusic() {
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-end justify-between gap-2">
                           <label className="block text-sm font-medium">{t("createMusic.genreSectionLabel", "장르")}</label>
-                          {(selectedGenreIds.length > 0 || genreOther.trim()) && (
+                          {genreOther.trim() && (
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedGenreIds([]);
                                 setGenreOther("");
                               }}
                               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
@@ -1481,15 +1514,21 @@ export default function CreateMusic() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {GENRE_PRESET_IDS.map((id) => {
-                            const selected = selectedGenreIds.includes(id);
+                            const token = GENRE_API_TOKEN[id];
+                            const selected = fieldHasPresetToken(genreOther, token);
                             return (
                               <button
                                 key={id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedGenreIds((prev) => {
-                                    if (prev.includes(id)) return prev.filter((x) => x !== id);
-                                    if (prev.length >= MAX_GENRE_PRESETS) {
+                                  setGenreOther((prev) => {
+                                    const { next, atMax } = togglePresetTokenInField(
+                                      prev,
+                                      token,
+                                      MAX_GENRE_PRESETS,
+                                      GENRE_API_TOKEN,
+                                    );
+                                    if (atMax) {
                                       toast({
                                         title: t(
                                           "createMusic.genreMaxNote",
@@ -1497,9 +1536,8 @@ export default function CreateMusic() {
                                           { n: MAX_GENRE_PRESETS },
                                         ),
                                       });
-                                      return prev;
                                     }
-                                    return [...prev, id];
+                                    return next;
                                   });
                                 }}
                                 className={cn(
@@ -1526,11 +1564,10 @@ export default function CreateMusic() {
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-end justify-between gap-2">
                           <label className="block text-sm font-medium">{t("createMusic.styleSectionLabel", "스타일")}</label>
-                          {(selectedStyleIds.length > 0 || styleOther.trim()) && (
+                          {styleOther.trim() && (
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedStyleIds([]);
                                 setStyleOther("");
                               }}
                               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
@@ -1548,15 +1585,21 @@ export default function CreateMusic() {
                         </p>
                         <div className="flex flex-wrap gap-2">
                           {STYLE_PRESET_IDS.map((id) => {
-                            const selected = selectedStyleIds.includes(id);
+                            const token = STYLE_API_TOKEN[id];
+                            const selected = fieldHasPresetToken(styleOther, token);
                             return (
                               <button
                                 key={id}
                                 type="button"
                                 onClick={() => {
-                                  setSelectedStyleIds((prev) => {
-                                    if (prev.includes(id)) return prev.filter((x) => x !== id);
-                                    if (prev.length >= MAX_STYLE_PRESETS) {
+                                  setStyleOther((prev) => {
+                                    const { next, atMax } = togglePresetTokenInField(
+                                      prev,
+                                      token,
+                                      MAX_STYLE_PRESETS,
+                                      STYLE_API_TOKEN,
+                                    );
+                                    if (atMax) {
                                       toast({
                                         title: t(
                                           "createMusic.styleMaxNote",
@@ -1564,9 +1607,8 @@ export default function CreateMusic() {
                                           { n: MAX_STYLE_PRESETS },
                                         ),
                                       });
-                                      return prev;
                                     }
-                                    return [...prev, id];
+                                    return next;
                                   });
                                 }}
                                 className={cn(

@@ -1662,7 +1662,7 @@
     "styleLabel": "Style",
     "stylePlaceholder": "e.g. K-ballad, male vocal, piano and strings",
     "genreSectionLabel": "Genre",
-    "genreHint": "Tap common genres or type your own below. Up to {{n}} presets at once. Combined with the style section for the model.",
+    "genreHint": "Tapping a preset adds its token to the field below (editable). Up to {{n}} preset tokens at once. Combined with the style field for the model.",
     "genreOtherPlaceholder": "e.g. city pop, synthwave",
     "genreClear": "Clear genres",
     "genreMaxNote": "You can select up to {{n}} genre presets.",
@@ -1691,7 +1691,7 @@
       "cafe_music": "Cafe music"
     },
     "styleSectionLabel": "Style",
-    "styleHint": "Pick vocals, instruments, or tempo from chips, or add your own text below. Up to {{n}} presets at once.",
+    "styleHint": "Tapping a preset fills the field below (you can edit). Up to {{n}} preset tokens at once.",
     "styleOtherPlaceholder": "e.g. reverb-heavy mix, lo-fi crackle",
     "styleClear": "Clear style",
     "styleMaxNote": "You can select up to {{n}} style presets.",
