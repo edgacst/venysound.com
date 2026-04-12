@@ -413,27 +413,6 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   });
 
   const isOwner = user?.id === music.userId;
-  const needsPurchaseCheck =
-    !!user &&
-    !isOwner &&
-    !!music.isDownloadable &&
-    Number(music.price || 0) > 0;
-  const { data: purchasedData } = useQuery<{ purchased: boolean }>({
-    queryKey: ["/api/purchases/check", music.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/purchases/check/${music.id}`, { credentials: "include" });
-      if (!res.ok) throw new Error("check failed");
-      return res.json();
-    },
-    enabled: needsPurchaseCheck,
-  });
-  const hasPurchased = purchasedData?.purchased === true;
-  /** 서버가 벨소리를 허용하는지(상세 `canDownload`와 동일) — 안내 문구용 */
-  const canRingtonePermission =
-    !!user &&
-    (isOwner ||
-      (!!music.isDownloadable && (Number(music.price || 0) === 0 || hasPurchased)));
-
   const isAdmin = adminCheck?.isAdmin === true;
   /** 관리자는 타인 음원에도 Spotify 앨범 ID만 저장 가능(API와 동일) */
   const isAdminSpotifyOnly = isAdmin && !isOwner;
@@ -1405,37 +1384,18 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               {t("music.ringtoneCardDialogTitle", "벨소리 다운로드")}
             </DialogTitle>
             <DialogDescription className="space-y-2 text-left text-sm">
-              <span className="block">
-                {t(
-                  "music.ringtoneCardDialogBody",
-                  "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.",
-                )}
-              </span>
               {!user ? (
-                <span className="block text-muted-foreground">
-                  {t("music.ringtoneCardLoginLine", "로그인한 뒤 받을 수 있습니다.")}
+                <span className="block whitespace-pre-line text-muted-foreground">
+                  {`${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneFeePolicy", "타인 음원은 음원이 유료·무료 다운로드이든 관계없이 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다")}\n\n${t("music.ringtoneLoginSuffix", "※ 로그인 후 결제·다운로드가 진행됩니다.")}`}
                 </span>
               ) : isOwner ? (
-                <span className="block text-muted-foreground">
-                  {t("music.ringtoneCardFreeLine", "본인이 올린 음원은 무료로 받을 수 있습니다.")}
+                <span className="block whitespace-pre-line text-muted-foreground">
+                  {`${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneOwnerFree", "본인이 올린 음원은 무료로 받을 수 있습니다.")}`}
                 </span>
               ) : (
-                <>
-                  <span className="block text-muted-foreground">
-                    {t(
-                      "music.ringtoneCardFeeLine",
-                      "타인 음원은(유료·무료 음원 다운로드 여부와 관계없이) 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다.",
-                    )}
-                  </span>
-                  {!canRingtonePermission && (
-                    <span className="block text-amber-600/90 dark:text-amber-400/90">
-                      {t(
-                        "music.ringtoneCardPermissionWarn",
-                        "이 음원은 다운로드가 허용되지 않았거나 유료 구매 전이면 받을 수 없습니다.",
-                      )}
-                    </span>
-                  )}
-                </>
+                <span className="block whitespace-pre-line text-muted-foreground">
+                  {`${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneFeePolicy", "타인 음원은 음원이 유료·무료 다운로드이든 관계없이 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다")}`}
+                </span>
               )}
             </DialogDescription>
           </DialogHeader>

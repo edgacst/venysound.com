@@ -651,20 +651,12 @@ export default function MusicDetail() {
                 )}
               </div>
               {musicData && (
-                <p className="text-xs text-muted-foreground mt-2" data-testid="text-ringtone-notice">
+                <p className="text-xs text-muted-foreground mt-2 whitespace-pre-line" data-testid="text-ringtone-notice">
                   {!user
-                    ? t("musicDetail.ringtoneNoticeLogin", "※ 벨소리를 받으려면 로그인해 주세요. 앞 50초 MP3이며 휴대폰에서 벨소리로 지정해 주세요.")
+                    ? `${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneFeePolicy", "타인 음원은 음원이 유료·무료 다운로드이든 관계없이 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다")}\n\n${t("music.ringtoneLoginSuffix", "※ 로그인 후 결제·다운로드가 진행됩니다.")}`
                     : isOwner
-                      ? t("musicDetail.ringtoneNotice", "※ 앞 50초 구간이 MP3로 내려받아집니다. 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.")
-                      : !canDownload
-                        ? t(
-                            "musicDetail.ringtoneNoticeNoPermission",
-                            "※ 다운로드가 허용되지 않았거나 유료 구매 전인 곡은 벨소리를 받을 수 없습니다. (허용·무료·구매 후 가능)",
-                          )
-                        : t(
-                            "musicDetail.ringtoneNoticeFee",
-                            "※ 타인 음원 벨소리는 음원 유료·무료와 관계없이 200원이 차감되며, 차감액은 업로더에게 지급됩니다. 앞 50초 구간이 MP3로 내려받아집니다. 휴대폰 설정에서 벨소리로 지정해 주세요.",
-                          )}
+                      ? `${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneOwnerFree", "본인이 올린 음원은 무료로 받을 수 있습니다.")}`
+                      : `${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneFeePolicy", "타인 음원은 음원이 유료·무료 다운로드이든 관계없이 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다")}`}
                 </p>
               )}
             </div>

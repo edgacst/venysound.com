@@ -7134,14 +7134,7 @@ export async function registerRoutes(
       }
 
       const isOwner = String(musicItem.userId) === String(userId);
-      const purchased = await storage.hasPurchased(userId, musicId);
-      const canDownload =
-        isOwner ||
-        (musicItem.isDownloadable && (Number(musicItem.price || 0) === 0 || purchased));
-
-      if (!canDownload) {
-        return res.status(403).json({ message: "구매 또는 무료 다운로드가 가능한 음원만 벨소리로 다운로드할 수 있습니다" });
-      }
+      /** 벨소리는 본인 곡만 무료, 타인 곡은 음원 다운로드 정책과 무관하게 200원(로컬 파일만 있으면 허용) */
 
       const fn = musicItem.filename || "";
       let fileId = "";
