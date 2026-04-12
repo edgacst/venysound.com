@@ -200,7 +200,7 @@ function buildTagsForApi(genreOther: string, styleOther: string): string {
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
-  if (apiState === "running") return 1500;
+  if (apiState === "running" || apiState === "preview") return 1500;
   return 2200;
 }
 /** 로컬 캐시 키(계정별). 서버 `GET/PUT /api/ai-music/library`와 병합해 PC·모바일 동기화. */
@@ -562,6 +562,25 @@ type SavedTrack = GeneratedTrack & {
   generationProvider?: string;
 };
 
+/** Suno FIRST_SUCCESS 미리듣기 — 보관함에 넣지 않고 글로벌 플레이어만 (완료 시 정식 클립으로 교체) */
+function generatedPreviewToSavedTrack(tr: GeneratedTrack, taskKey: string, index: number): SavedTrack {
+  const t = tr as Record<string, unknown>;
+  const now = Date.now();
+  return {
+    ...tr,
+    id: `preview-${taskKey}-${index}-${tr.clip_id ?? index}`,
+    createdAt: now,
+    uploadCount: 0,
+    downloadCount: 0,
+    audio_url: pickSavedTrackAudioUrl(t) ?? (tr.audio_url as string | undefined),
+    image_url: (tr.image_url ?? t.imageUrl) as string | undefined,
+    title: tr.title,
+    tags: tr.tags,
+    prompt: tr.prompt,
+    custom_mode: tr.custom_mode,
+  } as SavedTrack;
+}
+
 function parseLocalStorageRawToArray(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) return parsed;
   if (parsed && typeof parsed === "object" && Array.isArray((parsed as { data?: unknown[] }).data)) {
@@ -745,7 +764,9 @@ export default function CreateMusic() {
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"idle" | "pending" | "running" | "succeeded" | "failed">("idle");
+  const [status, setStatus] = useState<"idle" | "pending" | "running" | "preview" | "succeeded" | "failed">("idle");
+  /** Suno FIRST_SUCCESS — 최종 완료 전 커버·스트림 미리듣기 */
+  const [previewTracks, setPreviewTracks] = useState<GeneratedTrack[]>([]);
   const [resultTracks, setResultTracks] = useState<GeneratedTrack[]>([]);
   const [savedTracks, setSavedTracks] = useState<SavedTrack[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -803,7 +824,7 @@ export default function CreateMusic() {
   }, [sortedFilteredSavedTracks, savedTracksSafePage]);
 
   useEffect(() => {
-    if (status !== "pending" && status !== "running") return;
+    if (status !== "pending" && status !== "running" && status !== "preview") return;
     const t = setInterval(() => {
       const start = generationStartRef.current;
       if (start) setElapsedSec(Math.floor((Date.now() - start) / 1000));
@@ -860,6 +881,7 @@ export default function CreateMusic() {
       setTaskId(null);
       setStatus("idle");
       setResultTracks([]);
+      setPreviewTracks([]);
       setErrorMessage(null);
       return;
     }
@@ -1165,6 +1187,7 @@ export default function CreateMusic() {
       const q = provider ? `?provider=${encodeURIComponent(provider)}` : "";
       const res = await fetch(`/api/ai-music/task/${tid}${q}`, { credentials: "include" });
       if (!res.ok) {
+        setPreviewTracks([]);
         setStatus("failed");
         setErrorMessage("작업 조회에 실패했습니다.");
         return;
@@ -1172,8 +1195,12 @@ export default function CreateMusic() {
       const data = await res.json();
       const state = data.state ?? "pending";
       setStatus(state);
+      if (state === "preview" && Array.isArray(data.data)) {
+        setPreviewTracks(data.data as GeneratedTrack[]);
+      }
       if (state === "succeeded" && Array.isArray(data.data)) {
         generationStartRef.current = null;
+        setPreviewTracks([]);
         setResultTracks(data.data);
         setTaskId(null);
         const now = Date.now();
@@ -1217,10 +1244,11 @@ export default function CreateMusic() {
       }
       if (state === "failed") {
         generationStartRef.current = null;
+        setPreviewTracks([]);
         setErrorMessage(data.message ?? "생성에 실패했습니다.");
         setTaskId(null);
       }
-      if (state === "pending" || state === "running") {
+      if (state === "pending" || state === "running" || state === "preview") {
         setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
@@ -1243,6 +1271,7 @@ export default function CreateMusic() {
     setIsSubmitting(true);
     setErrorMessage(null);
     setResultTracks([]);
+    setPreviewTracks([]);
     setStatus("pending");
     setElapsedSec(0);
     generationStartRef.current = Date.now();
@@ -1769,9 +1798,16 @@ export default function CreateMusic() {
                           </p>
                         )}
                       </div>
-                      <Button type="submit" disabled={isSubmitting || status === "pending" || status === "running"} className="w-full rounded-full gap-2" size="lg">
-                        {(status === "pending" || status === "running") && <Loader2 className="w-5 h-5 animate-spin" />}
-                        {status === "pending" || status === "running"
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting || status === "pending" || status === "running" || status === "preview"}
+                        className="w-full rounded-full gap-2"
+                        size="lg"
+                      >
+                        {(status === "pending" || status === "running" || status === "preview") && (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        )}
+                        {status === "pending" || status === "running" || status === "preview"
                           ? (() => {
                               const m = Math.floor(elapsedSec / 60);
                               const s = elapsedSec % 60;
@@ -1862,7 +1898,7 @@ export default function CreateMusic() {
                         />
                       </div>
                     )}
-                    {(status === "pending" || status === "running") && (() => {
+                    {(status === "pending" || status === "running" || status === "preview") && (() => {
                         const m = Math.floor(elapsedSec / 60);
                         const s = elapsedSec % 60;
                         const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
@@ -1881,7 +1917,66 @@ export default function CreateMusic() {
                       </div>
                         );
                       })()}
-                    {savedTracks.length === 0 && status !== "pending" && status !== "running" ? (
+                    {previewTracks.length > 0 && taskId && (
+                      <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-500/[0.07] p-3 space-y-2 ring-1 ring-emerald-400/10">
+                        <p className="text-xs font-semibold text-emerald-200 tracking-wide">
+                          {t("createMusic.previewBadge", "미리듣기")}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          {t(
+                            "createMusic.previewHint",
+                            "첫 음원이나 커버가 준비되면 여기서 바로 들을 수 있습니다. 최종 파일이 완성되면 아래 보관함에 자동으로 추가됩니다.",
+                          )}
+                        </p>
+                        <ul className="space-y-2">
+                          {previewTracks.map((tr, i) => {
+                            const st = generatedPreviewToSavedTrack(tr, taskId, i);
+                            const canPlay = Boolean(st.audio_url?.trim());
+                            const dur = formatAiTrackDurationMmss(st.duration);
+                            return (
+                              <li
+                                key={`preview-row-${taskId}-${i}-${st.clip_id ?? i}`}
+                                className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/70 p-2"
+                              >
+                                {st.image_url ? (
+                                  <img src={st.image_url} alt="" className="w-11 h-11 rounded-md object-cover shrink-0" />
+                                ) : (
+                                  <div className="w-11 h-11 rounded-md bg-muted shrink-0 flex items-center justify-center">
+                                    <Music className="w-5 h-5 text-muted-foreground" aria-hidden />
+                                  </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-medium truncate flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+                                    <span>{st.title || t("createMusic.untitled", "제목 없음")}</span>
+                                    {dur ? (
+                                      <span className="text-muted-foreground font-normal tabular-nums shrink-0">{dur}</span>
+                                    ) : null}
+                                  </p>
+                                </div>
+                                {canPlay ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="shrink-0 gap-1 h-8"
+                                    onClick={() => playTrackInGlobalPlayer(st)}
+                                    title={t("createMusic.play", "재생")}
+                                  >
+                                    <Play className="w-3.5 h-3.5" />
+                                    {t("createMusic.play", "재생")}
+                                  </Button>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground shrink-0 max-w-[5.5rem] text-right leading-snug">
+                                    {t("createMusic.previewAudioSoon", "오디오 준비 중")}
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
                       <p className="text-muted-foreground text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 왼쪽에서 음악을 생성해 보세요.")}</p>
                     ) : sortedFilteredSavedTracks.length === 0 ? (
                       <p className="text-muted-foreground text-sm">

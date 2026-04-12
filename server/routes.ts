@@ -1820,18 +1820,15 @@ export async function registerRoutes(
         const resp = d?.response as { sunoData?: unknown[]; suno_data?: unknown[] } | undefined;
         const sunoMerged = resp?.sunoData ?? resp?.suno_data;
         const sunoList = Array.isArray(sunoMerged) ? sunoMerged : [];
-        if (status === "SUCCESS") {
-          if (sunoList.length === 0) {
-            return res.json({ state: "running", data: null });
+        let customMode = false;
+        try {
+          if (typeof d?.param === "string") {
+            const param = JSON.parse(d.param) as { customMode?: boolean };
+            customMode = param.customMode === true;
           }
-          let customMode = false;
-          try {
-            if (typeof d?.param === "string") {
-              const param = JSON.parse(d.param) as { customMode?: boolean };
-              customMode = param.customMode === true;
-            }
-          } catch {}
-          const list = (sunoList as Record<string, unknown>[]).map((raw) => {
+        } catch {}
+        const mapSunoRawsToClips = (raws: Record<string, unknown>[]) =>
+          raws.map((raw) => {
             const t = raw;
             const id = t.id;
             return {
@@ -1845,7 +1842,20 @@ export async function registerRoutes(
               duration: pickClipDurationSec(t),
             };
           });
+        if (status === "SUCCESS") {
+          if (sunoList.length === 0) {
+            return res.json({ state: "running", data: null });
+          }
+          const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
           return res.json({ state: "succeeded", data: list });
+        }
+        /** Suno 앱처럼 FIRST_SUCCESS 단계에서 커버·스트림 URL이 오면 미리듣기(폴링은 계속, 완료 시 succeeded) */
+        if (status === "FIRST_SUCCESS" && sunoList.length > 0) {
+          const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
+          const hasMedia = list.some((x) => Boolean((x.audio_url ?? "").trim()) || Boolean((x.image_url ?? "").trim()));
+          if (hasMedia) {
+            return res.json({ state: "preview", data: list });
+          }
         }
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
           return res.json({ state: "failed", message: d?.errorMessage ?? "생성에 실패했습니다.", data: null });
