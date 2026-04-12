@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, redirectToLogin } from "@/lib/queryClient";
 import { useState, useEffect, useMemo } from "react";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
@@ -319,7 +319,10 @@ export default function MusicDetail() {
         (Number(musicData.price || 0) === 0 || hasPurchased)));
 
   async function handleDownload(asRingtone: boolean) {
-    if (!user) return;
+    if (!user) {
+      if (asRingtone) redirectToLogin();
+      return;
+    }
     const endpoint = asRingtone ? `/api/music/${musicId}/ringtone` : `/api/music/${musicId}/download`;
     if (asRingtone) setIsRingtoneDownloading(true);
     else setIsDownloading(true);
@@ -347,7 +350,7 @@ export default function MusicDetail() {
       a.download = filename + (filename.includes(".mp3") ? "" : ".mp3");
       a.click();
       URL.revokeObjectURL(url);
-      if (asRingtone && !isOwner) {
+      if (asRingtone && !isOwner && Number(musicData?.price || 0) > 0) {
         queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
         queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -606,49 +609,69 @@ export default function MusicDetail() {
                   <Share2 size={18} />
                 </Button>
 
-                {user && canDownload && (
-                  <>
-                    {hasPurchased && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="rounded-full gap-1.5"
-                        disabled={isDownloading}
-                        onClick={() => handleDownload(false)}
-                        data-testid="button-download"
-                        title={t('musicDetail.download', '다운로드')}
-                      >
-                        {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                        {t('musicDetail.download', '다운로드')}
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-full gap-1.5"
-                      disabled={isRingtoneDownloading}
-                      onClick={() => handleDownload(true)}
-                      data-testid="button-ringtone"
-                      title={
-                        isOwner
-                          ? t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")
-                          : `${t("musicDetail.ringtoneFeeHover", "유료로 200원이 차감됩니다. 차감 금액은 업로더에게 지급됩니다.")} ${t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")}`
+                {user && canDownload && hasPurchased && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full gap-1.5"
+                    disabled={isDownloading}
+                    onClick={() => handleDownload(false)}
+                    data-testid="button-download"
+                    title={t('musicDetail.download', '다운로드')}
+                  >
+                    {isDownloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    {t('musicDetail.download', '다운로드')}
+                  </Button>
+                )}
+                {musicData && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full gap-1.5"
+                    disabled={isRingtoneDownloading}
+                    onClick={() => {
+                      if (!user) {
+                        redirectToLogin();
+                        return;
                       }
-                    >
-                      {isRingtoneDownloading ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
-                      {t('musicDetail.ringtoneDownload', '벨소리용')}
-                    </Button>
-                  </>
+                      handleDownload(true);
+                    }}
+                    data-testid="button-ringtone"
+                    title={
+                      !user
+                        ? t("musicDetail.ringtoneLoginHint", "로그인 후 벨소리를 받을 수 있습니다")
+                        : isOwner
+                          ? t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")
+                          : Number(musicData.price || 0) > 0
+                            ? `${t("musicDetail.ringtoneFeeHover", "유료로 200원이 차감됩니다. 차감 금액은 업로더에게 지급됩니다.")} ${t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")}`
+                            : t("musicDetail.ringtoneHint", "다운로드 후 휴대폰 설정에서 벨소리로 지정해 주세요")
+                    }
+                  >
+                    {isRingtoneDownloading ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+                    {t('musicDetail.ringtoneDownload', '벨소리용')}
+                  </Button>
                 )}
               </div>
-              {user && canDownload && (
+              {musicData && (
                 <p className="text-xs text-muted-foreground mt-2" data-testid="text-ringtone-notice">
-                  {isOwner
-                    ? t("musicDetail.ringtoneNotice", "※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.")
-                    : t(
-                        "musicDetail.ringtoneNoticeFee",
-                        "※ 타인 음원 벨소리는 유료(200원)이며 차감액은 업로더에게 지급됩니다. 앞 30초 구간이 MP3로 내려받아집니다. 휴대폰 설정에서 벨소리로 지정해 주세요.",
-                      )}
+                  {!user
+                    ? t("musicDetail.ringtoneNoticeLogin", "※ 벨소리를 받으려면 로그인해 주세요. 앞 30초 MP3이며 휴대폰에서 벨소리로 지정해 주세요.")
+                    : isOwner
+                      ? t("musicDetail.ringtoneNotice", "※ 벨소리 설정은 각 휴대폰의 설정 메뉴에서 직접 지정해 주세요.")
+                      : !canDownload
+                        ? t(
+                            "musicDetail.ringtoneNoticeNoPermission",
+                            "※ 다운로드가 허용되지 않았거나 유료 구매 전인 곡은 벨소리를 받을 수 없습니다. (허용·무료·구매 후 가능)",
+                          )
+                        : Number(musicData.price || 0) > 0
+                          ? t(
+                              "musicDetail.ringtoneNoticeFee",
+                              "※ 타인 음원 벨소리는 유료(200원)이며 차감액은 업로더에게 지급됩니다. 앞 30초 구간이 MP3로 내려받아집니다. 휴대폰 설정에서 벨소리로 지정해 주세요.",
+                            )
+                          : t(
+                              "musicDetail.ringtoneNoticeFreeOther",
+                              "※ 무료로 받을 수 있는 음원의 벨소리는 추가 차감 없습니다. 앞 30초 MP3이며 휴대폰 설정에서 벨소리로 지정해 주세요.",
+                            )}
                 </p>
               )}
             </div>

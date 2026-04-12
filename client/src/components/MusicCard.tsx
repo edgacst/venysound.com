@@ -428,8 +428,8 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
     enabled: needsPurchaseCheck,
   });
   const hasPurchased = purchasedData?.purchased === true;
-  /** 벨소리/다운로드 권한 — 상세 페이지 `canDownload`와 동일 */
-  const canRingtoneDownload =
+  /** 서버가 벨소리를 허용하는지(상세 `canDownload`와 동일) — 안내 문구용 */
+  const canRingtonePermission =
     !!user &&
     (isOwner ||
       (!!music.isDownloadable && (Number(music.price || 0) === 0 || hasPurchased)));
@@ -569,6 +569,10 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const showMenu = canEdit || canDelete || canReport || !!user;
 
   const handleRingtoneConfirm = async () => {
+    if (!user) {
+      redirectToLogin();
+      return;
+    }
     setIsRingtoneDownloading(true);
     try {
       const res = await fetch(`/api/music/${music.id}/ringtone`, { credentials: "include" });
@@ -598,7 +602,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
       a.download = filename.includes(".mp3") ? filename : `${filename}.mp3`;
       a.click();
       URL.revokeObjectURL(url);
-      if (!isOwner) {
+      if (!isOwner && Number(music.price || 0) > 0) {
         queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
         queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
@@ -693,22 +697,20 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 <ExternalLink className="h-4 w-4" />
               </Button>
             </Link>
-            {canRingtoneDownload && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8"
-                title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRingtoneDialogOpen(true);
-                }}
-                data-testid={`button-ringtone-card-${music.id}`}
-                aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-              >
-                <Bell className="h-4 w-4 text-amber-400" />
-              </Button>
-            )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRingtoneDialogOpen(true);
+              }}
+              data-testid={`button-ringtone-card-${music.id}`}
+              aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+            >
+              <Bell className="h-4 w-4 text-amber-400" />
+            </Button>
             {showMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -923,23 +925,21 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                     {music.price.toLocaleString()} {t('credits.creditUnit')}
                   </span>
                 )}
-                {canRingtoneDownload && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
-                    title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRingtoneDialogOpen(true);
-                    }}
-                    data-testid={`button-ringtone-card-${music.id}`}
-                    aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                  >
-                    <Bell size={15} />
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
+                  title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRingtoneDialogOpen(true);
+                  }}
+                  data-testid={`button-ringtone-card-${music.id}`}
+                  aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                >
+                  <Bell size={15} />
+                </Button>
               </div>
             </div>
             <div className="flex items-center justify-between gap-1">
@@ -1411,17 +1411,36 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                   "벨소리 다운로드입니다. 앞 30초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.",
                 )}
               </span>
-              {isOwner ? (
+              {!user ? (
+                <span className="block text-muted-foreground">
+                  {t("music.ringtoneCardLoginLine", "로그인한 뒤 받을 수 있습니다.")}
+                </span>
+              ) : isOwner ? (
                 <span className="block text-muted-foreground">
                   {t("music.ringtoneCardFreeLine", "본인이 올린 음원은 무료로 받을 수 있습니다.")}
                 </span>
               ) : (
-                <span className="block text-muted-foreground">
-                  {t(
-                    "music.ringtoneCardFeeLine",
-                    "타인 음원은 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다.",
+                <>
+                  <span className="block text-muted-foreground">
+                    {Number(music.price || 0) > 0
+                      ? t(
+                          "music.ringtoneCardFeeLine",
+                          "타인 음원은 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다.",
+                        )
+                      : t(
+                          "music.ringtoneCardFreeOtherLine",
+                          "무료로 받을 수 있는 타인 음원은 벨소리 추가 차감이 없습니다.",
+                        )}
+                  </span>
+                  {!canRingtonePermission && (
+                    <span className="block text-amber-600/90 dark:text-amber-400/90">
+                      {t(
+                        "music.ringtoneCardPermissionWarn",
+                        "이 음원은 다운로드가 허용되지 않았거나 유료 구매 전이면 받을 수 없습니다.",
+                      )}
+                    </span>
                   )}
-                </span>
+                </>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -1429,16 +1448,22 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             <Button variant="outline" onClick={() => setRingtoneDialogOpen(false)} disabled={isRingtoneDownloading}>
               {t("common.cancel")}
             </Button>
-            <Button onClick={handleRingtoneConfirm} disabled={isRingtoneDownloading} data-testid="button-ringtone-confirm">
-              {isRingtoneDownloading ? (
-                <>
-                  <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
-                  {t("music.ringtoneCardDownloading", "받는 중...")}
-                </>
-              ) : (
-                t("music.ringtoneCardConfirm", "다운로드")
-              )}
-            </Button>
+            {!user ? (
+              <Button onClick={() => redirectToLogin()} data-testid="button-ringtone-login">
+                {t("music.ringtoneCardLoginButton", "로그인")}
+              </Button>
+            ) : (
+              <Button onClick={handleRingtoneConfirm} disabled={isRingtoneDownloading} data-testid="button-ringtone-confirm">
+                {isRingtoneDownloading ? (
+                  <>
+                    <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                    {t("music.ringtoneCardDownloading", "받는 중...")}
+                  </>
+                ) : (
+                  t("music.ringtoneCardConfirm", "다운로드")
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

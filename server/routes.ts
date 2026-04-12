@@ -7181,7 +7181,9 @@ export async function registerRoutes(
       }
 
       const fee = RINGTONE_FEE_WON;
-      if (!isOwner) {
+      /** 타인 유료(판매가 있는) 음원만 벨소리 추가 과금 — 무료 공개 곡은 차감 없음 */
+      const chargeRingtoneFee = !isOwner && Number(musicItem.price || 0) > 0;
+      if (chargeRingtoneFee) {
         const deducted = await storage.deductCredits(userId, fee);
         if (!deducted) {
           return res.status(400).json({
