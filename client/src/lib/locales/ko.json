@@ -1717,6 +1717,12 @@
     "styleOtherPlaceholder": "예: 리버브 많은 믹스, lo-fi 자국",
     "styleClear": "스타일 초기화",
     "styleMaxNote": "스타일 프리셋은 최대 {{n}}개까지 선택할 수 있습니다.",
+    "instrumentalLabel": "연주만 (보컬 없음)",
+    "instrumentalHint": "켜면 서버에 무보컬(연주) 생성을 요청합니다. 악기·분위기는 장르·스타일 칩·직접 입력으로 지정하고, 설명 모드에서는 아래 칸에 연주곡 느낌을 적어 주세요.",
+    "promptLabelInstrumental": "가사 (연주만이면 비워도 됨)",
+    "promptPlaceholderInstrumental": "연주만일 때는 비워도 됩니다. 멜로디·분위기 힌트를 적는 것은 선택입니다.",
+    "lyricsInputPlaceholderInstrumental": "예: 잔잔한 솔로 피아노, 카페 배경용으로 부드럽게, 보컬 없이",
+    "instrumentalCustomHint": "연주만 + 가사 직접 입력 모드에서는 스타일(장르·스타일 칩)과 제목이 중요합니다. 가사 칸은 비워도 됩니다.",
     "styleChip": {
       "male_vocal": "남성 보컬",
       "female_vocal": "여성 보컬",

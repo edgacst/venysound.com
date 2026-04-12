@@ -1500,6 +1500,12 @@
     "styleOtherPlaceholder": "例: リバーブ多め、lo-fi のノイズ",
     "styleClear": "スタイルをクリア",
     "styleMaxNote": "スタイルのプリセットは最大{{n}}つまで選べます。",
+    "instrumentalLabel": "演奏のみ（ボーカルなし）",
+    "instrumentalHint": "オンにするとサーバーへインストゥルメンタル生成を依頼します。楽器や雰囲気はジャンル・スタイルのチップや自由入力で。説明モードでは下の欄にイメージを書いてください。",
+    "promptLabelInstrumental": "歌詞（演奏のみなら空欄可）",
+    "promptPlaceholderInstrumental": "演奏のみのときは空欄でも構いません。雰囲気のヒントは任意です。",
+    "lyricsInputPlaceholderInstrumental": "例: 静かなソロピアノ、カフェ向けの穏やかさ、ボーカルなし",
+    "instrumentalCustomHint": "演奏のみ＋歌詞直接入力モードでは、ジャンル・スタイルのチップとタイトルが重要です。歌詞欄は空でも構いません。",
     "styleChip": {
       "male_vocal": "男性ボーカル",
       "female_vocal": "女性ボーカル",

@@ -1498,6 +1498,12 @@
     "styleOtherPlaceholder": "例如：混响偏重、lo-fi 底噪",
     "styleClear": "清除风格",
     "styleMaxNote": "风格预设最多可选 {{n}} 个。",
+    "instrumentalLabel": "仅演奏（无人声）",
+    "instrumentalHint": "开启后向服务器请求纯器乐生成。乐器与氛围请用曲风/风格芯片或文字说明；在描述模式下请在下方写出器乐感觉。",
+    "promptLabelInstrumental": "歌词（纯器乐可留空）",
+    "promptPlaceholderInstrumental": "纯器乐时可留空。若要写，可简单写氛围或旋律提示（可选）。",
+    "lyricsInputPlaceholderInstrumental": "例如：轻柔独奏钢琴、咖啡馆背景音乐、不要人声",
+    "instrumentalCustomHint": "纯器乐 + 直接输入歌词模式时，曲风/风格芯片与标题更重要，歌词框可以留空。",
     "styleChip": {
       "male_vocal": "男声",
       "female_vocal": "女声",

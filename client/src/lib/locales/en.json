@@ -1695,6 +1695,12 @@
     "styleOtherPlaceholder": "e.g. reverb-heavy mix, lo-fi crackle",
     "styleClear": "Clear style",
     "styleMaxNote": "You can select up to {{n}} style presets.",
+    "instrumentalLabel": "Instrumental only (no vocals)",
+    "instrumentalHint": "Sends a no-vocals request to the server. Pick instruments and vibe with genre/style chips or text; in description mode, describe the instrumental below.",
+    "promptLabelInstrumental": "Lyrics (optional for instrumental)",
+    "promptPlaceholderInstrumental": "You can leave this empty for instrumental. Optional hints for mood or melody.",
+    "lyricsInputPlaceholderInstrumental": "e.g. soft solo piano, gentle cafe background, no vocals",
+    "instrumentalCustomHint": "For instrumental + lyrics mode, genre/style chips and title matter most. The lyrics box may stay empty.",
     "styleChip": {
       "male_vocal": "Male vocal",
       "female_vocal": "Female vocal",

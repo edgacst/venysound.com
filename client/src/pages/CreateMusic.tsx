@@ -36,6 +36,7 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /** 생성된 곡 목록 페이지당 개수 */
 const SAVED_TRACKS_LIST_PAGE_SIZE = 6;
@@ -630,6 +631,8 @@ export default function CreateMusic() {
   const [genreOther, setGenreOther] = useState("");
   const [selectedStyleIds, setSelectedStyleIds] = useState<StylePresetId[]>([]);
   const [styleOther, setStyleOther] = useState("");
+  /** 서버 `make_instrumental` — 무보컬(연주) 생성 요청 */
+  const [instrumentalOnly, setInstrumentalOnly] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -1120,7 +1123,7 @@ export default function CreateMusic() {
     if (!user) return;
     const customMode = mode === "custom";
     const promptTrim = prompt.trim();
-    if (customMode && !promptTrim) {
+    if (customMode && !promptTrim && !instrumentalOnly) {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
     }
@@ -1146,6 +1149,7 @@ export default function CreateMusic() {
         title: title.trim() || undefined,
         tags: mergedTags || undefined,
       };
+      if (instrumentalOnly) body.make_instrumental = true;
       if (customMode) body.prompt = promptTrim;
       else body.gpt_description_prompt = promptTrim;
 
@@ -1586,9 +1590,32 @@ export default function CreateMusic() {
                           maxLength={160}
                         />
                       </div>
+                      <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/15 px-4 py-3">
+                        <Checkbox
+                          id="create-music-instrumental"
+                          checked={instrumentalOnly}
+                          onCheckedChange={(v) => setInstrumentalOnly(v === true)}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 space-y-1">
+                          <label htmlFor="create-music-instrumental" className="text-sm font-medium leading-snug cursor-pointer block">
+                            {t("createMusic.instrumentalLabel", "연주만 (보컬 없음)")}
+                          </label>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {t(
+                              "createMusic.instrumentalHint",
+                              "켜면 서버에 무보컬 생성을 요청합니다. 피아노·기타 등은 스타일 칩·직접 입력으로 지정하고, 설명 모드에서는 아래 칸에 연주곡 분위기를 적어 주세요.",
+                            )}
+                          </p>
+                        </div>
+                      </div>
                       <div>
                         <label className="block text-sm font-medium mb-1">
-                          {mode === "custom" ? t("createMusic.promptLabel", "가사 (필수)") : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")}
+                          {mode === "custom"
+                            ? instrumentalOnly
+                              ? t("createMusic.promptLabelInstrumental", "가사 (연주만이면 비워도 됨)")
+                              : t("createMusic.promptLabel", "가사 (필수)")
+                            : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")}
                         </label>
                         <textarea
                           value={prompt}
@@ -1596,14 +1623,32 @@ export default function CreateMusic() {
                           className="w-full rounded-lg bg-background/80 border border-border px-4 py-3 min-h-[120px] resize-y"
                           placeholder={
                             mode === "custom"
-                              ? t("createMusic.promptPlaceholder", "[Verse]\n가사 입력...\n\n[Chorus]\n후렴구...")
-                              : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
+                              ? instrumentalOnly
+                                ? t(
+                                    "createMusic.promptPlaceholderInstrumental",
+                                    "연주만일 때는 비워도 됩니다. 멜로디·분위기 힌트를 적으면 선택입니다.",
+                                  )
+                                : t("createMusic.promptPlaceholder", "[Verse]\n가사 입력...\n\n[Chorus]\n후렴구...")
+                              : instrumentalOnly
+                                ? t(
+                                    "createMusic.lyricsInputPlaceholderInstrumental",
+                                    "예: 잔잔한 솔로 피아노, 카페 배경용으로 부드럽게, 보컬 없이",
+                                  )
+                                : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
                           }
-                          required
+                          required={mode === "description" || (mode === "custom" && !instrumentalOnly)}
                         />
-                        {mode === "custom" && (
+                        {mode === "custom" && !instrumentalOnly && (
                           <p className="mt-1.5 text-xs text-muted-foreground">
                             {t("createMusic.lyricsHint", "입력한 가사는 그대로 전달됩니다. [Verse], [Chorus] 등 구조를 쓰면 반영이 좋습니다. 실제 노래는 AI 서비스에 따라 다를 수 있습니다.")}
+                          </p>
+                        )}
+                        {mode === "custom" && instrumentalOnly && (
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            {t(
+                              "createMusic.instrumentalCustomHint",
+                              "연주만 + 가사 직접 입력 모드에서는 스타일(장르·스타일 칩)과 제목이 중요합니다. 가사 칸은 비워도 됩니다.",
+                            )}
                           </p>
                         )}
                       </div>
