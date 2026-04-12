@@ -116,7 +116,7 @@ export default function Pricing() {
     plan?: string;
     expiresAt?: string;
   }>({
-    queryKey: ["/api/toss/subscription"],
+    queryKey: ["/api/subscription/me"],
     enabled: !!user,
   });
 
@@ -150,7 +150,7 @@ export default function Pricing() {
         message: data.message,
       });
       toast({ title: t("pricing.bankRequestSubmitted", "입금 신청 완료"), description: data.message });
-      queryClient.invalidateQueries({ queryKey: ["/api/toss/subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
     },
     onError: (error: Error) => {
       toast({ title: t("pricing.bankRequestFailed", "입금 신청 실패"), description: error.message, variant: "destructive" });
@@ -159,12 +159,12 @@ export default function Pricing() {
 
   const cancelMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/toss/cancel-subscription");
+      const res = await apiRequest("POST", "/api/subscription/cancel");
       return res.json();
     },
     onSuccess: (data) => {
       toast({ title: t("pricing.cancelSuccess", "구독 해지"), description: data.message });
-      queryClient.invalidateQueries({ queryKey: ["/api/toss/subscription"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     },
     onError: (error: Error) => {

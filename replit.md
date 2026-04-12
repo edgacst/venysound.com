@@ -48,13 +48,10 @@ shared/
 - AI 커버 이미지 선택형 생성 (프리미엄 전용, gpt-image-1로 생성, POST /api/music/generate-cover)
 - 관리자 대시보드: 통계(회원수/음원수/좋아요/댓글), 커뮤니티 글 관리(삭제), 회원 관리(검색/삭제/승격), 저작권 신고 관리
 - 저작권 신고 시스템: 신고 접수(사유/원작자/원곡/상세설명), 상태 관리(대기중→검토중→처리완료/반려), 관리자 메모, 알림 전송
-- **토스페이먼츠 프리미엄 구독 시스템**: Free/Premium 플랜, 월간(9,900원)/연간(99,000원) 결제
-  - 토스페이먼츠 빌링키 방식: 카드 1회 등록 → 자동결제
-  - 환경변수: TOSS_CLIENT_KEY (클라이언트), TOSS_SECRET_KEY (서버)
-  - DB: users 테이블 (tossBillingKey, tossCustomerKey, subscriptionPlan, subscriptionExpiresAt)
-  - 테이블: subscription_plans (플랜 정보), payments (결제 내역)
-  - API: /api/toss/plans, /api/toss/subscription, /api/toss/client-key, /api/toss/billing/success, /api/toss/subscribe, /api/toss/cancel-subscription, /api/toss/payment-history
-  - Pricing 페이지 (/pricing): 플랜 비교, 결제 주기 선택, 카드 등록, 구독/해지
+- **멤버십·구독**: Starter~Premium, 계좌이체 구독 + 향후 페이업(Payup) 카드/정기결제
+  - DB: users (subscriptionTier, subscriptionEntitlements, subscriptionExpiresAt 등), subscription_plans, payments
+  - API: GET /api/subscription/plans, GET /api/subscription/me, POST /api/subscription/cancel, GET /api/subscription/payments, 계좌이체 `/api/subscription/request-bank` 등
+  - Pricing (/pricing): 플랜 안내, 계좌이체 구독, 구독 해지
   - Premium 배지: 프로필, 네비게이션 드롭다운에 표시
   - Premium 게이팅: AI 커버 생성 기능은 프리미엄 전용
 - **업로더 수익화 시스템**: 후원(팁) + 유료 다운로드로 아티스트 수익 지원

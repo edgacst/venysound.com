@@ -5300,9 +5300,9 @@ export async function registerRoutes(
     }
   });
 
-  // === TOSS PAYMENTS SUBSCRIPTION ROUTES ===
+  // === 구독 API (PG: 페이업 예정 · 토스 미사용 / 계좌이체 유지) ===
 
-  app.get("/api/toss/plans", async (_req, res) => {
+  app.get("/api/subscription/plans", async (_req, res) => {
     try {
       const plans = await db.select().from(subscriptionPlans);
       res.json(plans);
@@ -5312,7 +5312,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/toss/subscription", isAuthenticated, async (req, res) => {
+  app.get("/api/subscription/me", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
@@ -5346,191 +5346,17 @@ export async function registerRoutes(
           tier: row.subscriptionTier,
           plan: row.subscriptionPlan,
           expiresAt: row.subscriptionExpiresAt,
-          hasBillingKey: !!row.tossBillingKey,
         });
       }
 
-      res.json({ tier: "free", hasBillingKey: !!row.tossBillingKey });
+      res.json({ tier: "free" });
     } catch (err) {
       console.error("Subscription check error:", err);
       res.status(500).json({ message: "구독 정보를 불러올 수 없습니다" });
     }
   });
 
-  app.get("/api/toss/client-key", async (_req, res) => {
-    const clientKey = process.env.TOSS_CLIENT_KEY;
-    res.json({ clientKey: clientKey || null });
-  });
-
-  app.get("/api/toss/billing/success", isAuthenticated, async (req, res) => {
-    try {
-      // @ts-ignore
-      const userId = req.user.claims.sub;
-      const { authKey, customerKey } = req.query;
-
-      if (!authKey || !customerKey) {
-        return res.status(400).json({ message: "인증 정보가 필요합니다" });
-      }
-
-      const secretKey = process.env.TOSS_SECRET_KEY;
-      if (!secretKey) {
-        return res.status(500).json({ message: "결제 설정 오류" });
-      }
-
-      const encryptedKey = Buffer.from(secretKey + ':').toString('base64');
-
-      const response = await fetch('https://api.tosspayments.com/v1/billing/authorizations/issue', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${encryptedKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          authKey: authKey as string,
-          customerKey: customerKey as string,
-        }),
-      });
-
-      const data = await response.json() as any;
-
-      if (!response.ok) {
-        console.error("Billing key issue failed:", data);
-        return res.status(400).json({ message: data.message || "빌링키 발급 실패" });
-      }
-
-      await db.update(users).set({
-        tossBillingKey: data.billingKey,
-        tossCustomerKey: customerKey as string,
-      }).where(eq(users.id, userId));
-
-      res.json({ success: true, billingKey: data.billingKey });
-    } catch (err) {
-      console.error("Billing auth error:", err);
-      res.status(500).json({ message: "카드 등록에 실패했습니다" });
-    }
-  });
-
-  app.post("/api/toss/subscribe", isAuthenticated, async (req, res) => {
-    try {
-      // @ts-ignore
-      const userId = req.user.claims.sub;
-      const { billingPeriod } = req.body;
-
-      if (!billingPeriod || !['monthly', 'yearly'].includes(billingPeriod)) {
-        return res.status(400).json({ message: "결제 주기를 선택해주세요" });
-      }
-
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
-      if (!user.tossBillingKey) return res.status(400).json({ message: "카드를 먼저 등록해주세요" });
-
-      const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, 'pro'));
-      if (!plan) return res.status(500).json({ message: "플랜 정보를 찾을 수 없습니다" });
-
-      const n = normalizeSubscriptionPlanPrices("pro", plan.monthlyPrice, plan.yearlyPrice);
-      const supply = billingPeriod === "monthly" ? n.monthly : n.yearly;
-      const amount = subscriptionTotalVatInclusiveWon(supply);
-      const orderName = billingPeriod === 'monthly' ? 'Veny Sound Pro 월간 구독' : 'Veny Sound Pro 연간 구독';
-      const orderId = `SW_${userId.substring(0, 8)}_${Date.now()}`;
-
-      const secretKey = process.env.TOSS_SECRET_KEY;
-      if (!secretKey) return res.status(500).json({ message: "결제 설정 오류" });
-
-      const encryptedKey = Buffer.from(secretKey + ':').toString('base64');
-
-      const response = await fetch(`https://api.tosspayments.com/v1/billing/${user.tossBillingKey}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${encryptedKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerKey: user.tossCustomerKey,
-          amount,
-          orderId,
-          orderName,
-          customerEmail: user.email || undefined,
-          customerName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || undefined,
-        }),
-      });
-
-      const data = await response.json() as any;
-
-      if (!response.ok) {
-        console.error("Billing payment failed:", data);
-        return res.status(400).json({ message: data.message || "결제에 실패했습니다" });
-      }
-
-      const now = new Date();
-      const expiresAt = new Date(now);
-      if (billingPeriod === 'monthly') {
-        expiresAt.setMonth(expiresAt.getMonth() + 1);
-      } else {
-        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-      }
-
-      await db.insert(payments).values({
-        userId,
-        orderId,
-        paymentKey: data.paymentKey,
-        amount,
-        status: 'paid',
-        plan: 'pro',
-        billingPeriod,
-      });
-
-      const view = buildEntitlementsView(
-        user.subscriptionEntitlements,
-        user.subscriptionTier,
-        user.subscriptionExpiresAt,
-        now,
-      );
-      const merged = mergeEntitlementExpiry(view, "pro", expiresAt);
-      const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
-      await db
-        .update(users)
-        .set({
-          subscriptionEntitlements: computed.subscriptionEntitlements,
-          subscriptionTier: computed.subscriptionTier,
-          subscriptionExpiresAt: computed.subscriptionExpiresAt,
-          subscriptionPlan: billingPeriod,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-
-      await storage.createNotification({
-        userId,
-        type: "system",
-        message: `Pro 구독이 완료되었습니다. (${billingPeriod === "monthly" ? "월간" : "연간"})`,
-        payload: { plan: billingPeriod, amount },
-        url: "/pricing",
-      });
-
-      const subEmailKind = subscriptionPaymentEmailKind(user, now, "pro");
-      const recipientName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
-      void sendSubscriptionEmail(user.email, {
-        kind: subEmailKind,
-        planId: "pro",
-        billingPeriod,
-        expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
-        amountWon: amount,
-        recipientName,
-      });
-
-      res.json({
-        success: true,
-        tier: computed.subscriptionTier,
-        plan: billingPeriod,
-        expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
-        amount,
-      });
-    } catch (err) {
-      console.error("Subscribe error:", err);
-      res.status(500).json({ message: "구독 처리에 실패했습니다" });
-    }
-  });
-
-  app.post("/api/toss/cancel-subscription", isAuthenticated, async (req, res) => {
+  app.post("/api/subscription/cancel", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
@@ -5543,6 +5369,7 @@ export async function registerRoutes(
 
       await db.update(users).set({
         tossBillingKey: null,
+        tossCustomerKey: null,
         subscriptionPlan: null,
         subscriptionTier: "free",
         subscriptionExpiresAt: null,
@@ -5566,7 +5393,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/toss/payment-history", isAuthenticated, async (req, res) => {
+  app.get("/api/subscription/payments", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
@@ -5835,91 +5662,12 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/credits/charge", isAuthenticated, async (req, res) => {
-    try {
-      // @ts-ignore
-      const userId = req.user.claims.sub;
-      const { amount, paymentKey, orderId } = req.body;
-
-      const amountNum = Number(amount);
-      if (!amountNum || amountNum < WALLET_TOPUP_MIN_TOTAL_WON) {
-        return res.status(400).json({ message: `최소 충전 금액(총결제, 부가세 포함)은 ${WALLET_TOPUP_MIN_TOTAL_WON.toLocaleString("ko-KR")}원입니다` });
-      }
-      const oid =
-        orderId && String(orderId).trim()
-          ? String(orderId).trim()
-          : `CREDIT_${userId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32)}_${Date.now()}`;
-
-      const [existingPay] = await db.select().from(payments).where(eq(payments.orderId, oid)).limit(1);
-      if (existingPay?.status === "paid") {
-        const newCredits = await storage.getUserCredits(userId);
-        return res.json({ balanceWon: newCredits, credits: newCredits, message: "이미 처리된 결제입니다." });
-      }
-      if (existingPay?.status === "pending") {
-        return res.status(400).json({ message: "동일 주문이 입금 대기 중입니다. 중복 결제를 확인해 주세요." });
-      }
-
-      const tossSecretKey = process.env.TOSS_SECRET_KEY;
-      if (tossSecretKey && paymentKey && orderId) {
-        const confirmRes = await fetch("https://api.tosspayments.com/v1/payments/confirm", {
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${Buffer.from(tossSecretKey + ":").toString("base64")}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ paymentKey, orderId, amount }),
-        });
-
-        if (!confirmRes.ok) {
-          const errData = await confirmRes.json();
-          return res.status(400).json({ message: errData.message || "결제 확인에 실패했습니다" });
-        }
-      }
-
-      const supplyWon = walletSupplyWonFromTotalPaymentVatInclusive(amountNum);
-      if (supplyWon < 1) {
-        return res.status(400).json({ message: "결제 금액이 너무 작습니다" });
-      }
-
-      try {
-        await db.insert(payments).values({
-          userId,
-          orderId: oid,
-          paymentKey: paymentKey ? String(paymentKey) : tossSecretKey ? "toss_card" : "manual",
-          amount: amountNum,
-          status: "paid",
-          plan: "credit_charge",
-          billingPeriod: null,
-        });
-      } catch (insErr: unknown) {
-        const msg = insErr instanceof Error ? insErr.message : String(insErr);
-        const code = (insErr as { code?: string })?.code;
-        if (code === "23505" || /unique|duplicate/i.test(msg)) {
-          const newCredits = await storage.getUserCredits(userId);
-          return res.json({ balanceWon: newCredits, credits: newCredits, message: "이미 처리된 결제입니다." });
-        }
-        throw insErr;
-      }
-
-      try {
-        await storage.addCredits(userId, supplyWon);
-        await storage.createCreditTransaction({
-          userId,
-          type: "charge",
-          amount: supplyWon,
-          description: `지갑 충전 ${supplyWon.toLocaleString("ko-KR")}원 적립 (총결제 ${amountNum.toLocaleString("ko-KR")}원)`,
-        });
-      } catch (credErr) {
-        await db.delete(payments).where(eq(payments.orderId, oid));
-        throw credErr;
-      }
-
-      const newCredits = await storage.getUserCredits(userId);
-      res.json({ balanceWon: newCredits, credits: newCredits, message: "충전이 완료되었습니다" });
-    } catch (err) {
-      console.error("Credit charge error:", err);
-      res.status(500).json({ message: "크레딧 충전에 실패했습니다" });
-    }
+  /** 예전 토스 즉시충전 경로 — PG는 페이업으로 전환 예정. 지갑 충전은 계좌이체(/api/credits/request-bank)만 사용. */
+  app.post("/api/credits/charge", isAuthenticated, async (_req, res) => {
+    return res.status(503).json({
+      message:
+        "카드 즉시 지갑 충전은 중단되었습니다. 아래「계좌이체로 충전 신청」을 이용해 주세요. (페이업 카드 연동은 별도 배포에서 제공합니다.)",
+    });
   });
 
   // 크레딧 계좌이체 충전 신청 (amount = 총결재금액 = 충전금+부가세10%)

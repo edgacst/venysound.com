@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, Plus, Minus, Gift, Download, Loader2, Clock, CreditCard, Landmark, Sparkles, Undo2 } from "lucide-react";
+import { Coins, Plus, Minus, Gift, Download, Loader2, Clock, Landmark, Sparkles, Undo2 } from "lucide-react";
 import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -16,7 +16,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { apiRequest } from "@/lib/queryClient";
-import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 import {
   walletSupplyWonFromTotalPaymentVatInclusive,
   WALLET_TOPUP_DEFAULT_TOTAL_WON,
@@ -49,7 +48,6 @@ export default function Credits() {
     orderId: string;
     message: string;
   } | null>(null);
-  const [tossLoading, setTossLoading] = useState(false);
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundCreditsInput, setRefundCreditsInput] = useState("");
   const [refundReason, setRefundReason] = useState("");
@@ -109,58 +107,27 @@ export default function Credits() {
     enabled: !!user || bankModalOpen,
   });
 
-  const { data: tossClientKey } = useQuery<{ clientKey: string | null }>({
-    queryKey: ["/api/toss/client-key"],
-  });
-
   const searchString = useSearch();
-  const isTossAvailable = !!tossClientKey?.clientKey;
 
   const balanceWon = creditData?.balanceWon ?? creditData?.credits ?? 0;
   const topupSupplyWon = walletSupplyWonFromTotalPaymentVatInclusive(topupTotalWon);
 
-  // Handle Toss redirect: successUrl returns with ?paymentKey=...&orderId=...
   useEffect(() => {
     if (!user || !searchString) return;
     const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
-    const paymentKey = params.get("paymentKey");
-    const orderId = params.get("orderId");
-    if (!paymentKey || !orderId) return;
-    const stored = sessionStorage.getItem("credit_charge");
-    sessionStorage.removeItem("credit_charge");
-    if (!stored) return;
-    try {
-      const { amount } = JSON.parse(stored) as { amount: number };
-      if (!amount) return;
-      fetch("/api/credits/charge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, paymentKey, orderId }),
-        credentials: "include",
-      })
-        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
-        .then(({ ok, data }) => {
-          if (ok) {
-            queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
-            toast({
-              title: t("credits.chargeComplete", "충전 완료"),
-              description:
-                t("credits.chargeCompleteDescWon", "지갑에 원화가 반영되었습니다. 현재 잔액: ") +
-                (data.balanceWon ?? data.credits ?? 0).toLocaleString() +
-                t("common.won", "원"),
-            });
-          } else {
-            toast({ title: t("credits.chargeFailed", "충전 실패"), description: data?.message ?? "결제 확인에 실패했습니다", variant: "destructive" });
-          }
-        })
-        .catch(() => toast({ title: t("credits.chargeFailed", "충전 실패"), variant: "destructive" }));
+    if (params.get("paymentKey") && params.get("orderId")) {
+      sessionStorage.removeItem("credit_charge");
+      toast({
+        title: t("credits.chargeFailed", "충전 실패"),
+        description: t(
+          "credits.cardChargeDisabled",
+          "카드 즉시 충전은 종료되었습니다. 계좌이체로 충전해 주세요.",
+        ),
+        variant: "destructive",
+      });
       window.history.replaceState(null, "", "/credits");
-    } catch {
-      /* ignore */
     }
-  }, [user, searchString, queryClient, toast, t]);
+  }, [user, searchString, toast, t]);
 
   useEffect(() => {
     if (!refundOpen) return;
@@ -243,38 +210,6 @@ export default function Credits() {
     },
   });
 
-  const chargeMutation = useMutation({
-    mutationFn: async (amount: number) => {
-      const res = await fetch("/api/credits/charge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || t('credits.chargeFailed', '충전 실패'));
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: t("credits.chargeComplete", "충전 완료"),
-        description:
-          t("credits.chargeCompleteDescWon", "지갑에 원화가 반영되었습니다. 현재 잔액: ") +
-          (data.balanceWon ?? data.credits)?.toLocaleString() +
-          t("common.won", "원"),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/earnings"] });
-      setTopupTotalWon(WALLET_TOPUP_DEFAULT_TOTAL_WON);
-    },
-    onError: (error: Error) => {
-      toast({ title: t('credits.chargeFailed', '충전 실패'), description: error.message, variant: "destructive" });
-    },
-  });
-
   const getTypeLabel = (type: string) => {
     switch (type) {
       case "charge": return t('credits.typeCharge', '충전');
@@ -296,34 +231,6 @@ export default function Credits() {
       case "ai_music_create": return <Sparkles size={14} className="text-purple-400" />;
       case "refund": return <Undo2 size={14} className="text-orange-400" />;
       default: return <Coins size={14} />;
-    }
-  };
-
-  const handleTossPayment = async () => {
-    if (!user || !tossClientKey?.clientKey) return;
-    if (topupTotalWon < WALLET_TOPUP_MIN_TOTAL_WON) return;
-    const amount = topupTotalWon;
-    const orderId = `WALLET_${String(user.id).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 20)}_${Date.now()}`;
-    sessionStorage.setItem("credit_charge", JSON.stringify({ amount }));
-    setTossLoading(true);
-    try {
-      const tossPayments = await loadTossPayments(tossClientKey.clientKey);
-      const baseUrl = window.location.origin;
-      await tossPayments.requestPayment("카드", {
-        amount,
-        orderId,
-        orderName: t("credits.orderNameWallet", "지갑 충전"),
-        successUrl: `${baseUrl}/credits?payment=success`,
-        failUrl: `${baseUrl}/credits?payment=fail`,
-      });
-    } catch (err: unknown) {
-      const msg = err && typeof err === "object" && "message" in err ? String((err as { message: string }).message) : "";
-      if (msg && !msg.includes("popup") && !msg.includes("cancel")) {
-        toast({ title: t("credits.chargeFailed", "충전 실패"), description: msg, variant: "destructive" });
-      }
-      sessionStorage.removeItem("credit_charge");
-    } finally {
-      setTossLoading(false);
     }
   };
 
@@ -820,12 +727,6 @@ export default function Credits() {
                 <Landmark size={16} className="mr-2" />
                 {t("credits.bankTransferCharge", "계좌이체로 충전 신청")}
               </Button>
-              {isTossAvailable ? (
-                <Button onClick={() => void handleTossPayment()} disabled={tossLoading} data-testid="button-charge-toss">
-                  {tossLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <CreditCard size={16} className="mr-2" />}
-                  {t("credits.tossPay", "카드 결제")}
-                </Button>
-              ) : null}
             </div>
             {bankInfo && (
               <p className="text-xs text-muted-foreground mt-3 font-medium">
