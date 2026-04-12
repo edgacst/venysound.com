@@ -24,6 +24,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +39,50 @@ import {
 
 /** 생성된 곡 목록 페이지당 개수 */
 const SAVED_TRACKS_LIST_PAGE_SIZE = 6;
+
+/** 장르 칩 → API/스타일 문자열(영문 위주로 모델에 전달) */
+const GENRE_PRESET_IDS = [
+  "kpop",
+  "rnb",
+  "rock",
+  "hiphop",
+  "jazz",
+  "classical",
+  "edm",
+  "ballad",
+  "indie",
+  "folk",
+  "trot",
+  "ost",
+] as const;
+type GenrePresetId = (typeof GENRE_PRESET_IDS)[number];
+
+const GENRE_API_TOKEN: Record<GenrePresetId, string> = {
+  kpop: "K-pop",
+  rnb: "R&B",
+  rock: "Rock",
+  hiphop: "Hip-hop",
+  jazz: "Jazz",
+  classical: "Classical",
+  edm: "EDM",
+  ballad: "Ballad",
+  indie: "Indie",
+  folk: "Folk / acoustic",
+  trot: "Trot",
+  ost: "TV / film soundtrack",
+};
+
+const MAX_GENRE_PRESETS = 3;
+
+/** 장르(칩·직접입력) + 기존 스타일 입력을 서버 `tags`(스타일)로 합침 */
+function buildTagsForApi(genreIds: GenrePresetId[], genreOther: string, styleTags: string): string {
+  const fromPresets = genreIds.map((id) => GENRE_API_TOKEN[id]).filter(Boolean);
+  const other = genreOther.trim();
+  const g = [...fromPresets, other].filter(Boolean).join(", ");
+  const s = styleTags.trim();
+  if (g && s) return `${g} · ${s}`;
+  return g || s;
+}
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
@@ -466,6 +511,9 @@ export default function CreateMusic() {
     creditsPerMusicCreate?: number;
     wonPerMusicCreate?: number;
     deductsCreditsPerCreate?: boolean;
+    /** 구독 지갑 경로: 플랜 월 공급가(원) — basic 단일이면 9000 */
+    subscriptionAiPlanGrantWon?: number;
+    subscriptionAiWalletRemainingWon?: number;
   }>({
     queryKey: ["/api/ai-music/usage"],
     enabled: !!user,
@@ -501,6 +549,8 @@ export default function CreateMusic() {
 
   const [mode, setMode] = useState<CreateMode>("description");
   const [title, setTitle] = useState("");
+  const [selectedGenreIds, setSelectedGenreIds] = useState<GenrePresetId[]>([]);
+  const [genreOther, setGenreOther] = useState("");
   const [tags, setTags] = useState("");
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1009,13 +1059,14 @@ export default function CreateMusic() {
     submitModeRef.current = mode;
     if (mode === "custom") submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
-    submittedTagsRef.current = tags.trim();
+    const mergedTags = buildTagsForApi(selectedGenreIds, genreOther, tags);
+    submittedTagsRef.current = mergedTags;
     try {
       const body: Record<string, unknown> = {
         custom_mode: customMode,
         mv: "sonic-v4-5",
         title: title.trim() || undefined,
-        tags: tags.trim() || undefined,
+        tags: mergedTags || undefined,
       };
       if (customMode) body.prompt = promptTrim;
       else body.gpt_description_prompt = promptTrim;
@@ -1202,7 +1253,7 @@ export default function CreateMusic() {
                             <>
                               <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
                                 <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
-                                {t("createMusic.subscriptionAiLabelWon", "구독 AI 월 예산(원)")}
+                                {t("createMusic.subscriptionAiLabelWon", "구독 AI 한도(원, 이월 포함)")}
                               </div>
                               <strong className="text-xl tabular-nums text-white">
                                 {t("createMusic.subscriptionAiQuotaCountWon", "이번 달 {{used}} / {{limit}}원", {
@@ -1210,6 +1261,19 @@ export default function CreateMusic() {
                                   limit: q.limit.toLocaleString(),
                                 })}
                               </strong>
+                              {typeof aiUsage.subscriptionAiPlanGrantWon === "number" &&
+                              typeof aiUsage.subscriptionAiWalletRemainingWon === "number" ? (
+                                <span className="text-[10px] text-violet-200/85 leading-tight px-1 block">
+                                  {t(
+                                    "createMusic.subscriptionAiQuotaBreakdownWon",
+                                    "플랜 월 공급가 {{plan}}원 · 이월 지갑 잔액 {{wallet}}원 (총 한도 = 사용 + 잔액)",
+                                    {
+                                      plan: aiUsage.subscriptionAiPlanGrantWon.toLocaleString(),
+                                      wallet: aiUsage.subscriptionAiWalletRemainingWon.toLocaleString(),
+                                    },
+                                  )}
+                                </span>
+                              ) : null}
                               <span className="text-[11px] text-violet-100/70 leading-tight px-1">
                                 {String(aiUsage.usagePeriodKey ?? "").startsWith("sub:")
                                   ? t(
@@ -1308,6 +1372,68 @@ export default function CreateMusic() {
                           className="w-full rounded-lg bg-background/80 border border-border px-4 py-2"
                           placeholder={t("createMusic.titlePlaceholder", "예: Starry Night")}
                           maxLength={80}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-end justify-between gap-2">
+                          <label className="block text-sm font-medium">{t("createMusic.genreSectionLabel", "장르")}</label>
+                          {(selectedGenreIds.length > 0 || genreOther.trim()) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedGenreIds([]);
+                                setGenreOther("");
+                              }}
+                              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                            >
+                              {t("createMusic.genreClear", "장르 선택 초기화")}
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {t(
+                            "createMusic.genreHint",
+                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 최대 3개까지 선택됩니다. 선택·입력한 내용은 음악 스타일 앞에 붙여 AI에 전달됩니다.",
+                          )}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {GENRE_PRESET_IDS.map((id) => {
+                            const selected = selectedGenreIds.includes(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedGenreIds((prev) => {
+                                    if (prev.includes(id)) return prev.filter((x) => x !== id);
+                                    if (prev.length >= MAX_GENRE_PRESETS) {
+                                      toast({
+                                        title: t("createMusic.genreMaxNote", "장르는 최대 3개까지 선택할 수 있습니다."),
+                                      });
+                                      return prev;
+                                    }
+                                    return [...prev, id];
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                  selected
+                                    ? "border-primary/70 bg-primary/25 text-primary-foreground shadow-sm shadow-primary/10"
+                                    : "border-border/80 bg-background/70 text-muted-foreground hover:border-primary/35 hover:bg-muted/40",
+                                )}
+                              >
+                                {t(`createMusic.genreChip.${id}`, GENRE_API_TOKEN[id])}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <input
+                          type="text"
+                          value={genreOther}
+                          onChange={(e) => setGenreOther(e.target.value)}
+                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2 text-sm"
+                          placeholder={t("createMusic.genreOtherPlaceholder", "예: city pop, synthwave")}
+                          maxLength={120}
                         />
                       </div>
                       <div>
