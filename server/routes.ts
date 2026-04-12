@@ -1375,9 +1375,10 @@ export async function registerRoutes(
                 customMode: row.customMode,
                 generationTaskId: row.generationTaskId,
                 generationProvider: row.generationProvider,
-                uploadCount: row.uploadCount,
-                downloadCount: row.downloadCount,
-                publishedToSite: row.publishedToSite,
+                /** 이전 PUT/기기 동기화로 0이 오면 기존 진행도가 사라지지 않게 보존 */
+                uploadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.uploadCount}, 0), COALESCE(excluded.upload_count, 0))`,
+                downloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.downloadCount}, 0), COALESCE(excluded.download_count, 0))`,
+                publishedToSite: sql`COALESCE(${aiMusicSavedTracks.publishedToSite}, false) OR COALESCE(excluded.published_to_site, false)`,
               },
             });
         }

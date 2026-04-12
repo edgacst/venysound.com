@@ -313,6 +313,43 @@ function TrackCard({
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0 flex flex-col gap-1 pr-1">
             <p className="text-xs font-medium truncate leading-none">{title}</p>
+            <div
+              className="flex flex-wrap gap-1 text-[10px]"
+              data-testid={`track-status-${track.id}`}
+              role="status"
+              aria-label={t("createMusic.trackStatusAria", "다운로드·업로드·공개 상태")}
+            >
+              <span
+                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                  hasDownloaded
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                    : "border-border/70 bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                {t("createMusic.statusDownload", "다운로드")}{" "}
+                {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+              </span>
+              <span
+                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                  hasUploaded
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+                    : "border-border/70 bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                {t("createMusic.statusUpload", "업로드")}{" "}
+                {hasUploaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+              </span>
+              <span
+                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                  isPublished
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                    : "border-border/70 bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                {t("createMusic.statusPublish", "공개")}{" "}
+                {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
               <button
                 type="button"
@@ -988,7 +1025,7 @@ export default function CreateMusic() {
       const next = prev.map((t) =>
         t.id === track.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t
       );
-      persistTracks(next);
+      persistTracks(next, { immediate: true });
       return next;
     });
   }, [persistTracks]);
