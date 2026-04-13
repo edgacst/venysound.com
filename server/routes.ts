@@ -3003,7 +3003,10 @@ export async function registerRoutes(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === "OPENAI_API_KEY_MISSING" || msg.includes("OPENAI_API_KEY")) {
-        return res.status(503).json({ message: "홍보 문구 생성을 사용하려면 서버에 OPENAI_API_KEY를 설정해 주세요." });
+        return res.status(503).json({
+          message:
+            "홍보 문구 생성을 사용하려면 서버 환경에 OPENAI_API_KEY 또는 AI_INTEGRATIONS_OPENAI_API_KEY 중 하나를 설정한 뒤 프로세스를 재시작해 주세요.",
+        });
       }
       console.error("promo-social-kit error:", err);
       res.status(500).json({ message: "홍보 문구 생성에 실패했습니다." });
