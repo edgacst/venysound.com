@@ -1567,7 +1567,8 @@
       "winter_cosy": "冬日·温暖",
       "ocean_memory": "大海·记忆",
       "school_days": "校园时光",
-      "reunion_joy": "重逢·喜悦"
+      "reunion_joy": "重逢·喜悦",
+      "english_lyrics": "仅英文歌词"
     },
     "instrumentalLabel": "仅演奏（无人声）",
     "instrumentalHint": "开启后向服务器请求纯器乐生成。乐器与氛围请用曲风/风格芯片或文字说明；在描述模式下请在下方写出器乐感觉。",

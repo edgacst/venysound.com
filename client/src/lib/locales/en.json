@@ -1764,7 +1764,8 @@
       "winter_cosy": "Winter cosy",
       "ocean_memory": "Ocean & memory",
       "school_days": "School days",
-      "reunion_joy": "Reunion joy"
+      "reunion_joy": "Reunion joy",
+      "english_lyrics": "English lyrics only"
     },
     "instrumentalLabel": "Instrumental only (no vocals)",
     "instrumentalHint": "Sends a no-vocals request to the server. Pick instruments and vibe with genre/style chips or text; in description mode, describe the instrumental below.",

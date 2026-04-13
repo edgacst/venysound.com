@@ -1786,7 +1786,8 @@
       "winter_cosy": "겨울·포근함",
       "ocean_memory": "바다·기억",
       "school_days": "학창 시절",
-      "reunion_joy": "재회·반가움"
+      "reunion_joy": "재회·반가움",
+      "english_lyrics": "영어 가사만"
     },
     "instrumentalLabel": "연주만 (보컬 없음)",
     "instrumentalHint": "켜면 서버에 무보컬(연주) 생성을 요청합니다. 악기·분위기는 장르·스타일 칩·직접 입력으로 지정하고, 설명 모드에서는 아래 칸에 연주곡 느낌을 적어 주세요.",

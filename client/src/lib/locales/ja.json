@@ -1569,7 +1569,8 @@
       "winter_cosy": "冬・ぬくもり",
       "ocean_memory": "海・記憶",
       "school_days": "学生時代",
-      "reunion_joy": "再会の喜び"
+      "reunion_joy": "再会の喜び",
+      "english_lyrics": "英語の歌詞のみ"
     },
     "instrumentalLabel": "演奏のみ（ボーカルなし）",
     "instrumentalHint": "オンにするとサーバーへインストゥルメンタル生成を依頼します。楽器や雰囲気はジャンル・スタイルのチップや自由入力で。説明モードでは下の欄にイメージを書いてください。",

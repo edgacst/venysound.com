@@ -290,6 +290,7 @@ const DESCRIPTION_THEME_IDS = [
   "ocean_memory",
   "school_days",
   "reunion_joy",
+  "english_lyrics",
 ] as const;
 type DescriptionThemeId = (typeof DESCRIPTION_THEME_IDS)[number];
 
@@ -322,6 +323,8 @@ const DESCRIPTION_THEME_SNIPPET: Record<DescriptionThemeId, string> = {
   ocean_memory: "가사·분위기: 파도와 해변, 멀어진 기억이 물결처럼 밀려오는 감성.",
   school_days: "가사·분위기: 교실·복도·방과 후, 수험과 첫 짝사랑이 스치는 학창 시절.",
   reunion_joy: "가사·분위기: 오랜만의 재회, 반가움과 안도감이 넘치는 만남.",
+  english_lyrics:
+    "가사 언어: 전체 가사는 영어(English)로만 작성. 한국어·다른 언어 가사 없음. Lyrics: English only, natural phrasing.",
 };
 
 const MAX_DESCRIPTION_THEMES = 5;
