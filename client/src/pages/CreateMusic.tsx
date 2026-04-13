@@ -1828,7 +1828,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground">
                           {t(
                             "createMusic.modelVersionHint",
-                            "서버에 Suno 프록시 키가 설정된 환경에서는 upstream 모델 규칙이 다를 수 있습니다. 오류 시 이전 버전으로 바꿔 보세요.",
+                            "좀더 안정적이고 향상된 기능을 제공하는 업데이트이지만 사용해 보고 마음에 드는 버전으로 선택해 사용하세요",
                           )}
                         </p>
                       </div>
