@@ -1,8 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, Copy, Download, ImageIcon } from "lucide-react";
 
@@ -23,7 +34,7 @@ type Props = {
   artist: string;
   /** 유효 유료 구독(또는 서버에서 관리자)만 AI 홍보 문구 생성 가능 */
   canUseAiPromoKit: boolean;
-  /** /api/ai-music/usage 로딩 중이면 AI 버튼 비활성 */
+  /** /api/ai-music/usage 로딩 중 — 클릭 시 잠시 대기 안내 */
   aiPromoGateLoading?: boolean;
 };
 
@@ -61,10 +72,12 @@ function wrapTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
 export function OwnerPromoTools({ musicId, coverUrl, title, artist, canUseAiPromoKit, aiPromoGateLoading }: Props) {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [kit, setKit] = useState<PromoKit | null>(null);
   const [loadingKit, setLoadingKit] = useState(false);
   const [thumbBusy, setThumbBusy] = useState(false);
+  const [paidGateOpen, setPaidGateOpen] = useState(false);
 
   const copy = useCallback(
     (label: string, value: string) => {
@@ -116,6 +129,27 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist, canUseAiProm
       setLoadingKit(false);
     }
   }, [musicId, toast, t]);
+
+  const onPromoAiClick = useCallback(() => {
+    if (loadingKit) return;
+    if (aiPromoGateLoading) {
+      toast({
+        title: t("musicDetail.promoGateLoadingTitle", "잠시만요"),
+        description: t("musicDetail.promoGateLoadingDesc", "구독 정보를 불러오는 중입니다."),
+      });
+      return;
+    }
+    if (!canUseAiPromoKit) {
+      setPaidGateOpen(true);
+      return;
+    }
+    void generateKit();
+  }, [aiPromoGateLoading, canUseAiPromoKit, generateKit, loadingKit, t, toast]);
+
+  const goToPricing = useCallback(() => {
+    setPaidGateOpen(false);
+    setLocation("/pricing");
+  }, [setLocation]);
 
   const drawThumbnail = useCallback(() => {
     const canvas = canvasRef.current;
@@ -216,15 +250,6 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist, canUseAiProm
           "동영상 플랫폼용 제목·설명·태그·고정댓글 초안과 영문 설명을 생성하고, 1280×720 썸네일 PNG를 내려받을 수 있습니다. 실제 업로드와 정책(예: AI 표시)은 본인이 확인해 주세요.",
         )}
       </p>
-      {!canUseAiPromoKit && !aiPromoGateLoading && (
-        <p className="text-xs text-amber-200/90 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-          {t(
-            "musicDetail.promoPaidOnlyNotice",
-            "AI 홍보 문구 자동 생성은 유료 구독(유효 기간 내) 회원만 사용할 수 있습니다. 아래 썸네일 PNG는 계속 이용할 수 있습니다.",
-          )}
-        </p>
-      )}
-
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <ImageIcon size={16} className="text-muted-foreground" />
@@ -244,16 +269,29 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist, canUseAiProm
       </div>
 
       <div className="space-y-2">
-        <Button
-          type="button"
-          className="w-full gap-2"
-          disabled={loadingKit || aiPromoGateLoading || !canUseAiPromoKit}
-          onClick={() => void generateKit()}
-        >
-          {loadingKit || aiPromoGateLoading ? <Loader2 className="animate-spin size-4" /> : <Sparkles size={16} />}
+        <Button type="button" className="w-full gap-2" disabled={loadingKit} onClick={onPromoAiClick}>
+          {loadingKit ? <Loader2 className="animate-spin size-4" /> : <Sparkles size={16} />}
           {t("musicDetail.promoGenerateKit", "홍보 문구 자동 생성 (AI)")}
         </Button>
       </div>
+
+      <AlertDialog open={paidGateOpen} onOpenChange={setPaidGateOpen}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("musicDetail.promoPaidDialogTitle", "유료 회원 전용")}</AlertDialogTitle>
+            <AlertDialogDescription className="text-left leading-relaxed">
+              {t(
+                "musicDetail.promoPaidDialogBody",
+                "AI 홍보 문구 자동 생성은 유료 구독(유효 기간 내) 회원만 이용할 수 있습니다. 확인을 누르면 구독·결제 안내 페이지로 이동합니다.",
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("musicDetail.promoPaidDialogCancel", "취소")}</AlertDialogCancel>
+            <AlertDialogAction onClick={goToPricing}>{t("musicDetail.promoPaidDialogConfirm", "확인 후 이동")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {kit && (
         <div className="space-y-4 text-xs">
