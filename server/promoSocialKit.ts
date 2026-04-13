@@ -22,6 +22,25 @@ function getOpenAI(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
+function getErrorStatus(err: unknown): number | undefined {
+  if (err && typeof err === "object" && "status" in err) {
+    const s = (err as { status: unknown }).status;
+    return typeof s === "number" ? s : undefined;
+  }
+  return undefined;
+}
+
+function isRateLimitError(err: unknown): boolean {
+  if (getErrorStatus(err) === 429) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = msg.toLowerCase();
+  return m.includes("rate_limit") || m.includes("too many requests");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 function safeString(v: unknown, max: number): string {
   if (typeof v !== "string") return "";
   return v.slice(0, max).trim();
@@ -84,16 +103,31 @@ Return ONLY a JSON object with these exact keys (all strings except titleIdeas):
 - pinnedCommentEn: English version, same tone, under 500 characters.
 Do not include markdown fences or commentary outside JSON.`;
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    response_format: { type: "json_object" },
-    temperature: 0.7,
-    max_tokens: 4096,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: JSON.stringify(payload) },
-    ],
-  });
+  const maxAttempts = 4;
+  let completion: OpenAI.Chat.Completions.ChatCompletion | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+        max_tokens: 4096,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(payload) },
+        ],
+      });
+      break;
+    } catch (e) {
+      if (!isRateLimitError(e) || attempt >= maxAttempts) {
+        throw e;
+      }
+      await sleep(2000 * Math.pow(2, attempt - 1));
+    }
+  }
+  if (!completion) {
+    throw new Error("OpenAI completion empty after retries");
+  }
 
   const text = completion.choices[0]?.message?.content?.trim() ?? "{}";
   let parsed: unknown;
