@@ -326,25 +326,42 @@ const DESCRIPTION_THEME_SNIPPET: Record<DescriptionThemeId, string> = {
 
 const MAX_DESCRIPTION_THEMES = 5;
 
-function toggleDescriptionThemeId(
-  ids: DescriptionThemeId[],
-  id: DescriptionThemeId,
-  max: number,
-): { next: DescriptionThemeId[]; atMax: boolean } {
-  const i = ids.indexOf(id);
-  if (i >= 0) {
-    return { next: [...ids.slice(0, i), ...ids.slice(i + 1)], atMax: false };
+function countThemeSnippetsInPrompt(text: string): number {
+  let n = 0;
+  for (const id of DESCRIPTION_THEME_IDS) {
+    if (text.includes(DESCRIPTION_THEME_SNIPPET[id])) n += 1;
   }
-  if (ids.length >= max) return { next: ids, atMax: true };
-  return { next: [...ids, id], atMax: false };
+  return n;
 }
 
-/** 설명 모드에서 주제 스니펫 + 사용자 설명을 하나의 프롬프트로 */
-function buildGptDescriptionPrompt(themes: DescriptionThemeId[], userProse: string): string {
-  const themeBlock = themes.map((tid) => DESCRIPTION_THEME_SNIPPET[tid]).join("\n");
-  const u = userProse.trim();
-  if (themeBlock && u) return `${themeBlock}\n\n${u}`;
-  return themeBlock || u;
+function removeThemeSnippetOnce(text: string, snippet: string): string {
+  const i = text.indexOf(snippet);
+  if (i < 0) return text;
+  const next = (text.slice(0, i) + text.slice(i + snippet.length)).replace(/\n{3,}/g, "\n\n");
+  return next.trim();
+}
+
+/** 주제 칩으로 넣은 스니펫만 제거(가사 직접 입력 모드 전환·초기화 시) */
+function stripAllDescriptionThemeSnippets(text: string): string {
+  let t = text;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of DESCRIPTION_THEME_IDS) {
+      const snip = DESCRIPTION_THEME_SNIPPET[id];
+      if (t.includes(snip)) {
+        t = removeThemeSnippetOnce(t, snip);
+        changed = true;
+      }
+    }
+  }
+  return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** 입력란에 주제 문장을 붙임(선택된 칩이 텍스트에 보이도록) */
+function appendThemeSnippetToPrompt(prompt: string, snippet: string): string {
+  const p = prompt.trim();
+  return p ? `${p}\n\n${snippet}` : snippet;
 }
 
 function splitCommaList(s: string): string[] {
@@ -968,8 +985,6 @@ export default function CreateMusic() {
   /** 백엔드 보조 생성 API에 전달하는 모델 버전(sonic-*). Suno 프록시 경로는 서버가 별도 매핑합니다. */
   const [creationModelVersion, setCreationModelVersion] = useState<"sonic-v4-5" | "sonic-v5-5">("sonic-v4-5");
   const [prompt, setPrompt] = useState("");
-  /** 설명 모드 전용: 가사·분위기 주제 칩(서버에는 buildGptDescriptionPrompt로 합쳐 전달) */
-  const [descriptionThemes, setDescriptionThemes] = useState<DescriptionThemeId[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "pending" | "running" | "preview" | "succeeded" | "failed">("idle");
@@ -1472,11 +1487,11 @@ export default function CreateMusic() {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
     }
-    if (!customMode && !promptTrim && descriptionThemes.length === 0) {
+    if (!customMode && !promptTrim) {
       toast({
         title: t(
           "createMusic.descriptionOrThemeRequired",
-          "음악 설명을 적거나, 아래 주제 칩을 한 개 이상 선택해 주세요.",
+          "음악 설명을 적거나, 주제 칩을 눌러 입력란에 문장을 넣어 주세요.",
         ),
         variant: "destructive",
       });
@@ -1503,7 +1518,7 @@ export default function CreateMusic() {
       };
       if (instrumentalOnly) body.make_instrumental = true;
       if (customMode) body.prompt = promptTrim;
-      else body.gpt_description_prompt = buildGptDescriptionPrompt(descriptionThemes, promptTrim);
+      else body.gpt_description_prompt = promptTrim;
 
       const res = await fetch("/api/ai-music/create", {
         method: "POST",
@@ -1792,7 +1807,16 @@ export default function CreateMusic() {
                             <span>{t("createMusic.modeDescription", "설명으로 생성")}</span>
                           </label>
                           <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="mode" checked={mode === "custom"} onChange={() => setMode("custom")} className="rounded-full" />
+                            <input
+                              type="radio"
+                              name="mode"
+                              checked={mode === "custom"}
+                              onChange={() => {
+                                setMode("custom");
+                                setPrompt((p) => stripAllDescriptionThemeSnippets(p));
+                              }}
+                              className="rounded-full"
+                            />
                             <span>{t("createMusic.modeCustom", "가사 직접 입력")}</span>
                           </label>
                         </div>
@@ -1973,71 +1997,6 @@ export default function CreateMusic() {
                           </p>
                         </div>
                       </div>
-                      {mode === "description" && (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-end justify-between gap-2">
-                            <label className="block text-sm font-medium">
-                              {t("createMusic.themeSectionLabel", "가사·분위기 주제")}
-                            </label>
-                            {descriptionThemes.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setDescriptionThemes([])}
-                                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
-                              >
-                                {t("createMusic.themeClear", "주제 칩 초기화")}
-                              </button>
-                            )}
-                          </div>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            {t(
-                              "createMusic.themeHint",
-                              "설명으로 생성할 때 가사 방향을 짧은 문장으로 앞에 붙입니다. 아래 설명과 함께 전달되며, 칩만 골라도 생성할 수 있습니다(최대 {{n}}개).",
-                              { n: MAX_DESCRIPTION_THEMES },
-                            )}
-                          </p>
-                          <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
-                            <div className="flex flex-nowrap gap-2 w-max">
-                              {DESCRIPTION_THEME_IDS.map((id) => {
-                                const selected = descriptionThemes.includes(id);
-                                return (
-                                  <button
-                                    key={id}
-                                    type="button"
-                                    onClick={() => {
-                                      setDescriptionThemes((prev) => {
-                                        const { next, atMax } = toggleDescriptionThemeId(
-                                          prev,
-                                          id,
-                                          MAX_DESCRIPTION_THEMES,
-                                        );
-                                        if (atMax) {
-                                          toast({
-                                            title: t(
-                                              "createMusic.themeMaxNote",
-                                              "주제 칩은 최대 {{n}}개까지 선택할 수 있습니다.",
-                                              { n: MAX_DESCRIPTION_THEMES },
-                                            ),
-                                          });
-                                        }
-                                        return next;
-                                      });
-                                    }}
-                                    className={cn(
-                                      "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                                      selected
-                                        ? "border-amber-500/80 bg-amber-500/20 text-amber-100 shadow-sm shadow-amber-500/15"
-                                        : "border-border/80 bg-background/70 text-muted-foreground hover:border-amber-500/40 hover:bg-muted/40",
-                                    )}
-                                  >
-                                    {t(`createMusic.themeChip.${id}`, id)}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                       <div>
                         <label className="block text-sm font-medium mb-1">
                           {mode === "custom"
@@ -2079,6 +2038,71 @@ export default function CreateMusic() {
                               "연주만 + 가사 직접 입력 모드에서는 스타일(장르·스타일 칩)과 제목이 중요합니다. 가사 칸은 비워도 됩니다.",
                             )}
                           </p>
+                        )}
+                        {mode === "description" && (
+                          <div className="mt-3 space-y-2">
+                            <div className="flex flex-wrap items-end justify-between gap-2">
+                              <label className="block text-sm font-medium">
+                                {t("createMusic.themeSectionLabel", "가사·분위기 주제")}
+                              </label>
+                              {countThemeSnippetsInPrompt(prompt) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPrompt((p) => stripAllDescriptionThemeSnippets(p))}
+                                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                                >
+                                  {t("createMusic.themeClear", "주제 칩 초기화")}
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {t(
+                                "createMusic.themeHint",
+                                "칩을 누르면 위 입력란에 주제 문장이 추가되고, 다시 누르면 제거됩니다. 직접 수정·삭제도 가능합니다(최대 {{n}}개).",
+                                { n: MAX_DESCRIPTION_THEMES },
+                              )}
+                            </p>
+                            <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
+                              <div className="flex flex-nowrap gap-2 w-max">
+                                {DESCRIPTION_THEME_IDS.map((id) => {
+                                  const snippet = DESCRIPTION_THEME_SNIPPET[id];
+                                  const selected = prompt.includes(snippet);
+                                  return (
+                                    <button
+                                      key={id}
+                                      type="button"
+                                      onClick={() => {
+                                        setPrompt((p) => {
+                                          if (p.includes(snippet)) {
+                                            return removeThemeSnippetOnce(p, snippet);
+                                          }
+                                          if (countThemeSnippetsInPrompt(p) >= MAX_DESCRIPTION_THEMES) {
+                                            toast({
+                                              title: t(
+                                                "createMusic.themeMaxNote",
+                                                "주제 칩은 최대 {{n}}개까지 선택할 수 있습니다.",
+                                                { n: MAX_DESCRIPTION_THEMES },
+                                              ),
+                                            });
+                                            return p;
+                                          }
+                                          return appendThemeSnippetToPrompt(p, snippet);
+                                        });
+                                      }}
+                                      className={cn(
+                                        "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                        selected
+                                          ? "border-amber-500/80 bg-amber-500/20 text-amber-100 shadow-sm shadow-amber-500/15"
+                                          : "border-border/80 bg-background/70 text-muted-foreground hover:border-amber-500/40 hover:bg-muted/40",
+                                      )}
+                                    >
+                                      {t(`createMusic.themeChip.${id}`, id)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                       <div className="space-y-1.5">

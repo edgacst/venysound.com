@@ -1732,9 +1732,9 @@
     "styleOtherPlaceholder": "e.g. reverb-heavy mix, lo-fi crackle",
     "styleClear": "Clear style",
     "styleMaxNote": "You can select up to {{n}} style presets.",
-    "descriptionOrThemeRequired": "Enter a music description or pick at least one theme chip.",
+    "descriptionOrThemeRequired": "Enter a music description or tap a theme chip to add its line to the box above.",
     "themeSectionLabel": "Lyrics / mood themes",
-    "themeHint": "In description mode, selected themes add short Korean direction lines before your text for the AI. You can generate with chips only (up to {{n}}) or combine with your description.",
+    "themeHint": "Tap a chip to append its Korean theme line to the text box above; tap again to remove. You can edit or delete text manually (up to {{n}} theme lines).",
     "themeClear": "Clear theme chips",
     "themeMaxNote": "You can select up to {{n}} theme chips.",
     "themeChip": {

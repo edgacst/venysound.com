@@ -1754,9 +1754,9 @@
     "styleOtherPlaceholder": "예: 리버브 많은 믹스, lo-fi 자국",
     "styleClear": "스타일 초기화",
     "styleMaxNote": "스타일 프리셋은 최대 {{n}}개까지 선택할 수 있습니다.",
-    "descriptionOrThemeRequired": "음악 설명을 적거나, 주제 칩을 한 개 이상 선택해 주세요.",
+    "descriptionOrThemeRequired": "음악 설명을 적거나, 주제 칩을 눌러 입력란에 문장을 넣어 주세요.",
     "themeSectionLabel": "가사·분위기 주제",
-    "themeHint": "설명으로 생성할 때 가사 방향을 짧은 문장으로 앞에 붙입니다. 아래 입력과 함께 전달되며, 칩만 골라도 생성할 수 있습니다(최대 {{n}}개).",
+    "themeHint": "칩을 누르면 위 입력란에 주제 문장이 추가되고, 다시 누르면 제거됩니다. 직접 수정·삭제도 가능합니다(최대 {{n}}개).",
     "themeClear": "주제 칩 초기화",
     "themeMaxNote": "주제 칩은 최대 {{n}}개까지 선택할 수 있습니다.",
     "themeChip": {

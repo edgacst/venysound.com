@@ -1535,9 +1535,9 @@
     "styleOtherPlaceholder": "例如：混响偏重、lo-fi 底噪",
     "styleClear": "清除风格",
     "styleMaxNote": "风格预设最多可选 {{n}} 个。",
-    "descriptionOrThemeRequired": "请填写音乐说明，或至少选择一个主题芯片。",
+    "descriptionOrThemeRequired": "请填写音乐说明，或点击主题芯片将对应句子加入上方输入框。",
     "themeSectionLabel": "歌词 / 氛围主题",
-    "themeHint": "在描述模式下，所选主题会以简短的韩文提示行加在说明前面；也可仅用芯片生成（最多 {{n}} 个），或与下方文字一起发送。",
+    "themeHint": "点击芯片会在上方输入框追加主题句，再点一次可移除；也可手动编辑或删除（最多 {{n}} 条主题句）。",
     "themeClear": "清除主题芯片",
     "themeMaxNote": "主题芯片最多可选 {{n}} 个。",
     "themeChip": {

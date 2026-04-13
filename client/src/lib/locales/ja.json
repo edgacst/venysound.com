@@ -1537,9 +1537,9 @@
     "styleOtherPlaceholder": "例: リバーブ多め、lo-fi のノイズ",
     "styleClear": "スタイルをクリア",
     "styleMaxNote": "スタイルのプリセットは最大{{n}}つまで選べます。",
-    "descriptionOrThemeRequired": "曲の説明を書くか、テーマチップを1つ以上選んでください。",
+    "descriptionOrThemeRequired": "曲の説明を書くか、テーマチップをタップして上の欄に文を追加してください。",
     "themeSectionLabel": "歌詞・雰囲気のテーマ",
-    "themeHint": "説明モードでは、選んだテーマが短い韓国語の指示文として説明の前に付きます。チップのみ（最大{{n}}）でも生成できます。",
+    "themeHint": "チップを押すと上の入力欄にテーマ文が追加され、もう一度押すと削除されます。手で編集・削除も可能です（最大{{n}}行）。",
     "themeClear": "テーマをクリア",
     "themeMaxNote": "テーマチップは最大{{n}}つまで選べます。",
     "themeChip": {
