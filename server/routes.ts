@@ -15,6 +15,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
+import { generatePromoSocialKit } from "./promoSocialKit";
 import {
   sendNewMusicNotificationEmail,
   sendSocialActivityEmail,
@@ -1624,7 +1625,14 @@ export async function registerRoutes(
     if (SUNOAPI_KEY) {
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
-      const model = (body.mv === "V5" || body.mv === "V4_5" || body.mv === "V4_5PLUS" || body.mv === "V4") ? body.mv : "V4_5ALL";
+      const model =
+        body.mv === "V5" ||
+        body.mv === "V5_5" ||
+        body.mv === "V4_5" ||
+        body.mv === "V4_5PLUS" ||
+        body.mv === "V4"
+          ? body.mv
+          : "V4_5ALL";
       const payload: Record<string, unknown> = {
         customMode,
         instrumental: makeInstrumental,
@@ -1707,7 +1715,11 @@ export async function registerRoutes(
     }
 
     try {
-      const mv = body.mv || "sonic-v4-5";
+      const rawMv = typeof body.mv === "string" ? body.mv.trim() : "";
+      const mv =
+        rawMv === "sonic-v4-5" || rawMv === "sonic-v5-5" || rawMv === "sonic-v4-5-all" || rawMv === "sonic-v5-5-all"
+          ? rawMv
+          : "sonic-v4-5";
       const payload: Record<string, unknown> = { task_type: "create_music", custom_mode: customMode, mv };
       if (customMode && body.prompt) payload.prompt = body.prompt;
       else if (!customMode) {
@@ -2951,6 +2963,50 @@ export async function registerRoutes(
       }
       console.error("align-lyrics error:", err);
       res.status(500).json({ message: err?.message || "가사 정렬에 실패했습니다" });
+    }
+  });
+
+  /** 음원 소유자: 동영상 플랫폼 홍보용 메타 문구(한·영) 자동 생성 */
+  app.post("/api/music/:id/promo-social-kit", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const musicId = Number(req.params.id);
+      if (!Number.isFinite(musicId) || musicId <= 0) {
+        return res.status(400).json({ message: "잘못된 음원 ID입니다." });
+      }
+      const existing = await storage.getMusicById(musicId);
+      if (!existing) return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      if (existing.userId !== userId) {
+        return res.status(403).json({ message: "본인이 올린 음원만 생성할 수 있습니다." });
+      }
+
+      const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+      const trackUrl = `${siteBase}/music/${musicId}`;
+      const lyricsPlain = (existing.lyrics ?? "")
+        .replace(/\[\d{1,2}:\d{2}(?:\.\d+)?\]/g, " ")
+        .replace(/\r\n/g, "\n")
+        .trim();
+      const lyricsSnippet = lyricsPlain.slice(0, 2800);
+
+      const kit = await generatePromoSocialKit({
+        title: existing.title ?? "",
+        artist: existing.artist ?? "",
+        genre: existing.genre,
+        tags: existing.tags,
+        lyricsSnippet: lyricsSnippet || null,
+        isAi: Boolean(existing.isAi),
+        trackUrl,
+        siteLabel: "Veny Sound",
+      });
+      res.json(kit);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg === "OPENAI_API_KEY_MISSING" || msg.includes("OPENAI_API_KEY")) {
+        return res.status(503).json({ message: "홍보 문구 생성을 사용하려면 서버에 OPENAI_API_KEY를 설정해 주세요." });
+      }
+      console.error("promo-social-kit error:", err);
+      res.status(500).json({ message: "홍보 문구 생성에 실패했습니다." });
     }
   });
 

@@ -37,6 +37,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 /** 생성된 곡 목록 페이지당 개수 */
 const SAVED_TRACKS_LIST_PAGE_SIZE = 10;
@@ -761,6 +762,8 @@ export default function CreateMusic() {
   const [styleOther, setStyleOther] = useState("");
   /** 서버 `make_instrumental` — 무보컬(연주) 생성 요청 */
   const [instrumentalOnly, setInstrumentalOnly] = useState(false);
+  /** 백엔드 보조 생성 API에 전달하는 모델 버전(sonic-*). Suno 프록시 경로는 서버가 별도 매핑합니다. */
+  const [creationModelVersion, setCreationModelVersion] = useState<"sonic-v4-5" | "sonic-v5-5">("sonic-v4-5");
   const [prompt, setPrompt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -1283,7 +1286,7 @@ export default function CreateMusic() {
     try {
       const body: Record<string, unknown> = {
         custom_mode: customMode,
-        mv: "sonic-v4-5",
+        mv: creationModelVersion,
         title: title.trim() || undefined,
         tags: mergedTags || undefined,
       };
@@ -1801,6 +1804,33 @@ export default function CreateMusic() {
                             )}
                           </p>
                         )}
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-sm font-medium">
+                          {t("createMusic.modelVersionLabel", "생성 모델 버전")}
+                        </label>
+                        <Select
+                          value={creationModelVersion}
+                          onValueChange={(v) => setCreationModelVersion(v as "sonic-v4-5" | "sonic-v5-5")}
+                        >
+                          <SelectTrigger className="w-full max-w-md bg-background/80">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sonic-v4-5">
+                              {t("createMusic.modelV45", "v4.5 계열 (sonic-v4-5, 기본)")}
+                            </SelectItem>
+                            <SelectItem value="sonic-v5-5">
+                              {t("createMusic.modelV55", "v5.5 계열 (sonic-v5-5)")}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {t(
+                            "createMusic.modelVersionHint",
+                            "서버에 Suno 프록시 키가 설정된 환경에서는 upstream 모델 규칙이 다를 수 있습니다. 오류 시 이전 버전으로 바꿔 보세요.",
+                          )}
+                        </p>
                       </div>
                       <Button
                         type="submit"

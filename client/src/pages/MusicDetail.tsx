@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
+import { OwnerPromoTools } from "@/components/OwnerPromoTools";
 import { apiRequest, queryClient, redirectToLogin } from "@/lib/queryClient";
 import { useState, useEffect, useMemo } from "react";
 import { resolveStorageUrl } from "@/lib/utils";
@@ -991,6 +992,15 @@ export default function MusicDetail() {
                   )}
                 </div>
               </Card>
+
+              {isOwner && user && (
+                <OwnerPromoTools
+                  musicId={musicId}
+                  coverUrl={coverImage}
+                  title={musicData.title}
+                  artist={musicData.artist}
+                />
+              )}
 
               {uploader && (
                 <Card className="p-5 bg-black/40 border-white/10 backdrop-blur-sm">
