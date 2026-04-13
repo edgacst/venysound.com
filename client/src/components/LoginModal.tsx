@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useToast } from "@/hooks/use-toast";
 import { RegisterForm } from "@/components/RegisterForm";
+import { recordSignupPageViewDeduped } from "@/lib/analytics-conversion";
 import { cn } from "@/lib/utils";
 
 export function LoginModal() {
@@ -45,6 +46,12 @@ export function LoginModal() {
       setShowPw(false);
     }
   }, [isOpen]);
+
+  /** 가입 퍼널: `/register` 외 모달 가입 시에도 `signup_page_view`가 집계되도록 */
+  useEffect(() => {
+    if (!isOpen || mode !== "register") return;
+    recordSignupPageViewDeduped();
+  }, [isOpen, mode]);
 
   const handleDevLogin = async () => {
     setDevLoggingIn(true);
