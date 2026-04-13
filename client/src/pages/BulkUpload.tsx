@@ -364,7 +364,12 @@ export default function BulkUpload() {
             onChange={handleFilesSelected}
           />
           <CloudUpload className="mx-auto w-10 h-10 text-muted-foreground mb-3 opacity-50" />
-          <p className="text-sm text-muted-foreground">{t('bulkUpload.clickToSelect', '클릭하여 여러 음원 파일을 선택하세요')}</p>
+          <p className="text-sm text-muted-foreground">
+            {t(
+              "bulkUpload.clickToSelect",
+              "원하는 만큼 파일을 선택하거나 드래그하여 넣으면 대량으로 업로드할 수 있습니다.",
+            )}
+          </p>
           <p className="text-xs text-muted-foreground mt-1">{t('bulkUpload.supportedFormats', 'MP3, WAV, OGG 형식 지원')}</p>
         </div>
 

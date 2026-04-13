@@ -484,7 +484,7 @@
     "tracksMissingInfo": " 首曲目信息不完整",
     "uploadComplete": "上传完成！",
     "tracksProcessed": " 首已处理",
-    "clickToSelect": "点击选择多个音频文件",
+    "clickToSelect": "任选数量文件，或拖放到此处即可批量上传。",
     "supportedFormats": "支持 MP3、WAV、OGG 格式",
     "tracksSelected": " 首已选",
     "tracksDone": " 首完成",

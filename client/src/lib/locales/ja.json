@@ -486,7 +486,7 @@
     "tracksMissingInfo": "曲の情報が不足しています",
     "uploadComplete": "アップロード完了！",
     "tracksProcessed": "曲処理しました",
-    "clickToSelect": "クリックして複数の音声ファイルを選択",
+    "clickToSelect": "必要な数だけファイルを選ぶか、ドラッグ＆ドロップすると一括アップロードできます。",
     "supportedFormats": "MP3、WAV、OGG形式対応",
     "tracksSelected": "曲選択中",
     "tracksDone": "曲完了",
