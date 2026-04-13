@@ -349,6 +349,14 @@ export default function Upload() {
         <Navigation />
       
         <div className="container max-w-2xl px-4 py-12">
+          <div className="mb-6">
+            <Link href="/bulk-upload" className="block">
+              <Button variant="outline" className="w-full gap-2 sm:w-auto sm:min-w-[200px]" data-testid="link-bulk-upload">
+                <CloudUpload size={16} />
+                {t("upload.bulkUpload", "대량 업로드")}
+              </Button>
+            </Link>
+          </div>
         <Card className="border-white/10 bg-card/50 backdrop-blur-sm">
           <CardHeader className="text-center">
             <div className="text-primary text-4xl mb-2">
@@ -722,18 +730,12 @@ export default function Upload() {
               </form>
             </Form>
 
-            <div className="flex items-center justify-between mt-6 flex-wrap gap-4">
+            <div className="flex items-center justify-start mt-6">
               <Link href="/">
                 <div className="flex items-center gap-2 text-primary cursor-pointer hover:underline" data-testid="link-back-home">
                   <ArrowLeft size={16} />
                   {t('upload.backToHome', '홈으로 돌아가기')}
                 </div>
-              </Link>
-              <Link href="/bulk-upload">
-                <Button variant="outline" size="sm" className="gap-2" data-testid="link-bulk-upload">
-                  <CloudUpload size={14} />
-                  {t('upload.bulkUpload', '대량 업로드')}
-                </Button>
               </Link>
             </div>
           </CardContent>
