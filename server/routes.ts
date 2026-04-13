@@ -2025,9 +2025,21 @@ export async function registerRoutes(
       const rawTags = (tags || "").trim();
       const isImagePrompt = rawTags.length > 60 || /album\s*cover|cinematic|photo|image|visual|artwork/i.test(rawTags);
       const cleanedTags = isImagePrompt ? "" : rawTags;
-      const resolvedGenre = genre
-        || (cleanedTags ? cleanedTags.split(/[,;\s]+/).map((t: string) => t.trim()).filter(Boolean)[0] : "")
-        || "팝뮤직";
+      // CreateMusic `buildTagsForApi`는 장르·스타일을 `장르 · 스타일` 한 줄로 합칩니다.
+      // 예전에는 전체 문자열에서 첫 토큰만 떼어 `music.genre`에 넣어 스타일 절(· 뒤)의 단어(techno 등)가 장르로 들어가 유통 메타와 맞지 않는 경우가 있었습니다.
+      const genreSegmentForLookup = (() => {
+        if (!cleanedTags) return "";
+        const parts = cleanedTags.split(/\s*·\s*/);
+        return (parts[0] ?? "").trim();
+      })();
+      const genreFromTags = genreSegmentForLookup
+        ? genreSegmentForLookup
+            .split(/[,;\s]+/)
+            .map((t: string) => t.trim())
+            .filter(Boolean)[0] ?? ""
+        : "";
+      const bodyGenre = typeof genre === "string" ? genre.trim() : "";
+      const resolvedGenre = bodyGenre || genreFromTags || "팝뮤직";
       const trackTitle = (title || "AI 생성 음악").trim();
       const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
 
