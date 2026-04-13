@@ -3008,8 +3008,39 @@ export async function registerRoutes(
             "홍보 문구 생성을 사용하려면 서버 환경에 OPENAI_API_KEY 또는 AI_INTEGRATIONS_OPENAI_API_KEY 중 하나를 설정한 뒤 프로세스를 재시작해 주세요.",
         });
       }
+      const httpStatus =
+        err && typeof err === "object" && "status" in err && typeof (err as { status: unknown }).status === "number"
+          ? (err as { status: number }).status
+          : undefined;
+      const lower = msg.toLowerCase();
+      if (httpStatus === 401 || lower.includes("incorrect api key") || lower.includes("invalid_api_key")) {
+        return res.status(502).json({
+          message: "OpenAI API 키가 잘못되었거나 만료되었습니다. .env의 키 앞뒤 공백·따옴표를 제거한 뒤 재시작해 주세요.",
+        });
+      }
+      if (httpStatus === 429 || lower.includes("rate_limit")) {
+        return res.status(429).json({ message: "OpenAI 요청 한도에 걸렸습니다. 잠시 후 다시 시도해 주세요." });
+      }
+      if (
+        lower.includes("insufficient_quota") ||
+        lower.includes("billing") ||
+        lower.includes("payment") ||
+        lower.includes("exceeded your current quota")
+      ) {
+        return res.status(402).json({
+          message:
+            "OpenAI 계정에 사용 가능한 크레딧이 없거나 결제 수단이 필요합니다. https://platform.openai.com/settings/organization/billing 에서 확인해 주세요.",
+        });
+      }
       console.error("promo-social-kit error:", err);
-      res.status(500).json({ message: "홍보 문구 생성에 실패했습니다." });
+      const detail = msg
+        .replace(/sk-[a-zA-Z0-9_-]{10,}/gi, "sk-…")
+        .replace(/\r?\n/g, " ")
+        .slice(0, 400);
+      res.status(500).json({
+        message: "홍보 문구 생성에 실패했습니다.",
+        detail: detail.length > 0 ? detail : undefined,
+      });
     }
   });
 

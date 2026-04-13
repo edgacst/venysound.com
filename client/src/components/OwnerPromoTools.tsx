@@ -82,9 +82,16 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist }: Props) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const parts: string[] = [];
+        if (typeof (data as { message?: unknown }).message === "string") {
+          parts.push((data as { message: string }).message);
+        }
+        if (typeof (data as { detail?: unknown }).detail === "string" && (data as { detail: string }).detail.trim()) {
+          parts.push((data as { detail: string }).detail.trim());
+        }
         toast({
           title: t("musicDetail.promoKitFailed", "문구 생성에 실패했습니다"),
-          description: typeof data.message === "string" ? data.message : undefined,
+          description: parts.length ? parts.join("\n") : undefined,
           variant: "destructive",
         });
         return;
