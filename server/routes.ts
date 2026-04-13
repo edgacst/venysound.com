@@ -2975,6 +2975,22 @@ export async function registerRoutes(
       if (!Number.isFinite(musicId) || musicId <= 0) {
         return res.status(400).json({ message: "잘못된 음원 ID입니다." });
       }
+
+      const [promoUser0] = await db.select().from(users).where(eq(users.id, userId));
+      if (!promoUser0) {
+        return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+      }
+      await maybePersistSubscriptionRow(userId, promoUser0);
+      const [promoUser] = await db.select().from(users).where(eq(users.id, userId));
+      const promoRow = promoUser!;
+      const promoNow = new Date();
+      if (promoRow.role !== "admin" && !isActivePaidSubscription(promoRow, promoNow)) {
+        return res.status(403).json({
+          message: "홍보 문구 자동 생성은 유료 구독(유효 기간 내) 회원만 사용할 수 있습니다.",
+          code: "PROMO_SOCIAL_KIT_PAID_ONLY",
+        });
+      }
+
       const existing = await storage.getMusicById(musicId);
       if (!existing) return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
       if (existing.userId !== userId) {

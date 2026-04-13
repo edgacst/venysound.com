@@ -21,6 +21,10 @@ type Props = {
   coverUrl: string;
   title: string;
   artist: string;
+  /** 유효 유료 구독(또는 서버에서 관리자)만 AI 홍보 문구 생성 가능 */
+  canUseAiPromoKit: boolean;
+  /** /api/ai-music/usage 로딩 중이면 AI 버튼 비활성 */
+  aiPromoGateLoading?: boolean;
 };
 
 const CANVAS_W = 1280;
@@ -54,7 +58,7 @@ function wrapTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: 
   return lines;
 }
 
-export function OwnerPromoTools({ musicId, coverUrl, title, artist }: Props) {
+export function OwnerPromoTools({ musicId, coverUrl, title, artist, canUseAiPromoKit, aiPromoGateLoading }: Props) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -88,6 +92,14 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist }: Props) {
         }
         if (typeof (data as { detail?: unknown }).detail === "string" && (data as { detail: string }).detail.trim()) {
           parts.push((data as { detail: string }).detail.trim());
+        }
+        if ((data as { code?: string }).code === "PROMO_SOCIAL_KIT_PAID_ONLY" && parts.length === 0) {
+          parts.push(
+            t(
+              "musicDetail.promoPaidOnlyToast",
+              "유료 구독(유효 기간 내)에서만 AI 홍보 문구를 생성할 수 있습니다.",
+            ),
+          );
         }
         toast({
           title: t("musicDetail.promoKitFailed", "문구 생성에 실패했습니다"),
@@ -204,6 +216,14 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist }: Props) {
           "동영상 플랫폼용 제목·설명·태그·고정댓글 초안과 영문 설명을 생성하고, 1280×720 썸네일 PNG를 내려받을 수 있습니다. 실제 업로드와 정책(예: AI 표시)은 본인이 확인해 주세요.",
         )}
       </p>
+      {!canUseAiPromoKit && !aiPromoGateLoading && (
+        <p className="text-xs text-amber-200/90 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          {t(
+            "musicDetail.promoPaidOnlyNotice",
+            "AI 홍보 문구 자동 생성은 유료 구독(유효 기간 내) 회원만 사용할 수 있습니다. 아래 썸네일 PNG는 계속 이용할 수 있습니다.",
+          )}
+        </p>
+      )}
 
       <div className="space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
@@ -224,8 +244,13 @@ export function OwnerPromoTools({ musicId, coverUrl, title, artist }: Props) {
       </div>
 
       <div className="space-y-2">
-        <Button type="button" className="w-full gap-2" disabled={loadingKit} onClick={() => void generateKit()}>
-          {loadingKit ? <Loader2 className="animate-spin size-4" /> : <Sparkles size={16} />}
+        <Button
+          type="button"
+          className="w-full gap-2"
+          disabled={loadingKit || aiPromoGateLoading || !canUseAiPromoKit}
+          onClick={() => void generateKit()}
+        >
+          {loadingKit || aiPromoGateLoading ? <Loader2 className="animate-spin size-4" /> : <Sparkles size={16} />}
           {t("musicDetail.promoGenerateKit", "홍보 문구 자동 생성 (AI)")}
         </Button>
       </div>

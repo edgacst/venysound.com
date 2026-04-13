@@ -390,6 +390,17 @@ export default function MusicDetail() {
     }
   }, [activeMusicId, musicId, navigate]);
 
+  /** 홍보 문구 AI: 유효 유료 구독(또는 관리자)만 — /api/ai-music/usage 와 동일 기준 */
+  const { data: aiPromoUsage, isLoading: aiPromoUsageLoading } = useQuery<{ isPaidTier?: boolean }>({
+    queryKey: ["/api/ai-music/usage"],
+    queryFn: async () => {
+      const res = await fetch("/api/ai-music/usage", { credentials: "include" });
+      if (!res.ok) throw new Error("usage");
+      return res.json();
+    },
+    enabled: musicIdValid && !!user && !!musicData && user.id === musicData.userId,
+  });
+
   if (!musicIdValid) {
     return (
       <div className="min-h-screen bg-background flex flex-col pb-24">
@@ -999,6 +1010,8 @@ export default function MusicDetail() {
                   coverUrl={coverImage}
                   title={musicData.title}
                   artist={musicData.artist}
+                  canUseAiPromoKit={aiPromoUsage?.isPaidTier === true}
+                  aiPromoGateLoading={aiPromoUsageLoading}
                 />
               )}
 
