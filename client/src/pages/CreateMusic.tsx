@@ -258,6 +258,95 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 /** 동시에 고를 수 있는 스타일 프리셋 개수 */
 const MAX_STYLE_PRESETS = 6;
 
+/**
+ * 「설명으로 생성」일 때만 사용. 가사·분위기 주제를 한글 문장으로 API 앞단에 붙임(Suno 등이 한글 설명 수용).
+ * 칩 라벨은 i18n `createMusic.themeChip.*`, 값은 모델에 그대로 전달되는 스니펫.
+ */
+const DESCRIPTION_THEME_IDS = [
+  "breakup_longing",
+  "life_reflection",
+  "hope_tomorrow",
+  "youth_nostalgia",
+  "night_city_lonely",
+  "quiet_healing",
+  "first_love_bittersweet",
+  "family_gratitude",
+  "friendship_bond",
+  "solo_courage",
+  "rainy_day_mood",
+  "summer_freedom",
+  "road_trip_wander",
+  "dream_chase",
+  "self_love_growth",
+  "hometown_longing",
+  "gentle_farewell",
+  "love_confession",
+  "pain_to_catharsis",
+  "festive_celebration",
+  "daily_respite",
+  "pet_warmth",
+  "starry_romance",
+  "winter_cosy",
+  "ocean_memory",
+  "school_days",
+  "reunion_joy",
+] as const;
+type DescriptionThemeId = (typeof DESCRIPTION_THEME_IDS)[number];
+
+const DESCRIPTION_THEME_SNIPPET: Record<DescriptionThemeId, string> = {
+  breakup_longing:
+    "가사·분위기: 헤어진 연인에 대한 그리움. 미련과 아픔이 있지만 시간 속에서 마음을 정리해 가는 톤.",
+  life_reflection: "가사·분위기: 삶의 의미·존재·일상 속 성찰. 철학적이거나 서정적으로 질문을 던지는 가사.",
+  hope_tomorrow: "가사·분위기: 내일과 미래에 대한 희망. 어려움 뒤에도 다시 일어서는 긍정의 메시지.",
+  youth_nostalgia: "가사·분위기: 지나온 청춘·학창 시절·추억에 대한 노스탤지어.",
+  night_city_lonely: "가사·분위기: 밤의 도시, 네온과 거리, 익명 속 외로움이 공존하는 무드.",
+  quiet_healing: "가사·분위기: 조용한 위로와 회복. 누군가의 어깨에 기대 쉬어 가는 듯한 따뜻함.",
+  first_love_bittersweet: "가사·분위기: 첫사랑의 설렘과 아쉬움이 섞인 달콤씁쓸한 감정.",
+  family_gratitude: "가사·분위기: 가족에 대한 고마움·미안함·사랑을 솔직하게 노래하는 톤.",
+  friendship_bond: "가사·분위기: 친구와의 우정, 함께 웃고 버틴 시간에 대한 이야기.",
+  solo_courage: "가사·분위기: 홀로 서는 용기, 독립과 자기 다짐, 혼자 걷는 길에 대한 노래.",
+  rainy_day_mood: "가사·분위기: 비 오는 날 창가, 젖은 거리, 잔잔한 우울과 정화가 섞인 무드.",
+  summer_freedom: "가사·분위기: 여름·바다·바람, 자유와 설렘이 느껴지는 밝은 여행감.",
+  road_trip_wander: "가사·분위기: 떠남과 이동, 하이웨이와 지평선, 미지의 다음 장에 대한 기대.",
+  dream_chase: "가사·분위기: 꿈과 목표를 향한 도전, 넘어져도 다시 달리는 열정.",
+  self_love_growth: "가사·분위기: 나 자신을 인정하고 사랑하며 성장해 가는 과정.",
+  hometown_longing: "가사·분위기: 고향·익숙한 골목·떠나온 풍경에 대한 그리움.",
+  gentle_farewell: "가사·분위기: 아름다운 이별과 마무리, 미움보다는 감사로 남기는 작별.",
+  love_confession: "가사·분위기: 직진 고백과 설렘, 상대에게 닿기를 바라는 마음.",
+  pain_to_catharsis: "가사·분위기: 아픔을 노래로 토해 내고 가벼워지는 카타르시스.",
+  festive_celebration: "가사·분위기: 축제·파티·축하, 함께 어울리는 환호와 리듬감.",
+  daily_respite: "가사·분위기: 반복되는 일상 속 잠깐의 숨, 작은 쉼표와 위로.",
+  pet_warmth: "가사·분위기: 반려동물·작은 동반자와의 따뜻한 순간들.",
+  starry_romance: "가사·분위기: 별빛 아래 로맨스, 밤하늘과 속삭임.",
+  winter_cosy: "가사·분위기: 겨울·연말, 담요와 차 한 잔 같은 포근함.",
+  ocean_memory: "가사·분위기: 파도와 해변, 멀어진 기억이 물결처럼 밀려오는 감성.",
+  school_days: "가사·분위기: 교실·복도·방과 후, 수험과 첫 짝사랑이 스치는 학창 시절.",
+  reunion_joy: "가사·분위기: 오랜만의 재회, 반가움과 안도감이 넘치는 만남.",
+};
+
+const MAX_DESCRIPTION_THEMES = 5;
+
+function toggleDescriptionThemeId(
+  ids: DescriptionThemeId[],
+  id: DescriptionThemeId,
+  max: number,
+): { next: DescriptionThemeId[]; atMax: boolean } {
+  const i = ids.indexOf(id);
+  if (i >= 0) {
+    return { next: [...ids.slice(0, i), ...ids.slice(i + 1)], atMax: false };
+  }
+  if (ids.length >= max) return { next: ids, atMax: true };
+  return { next: [...ids, id], atMax: false };
+}
+
+/** 설명 모드에서 주제 스니펫 + 사용자 설명을 하나의 프롬프트로 */
+function buildGptDescriptionPrompt(themes: DescriptionThemeId[], userProse: string): string {
+  const themeBlock = themes.map((tid) => DESCRIPTION_THEME_SNIPPET[tid]).join("\n");
+  const u = userProse.trim();
+  if (themeBlock && u) return `${themeBlock}\n\n${u}`;
+  return themeBlock || u;
+}
+
 function splitCommaList(s: string): string[] {
   return s
     .split(/[,，、]/g)
@@ -879,6 +968,8 @@ export default function CreateMusic() {
   /** 백엔드 보조 생성 API에 전달하는 모델 버전(sonic-*). Suno 프록시 경로는 서버가 별도 매핑합니다. */
   const [creationModelVersion, setCreationModelVersion] = useState<"sonic-v4-5" | "sonic-v5-5">("sonic-v4-5");
   const [prompt, setPrompt] = useState("");
+  /** 설명 모드 전용: 가사·분위기 주제 칩(서버에는 buildGptDescriptionPrompt로 합쳐 전달) */
+  const [descriptionThemes, setDescriptionThemes] = useState<DescriptionThemeId[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "pending" | "running" | "preview" | "succeeded" | "failed">("idle");
@@ -1381,8 +1472,14 @@ export default function CreateMusic() {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
     }
-    if (!customMode && !promptTrim) {
-      toast({ title: "음악에 대한 설명을 입력해 주세요.", variant: "destructive" });
+    if (!customMode && !promptTrim && descriptionThemes.length === 0) {
+      toast({
+        title: t(
+          "createMusic.descriptionOrThemeRequired",
+          "음악 설명을 적거나, 아래 주제 칩을 한 개 이상 선택해 주세요.",
+        ),
+        variant: "destructive",
+      });
       return;
     }
     setIsSubmitting(true);
@@ -1406,7 +1503,7 @@ export default function CreateMusic() {
       };
       if (instrumentalOnly) body.make_instrumental = true;
       if (customMode) body.prompt = promptTrim;
-      else body.gpt_description_prompt = promptTrim;
+      else body.gpt_description_prompt = buildGptDescriptionPrompt(descriptionThemes, promptTrim);
 
       const res = await fetch("/api/ai-music/create", {
         method: "POST",
@@ -1876,6 +1973,71 @@ export default function CreateMusic() {
                           </p>
                         </div>
                       </div>
+                      {mode === "description" && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-end justify-between gap-2">
+                            <label className="block text-sm font-medium">
+                              {t("createMusic.themeSectionLabel", "가사·분위기 주제")}
+                            </label>
+                            {descriptionThemes.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setDescriptionThemes([])}
+                                className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                              >
+                                {t("createMusic.themeClear", "주제 칩 초기화")}
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            {t(
+                              "createMusic.themeHint",
+                              "설명으로 생성할 때 가사 방향을 짧은 문장으로 앞에 붙입니다. 아래 설명과 함께 전달되며, 칩만 골라도 생성할 수 있습니다(최대 {{n}}개).",
+                              { n: MAX_DESCRIPTION_THEMES },
+                            )}
+                          </p>
+                          <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
+                            <div className="flex flex-nowrap gap-2 w-max">
+                              {DESCRIPTION_THEME_IDS.map((id) => {
+                                const selected = descriptionThemes.includes(id);
+                                return (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    onClick={() => {
+                                      setDescriptionThemes((prev) => {
+                                        const { next, atMax } = toggleDescriptionThemeId(
+                                          prev,
+                                          id,
+                                          MAX_DESCRIPTION_THEMES,
+                                        );
+                                        if (atMax) {
+                                          toast({
+                                            title: t(
+                                              "createMusic.themeMaxNote",
+                                              "주제 칩은 최대 {{n}}개까지 선택할 수 있습니다.",
+                                              { n: MAX_DESCRIPTION_THEMES },
+                                            ),
+                                          });
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    className={cn(
+                                      "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                                      selected
+                                        ? "border-amber-500/80 bg-amber-500/20 text-amber-100 shadow-sm shadow-amber-500/15"
+                                        : "border-border/80 bg-background/70 text-muted-foreground hover:border-amber-500/40 hover:bg-muted/40",
+                                    )}
+                                  >
+                                    {t(`createMusic.themeChip.${id}`, id)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div>
                         <label className="block text-sm font-medium mb-1">
                           {mode === "custom"
@@ -1903,7 +2065,7 @@ export default function CreateMusic() {
                                   )
                                 : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
                           }
-                          required={mode === "description" || (mode === "custom" && !instrumentalOnly)}
+                          required={mode === "custom" && !instrumentalOnly}
                         />
                         {mode === "custom" && !instrumentalOnly && (
                           <p className="mt-1.5 text-xs text-muted-foreground">
