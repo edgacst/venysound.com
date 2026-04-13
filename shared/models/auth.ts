@@ -76,6 +76,8 @@ export const payments = pgTable("payments", {
   status: varchar("status").default("pending"),
   plan: varchar("plan"),
   billingPeriod: varchar("billing_period"),
+  /** 페이업 인증결제: payUrl·완료 메타 등 (구독 카드만 사용) */
+  payupMeta: jsonb("payup_meta").$type<Record<string, unknown> | null>(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
+import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,7 @@ import {
   Loader2,
   Zap,
   Landmark,
+  CreditCard,
   XCircle,
   Calendar,
   Star,
@@ -42,6 +43,7 @@ import {
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
+import { submitPayupDirectOrderForm } from "@/lib/payup-checkout";
 
 const PAID_PLAN_ORDER: PaidSubscriptionTierId[] = ["starter", "basic", "pro", "premium"];
 
@@ -130,6 +132,73 @@ export default function Pricing() {
   }>({
     queryKey: ["/api/subscription/bank-info"],
     staleTime: 60_000,
+  });
+
+  const searchString = useSearch();
+
+  const { data: payupStatus } = useQuery<{ payup: { configured: boolean; testMode: boolean } }>({
+    queryKey: ["/api/payup/status"],
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (!searchString) return;
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    const p = params.get("payup");
+    if (p === "success") {
+      toast({
+        title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
+        description: t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      window.history.replaceState(null, "", "/pricing");
+    }
+    if (p === "cancel") {
+      toast({
+        title: t("pricing.payupCancelledTitle", "결제 취소"),
+        description: t("pricing.payupCancelledDesc", "카드 결제를 완료하지 않았습니다."),
+        variant: "destructive",
+      });
+      window.history.replaceState(null, "", "/pricing");
+    }
+    if (p === "fail") {
+      toast({
+        title: t("pricing.payupFailTitle", "결제 실패"),
+        description: t("pricing.payupFailDesc", "카드 승인에 실패했습니다. 다시 시도하거나 계좌이체를 이용해 주세요."),
+        variant: "destructive",
+      });
+      window.history.replaceState(null, "", "/pricing");
+    }
+  }, [searchString, toast, t, queryClient]);
+
+  const payupSubscribeMutation = useMutation({
+    mutationFn: async ({ period, planId }: { period: "monthly" | "yearly"; planId: PaidSubscriptionTierId }) => {
+      const isMobile =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(max-width: 640px)").matches;
+      const res = await apiRequest("POST", "/api/subscription/payup/order", {
+        billingPeriod: period,
+        planId,
+        userAgentKind: isMobile ? "MW" : "PC",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { message?: string }).message || "카드 결제 준비에 실패했습니다");
+      }
+      return res.json() as Promise<{ starturl: string; startparams: string; orderNumber: string }>;
+    },
+    onSuccess: (data) => {
+      submitPayupDirectOrderForm(data.starturl, data.startparams);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t("pricing.payupOrderFailedTitle", "카드 결제"),
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const requestBankMutation = useMutation({
@@ -335,7 +404,7 @@ export default function Pricing() {
               )}
             </div>
           ) : (
-            <div>
+            <div className="space-y-2">
               <Button
                 className={`w-full ${id === "pro" ? "bg-primary" : ""}`}
                 variant={id === "pro" ? "default" : id === "premium" ? "outline" : "secondary"}
@@ -346,7 +415,38 @@ export default function Pricing() {
                 <Landmark size={14} className="mr-2" />
                 {t("pricing.bankTransferSubscribe", "계좌이체로 구독하기")}
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-1.5">{t("pricing.bankTransferOnlyNote", "당분간은 계좌 이체만 가능합니다")}</p>
+              {payupStatus?.payup?.configured ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={payupSubscribeMutation.isPending}
+                  onClick={() => {
+                    if (!user) {
+                      toast({
+                        title: t("pricing.loginRequired", "로그인이 필요합니다"),
+                        description: t("pricing.loginRequiredDesc", "유료 구독을 위해 먼저 로그인해주세요"),
+                        variant: "destructive",
+                      });
+                      window.location.href = LOGIN_PATH;
+                      return;
+                    }
+                    payupSubscribeMutation.mutate({ period: billingPeriod, planId: id });
+                  }}
+                  data-testid={`button-payup-subscribe-${id}`}
+                >
+                  <CreditCard size={14} className="mr-2" />
+                  {payupSubscribeMutation.isPending
+                    ? t("pricing.processing", "처리 중...")
+                    : t("pricing.cardPayupSubscribe", "카드로 결제하기 (페이업)")}
+                </Button>
+              ) : null}
+              <p className="text-xs text-muted-foreground text-center mt-1.5">
+                {payupStatus?.payup?.configured
+                  ? t("pricing.bankOrCardNote", "계좌이체 또는 카드(페이업)로 구독할 수 있습니다.")
+                  : t("pricing.bankTransferOnlyNote", "당분간은 계좌 이체만 가능합니다")}
+              </p>
             </div>
           )}
         </div>

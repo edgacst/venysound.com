@@ -37,3 +37,20 @@ export async function payupPostJson<T = unknown>(
   }
   return { ok: true, status: res.status, data };
 }
+
+/** 페이업 승인 URL 등에 `application/x-www-form-urlencoded` POST */
+export async function payupPostUrlEncoded(
+  url: string,
+  body: Record<string, string>,
+): Promise<{ ok: true; status: number; text: string } | { ok: false; status: number; message: string; text?: string }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8", Accept: "*/*" },
+    body: new URLSearchParams(body).toString(),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    return { ok: false, status: res.status, message: `HTTP ${res.status}`, text: text.slice(0, 500) };
+  }
+  return { ok: true, status: res.status, text };
+}

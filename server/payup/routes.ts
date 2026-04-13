@@ -15,7 +15,7 @@ export function registerPayupRoutes(app: Express): void {
         testMode: s.testMode,
         baseUrl: s.baseUrl,
         hint: s.configured
-          ? "페이업 키가 설정되어 있습니다. 결제 플로우 연동 시 server/payup 모듈을 사용하세요."
+          ? "유료 구독 카드: POST /api/subscription/payup/order → 결제창 → POST /api/subscription/payup/complete. (지갑 충전은 별도)"
           : "가맹 승인 후 PAYUP_MERCHANT_ID, PAYUP_API_CERT_KEY 를 .env에 넣고 운영 전 PAYUP_USE_TEST=false 로 전환하세요.",
       },
     });

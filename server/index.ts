@@ -169,6 +169,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_ai_period_consumed_won i
     name: "014-subscription-entitlements",
     sql: `ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_entitlements jsonb NOT NULL DEFAULT '{}'::jsonb;`,
   },
+  {
+    name: "015-payments-payup-meta",
+    sql: `ALTER TABLE payments ADD COLUMN IF NOT EXISTS payup_meta jsonb;`,
+  },
 ];
 
 async function runAutoMigrations() {
