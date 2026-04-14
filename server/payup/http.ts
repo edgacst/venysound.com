@@ -87,6 +87,15 @@ export async function payupPostUrlEncodedJson<T = unknown>(
     return { ok: false, status: res.status, message: "페이업 응답이 JSON이 아닙니다.", bodyText: text.slice(0, 500) };
   }
   if (!res.ok) {
+    if (res.status === 415) {
+      return {
+        ok: false,
+        status: 415,
+        message:
+          "페이업이 JSON(application/json)만 허용합니다. .env의 PAYUP_ORDER_BODY_FORMAT=form 줄을 삭제하거나 json으로 두고 pm2 restart --update-env 하세요.",
+        bodyText: text.slice(0, 300),
+      };
+    }
     const msg =
       typeof (data as { responseMsg?: string })?.responseMsg === "string"
         ? (data as { responseMsg: string }).responseMsg
