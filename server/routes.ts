@@ -5971,10 +5971,9 @@ export async function registerRoutes(
 
       const itemName = `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`.slice(0, 100);
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
+      /** 페이업 응답: `auth_return` 또는 `returnUrl` 필수 — `AUTH_RETURN` 등 다른 키는 인정되지 않음 */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = (user.email || "").trim().slice(0, 50);
-      const authReturnKeyRaw = String(process.env.PAYUP_DANAL_AUTH_RETURN_FIELD ?? "auth_return").trim();
-      const authReturnKey = authReturnKeyRaw === "AUTH_RETURN" || authReturnKeyRaw === "auth_return" ? authReturnKeyRaw : "auth_return";
       const orderBody: Record<string, string> = {
         merchantId: cred.merchantId,
         orderNumber,
@@ -5984,11 +5983,15 @@ export async function registerRoutes(
         userAgent,
         signature,
         timestamp,
-        [authReturnKey]: authReturnUrl,
+        auth_return: authReturnUrl,
         USESKIPPAGE: "Y",
         CARDCODE: cardCode4,
         QUOTA: "00",
       };
+      /** 모바일(WM)은 표준 결제 가이드상 returnUrl 필수인 경우가 있어 동일 URL을 병행 */
+      if (userAgent === "WM") {
+        orderBody.returnUrl = authReturnUrl;
+      }
       if (userEmailTrim) {
         orderBody.userEmail = userEmailTrim;
       }
