@@ -221,13 +221,36 @@ function pickPayupDirectOrderFields(data: Record<string, unknown>) {
   return { responseCode, responseMsg, payUrl, starturl, startparams, cancelUrl, cardCode };
 }
 
-/** 규격서 금액 필드(12) — 좌측 0 패딩 */
-function formatPayupAmount12(amountWon: number): string {
-  const s = String(Math.max(0, Math.floor(amountWon)));
-  if (s.length > 12) {
-    throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
+/** 페이업 AP 주문 `amount` — 기본은 비패딩 10자리 이하(내부 전문 파싱). `PAYUP_ORDER_AMOUNT_PAD12=true`면 12자리 0패딩(구 규격 대비) */
+function formatPayupOrderAmountForRequest(amountWon: number): string {
+  const pad12 = String(process.env.PAYUP_ORDER_AMOUNT_PAD12 ?? "").trim().toLowerCase();
+  if (pad12 === "true" || pad12 === "1" || pad12 === "yes") {
+    const s = String(Math.max(0, Math.floor(amountWon)));
+    if (s.length > 12) {
+      throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
+    }
+    return s.padStart(12, "0");
   }
-  return s.padStart(12, "0");
+  const s = String(Math.max(0, Math.floor(amountWon)));
+  if (s.length > 10) {
+    throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
+  }
+  return s;
+}
+
+/** 다날/페이업 내부 `|` 구분 전문에 섞이면 파싱 실패 — 제어 문자·파이프 제거 */
+function sanitizePayupOrderField(input: string, maxLen: number): string {
+  let s = String(input ?? "")
+    .replace(/[\r\n\t\f\v\u0000-\u001F\u007F]/g, " ")
+    .replace(/\|/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  try {
+    s = s.normalize("NFKC");
+  } catch {
+    /* ignore */
+  }
+  return s.slice(0, maxLen);
 }
 
 function readPayupReturnParamsFromReq(req: Request): string {
@@ -5955,38 +5978,42 @@ export async function registerRoutes(
 
       const orderNumber = newPayupSubscriptionOrderNumber();
       const timestamp = payupTimestamp14();
-      let amt12: string;
+      let amtForOrder: string;
       try {
-        amt12 = formatPayupAmount12(amount);
+        amtForOrder = formatPayupOrderAmountForRequest(amount);
       } catch {
         return res.status(400).json({ message: "결제 금액이 페이업 전문 한도를 초과합니다." });
       }
 
-      const signature = signPayupDirectOrder(cred.merchantId, orderNumber, amt12, cred.apiCertKey, timestamp);
-      const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "회원";
+      const signature = signPayupDirectOrder(cred.merchantId, orderNumber, amtForOrder, cred.apiCertKey, timestamp);
+      const displayNameRaw = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "회원";
+      const displayName = sanitizePayupOrderField(displayNameRaw, 50) || "회원";
       /** 규격서 3.1 userAgent 길이 2 — 모바일 WM, 그 외 PC */
       const userAgent = userAgentKind === "MW" || userAgentKind === "mw" ? "WM" : "PC";
       const cardCode4 = (process.env.PAYUP_SUBSCRIPTION_CARDCODE ?? "0000").replace(/\D/g, "").padStart(4, "0").slice(0, 4);
       const authReturnUrl = `${site}/api/subscription/payup/complete`.slice(0, 200);
 
-      const itemName = `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`.slice(0, 100);
+      const itemName = sanitizePayupOrderField(
+        `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`,
+        100,
+      );
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
       /** 페이업 응답: `auth_return` 또는 `returnUrl` 필수 — `AUTH_RETURN` 등 다른 키는 인정되지 않음 */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
-      const userEmailTrim = (user.email || "").trim().slice(0, 50);
+      const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
       const orderBody: Record<string, string> = {
         merchantId: cred.merchantId,
         orderNumber,
-        amount: amt12,
+        amount: amtForOrder,
         itemName,
-        userName: displayName.slice(0, 50),
+        userName: displayName,
         userAgent,
         signature,
         timestamp,
         auth_return: authReturnUrl,
         USESKIPPAGE: "Y",
         CARDCODE: cardCode4,
-        QUOTA: "00",
+        QUOTA: "0",
       };
       /** 모바일(WM)은 표준 결제 가이드상 returnUrl 필수인 경우가 있어 동일 URL을 병행 */
       if (userAgent === "WM") {
