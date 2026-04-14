@@ -69,7 +69,7 @@ export default function Explore() {
     }
   };
 
-  const { data: musicResult, isLoading } = useMusicList({ 
+  const { data: musicResult, isLoading, isError, error, refetch: refetchMusicList } = useMusicList({ 
     search: debouncedSearch,
     genre: selectedGenre,
     tag: selectedTag,
@@ -385,7 +385,20 @@ export default function Explore() {
               ))}
             </div>
 
-            {musicList?.length === 0 && !isLoading && (
+            {isError && !isLoading && (
+              <div className="text-center py-20 space-y-4 px-4" data-testid="text-music-list-error">
+                <p className="text-destructive font-medium">
+                  {t("explore.musicListLoadError", "목록을 불러오지 못했습니다. API 연결을 확인해 주세요.")}
+                </p>
+                <p className="text-xs text-muted-foreground break-all max-w-lg mx-auto">
+                  {error instanceof Error ? error.message : String(error)}
+                </p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void refetchMusicList()}>
+                  {t("explore.retryLoad", "다시 시도")}
+                </Button>
+              </div>
+            )}
+            {musicList?.length === 0 && !isLoading && !isError && (
               <div className="text-center py-20 text-muted-foreground" data-testid="text-no-results">
                 {t("explore.noResults")}
               </div>

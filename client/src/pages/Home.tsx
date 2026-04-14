@@ -122,7 +122,7 @@ export default function Home() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const openRegisterModal = useLoginModalStore((s) => s.openRegister);
   const userId = user?.id;
-  const { data: musicResult, isLoading } = useMusicList({ limit: 500 });
+  const { data: musicResult, isLoading, isError, error, refetch: refetchMusicList } = useMusicList({ limit: 500 });
   const musicList = musicResult?.data;
   const { data: myLikeIds = [] } = useMyLikes();
 
@@ -1252,6 +1252,18 @@ export default function Home() {
         {isLoading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="animate-spin text-primary" size={40} />
+          </div>
+        ) : isError ? (
+          <div className="text-center py-20 space-y-4 px-4" data-testid="text-music-list-error">
+            <p className="text-destructive font-medium">
+              {t("home.musicListLoadError", "음악 목록을 불러오지 못했습니다. 네트워크 또는 서버(API) 연결을 확인해 주세요.")}
+            </p>
+            <p className="text-xs text-muted-foreground break-all max-w-lg mx-auto">
+              {error instanceof Error ? error.message : String(error)}
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void refetchMusicList()}>
+              {t("home.retryLoadMusic", "다시 시도")}
+            </Button>
           </div>
         ) : (musicList?.length ?? 0) === 0 ? (
           <div className="text-center py-20 text-muted-foreground" data-testid="text-no-music">
