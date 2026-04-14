@@ -54,3 +54,44 @@ export async function payupPostUrlEncoded(
   }
   return { ok: true, status: res.status, text };
 }
+
+/**
+ * 레거시 AP 주문 등 일부 엔드포인트는 JSON 대신 `x-www-form-urlencoded` + JSON 응답 조합인 경우가 있음.
+ * `PAYUP_ORDER_BODY_FORMAT=form` 일 때 구독 주문(order)에 사용.
+ */
+export async function payupPostUrlEncodedJson<T = unknown>(
+  cred: Extract<PayupCredentials, { ok: true }>,
+  path: string,
+  body: Record<string, string>,
+): Promise<PayupJsonResult<T>> {
+  void cred;
+  const base = getPayupBaseUrl().replace(/\/$/, "");
+  const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(body)) {
+    params.set(k, v);
+  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+      Accept: "application/json",
+    },
+    body: params.toString(),
+  });
+  const text = await res.text();
+  let data: T;
+  try {
+    data = (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    return { ok: false, status: res.status, message: "페이업 응답이 JSON이 아닙니다.", bodyText: text.slice(0, 500) };
+  }
+  if (!res.ok) {
+    const msg =
+      typeof (data as { responseMsg?: string })?.responseMsg === "string"
+        ? (data as { responseMsg: string }).responseMsg
+        : `HTTP ${res.status}`;
+    return { ok: false, status: res.status, message: msg, bodyText: text.slice(0, 300) };
+  }
+  return { ok: true, status: res.status, data };
+}

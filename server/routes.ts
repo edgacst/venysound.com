@@ -81,7 +81,7 @@ import {
 } from "./subscription-ai-wallet";
 import { getPayupCredentials } from "./payup/config";
 import { signPayupDirectOrder } from "./payup/signing";
-import { payupPostJson } from "./payup/http";
+import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
 import { payupDirectPostPayUrl } from "./payup/direct-pay";
 import { payupPostPartCancel } from "./payup/part-cancel";
 
@@ -221,21 +221,21 @@ function pickPayupDirectOrderFields(data: Record<string, unknown>) {
   return { responseCode, responseMsg, payUrl, starturl, startparams, cancelUrl, cardCode };
 }
 
-/** 페이업 AP 주문 `amount` — 기본은 비패딩 10자리 이하(내부 전문 파싱). `PAYUP_ORDER_AMOUNT_PAD12=true`면 12자리 0패딩(구 규격 대비) */
+/** 페이업·다날 AP 주문 `amount` — 기본 12자리 0패딩(CP 전문 흔한 형식). `PAYUP_ORDER_AMOUNT_SHORT=true`면 비패딩 10자리 이하 */
 function formatPayupOrderAmountForRequest(amountWon: number): string {
-  const pad12 = String(process.env.PAYUP_ORDER_AMOUNT_PAD12 ?? "").trim().toLowerCase();
-  if (pad12 === "true" || pad12 === "1" || pad12 === "yes") {
+  const short = String(process.env.PAYUP_ORDER_AMOUNT_SHORT ?? "").trim().toLowerCase();
+  if (short === "true" || short === "1" || short === "yes") {
     const s = String(Math.max(0, Math.floor(amountWon)));
-    if (s.length > 12) {
-      throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
+    if (s.length > 10) {
+      throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
     }
-    return s.padStart(12, "0");
+    return s;
   }
   const s = String(Math.max(0, Math.floor(amountWon)));
-  if (s.length > 10) {
-    throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
+  if (s.length > 12) {
+    throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
   }
-  return s;
+  return s.padStart(12, "0");
 }
 
 /** 다날/페이업 내부 `|` 구분 전문에 섞이면 파싱 실패 — 제어 문자·파이프 제거 */
@@ -6001,8 +6001,8 @@ export async function registerRoutes(
       /** 페이업 응답: `auth_return` 또는 `returnUrl` 필수 — `AUTH_RETURN` 등 다른 키는 인정되지 않음 */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
+      /** URL 경로에 merchantId 포함(`/ap/api/payment/{id}/order`) — 본문에 중복 시 내부 전문 길이·파싱 오류 유발 가능(part-cancel과 동일하게 본문 제외) */
       const orderBody: Record<string, string> = {
-        merchantId: cred.merchantId,
         orderNumber,
         amount: amtForOrder,
         itemName,
@@ -6021,6 +6021,9 @@ export async function registerRoutes(
       }
       if (userEmailTrim) {
         orderBody.userEmail = userEmailTrim;
+      }
+      if (String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
+        orderBody.merchantId = cred.merchantId;
       }
 
       const [inserted] = await db
@@ -6041,11 +6044,23 @@ export async function registerRoutes(
         return res.status(500).json({ message: "결제 준비 레코드를 만들지 못했습니다." });
       }
 
-      const orderRes = await payupPostJson<Record<string, unknown>>(cred, orderPath, orderBody);
+      const orderBodyFormat = String(process.env.PAYUP_ORDER_BODY_FORMAT ?? "").trim().toLowerCase();
+      const orderPost =
+        orderBodyFormat === "form" || orderBodyFormat === "urlencoded"
+          ? payupPostUrlEncodedJson<Record<string, unknown>>
+          : payupPostJson<Record<string, unknown>>;
+      const orderRes = await orderPost(cred, orderPath, orderBody);
       if (!orderRes.ok) {
         console.error(
           "[payup] order failed",
-          { status: orderRes.status, message: orderRes.message, orderNumber, path: orderPath },
+          {
+            status: orderRes.status,
+            message: orderRes.message,
+            orderNumber,
+            path: orderPath,
+            bodyFormat: orderBodyFormat === "form" || orderBodyFormat === "urlencoded" ? "form" : "json",
+            bodyKeys: Object.keys(orderBody),
+          },
           orderRes.bodyText?.slice(0, 800),
         );
         await db.delete(payments).where(eq(payments.id, insertedId));
