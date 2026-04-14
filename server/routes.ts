@@ -80,8 +80,8 @@ import {
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
 import { getPayupCredentials } from "./payup/config";
-import { signPayupDirectOrder } from "./payup/signing";
-import { payupPostJson, payupPostUrlEncoded } from "./payup/http";
+import { signPayupBatchReady, signPayupBatchPay } from "./payup/signing";
+import { payupPostJson } from "./payup/http";
 
 /** 라디오 채널 카페 홈페이지 — http/https만 허용, 스킴 생략 시 https 부여 */
 function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | null } | { ok: false } {
@@ -176,7 +176,8 @@ async function applyBankTransferSubscriptionToUserFromPayment(payment: {
   return { computed, payUser, tierPaid, expiresAt };
 }
 
-const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_order";
+/** 페이업 자동결제(배치) 규격: ready → cert → pay 까지 진행 중인 payments 행 */
+const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_batch";
 
 function payupSubscriptionSiteBase(): string {
   const s = (process.env.SITE_URL || "").trim().replace(/\/$/, "");
@@ -206,89 +207,68 @@ function pickPayupStr(obj: Record<string, unknown> | null | undefined, ...keys: 
   return undefined;
 }
 
-function pickPayupOrderFields(data: Record<string, unknown>) {
+/** ready 응답: starturl / startparams (페이업 자동결제 규격서 3.1 응답) */
+function pickPayupReadyFields(data: Record<string, unknown>) {
   const responseCode = pickPayupStr(data, "responseCode", "RESPONSECODE", "resultCode", "RESULT_CODE") ?? "";
   const responseMsg = pickPayupStr(data, "responseMsg", "RESPONSEMSG", "resultMsg", "RESULT_MSG");
   const starturl = pickPayupStr(data, "starturl", "startUrl", "STARTURL");
   const startparams = pickPayupStr(data, "startparams", "startParams", "STARTPARAMS");
-  const payUrl = pickPayupStr(data, "payUrl", "payurl", "PAYURL");
-  return { responseCode, responseMsg, starturl, startparams, payUrl };
+  return { responseCode, responseMsg, starturl, startparams };
 }
 
-function readPayupReturnParamsFromBody(body: Record<string, unknown>): string {
-  const v =
-    (typeof body.RETURNPARAMS === "string" && body.RETURNPARAMS) ||
-    (typeof body.returnParams === "string" && body.returnParams) ||
-    (typeof body.ReturnParams === "string" && body.ReturnParams) ||
-    "";
-  return v;
+/** 규격서 금액 필드(12) — 좌측 0 패딩 */
+function formatPayupAmount12(amountWon: number): string {
+  const s = String(Math.max(0, Math.floor(amountWon)));
+  if (s.length > 12) {
+    throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
+  }
+  return s.padStart(12, "0");
 }
 
-function tryParsePayupReturnJson(blob: string): Record<string, unknown> | null {
-  if (!blob) return null;
-  const tryOne = (s: string): Record<string, unknown> | null => {
-    try {
-      const j = JSON.parse(s) as unknown;
-      if (j && typeof j === "object" && !Array.isArray(j)) return j as Record<string, unknown>;
-    } catch {
-      /* ignore */
-    }
-    return null;
-  };
-  return tryOne(blob) ?? tryOne(decodeURIComponent(blob));
+/** 배치 승인(pay)용 주문번호 (ready 주문번호와 별도) */
+function newPayupPayOrderNumber(): string {
+  const id = `P${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  return id.length <= 20 ? id : id.slice(0, 20);
+}
+
+/** 카드등록 복귀 URL 검증 — 페이업 리다이렉트에서 세션 없을 수 있음 */
+function payupBatchReturnToken(paymentId: string, userId: string): string {
+  const secret = (process.env.SESSION_SECRET ?? "").trim();
+  if (!secret) return "";
+  return crypto.createHmac("sha256", secret).update(`payup-sub-batch|${paymentId}|${userId}`).digest("base64url");
+}
+
+function verifyPayupBatchReturnToken(paymentId: string, userId: string, token: string): boolean {
+  const expected = payupBatchReturnToken(paymentId, userId);
+  if (!expected || !token || token.length !== expected.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected, "utf8"), Buffer.from(token, "utf8"));
+  } catch {
+    return false;
+  }
+}
+
+function readPayupReturnParamsFromReq(req: Request): string {
+  const q = req.query as Record<string, unknown>;
+  const b = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+  const keys = ["RETURNPARAMS", "returnParams", "ReturnParams"];
+  for (const k of keys) {
+    const pick = (src: Record<string, unknown>) => {
+      const v = src[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+      return "";
+    };
+    const fromQ = pick(q);
+    if (fromQ) return fromQ;
+    const fromB = pick(b);
+    if (fromB) return fromB;
+  }
+  return "";
 }
 
 function payupTxnIdFromParsed(parsed: Record<string, unknown>): string | undefined {
   return pickPayupStr(parsed, "transactionId", "TRANSACTIONID", "tid", "TID", "transaction_id");
-}
-
-function payupOrderNumberFromParsed(parsed: Record<string, unknown>): string | undefined {
-  return pickPayupStr(parsed, "orderNumber", "ORDERNUMBER", "orderId", "ORDER_ID", "ORDERNO", "ordernumber");
-}
-
-async function payupFinalApproveIfNeeded(
-  payUrl: string | undefined,
-  returnParamsBlob: string,
-  parsed: Record<string, unknown> | null,
-): Promise<{ ok: boolean; txnId?: string; message?: string }> {
-  const p = parsed ?? {};
-  const codeOk =
-    pickPayupStr(p, "responseCode", "RESPONSECODE", "resultCode", "RESULT_CODE") === "0000";
-  const tidEarly = payupTxnIdFromParsed(p);
-  if (codeOk && tidEarly) {
-    return { ok: true, txnId: tidEarly };
-  }
-  if (!returnParamsBlob) {
-    return { ok: false, message: "RETURNPARAMS 가 비어 있습니다." };
-  }
-  if (!payUrl) {
-    return { ok: false, message: "주문 응답에 payUrl 이 없습니다. 페이업 규격·MID 환경을 확인하세요." };
-  }
-  const fieldName = (process.env.PAYUP_PAYPARAM_FIELD ?? "PAYPARAMS").trim() || "PAYPARAMS";
-  const pr = await payupPostUrlEncoded(payUrl, { [fieldName]: returnParamsBlob });
-  if (!pr.ok) {
-    return { ok: false, message: pr.message };
-  }
-  let data: Record<string, unknown> | null = null;
-  try {
-    data = JSON.parse(pr.text) as Record<string, unknown>;
-  } catch {
-    data = tryParsePayupReturnJson(pr.text);
-  }
-  if (!data) {
-    if (pr.text.includes("0000")) {
-      const tid = payupTxnIdFromParsed(p);
-      if (tid) return { ok: true, txnId: tid };
-    }
-    return { ok: false, message: "승인 응답 파싱에 실패했습니다." };
-  }
-  const code = pickPayupStr(data, "responseCode", "RESPONSECODE", "resultCode", "RESULT_CODE");
-  if (code !== "0000") {
-    return { ok: false, message: pickPayupStr(data, "responseMsg", "RESPONSEMSG") || `승인 거절(${code})` };
-  }
-  const tid = payupTxnIdFromParsed(data);
-  if (!tid) return { ok: false, message: "승인 응답에 거래번호가 없습니다." };
-  return { ok: true, txnId: tid };
 }
 
 function redirectPricingPayupOutcome(res: Response, outcome: "success" | "fail"): void {
@@ -5825,12 +5805,19 @@ export async function registerRoutes(
     }
   });
 
-  /** 페이업 인증결제(API) — 유료 구독만. 규격: api(.)payup.co.kr `/ap/api/payment/{merchantId}/order` + 결제창 POST */
-  app.post("/api/subscription/payup/order", isAuthenticated, async (req, res) => {
+  /**
+   * 페이업 **자동결제(다날) 규격서(인증)** — 3.1 배치키 발급 준비 `POST /ab/api/payment/{merchantId}/ready`
+   * 이후 카드창(STARTPARAMS) → returnUrl → cert → pay (동일 규격서 3.1 cert, 4.1 pay)
+   */
+  app.post("/api/subscription/payup/ready", isAuthenticated, async (req, res) => {
     try {
       const cred = getPayupCredentials();
       if (!cred.ok) {
         return res.status(503).json({ message: cred.message });
+      }
+      const secret = (process.env.SESSION_SECRET ?? "").trim();
+      if (!secret) {
+        return res.status(503).json({ message: "카드 복귀 검증을 위해 SESSION_SECRET 이 필요합니다." });
       }
       const site = payupSubscriptionSiteBase();
       if (!site) {
@@ -5868,40 +5855,16 @@ export async function registerRoutes(
       }
 
       const orderNumber = newPayupSubscriptionOrderNumber();
-      const timestamp = payupTimestamp14();
-      const signature = signPayupDirectOrder(
-        cred.merchantId,
-        orderNumber,
-        String(amount),
-        cred.apiCertKey,
-        timestamp,
-      );
+      let amt12: string;
+      try {
+        amt12 = formatPayupAmount12(amount);
+      } catch {
+        return res.status(400).json({ message: "결제 금액이 페이업 전문 한도를 초과합니다." });
+      }
 
+      const signature = signPayupBatchReady(cred.merchantId, orderNumber, cred.apiCertKey);
       const displayName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "회원";
-      const userAgent = userAgentKind === "MW" || userAgentKind === "mw" ? "MW" : "PC";
-      const cardCode = (process.env.PAYUP_SUBSCRIPTION_CARDCODE ?? "0000").trim() || "0000";
-      const authReturnUrl = `${site}/api/subscription/payup/complete`;
-      const cancelReturnUrl = `${site}/pricing?payup=cancel`;
-
-      const itemName = `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`;
-      const path = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
-      const orderBody: Record<string, string> = {
-        merchantId: cred.merchantId,
-        orderNumber,
-        amount: String(amount),
-        itemName: itemName.slice(0, 120),
-        productName: itemName.slice(0, 120),
-        userName: displayName.slice(0, 40),
-        userEmail: (user.email || "").slice(0, 128),
-        timestamp,
-        signature,
-        authReturnUrl: authReturnUrl.slice(0, 250),
-        cancelReturnUrl: cancelReturnUrl.slice(0, 250),
-        userAgent,
-        CARDCODE: cardCode,
-        QUOTA: "00",
-        USESKIPPAGE: "Y",
-      };
+      const userAgent = userAgentKind === "MW" || userAgentKind === "mw" ? "Mobile Web" : "PC Web";
 
       const [inserted] = await db
         .insert(payments)
@@ -5916,39 +5879,65 @@ export async function registerRoutes(
         })
         .returning({ id: payments.id });
 
-      const insertedId = inserted?.id;
-      if (!insertedId) {
+      const paymentId = inserted?.id;
+      if (!paymentId) {
         return res.status(500).json({ message: "결제 준비 레코드를 만들지 못했습니다." });
       }
 
-      const orderRes = await payupPostJson<Record<string, unknown>>(cred, path, orderBody);
-      if (!orderRes.ok) {
-        await db.delete(payments).where(eq(payments.id, insertedId));
+      const batchToken = payupBatchReturnToken(paymentId, userId);
+      if (!batchToken) {
+        await db.delete(payments).where(eq(payments.id, paymentId));
+        return res.status(503).json({ message: "배치 복귀 토큰을 만들 수 없습니다. SESSION_SECRET 을 확인하세요." });
+      }
+
+      const returnPath = `/api/subscription/payup/batch-return?pid=${encodeURIComponent(paymentId)}&t=${encodeURIComponent(batchToken)}`;
+      const returnUrl = `${site}${returnPath}`.slice(0, 255);
+      const cancelUrl = `${site}/pricing?payup=cancel`.slice(0, 255);
+
+      const itemName = `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`.slice(0, 100);
+      const readyPath = `/ab/api/payment/${encodeURIComponent(cred.merchantId)}/ready`;
+      const readyBody: Record<string, string> = {
+        merchantId: cred.merchantId,
+        orderNumber,
+        amount: amt12,
+        itemName,
+        userName: displayName.slice(0, 50),
+        userAgent,
+        userEmail: (user.email || "").slice(0, 50),
+        cancelUrl,
+        returnUrl,
+        bypassValue: `pid=${paymentId}`.slice(0, 255),
+        signature,
+      };
+
+      const readyRes = await payupPostJson<Record<string, unknown>>(cred, readyPath, readyBody);
+      if (!readyRes.ok) {
+        await db.delete(payments).where(eq(payments.id, paymentId));
         return res.status(502).json({
-          message: orderRes.message || "페이업 주문 요청에 실패했습니다.",
-          detail: orderRes.bodyText,
+          message: readyRes.message || "페이업 배치키 발급 준비(ready) 요청에 실패했습니다.",
+          detail: readyRes.bodyText,
         });
       }
 
-      const d = orderRes.data;
+      const d = readyRes.data;
       if (!d || typeof d !== "object") {
-        await db.delete(payments).where(eq(payments.id, insertedId));
-        return res.status(502).json({ message: "페이업 주문 응답이 비어 있습니다." });
+        await db.delete(payments).where(eq(payments.id, paymentId));
+        return res.status(502).json({ message: "페이업 ready 응답이 비어 있습니다." });
       }
-      const pf = pickPayupOrderFields(d);
+      const pf = pickPayupReadyFields(d);
       if (pf.responseCode !== "0000" || !pf.starturl || !pf.startparams) {
-        await db.delete(payments).where(eq(payments.id, insertedId));
+        await db.delete(payments).where(eq(payments.id, paymentId));
         return res.status(502).json({
-          message: pf.responseMsg || `페이업 주문 거절(${pf.responseCode || "?"})`,
+          message: pf.responseMsg || `페이업 ready 거절(${pf.responseCode || "?"})`,
         });
       }
 
       await db
         .update(payments)
         .set({
-          payupMeta: { payUrl: pf.payUrl ?? "", startUrl: pf.starturl },
+          payupMeta: { phase: "ready_ok", startUrl: pf.starturl, returnPath },
         })
-        .where(eq(payments.id, insertedId));
+        .where(eq(payments.id, paymentId));
 
       return res.json({
         starturl: pf.starturl,
@@ -5956,67 +5945,141 @@ export async function registerRoutes(
         orderNumber,
       });
     } catch (err: any) {
-      console.error("PayUp subscription order error:", err);
-      res.status(500).json({ message: err?.message || "페이업 주문 처리에 실패했습니다" });
+      console.error("PayUp subscription ready error:", err);
+      res.status(500).json({ message: err?.message || "페이업 ready 처리에 실패했습니다" });
     }
   });
 
-  /** 페이업 인증 복귀(가맹점 서버). 인증 파라미터로 최종 승인 후 구독 반영 */
-  app.post("/api/subscription/payup/complete", async (req, res) => {
+  /** 규격서 returnUrl (브라우저 GET). cert → pay 후 구독 반영 */
+  const handlePayupSubscriptionBatchReturn = async (req: Request, res: Response): Promise<void> => {
     try {
-      const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
-      const blob = readPayupReturnParamsFromBody(body);
-      const parsed = blob ? tryParsePayupReturnJson(blob) : null;
-      const orderNumber =
-        (parsed && payupOrderNumberFromParsed(parsed)) ||
-        (typeof body.orderNumber === "string" && body.orderNumber) ||
-        (typeof body.orderId === "string" && body.orderId) ||
-        "";
-      if (!orderNumber) {
-        console.warn("[payup] complete: orderNumber 없음", Object.keys(body));
-        return redirectPricingPayupOutcome(res, "fail");
+      const pidRaw = String(req.query.pid ?? "").trim();
+      const token = String(req.query.t ?? "").trim();
+      if (!pidRaw || !token) {
+        console.warn("[payup] batch-return: pid/t 없음");
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+      const cred = getPayupCredentials();
+      if (!cred.ok) {
+        redirectPricingPayupOutcome(res, "fail");
+        return;
       }
 
-      const [payment] = await db.select().from(payments).where(eq(payments.orderId, orderNumber));
-      if (!payment) {
-        console.warn("[payup] complete: 알 수 없는 주문", orderNumber);
-        return redirectPricingPayupOutcome(res, "fail");
+      const [payment] = await db.select().from(payments).where(eq(payments.id, pidRaw));
+      if (!payment || !verifyPayupBatchReturnToken(payment.id, payment.userId, token)) {
+        console.warn("[payup] batch-return: 결제건 또는 토큰 불일치", pidRaw);
+        redirectPricingPayupOutcome(res, "fail");
+        return;
       }
       if (payment.status === "paid") {
-        return redirectPricingPayupOutcome(res, "success");
+        redirectPricingPayupOutcome(res, "success");
+        return;
       }
       if (payment.paymentKey !== PAYUP_SUBSCRIPTION_PAYMENT_KEY || payment.status !== "pending") {
-        return redirectPricingPayupOutcome(res, "fail");
+        redirectPricingPayupOutcome(res, "fail");
+        return;
       }
 
-      const meta = payment.payupMeta as Record<string, unknown> | null | undefined;
-      const payUrlRaw = meta && typeof meta.payUrl === "string" ? meta.payUrl.trim() : "";
-      const payUrl = payUrlRaw.length > 0 ? payUrlRaw : undefined;
-      const approved = await payupFinalApproveIfNeeded(payUrl, blob, parsed);
-      if (!approved.ok || !approved.txnId) {
-        console.error("[payup] complete 승인 실패:", approved.message, orderNumber);
-        return redirectPricingPayupOutcome(res, "fail");
+      const blob = readPayupReturnParamsFromReq(req);
+      if (!blob) {
+        console.warn("[payup] batch-return: RETURNPARAMS 없음");
+        redirectPricingPayupOutcome(res, "fail");
+        return;
       }
 
-      if (parsed) {
-        const amtFromReturn = Number(pickPayupStr(parsed, "amount", "AMOUNT", "payAmount", "PAYAMOUNT"));
-        if (Number.isFinite(amtFromReturn) && amtFromReturn > 0 && amtFromReturn !== payment.amount) {
-          console.error("[payup] 금액 불일치", payment.amount, amtFromReturn, orderNumber);
-          return redirectPricingPayupOutcome(res, "fail");
-        }
+      const certPath = `/ab/api/payment/${encodeURIComponent(cred.merchantId)}/cert`;
+      const certRes = await payupPostJson<Record<string, unknown>>(cred, certPath, { RETURNPARAMS: blob });
+      if (!certRes.ok || !certRes.data || typeof certRes.data !== "object") {
+        console.error("[payup] cert 실패", certRes.bodyText ?? certRes.message);
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+      const certData = certRes.data as Record<string, unknown>;
+      const certCode = pickPayupStr(certData, "responseCode", "RESPONSECODE") ?? "";
+      if (certCode !== "0000") {
+        console.error("[payup] cert 거절", certCode, pickPayupStr(certData, "responseMsg", "RESPONSEMSG"));
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+      const billKey = pickPayupStr(certData, "billKey", "BILLKEY", "billkey");
+      if (!billKey) {
+        console.error("[payup] cert 응답에 billKey 없음");
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+
+      const payOrderNumber = newPayupPayOrderNumber();
+      const timestamp = payupTimestamp14();
+      const amountStr = formatPayupAmount12(payment.amount);
+      const paySig = signPayupBatchPay(cred.merchantId, payOrderNumber, amountStr, cred.apiCertKey, timestamp);
+
+      const planLabel = String(payment.plan ?? "pro");
+      const bp =
+        payment.billingPeriod === "yearly" || payment.billingPeriod === "monthly" ? payment.billingPeriod : "monthly";
+      const itemPay = `VenySound ${planLabel} ${bp === "monthly" ? "월간" : "연간"}`.slice(0, 100);
+      const [urow] = await db.select().from(users).where(eq(users.id, payment.userId));
+      const payerName = `${urow?.firstName || ""} ${urow?.lastName || ""}`.trim() || urow?.email || "회원";
+
+      const payPath = `/ab/api/payment/${encodeURIComponent(cred.merchantId)}/pay`;
+      const payBody: Record<string, string> = {
+        billKey,
+        orderNumber: payOrderNumber,
+        amount: amountStr,
+        itemName: itemPay,
+        userName: payerName.slice(0, 20),
+        kakaoSend: "N",
+        signature: paySig,
+        timestamp,
+      };
+      if (urow?.email) {
+        payBody.userEmail = String(urow.email).slice(0, 128);
+      }
+
+      const payRes = await payupPostJson<Record<string, unknown>>(cred, payPath, payBody);
+      if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
+        console.error("[payup] pay 실패", payRes.bodyText ?? payRes.message);
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+      const payData = payRes.data as Record<string, unknown>;
+      const payCode = pickPayupStr(payData, "responseCode", "RESPONSECODE") ?? "";
+      if (payCode !== "0000") {
+        console.error("[payup] pay 거절", payCode, pickPayupStr(payData, "responseMsg", "RESPONSEMSG"));
+        redirectPricingPayupOutcome(res, "fail");
+        return;
+      }
+      const txnId = payupTxnIdFromParsed(payData);
+      if (!txnId) {
+        console.error("[payup] pay 응답에 transactionId 없음");
+        redirectPricingPayupOutcome(res, "fail");
+        return;
       }
 
       const now = new Date();
+      const meta = payment.payupMeta as Record<string, unknown> | null | undefined;
       const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+
+      await db
+        .update(users)
+        .set({
+          tossBillingKey: billKey,
+          tossCustomerKey: null,
+          updatedAt: now,
+        })
+        .where(eq(users.id, payment.userId));
+
       await db
         .update(payments)
         .set({
           status: "paid",
-          paymentKey: `payup:${approved.txnId}`,
+          paymentKey: `payup:${txnId}`,
           payupMeta: {
             ...(meta && typeof meta === "object" ? meta : {}),
+            billKeyStored: true,
+            payOrderNumber,
             completedAt: now.toISOString(),
-            txnId: approved.txnId,
+            txnId,
           },
         })
         .where(eq(payments.id, payment.id));
@@ -6036,11 +6099,18 @@ export async function registerRoutes(
         recipientName: bankRecipient,
       });
 
-      return redirectPricingPayupOutcome(res, "success");
+      redirectPricingPayupOutcome(res, "success");
     } catch (err) {
-      console.error("PayUp subscription complete error:", err);
-      return redirectPricingPayupOutcome(res, "fail");
+      console.error("PayUp subscription batch-return error:", err);
+      redirectPricingPayupOutcome(res, "fail");
     }
+  };
+
+  app.get("/api/subscription/payup/batch-return", (req, res) => {
+    void handlePayupSubscriptionBatchReturn(req, res);
+  });
+  app.post("/api/subscription/payup/batch-return", (req, res) => {
+    void handlePayupSubscriptionBatchReturn(req, res);
   });
 
   app.post("/api/admin/payments/:id/confirm-bank", isAuthenticated, isAdmin, async (req, res) => {

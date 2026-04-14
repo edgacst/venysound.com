@@ -178,7 +178,7 @@ export default function Pricing() {
         typeof window !== "undefined" &&
         typeof window.matchMedia === "function" &&
         window.matchMedia("(max-width: 640px)").matches;
-      const res = await apiRequest("POST", "/api/subscription/payup/order", {
+      const res = await apiRequest("POST", "/api/subscription/payup/ready", {
         billingPeriod: period,
         planId,
         userAgentKind: isMobile ? "MW" : "PC",

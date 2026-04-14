@@ -15,7 +15,7 @@ export function registerPayupRoutes(app: Express): void {
         testMode: s.testMode,
         baseUrl: s.baseUrl,
         hint: s.configured
-          ? "유료 구독 카드: POST /api/subscription/payup/order → 결제창 → POST /api/subscription/payup/complete. (지갑 충전은 별도)"
+          ? "유료 구독(자동결제 규격): POST /api/subscription/payup/ready → STARTPARAMS → GET /api/subscription/payup/batch-return (cert+pay)"
           : "가맹 승인 후 PAYUP_MERCHANT_ID, PAYUP_API_CERT_KEY 를 .env에 넣고 운영 전 PAYUP_USE_TEST=false 로 전환하세요.",
       },
     });
