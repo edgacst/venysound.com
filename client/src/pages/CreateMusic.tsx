@@ -1316,9 +1316,19 @@ export default function CreateMusic() {
     if (!track.audio_url) return;
     const baseName = sanitizeFilename(track.title || "제목 없음");
     try {
-      const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}`;
+      const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}&purpose=file`;
       const res = await fetch(proxyUrl, { credentials: "include" });
-      if (!res.ok) throw new Error("Download failed");
+      if (!res.ok) {
+        let msg = "다운로드에 실패했습니다.";
+        try {
+          const j = (await res.json()) as { message?: string };
+          if (j?.message) msg = String(j.message);
+        } catch {
+          /* ignore */
+        }
+        toast({ title: "다운로드 실패", description: msg, variant: "destructive" });
+        return;
+      }
       const blob = await res.blob();
       const type = blob.type || "audio/mpeg";
       const ext = type.includes("ogg") ? ".ogg" : type.includes("wav") ? ".wav" : ".mp3";
@@ -1328,22 +1338,20 @@ export default function CreateMusic() {
       a.download = `${baseName}${ext}`;
       a.click();
       URL.revokeObjectURL(url);
+      setSavedTracks((prev) => {
+        const next = prev.map((t) =>
+          t.id === track.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t,
+        );
+        persistTracks(next, { immediate: true });
+        return next;
+      });
     } catch {
-      const a = document.createElement("a");
-      a.href = track.audio_url;
-      a.download = `${baseName}.mp3`;
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.click();
+      toast({
+        title: "다운로드 실패",
+        description: "네트워크 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     }
-    // 다운로드 횟수 카운트
-    setSavedTracks((prev) => {
-      const next = prev.map((t) =>
-        t.id === track.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t
-      );
-      persistTracks(next, { immediate: true });
-      return next;
-    });
   },
     [persistTracks, aiUsage?.isPaidTier, toast, t],
   );

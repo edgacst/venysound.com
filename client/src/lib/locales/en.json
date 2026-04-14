@@ -1526,6 +1526,7 @@
     "freeFeature2": "100 songs/day streaming",
     "freeFeature3": "Track upload (10/month)",
     "freeFeatureAiMusic": "AI music generation (2 tracks/month)",
+    "freeFeatureAiMusicDownloadNote": "File download after publishing to the site",
     "freeFeature4": "Community participation",
     "freeFeature5": "V broadcast participation",
     "starterPlanName": "Starter",

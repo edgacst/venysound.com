@@ -1330,6 +1330,7 @@
     "freeFeature2": "1日100曲ストリーミング",
     "freeFeature3": "楽曲アップロード（月10曲）",
     "freeFeatureAiMusic": "AI音楽生成（月2曲）",
+    "freeFeatureAiMusicDownloadNote": "サイト公開後にダウンロード可能",
     "freeFeature4": "コミュニティ参加",
     "freeFeature5": "V放送参加",
     "starterPlanName": "Starter",

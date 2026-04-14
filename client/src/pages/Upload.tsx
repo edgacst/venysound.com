@@ -200,7 +200,7 @@ export default function Upload() {
       try {
         sessionStorage.removeItem("createMusic_uploadAudioUrl");
       } catch {}
-      const audioProxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(audioUrl)}`;
+      const audioProxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(audioUrl)}&purpose=file`;
       const p = fetch(audioProxyUrl, { credentials: "include" })
         .then((res) => {
           if (!res.ok) {

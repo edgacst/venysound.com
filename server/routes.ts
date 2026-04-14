@@ -45,7 +45,7 @@ import {
   creditRefundRequests,
   creditRefundEvents,
 } from "../shared/schema";
-import { eq, sql, inArray, and, desc, asc } from "drizzle-orm";
+import { eq, sql, inArray, and, or, desc, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -969,6 +969,76 @@ export async function registerRoutes(
   });
 
   const AUDIO_PROXY_MAX_BYTES = 50 * 1024 * 1024; // 50MB
+
+  /** 무료 플랜: 프록시는 본인 라이브러리에 저장된 URL만. 파일(purpose=file)은 공개 후에만. */
+  function buildAiLibraryAudioUrlCandidates(raw: string): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const push = (s: string) => {
+      const t = s.trim();
+      if (!t || seen.has(t)) return;
+      seen.add(t);
+      out.push(t);
+    };
+    push(raw);
+    try {
+      push(new URL(raw.trim()).href);
+    } catch {
+      /* ignore */
+    }
+    try {
+      const dec = decodeURIComponent(raw.trim());
+      push(dec);
+      try {
+        push(new URL(dec).href);
+      } catch {
+        /* ignore */
+      }
+    } catch {
+      /* ignore */
+    }
+    return out;
+  }
+
+  async function assertAiAudioProxyAllowedForUser(
+    userId: string,
+    rawUrl: string,
+    purpose: "stream" | "file",
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const [userRow] = await db.select().from(users).where(eq(users.id, userId));
+    const now = new Date();
+    if (userRow?.role === "admin" || isActivePaidSubscription(userRow, now)) {
+      return { ok: true };
+    }
+    const candidates = buildAiLibraryAudioUrlCandidates(rawUrl);
+    if (candidates.length === 0) {
+      return { ok: false, message: "허용되지 않은 음원 주소입니다." };
+    }
+    const urlCond =
+      candidates.length === 1
+        ? eq(aiMusicSavedTracks.audioUrl, candidates[0]!)
+        : or(...candidates.map((c) => eq(aiMusicSavedTracks.audioUrl, c)))!;
+    const rows = await db
+      .select({ publishedToSite: aiMusicSavedTracks.publishedToSite })
+      .from(aiMusicSavedTracks)
+      .where(and(eq(aiMusicSavedTracks.userId, userId), urlCond))
+      .limit(16);
+    if (rows.length === 0) {
+      return {
+        ok: false,
+        message:
+          purpose === "file"
+            ? "무료 플랜에서는 내 생성 라이브러리에 있는 음원만 파일로 받을 수 있으며, 사이트에 신곡으로 공개한 뒤에만 가능합니다."
+            : "무료 플랜에서는 내 생성 라이브러리에 저장된 음원만 재생할 수 있습니다.",
+      };
+    }
+    const anyPublished = rows.some((r) => r.publishedToSite);
+    if (purpose === "file" && !anyPublished) {
+      return { ok: false, message: "무료 플랜에서는 사이트에 신곡으로 공개한 뒤에만 파일로 받을 수 있습니다." };
+    }
+    return { ok: true };
+  }
+
   app.get("/api/ai-music/audio-proxy", isAuthenticated, async (req, res) => {
     let rawUrl = req.query.url as string;
     if (!rawUrl || typeof rawUrl !== "string") {
@@ -986,6 +1056,15 @@ export async function registerRoutes(
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       return res.status(400).json({ message: "http(s) URL만 가능합니다." });
+    }
+    const purposeRaw = typeof req.query.purpose === "string" ? req.query.purpose.trim().toLowerCase() : "";
+    const purpose: "stream" | "file" =
+      purposeRaw === "file" || purposeRaw === "download" ? "file" : "stream";
+    // @ts-ignore Replit auth
+    const proxyUserId = req.user?.claims?.sub as string;
+    const gate = await assertAiAudioProxyAllowedForUser(proxyUserId, rawUrl, purpose);
+    if (!gate.ok) {
+      return res.status(403).json({ message: gate.message });
     }
     try {
       const controller = new AbortController();
@@ -1049,6 +1128,30 @@ export async function registerRoutes(
     const genTaskId = typeof body.generation_task_id === "string" ? body.generation_task_id.trim() : "";
 
     try {
+      // @ts-ignore Replit auth
+      const wavUserId = req.user?.claims?.sub as string;
+      const [wavUserRow] = await db.select().from(users).where(eq(users.id, wavUserId));
+      const wavNow = new Date();
+      const wavPaidTier = wavUserRow?.role === "admin" || isActivePaidSubscription(wavUserRow, wavNow);
+      if (!wavPaidTier) {
+        const wavLibWhere = and(
+          eq(aiMusicSavedTracks.userId, wavUserId),
+          eq(aiMusicSavedTracks.clipId, clipId),
+          ...(genTaskId ? [eq(aiMusicSavedTracks.generationTaskId, genTaskId)] : []),
+        );
+        const wavLibRows = await db
+          .select({ publishedToSite: aiMusicSavedTracks.publishedToSite })
+          .from(aiMusicSavedTracks)
+          .where(wavLibWhere)
+          .limit(8);
+        if (wavLibRows.length === 0 || !wavLibRows.some((r) => r.publishedToSite)) {
+          return res.status(403).json({
+            message:
+              "무료 플랜에서는 사이트에 신곡으로 공개한 AI 생성곡만 WAV 고음질 URL을 요청할 수 있습니다.",
+          });
+        }
+      }
+
       if (provider === "aimusicapi" && AIMUSICAPI_KEY) {
         const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/wav`, {
           method: "POST",

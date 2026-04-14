@@ -28,6 +28,7 @@ import {
   Layers,
   Globe,
   FileText,
+  type LucideIcon,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
@@ -54,13 +55,17 @@ export default function Pricing() {
   const queryClient = useQueryClient();
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">("monthly");
 
-  const FREE_FEATURES = [
+  const FREE_FEATURES: { icon: LucideIcon; text: string; sub?: string }[] = [
     { icon: Music, text: t("pricing.freeFeature1", "무제한 음원 스트리밍") },
     { icon: Music, text: t("pricing.freeFeature2", "무제한 음원 업로드") },
     { icon: Radio, text: t("pricing.freeFeature3", "내 방송 채널 운영") },
     { icon: Shield, text: t("pricing.freeFeature4", "커뮤니티 참여") },
     { icon: Headphones, text: t("pricing.freeFeature5", "고음질 스트리밍") },
-    { icon: Sparkles, text: t("pricing.freeFeatureAiMusic", "AI 음원 생성 (월 2곡)") },
+    {
+      icon: Sparkles,
+      text: t("pricing.freeFeatureAiMusic", "AI 음원 생성 (월 2곡)"),
+      sub: t("pricing.freeFeatureAiMusicDownloadNote", "사이트에 공개 후 다운로드 가능"),
+    },
   ];
 
   const STARTER_FEATURES = [
@@ -544,9 +549,14 @@ export default function Pricing() {
                   </div>
                   <div className="space-y-2 mb-4">
                     {FREE_FEATURES.map((feature, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <Check size={14} className="text-muted-foreground shrink-0" />
-                        <span className="text-xs">{feature.text}</span>
+                      <div key={i} className={feature.sub ? "space-y-0.5" : ""}>
+                        <div className="flex items-center gap-2">
+                          <Check size={14} className="text-muted-foreground shrink-0" />
+                          <span className="text-xs">{feature.text}</span>
+                        </div>
+                        {feature.sub ? (
+                          <p className="pl-5 text-[11px] text-muted-foreground leading-snug">{feature.sub}</p>
+                        ) : null}
                       </div>
                     ))}
                   </div>

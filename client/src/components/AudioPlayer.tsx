@@ -546,7 +546,7 @@ export function GlobalAudioPlayer() {
   const isClosingRef = useRef(false);
 
   if (activeExternalTrack) {
-    lastAudioUrlRef.current = `/api/ai-music/audio-proxy?url=${encodeURIComponent(activeExternalTrack.url)}`;
+    lastAudioUrlRef.current = `/api/ai-music/audio-proxy?url=${encodeURIComponent(activeExternalTrack.url)}&purpose=stream`;
   } else if (activeMusicId) {
     lastAudioUrlRef.current = `/api/music/${activeMusicId}/stream`;
   }
