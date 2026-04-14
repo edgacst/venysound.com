@@ -221,21 +221,65 @@ function pickPayupDirectOrderFields(data: Record<string, unknown>) {
   return { responseCode, responseMsg, payUrl, starturl, startparams, cancelUrl, cardCode };
 }
 
-/** 페이업·다날 AP 주문 `amount` — 기본 12자리 0패딩(CP 전문 흔한 형식). `PAYUP_ORDER_AMOUNT_SHORT=true`면 비패딩 10자리 이하 */
+/**
+ * 페이업 AP 주문 `amount` 문자열.
+ * - 기본 pad12: 12자리 0패딩
+ * - PAYUP_ORDER_AMOUNT_STYLE=short|plain : 비패딩, 최대 10자리
+ * - PAYUP_ORDER_AMOUNT_STYLE=pad10 : 10자리 0패딩
+ * - 레거시: PAYUP_ORDER_AMOUNT_SHORT=true → short 와 동일
+ */
 function formatPayupOrderAmountForRequest(amountWon: number): string {
-  const short = String(process.env.PAYUP_ORDER_AMOUNT_SHORT ?? "").trim().toLowerCase();
-  if (short === "true" || short === "1" || short === "yes") {
-    const s = String(Math.max(0, Math.floor(amountWon)));
+  const legacyShort = String(process.env.PAYUP_ORDER_AMOUNT_SHORT ?? "").trim().toLowerCase();
+  let style = String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim().toLowerCase();
+  if (!style && (legacyShort === "true" || legacyShort === "1" || legacyShort === "yes")) {
+    style = "short";
+  }
+  const s = String(Math.max(0, Math.floor(amountWon)));
+  if (style === "short" || style === "plain") {
     if (s.length > 10) {
       throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
     }
     return s;
   }
-  const s = String(Math.max(0, Math.floor(amountWon)));
+  if (style === "pad10" || style === "10") {
+    if (s.length > 10) {
+      throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
+    }
+    return s.padStart(10, "0");
+  }
   if (s.length > 12) {
     throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
   }
   return s.padStart(12, "0");
+}
+
+/** 자료에 따라 JSON 키를 대문자로 보내야 하는 가맹점 대비(복귀 URL 키는 페이업 문구상 `auth_return` 유지) */
+function applyPayupOrderJsonKeyCasing(body: Record<string, string>): Record<string, string> {
+  const mode = String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim().toLowerCase();
+  if (mode !== "upper" && mode !== "caps") {
+    return body;
+  }
+  const keyMap: Record<string, string> = {
+    merchantId: "MERCHANTID",
+    orderNumber: "ORDERNUMBER",
+    amount: "AMOUNT",
+    itemName: "ITEMNAME",
+    userName: "USERNAME",
+    userEmail: "USEREMAIL",
+    userAgent: "USERAGENT",
+    signature: "SIGNATURE",
+    timestamp: "TIMESTAMP",
+    auth_return: "auth_return",
+    USESKIPPAGE: "USESKIPPAGE",
+    CARDCODE: "CARDCODE",
+    QUOTA: "QUOTA",
+    returnUrl: "returnUrl",
+  };
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) {
+    out[keyMap[k] ?? k] = v;
+  }
+  return out;
 }
 
 /** 다날/페이업 내부 `|` 구분 전문에 섞이면 파싱 실패 — 제어 문자·파이프 제거 */
@@ -6001,8 +6045,9 @@ export async function registerRoutes(
       /** 페이업 응답: `auth_return` 또는 `returnUrl` 필수 — `AUTH_RETURN` 등 다른 키는 인정되지 않음 */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
-      /** URL 경로에 merchantId 포함(`/ap/api/payment/{id}/order`) — 본문에 중복 시 내부 전문 길이·파싱 오류 유발 가능(part-cancel과 동일하게 본문 제외) */
+      /** 대부분 자료는 본문에 merchantId 포함 — 전문만 URL 기준이면 PAYUP_ORDER_OMIT_MERCHANT_IN_BODY=true */
       const orderBody: Record<string, string> = {
+        merchantId: cred.merchantId,
         orderNumber,
         amount: amtForOrder,
         itemName,
@@ -6015,6 +6060,9 @@ export async function registerRoutes(
         CARDCODE: cardCode4,
         QUOTA: "0",
       };
+      if (String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
+        delete orderBody.merchantId;
+      }
       /** 모바일(WM)은 표준 결제 가이드상 returnUrl 필수인 경우가 있어 동일 URL을 병행 */
       if (userAgent === "WM") {
         orderBody.returnUrl = authReturnUrl;
@@ -6022,9 +6070,8 @@ export async function registerRoutes(
       if (userEmailTrim) {
         orderBody.userEmail = userEmailTrim;
       }
-      if (String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
-        orderBody.merchantId = cred.merchantId;
-      }
+
+      const orderPayload = applyPayupOrderJsonKeyCasing(orderBody);
 
       const [inserted] = await db
         .insert(payments)
@@ -6049,8 +6096,13 @@ export async function registerRoutes(
         orderBodyFormat === "form" || orderBodyFormat === "urlencoded"
           ? payupPostUrlEncodedJson<Record<string, unknown>>
           : payupPostJson<Record<string, unknown>>;
-      const orderRes = await orderPost(cred, orderPath, orderBody);
+      const orderRes = await orderPost(cred, orderPath, orderPayload);
       if (!orderRes.ok) {
+        const safeBody = JSON.stringify(
+          Object.fromEntries(
+            Object.entries(orderPayload).map(([k, v]) => [k, /signature/i.test(k) ? "[redacted]" : v]),
+          ),
+        );
         console.error(
           "[payup] order failed",
           {
@@ -6059,7 +6111,10 @@ export async function registerRoutes(
             orderNumber,
             path: orderPath,
             bodyFormat: orderBodyFormat === "form" || orderBodyFormat === "urlencoded" ? "form" : "json",
-            bodyKeys: Object.keys(orderBody),
+            bodyKeys: Object.keys(orderPayload),
+            amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "pad12(default)",
+            jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
+            safeBody: safeBody.slice(0, 1500),
           },
           orderRes.bodyText?.slice(0, 800),
         );
