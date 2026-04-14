@@ -1,0 +1,26 @@
+---
+description: VPS 배포 시 DB 스키마와 코드 동기화 — 누락 시 /api/music 등 500 방지
+alwaysApply: true
+---
+
+# 배포 시 DB 마이그레이션 (`db:deploy`) — 필수 습관
+
+## 왜 필요한가
+
+- 앱 코드(`shared/schema.ts`, Drizzle 쿼리)는 **새 컬럼·테이블**을 전제로 SELECT/INSERT 한다.
+- 운영 PostgreSQL에 **`deploy/*.sql`이 아직 적용되지 않으면** Postgres가 **컬럼 없음**으로 에러를 내고, `/api/music`, `/api/music/:id`, `/api/music/:id/stream` 등이 **HTTP 500**이 된다.
+- DB의 `music` 행 수는 그대로여도 **목록이 0곡처럼** 보일 수 있다(프론트는 실패를 빈 목록과 헷갈릴 수 있음). **데이터 삭제와 무관한 “스키마 불일치”**다.
+
+## 에이전트가 할 일
+
+1. **`deploy/`에 SQL 추가**, **`script/run-all-deploy-migrations.ts`의 MIGRATIONS 목록 수정**, **`shared/schema.ts`의 테이블·컬럼 추가/변경** 중 하나라도 하면, 사용자에게 **반드시** 운영 VPS에서 `npm run db:deploy`를 실행하라고 안내한다.
+2. 사용자가 **“배포해줘” “서버 반영” “푸시 했어”** 등이면, 응답 말미 **기본 배포 한 줄**에 **`npm run db:deploy`를 `npm install --include=dev` 직후·`npm run build` 전**에 넣는다. (이 레포의 `deploy/*.sql`은 `IF NOT EXISTS` / one-off 가드 위주라 **매 배포 포함해도 안전한 편**이다.)
+3. **이번 작업이 순수 프론트 문구만**이고 DB·스키마·`deploy/`를 건드리지 않았다고 확실할 때만, “이번에는 `db:deploy` 생략 가능”이라고 짧게 덧붙일 수 있다.
+
+## 운영 서버에서의 올바른 순서 (요지)
+
+`git pull` → `npm install --include=dev` → **`npm run db:deploy`** → `npm run build` → (선택) `npm prune --omit=dev` → `pm2 restart …`
+
+`db:deploy`는 **`npm install --include=dev` 다음**에 둔다(`tsx: not found` 방지). 앱이 읽는 **`DATABASE_URL`은 `.env` 또는 pm2 환경**에 반드시 있어야 한다.
+
+이 규칙은 **라디오/재생 핵심 규칙**을 대체하지 않는다.

@@ -2,6 +2,9 @@
  * 배포 시 서버 DB에 필요한 테이블/컬럼을 한 번에 적용합니다.
  * (이미 있으면 IF NOT EXISTS / ADD COLUMN IF NOT EXISTS 로 건너뜀)
  * 실행: npm run db:deploy  또는  npx tsx script/run-all-deploy-migrations.ts
+ *
+ * 운영 VPS: git pull 후 build만 하고 이걸 빼면 schema와 DB가 어긋나 /api/music 등이 500이 될 수 있음.
+ * 기본 배포 순서에 db:deploy 포함 권장 — .cursor/rules/deploy-db-schema-sync.mdc 참고.
  */
 import "dotenv/config";
 import pg from "pg";

@@ -12,8 +12,10 @@ alwaysApply: true
 3. 응답 마지막에 **Hostinger VPS SSH용 한 줄 배포 명령**을 반드시 붙인다. **`&& pm2`만 단독 실행하지 말 것** — 인자가 없으면 도움말만 출력되고 프로세스는 안 뜬다. 아래처럼 **`pm2 restart`까지 한 줄**로 끝낸다.
 
 ```bash
-cd /var/www/venysound/app && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
+cd /var/www/venysound/app && git pull && npm install --include=dev && npm run db:deploy && npm run build && npm prune --omit=dev && pm2 restart venysound
 ```
+
+(이번 커밋이 DB·`deploy/`·`shared/schema.ts`와 무관하면 `npm run db:deploy`만 빼도 된다고 말할 수 있다. 불확실하면 **위 한 줄 그대로** 권장한다.)
 
 (프로세스명이 다르면 `venysound`만 바꾼다. 저장소 루트 경로가 다르면 `cd`만 바꾼다.)
 
