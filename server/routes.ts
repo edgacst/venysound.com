@@ -2263,6 +2263,10 @@ export async function registerRoutes(
           freeAiSiteRestrictions = true;
         }
       }
+      /** 비구독(무료 플랜) 공개는 taskId·생성 로그 불일치 시에도 벨소리 등 사이트 전용 제한(플래그) 적용 */
+      if (!isPaidTier) {
+        freeAiSiteRestrictions = true;
+      }
 
       // 4) DB에 음악 등록
       const resolvedAiProvider =
