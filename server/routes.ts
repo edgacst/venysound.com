@@ -5971,6 +5971,10 @@ export async function registerRoutes(
 
       const itemName = `VenySound ${plan} ${billingPeriod === "monthly" ? "월간" : "연간"}`.slice(0, 100);
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
+      /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
+      const userEmailTrim = (user.email || "").trim().slice(0, 50);
+      const authReturnKeyRaw = String(process.env.PAYUP_DANAL_AUTH_RETURN_FIELD ?? "auth_return").trim();
+      const authReturnKey = authReturnKeyRaw === "AUTH_RETURN" || authReturnKeyRaw === "auth_return" ? authReturnKeyRaw : "auth_return";
       const orderBody: Record<string, string> = {
         merchantId: cred.merchantId,
         orderNumber,
@@ -5978,14 +5982,16 @@ export async function registerRoutes(
         itemName,
         userName: displayName.slice(0, 50),
         userAgent,
-        userEmail: (user.email || "").slice(0, 50),
         signature,
         timestamp,
-        auth_return: authReturnUrl,
+        [authReturnKey]: authReturnUrl,
         USESKIPPAGE: "Y",
         CARDCODE: cardCode4,
         QUOTA: "00",
       };
+      if (userEmailTrim) {
+        orderBody.userEmail = userEmailTrim;
+      }
 
       const [inserted] = await db
         .insert(payments)
@@ -6007,6 +6013,11 @@ export async function registerRoutes(
 
       const orderRes = await payupPostJson<Record<string, unknown>>(cred, orderPath, orderBody);
       if (!orderRes.ok) {
+        console.error(
+          "[payup] order failed",
+          { status: orderRes.status, message: orderRes.message, orderNumber, path: orderPath },
+          orderRes.bodyText?.slice(0, 800),
+        );
         await db.delete(payments).where(eq(payments.id, insertedId));
         return res.status(502).json({
           message: orderRes.message || "페이업 주문(order) 요청에 실패했습니다.",
