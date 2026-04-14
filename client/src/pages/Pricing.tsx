@@ -43,7 +43,7 @@ import {
   isPaidSubscriptionTierId,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
-import { submitPayupDirectOrderForm } from "@/lib/payup-checkout";
+import { submitPayupDanalDirectCheckout } from "@/lib/payup-checkout";
 
 const PAID_PLAN_ORDER: PaidSubscriptionTierId[] = ["starter", "basic", "pro", "premium"];
 
@@ -178,7 +178,7 @@ export default function Pricing() {
         typeof window !== "undefined" &&
         typeof window.matchMedia === "function" &&
         window.matchMedia("(max-width: 640px)").matches;
-      const res = await apiRequest("POST", "/api/subscription/payup/ready", {
+      const res = await apiRequest("POST", "/api/subscription/payup/order", {
         billingPeriod: period,
         planId,
         userAgentKind: isMobile ? "MW" : "PC",
@@ -187,10 +187,21 @@ export default function Pricing() {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { message?: string }).message || "카드 결제 준비에 실패했습니다");
       }
-      return res.json() as Promise<{ starturl: string; startparams: string; orderNumber: string }>;
+      return res.json() as Promise<{
+        starturl: string;
+        startparams: string;
+        cancelUrl: string;
+        cardCode: string;
+        orderNumber: string;
+      }>;
     },
     onSuccess: (data) => {
-      submitPayupDirectOrderForm(data.starturl, data.startparams);
+      submitPayupDanalDirectCheckout({
+        starturl: data.starturl,
+        startparams: data.startparams,
+        cancelUrl: data.cancelUrl,
+        cardCode: data.cardCode,
+      });
     },
     onError: (error: Error) => {
       toast({

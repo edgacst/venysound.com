@@ -1,6 +1,5 @@
 /**
- * 페이업·다날 **자동결제(배치키) 카드등록** 규격: `starturl`로 POST, 필드명 `STARTPARAMS`.
- * **인증결제 다이렉트(구독 주문)** 응답도 동일하게 `starturl` + `STARTPARAMS` 로 결제창을 연다.
+ * 페이업·다날 **자동결제(배치키)** 규격: `starturl`로 POST, 필드명 `STARTPARAMS`.
  */
 export function submitPayupBatchRegisterForm(starturl: string, startparams: string): void {
   const form = document.createElement("form");
@@ -16,7 +15,45 @@ export function submitPayupBatchRegisterForm(starturl: string, startparams: stri
   form.submit();
 }
 
-/** 구독 등 인증결제 다이렉트 — 서버가 준 `starturl` / `startparams` 로 결제창 POST */
-export function submitPayupDirectOrderForm(starturl: string, startparams: string): void {
-  submitPayupBatchRegisterForm(starturl, startparams);
+/** [페이업] 인증결제 DANAL 다이렉트 규격서 3.2 — 결제창 시작 (STARTURL, STARTPARAMS, CANCELURL, CARDCODE) */
+export type PayupDanalDirectCheckoutPayload = {
+  starturl: string;
+  startparams: string;
+  cancelUrl: string;
+  cardCode: string;
+};
+
+export function submitPayupDanalDirectCheckout(payload: PayupDanalDirectCheckoutPayload): void {
+  const { starturl, startparams, cancelUrl, cardCode } = payload;
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = starturl;
+  form.style.display = "none";
+  const add = (name: string, value: string) => {
+    const inp = document.createElement("input");
+    inp.type = "hidden";
+    inp.name = name;
+    inp.value = value;
+    form.appendChild(inp);
+  };
+  add("STARTURL", starturl);
+  add("STARTPARAMS", startparams);
+  add("CANCELURL", cancelUrl);
+  add("CARDCODE", cardCode.slice(0, 4));
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/** 구독 등 인증결제 다이렉트 — 서버가 준 필드로 결제창 POST */
+export function submitPayupDirectOrderForm(
+  starturl: string,
+  startparams: string,
+  opts?: { cancelUrl?: string; cardCode?: string },
+): void {
+  submitPayupDanalDirectCheckout({
+    starturl,
+    startparams,
+    cancelUrl: opts?.cancelUrl ?? "",
+    cardCode: (opts?.cardCode ?? "0000").replace(/\D/g, "").padStart(4, "0").slice(0, 4),
+  });
 }
