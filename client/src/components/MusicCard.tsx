@@ -63,7 +63,8 @@ function formatLrcTime(sec: number): string {
 function aiProviderSuffixForBadge(aiProvider: unknown): string {
   const p = typeof aiProvider === "string" ? aiProvider.trim() : "";
   if (!p) return "";
-  if (p.toLowerCase().includes("suno")) return "";
+  const q = p.toLowerCase();
+  if (q.includes("suno") || q === "sono") return "";
   return ` · ${p}`;
 }
 
