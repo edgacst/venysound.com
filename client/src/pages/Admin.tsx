@@ -5007,7 +5007,7 @@ export default function Admin() {
                           {walletData.aiMusicMonthly.unit === "won"
                             ? t(
                                 "admin.walletAiUsageAdjustHintWon",
-                                "유료 구독: 위 숫자는 곡 수가 아니라 원(₩) 누적입니다. 저장 시 users.subscription_ai_period_consumed_won·지갑이 맞춰집니다. 집계 키는 화면의 sub:… 또는 YYYY-MM과 동일하게 맞추세요. (1곡≈150원이면 생성 횟수×150)",
+                                "유료 구독: 위 숫자는 곡 수가 아니라 원(₩) 누적입니다. 저장 시 users.subscription_ai_period_consumed_won·지갑이 맞춰집니다. 집계 키는 화면의 sub:… 또는 YYYY-MM과 동일하게 맞추세요. (AI 생성 1회당 차감 원화×생성 횟수로 검증)",
                               )
                             : t(
                                 "admin.walletAiUsageAdjustHint",

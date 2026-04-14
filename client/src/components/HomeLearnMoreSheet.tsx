@@ -132,7 +132,7 @@ export function HomeLearnMoreSheet({
                   title={t("home.learnMoreSheetStep2Title", "2. 베니사운드에 배포")}
                   body={t(
                     "home.learnMoreSheetStep2Body",
-                    "음악 생성 후 신곡으로 공개만 누르면 바로 베니사운드 최근 업로드에 배포됩니다. 업로드한 곡당 150원이 지급됩니다.",
+                    "음악 생성 후 신곡으로 공개만 누르면 바로 베니사운드 최근 업로드에 배포됩니다.",
                   )}
                 />
                 <StepBlock

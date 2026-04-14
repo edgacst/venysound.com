@@ -2940,22 +2940,6 @@ export async function registerRoutes(
       const price = isPremium ? input.price : 0;
 
       const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
-      const uploadBonusWon = AI_MUSIC_WON_PER_TRACK;
-      await storage.addCredits(userId, uploadBonusWon);
-      await storage.createCreditTransaction({
-        userId,
-        type: "music_upload_bonus",
-        amount: uploadBonusWon,
-        description: "음원 등록 보너스",
-        relatedId: music.id,
-      });
-      await storage.createNotification({
-        userId,
-        type: "system",
-        message: `음원이 등록되었습니다. ${uploadBonusWon.toLocaleString("ko-KR")}원이 지갑에 지급되었습니다.`,
-        payload: { musicTitle: music.title, amount: uploadBonusWon },
-        url: "/credits",
-      });
       // 비동기로 "좋아할 만한 신곡" 알림 (이메일 + 푸시 + 앱 내 알림)
       const baseUrl = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const musicUrl = `${baseUrl}/music/${music.id}`;
@@ -3322,24 +3306,6 @@ export async function registerRoutes(
       if (existing.userId !== userId && role !== "admin") {
         return res.status(403).json({ message: "삭제 권한이 없습니다" });
       }
-
-      // 이벤트: 음원 등록 시 지급한 보너스 원화 회수
-      const ownerId = existing.userId;
-      await storage.addCredits(ownerId, -AI_MUSIC_WON_PER_TRACK);
-      await storage.createCreditTransaction({
-        userId: ownerId,
-        type: "music_upload_bonus_reversal",
-        amount: -AI_MUSIC_WON_PER_TRACK,
-        description: "음원 삭제 시 등록 보너스 회수",
-        relatedId: musicId,
-      });
-      await storage.createNotification({
-        userId: ownerId,
-        type: "system",
-        message: `"${existing.title}" 음원이 삭제되어 등록 보너스 ${AI_MUSIC_WON_PER_TRACK.toLocaleString("ko-KR")}원이 회수되었습니다.`,
-        payload: { musicTitle: existing.title, amount: -AI_MUSIC_WON_PER_TRACK },
-        url: "/credits",
-      });
 
       await storage.deleteMusic(musicId);
       res.json({ success: true });
