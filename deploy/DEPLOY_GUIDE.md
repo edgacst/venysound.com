@@ -11,14 +11,16 @@
 
 GitHub에는 올려 뒀는데 **서버(사이트)에는 아직 반영이 안 된 상태**라면, **서버에 SSH 접속해서 아래만 실행**하면 됩니다.
 
-**배포 폴더** (앱은 **venysound 하나만** 사용합니다. `/var/www/venysound` 또는 실제로 쓰는 앱 디렉터리 한 곳에서만 실행하세요.)
+**배포 폴더** — **`git pull` 은 `.git` 이 있는 디렉터리에서만** 됩니다. Hostinger 등에서 흔히 **저장소 루트가 `/var/www/venysound/app`** 이고, 그 위 `/var/www/venysound` 는 Git 없이 설정·정적 파일만 둔 경우가 많습니다. 그럴 때 상위로 `cd` 하면 `fatal: not a git repository` 가 납니다.
 
 빌드(`npm run build`)는 **tsx·Vite** 등 **devDependencies**가 필요합니다.  
 서버 셸이나 PM2·systemd 등에서 **`NODE_ENV=production` 이 잡혀 있으면**, `npm install` 만 쳐도 **devDependencies 가 설치되지 않아** 같은 증상(`tsx: not found`)이 납니다. 그때는 **`--include=dev`** 로 강제하세요.
 
 ```bash
-cd /var/www/venysound && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
+cd /var/www/venysound/app && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
 ```
+
+(`.git` 이 `/var/www/venysound` 에만 있으면 `cd` 를 그 경로로 바꾸면 됩니다. 확인: `ls -la /var/www/venysound/app/.git` 또는 `ls -la /var/www/venysound/.git`.)
 
 - `npm prune --omit=dev` 는 빌드 후 dev 패키지를 지워 디스크를 줄입니다. 다음 배포 때 다시 `npm install --include=dev` 하면 됩니다.
 - `pm2 restart all` 대신 `pm2 restart venysound` 로 서비스 앱만 재시작하는 것을 권장합니다.
@@ -40,7 +42,7 @@ pm2 save
 1. **로컬에서** 코드 수정 후 **GitHub에 푸시** (이미 하셨다면 이 단계는 끝).
 2. **서버(Hostinger)에 SSH로 접속**한 뒤, 터미널에서 **위 “지금 Git에 푸시해 놓고…”** 의 1) 또는 2) 한 줄 실행.
 
-- **배포 경로가 다르면** (예: 앱이 `/var/www/venysound/app` 에 있으면) `cd` 뒤 경로만 실제 경로로 바꾸면 됩니다.
+- **배포 경로가 다르면** `cd` 를 **`.git` 이 있는 폴더**로 맞추면 됩니다. (기본 예시는 `/var/www/venysound/app`.)
 - **`pm2 restart all` 해도 재시작될 프로세스가 0개**라면 위 3) 번대로 `pm2 start` 후 `pm2 save` 하세요.
 - `git pull` 이 GitHub에서 방금 푸시한 코드를 서버로 가져옵니다.  
 - 끝나면 **새 버전으로 반영**된 겁니다.  
@@ -280,7 +282,7 @@ rsync -avz --exclude='node_modules' --exclude='.git' --exclude='dist' --exclude=
   ./ root@서버IP:/var/www/venysound/
 
 # 서버에서 실행
-ssh root@서버IP "cd /var/www/venysound && npm install && npm run build && pm2 restart venysound"
+ssh root@서버IP "cd /var/www/venysound/app && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound"
 ```
 
 ---
@@ -343,7 +345,7 @@ sudo /root/switch-to-port.sh 5000
 4. **이후 배포**  
    - 정한 **그 폴더 하나**에서만:  
      ```bash
-     cd /var/www/venysound && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
+     cd /var/www/venysound/app && git pull && npm install --include=dev && npm run build && npm prune --omit=dev && pm2 restart venysound
      ```
 
 **정리:**  

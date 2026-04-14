@@ -424,6 +424,8 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
   const uploaderIsPremium = uploaderTier === "premium";
   const uploaderDonationBadge = (music as { uploaderDonationBadge?: string | null }).uploaderDonationBadge ?? null;
+  /** 무료 플랜 AI 월 한도로 생성 후 사이트 공개된 곡 — 후원·유료 다운로드·벨소리 비활성(관리자 생성 로그는 해당 없음) */
+  const freeAiLocked = music.freeAiSiteRestrictions === true;
 
   const isPlaying = activeMusicId === music.id;
   const isLiked = myLikes?.includes(music.id) ?? false;
@@ -502,7 +504,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
     }
 
     const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: editTags, lyrics: editLyrics, isAi: editIsAi };
-    if (uploaderIsPremium) {
+    if (uploaderIsPremium && !freeAiLocked) {
       data.isDownloadable = editIsDownloadable;
       const priceValue = typeof editPrice === "number" ? editPrice : 0;
       data.price = editIsDownloadable ? priceValue : 0;
@@ -676,20 +678,22 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 <ExternalLink className="h-4 w-4" />
               </Button>
             </Link>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-              onClick={(e) => {
-                e.stopPropagation();
-                setRingtoneDialogOpen(true);
-              }}
-              data-testid={`button-ringtone-card-${music.id}`}
-              aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-            >
-              <Bell className="h-4 w-4 text-amber-400" />
-            </Button>
+            {!freeAiLocked && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRingtoneDialogOpen(true);
+                }}
+                data-testid={`button-ringtone-card-${music.id}`}
+                aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+              >
+                <Bell className="h-4 w-4 text-amber-400" />
+              </Button>
+            )}
             {showMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -895,7 +899,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 {music.genre || t('music.other')}
               </span>
               <div className="flex shrink-0 items-center gap-0.5">
-                {uploaderIsPremium && music.isDownloadable && music.price && music.price > 0 && (
+                {uploaderIsPremium && !freeAiLocked && music.isDownloadable && music.price && music.price > 0 && (
                   <span
                     className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded-full flex items-center gap-1"
                     data-testid={`badge-price-${music.id}`}
@@ -904,26 +908,28 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                     {music.price.toLocaleString()} {t('credits.creditUnit')}
                   </span>
                 )}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
-                  title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRingtoneDialogOpen(true);
-                  }}
-                  data-testid={`button-ringtone-card-${music.id}`}
-                  aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                >
-                  <Bell size={15} />
-                </Button>
+                {!freeAiLocked && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
+                    title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRingtoneDialogOpen(true);
+                    }}
+                    data-testid={`button-ringtone-card-${music.id}`}
+                    aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                  >
+                    <Bell size={15} />
+                  </Button>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-0.5">
-                {uploaderIsPremium && !isOwner && user && (
+                {uploaderIsPremium && !freeAiLocked && !isOwner && user && (
                   <Button 
                     variant="ghost" 
                     size="icon" 
@@ -934,7 +940,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                     <Gift size={14} className="text-yellow-500" />
                   </Button>
                 )}
-                {uploaderIsPremium && !isOwner && user && music.isDownloadable && music.price && music.price > 0 && (
+                {uploaderIsPremium && !freeAiLocked && !isOwner && user && music.isDownloadable && music.price && music.price > 0 && (
                   <Button 
                     variant="ghost" 
                     size="icon" 
@@ -1089,16 +1095,20 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 id="edit-downloadable"
                 checked={editIsDownloadable}
                 onCheckedChange={(v) => setEditIsDownloadable(v === true)}
-                disabled={!uploaderIsPremium}
+                disabled={!uploaderIsPremium || freeAiLocked}
                 data-testid="checkbox-edit-downloadable"
               />
               <Label htmlFor="edit-downloadable">
                 {t('music.downloadable', '다운로드 판매 허용')}
-                {!uploaderIsPremium && (
+                {freeAiLocked ? (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {t("music.freeAiMonetizationLocked", "무료 AI(월 한도) 공개 곡은 판매·후원·벨소리가 비활성입니다.")}
+                  </span>
+                ) : !uploaderIsPremium ? (
                   <span className="ml-1 text-xs text-muted-foreground">
                     {t('music.premiumOnly', '프리미엄 업로더 전용')}
                   </span>
-                )}
+                ) : null}
               </Label>
             </div>
             <div>
@@ -1120,7 +1130,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                     if (Number.isNaN(n) || n < 0) return;
                     setEditPrice(n);
                   }}
-                  disabled={!uploaderIsPremium || !editIsDownloadable}
+                  disabled={freeAiLocked || !uploaderIsPremium || !editIsDownloadable}
                   data-testid="input-edit-price"
                 />
                 <span className="text-sm text-muted-foreground">{t('credits.creditUnit')}</span>

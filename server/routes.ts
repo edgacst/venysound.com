@@ -2147,6 +2147,20 @@ export async function registerRoutes(
       const trackTitle = (title || "AI 생성 음악").trim();
       const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
 
+      const logTaskId = typeof publishTaskId === "string" ? publishTaskId.trim() : "";
+      let freeAiSiteRestrictions = false;
+      if (logTaskId) {
+        const [genLog] = await db
+          .select({ billingKind: aiMusicGenerationLogs.billingKind })
+          .from(aiMusicGenerationLogs)
+          .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, logTaskId)))
+          .limit(1);
+        /** 관리자는 billing_kind 가 admin — 무료 한도 전용 제한 플래그 미적용 */
+        if (genLog?.billingKind === "free") {
+          freeAiSiteRestrictions = true;
+        }
+      }
+
       // 4) DB에 음악 등록
       const resolvedAiProvider =
         generationProvider === "aimusicapi" || generationProvider === "suno" ? generationProvider : "suno";
@@ -2161,12 +2175,12 @@ export async function registerRoutes(
         lyrics: null,
         isAi: true,
         aiProvider: resolvedAiProvider,
+        freeAiSiteRestrictions,
         price: 0,
         isDownloadable: false, // 무료·유료 모두 AI 공개곡은 기본 다운로드 불가 (관리자가 수동 허용)
         userId,
       });
 
-      const logTaskId = typeof publishTaskId === "string" ? publishTaskId.trim() : "";
       if (logTaskId) {
         try {
           const [logRow] = await db
@@ -3010,8 +3024,24 @@ export async function registerRoutes(
       if (lyrics !== undefined) updateData.lyrics = lyrics;
       if (isAi !== undefined) updateData.isAi = isAi;
       if (imageFilename !== undefined) updateData.imageFilename = imageFilename;
+      if (existing.freeAiSiteRestrictions) {
+        if (price !== undefined && Number(price) > 0) {
+          return res.status(400).json({
+            message: "무료 플랜 AI 월 한도로 공개된 곡은 유료 다운로드·판매 설정을 켤 수 없습니다.",
+          });
+        }
+        if (isDownloadable === true) {
+          return res.status(400).json({
+            message: "무료 플랜 AI 월 한도로 공개된 곡은 다운로드 판매를 허용할 수 없습니다.",
+          });
+        }
+      }
       if (price !== undefined) updateData.price = isPremium ? (Number(price) || 0) : 0;
       if (isDownloadable !== undefined) updateData.isDownloadable = isPremium ? Boolean(isDownloadable) : false;
+      if (existing.freeAiSiteRestrictions) {
+        updateData.price = 0;
+        updateData.isDownloadable = false;
+      }
       /** Spotify 앨범 ID는 관리자만 설정(해외 탭 DB 연동). 일반 소유자 PATCH는 무시 */
       if (spotifyAlbumId !== undefined && isAdminUser) {
         const raw = spotifyAlbumId == null ? "" : String(spotifyAlbumId).trim();
@@ -7472,6 +7502,16 @@ export async function registerRoutes(
         return res.status(400).json({ message: "자기 자신에게 후원할 수 없습니다" });
       }
 
+      if (musicId != null && musicId !== "") {
+        const mid = Number(musicId);
+        if (Number.isFinite(mid) && mid > 0) {
+          const tipMusic = await storage.getMusicById(mid);
+          if (tipMusic?.freeAiSiteRestrictions) {
+            return res.status(400).json({ message: "이 음원에는 후원을 보낼 수 없습니다." });
+          }
+        }
+      }
+
       const deducted = await storage.deductCredits(fromUserId, amount);
       if (!deducted) {
         return res.status(400).json({ message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.", insufficientCredits: true });
@@ -7567,6 +7607,9 @@ export async function registerRoutes(
       if (!musicItem) {
         return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
       }
+      if (musicItem.freeAiSiteRestrictions) {
+        return res.status(400).json({ message: "이 음원은 유료 다운로드·구매가 제공되지 않습니다." });
+      }
       if (!musicItem.isDownloadable || !musicItem.price || musicItem.price <= 0) {
         return res.status(400).json({ message: "이 음원은 유료 다운로드가 불가능합니다" });
       }
@@ -7646,14 +7689,17 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const musicId = Number(req.params.id);
 
-      const purchased = await storage.hasPurchased(userId, musicId);
-      if (!purchased) {
-        return res.status(403).json({ message: "구매한 음원만 다운로드할 수 있습니다" });
-      }
-
       const musicItem = await storage.getMusicById(musicId);
       if (!musicItem) {
         return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      }
+      if (musicItem.freeAiSiteRestrictions) {
+        return res.status(403).json({ message: "이 음원은 다운로드가 제공되지 않습니다." });
+      }
+
+      const purchased = await storage.hasPurchased(userId, musicId);
+      if (!purchased) {
+        return res.status(403).json({ message: "구매한 음원만 다운로드할 수 있습니다" });
       }
 
       const fn = musicItem.filename || "";
@@ -7711,6 +7757,9 @@ export async function registerRoutes(
       const musicItem = await storage.getMusicById(musicId);
       if (!musicItem) {
         return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
+      }
+      if (musicItem.freeAiSiteRestrictions) {
+        return res.status(403).json({ message: "이 음원은 벨소리 다운로드를 제공하지 않습니다." });
       }
 
       const isOwner = String(musicItem.userId) === String(userId);

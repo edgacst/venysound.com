@@ -313,8 +313,10 @@ export default function MusicDetail() {
   const uploaderIsPremium = musicData?.uploaderSubscriptionTier === "premium";
   const uploaderDonationBadge = (musicData as { uploaderDonationBadge?: string | null } | undefined)?.uploaderDonationBadge ?? null;
   const isFollowingUploader = followStatus?.isFollowing === true;
+  const freeAiLocked = musicData?.freeAiSiteRestrictions === true;
   const canDownload =
     !!musicData &&
+    !freeAiLocked &&
     (isOwner ||
       (!!musicData.isDownloadable &&
         (Number(musicData.price || 0) === 0 || hasPurchased)));
@@ -512,7 +514,7 @@ export default function MusicDetail() {
                     AI
                   </Badge>
                 )}
-                {uploaderIsPremium && musicData.isDownloadable && musicData.price > 0 && (
+                {uploaderIsPremium && !freeAiLocked && musicData.isDownloadable && musicData.price > 0 && (
                   <Badge variant="outline" className="text-xs border-green-500/30 text-green-400" data-testid="badge-price">
                     <DollarSign size={10} className="mr-0.5" />{musicData.price.toLocaleString()} {t('credits.creditUnit')}
                   </Badge>
@@ -635,7 +637,7 @@ export default function MusicDetail() {
                     {t('musicDetail.download', '다운로드')}
                   </Button>
                 )}
-                {musicData && (
+                {musicData && !freeAiLocked && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -662,7 +664,7 @@ export default function MusicDetail() {
                   </Button>
                 )}
               </div>
-              {musicData && (
+              {musicData && !freeAiLocked && (
                 <p className="text-xs text-muted-foreground mt-2 whitespace-pre-line" data-testid="text-ringtone-notice">
                   {!user
                     ? `${t("music.ringtoneIntro", "벨소리 다운로드입니다. 앞 50초 구간이 MP3로 내려받아지며, 실제 벨소리로 쓰시려면 본인 휴대폰 설정에서 직접 지정해 주셔야 합니다.")}\n\n${t("music.ringtoneFeePolicy", "타인 음원은 음원이 유료·무료 다운로드이든 관계없이 벨소리마다 200원이 지갑에서 차감되며, 해당 금액은 업로더에게 지급됩니다")}\n\n${t("music.ringtoneLoginSuffix", "※ 로그인 후 결제·다운로드가 진행됩니다.")}`
@@ -993,7 +995,7 @@ export default function MusicDetail() {
                       <Badge variant="outline" className="text-xs border-purple-500/30 text-purple-400 no-default-hover-elevate no-default-active-elevate">{t('musicDetail.aiGenerated', 'AI 생성')}</Badge>
                     </div>
                   )}
-                  {uploaderIsPremium && musicData.isDownloadable && (
+                  {uploaderIsPremium && !freeAiLocked && musicData.isDownloadable && (
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t('musicDetail.infoDownload', '다운로드')}</span>
                       <span className="font-medium text-green-400">

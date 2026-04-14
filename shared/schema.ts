@@ -21,6 +21,8 @@ export const music = pgTable("music", {
   lyrics: text("lyrics"),
   isAi: boolean("is_ai").default(false),
   aiProvider: text("ai_provider"), // 'suno' 등 AI 제공사
+  /** 무료 플랜 월 한도로 AI 생성 후 사이트 공개된 곡 — 후원·유료 다운로드·벨소리 불가(관리자 생성 제외) */
+  freeAiSiteRestrictions: boolean("free_ai_site_restrictions").default(false).notNull(),
   price: integer("price").default(0),
   isDownloadable: boolean("is_downloadable").default(false),
   userId: text("user_id").references(() => users.id).notNull(),

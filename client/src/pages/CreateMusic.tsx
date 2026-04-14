@@ -498,6 +498,7 @@ function TrackCard({
   onRemove,
   onUpload,
   onDownload,
+  libraryDownloadAllowed,
   onScoreExport,
   scoreExportLoading,
   scorePdfEnabled,
@@ -512,6 +513,8 @@ function TrackCard({
   onRemove: () => void;
   onUpload: () => void;
   onDownload: () => void;
+  /** 무료 플랜: 사이트 공개 전에는 라이브러리 파일 다운로드 불가(유료·관리자는 항상 허용) */
+  libraryDownloadAllowed: boolean;
   onScoreExport: (format: "pdf" | "musicxml" | "zip") => void;
   scoreExportLoading: boolean;
   scorePdfEnabled: boolean;
@@ -627,8 +630,22 @@ function TrackCard({
                   </button>
                   <button
                     type="button"
-                    onClick={onDownload}
-                    className={`inline-flex items-center gap-1 hover:underline ${hasDownloaded ? doneActionClass : actionLinkClass}`}
+                    onClick={() => {
+                      if (!libraryDownloadAllowed) return;
+                      onDownload();
+                    }}
+                    disabled={!libraryDownloadAllowed}
+                    title={
+                      libraryDownloadAllowed
+                        ? t("createMusic.download", "다운로드")
+                        : t(
+                            "createMusic.libraryDownloadAfterPublishTitle",
+                            "무료 플랜: 사이트에 신곡 공개 후 다운로드할 수 있습니다.",
+                          )
+                    }
+                    className={`inline-flex items-center gap-1 hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline ${
+                      hasDownloaded ? doneActionClass : actionLinkClass
+                    }`}
                   >
                     <Download className="w-3 h-3 flex-shrink-0" />
                     {t("createMusic.download", "다운로드")}
@@ -1282,7 +1299,20 @@ export default function CreateMusic() {
     });
   }, []);
 
-  const handleDownloadTrack = useCallback(async (track: SavedTrack) => {
+  const handleDownloadTrack = useCallback(
+    async (track: SavedTrack) => {
+    const paidOrPublished = Boolean(aiUsage?.isPaidTier || track.publishedToSite);
+    if (!paidOrPublished) {
+      toast({
+        title: t("createMusic.libraryDownloadBlockedTitle", "다운로드 전에 공개해 주세요"),
+        description: t(
+          "createMusic.libraryDownloadAfterPublishBody",
+          "무료 플랜에서는 생성한 곡을 사이트에 신곡으로 공개한 뒤에만 파일을 내려받을 수 있습니다. 유료 플랜·관리자는 공개 전에도 다운로드할 수 있습니다.",
+        ),
+        variant: "destructive",
+      });
+      return;
+    }
     if (!track.audio_url) return;
     const baseName = sanitizeFilename(track.title || "제목 없음");
     try {
@@ -1314,7 +1344,9 @@ export default function CreateMusic() {
       persistTracks(next, { immediate: true });
       return next;
     });
-  }, [persistTracks]);
+  },
+    [persistTracks, aiUsage?.isPaidTier, toast, t],
+  );
 
   const [scorePdfEnabled, setScorePdfEnabled] = useState(false);
   const [scorePdfTrackId, setScorePdfTrackId] = useState<string | null>(null);
@@ -2331,6 +2363,7 @@ export default function CreateMusic() {
                                 onRemove={() => removeSavedTrack(track.id)}
                                 onUpload={() => goUploadWithTrack(track)}
                                 onDownload={() => handleDownloadTrack(track)}
+                                libraryDownloadAllowed={Boolean(aiUsage?.isPaidTier || track.publishedToSite)}
                                 onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
                                 scoreExportLoading={scorePdfTrackId === track.id}
                                 scorePdfEnabled={scorePdfEnabled}

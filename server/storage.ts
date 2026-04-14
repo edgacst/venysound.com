@@ -584,6 +584,8 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
@@ -633,6 +635,7 @@ export class DatabaseStorage implements IStorage {
       lyrics: music.lyrics,
       isAi: music.isAi,
       aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
@@ -743,9 +746,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
     const rows = await db
@@ -787,9 +793,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
     const baseSelect = db
@@ -850,9 +859,12 @@ export class DatabaseStorage implements IStorage {
         m.tags,
         m.lyrics,
         m.is_ai,
+        m.ai_provider,
+        m.free_ai_site_restrictions,
         m.price,
         m.is_downloadable,
         m.user_id,
+        m.spotify_album_id,
         m.created_at,
         u.subscription_tier AS uploader_subscription_tier,
         u.subscription_expires_at AS uploader_subscription_expires_at,
@@ -865,7 +877,7 @@ export class DatabaseStorage implements IStorage {
       WHERE sl.created_at >= NOW() - INTERVAL '7 days'
       GROUP BY
         m.id, m.title, m.artist, m.filename, m.image_filename, m.genre, m.tags, m.lyrics,
-        m.is_ai, m.price, m.is_downloadable, m.user_id, m.created_at,
+        m.is_ai, m.ai_provider, m.free_ai_site_restrictions, m.price, m.is_downloadable, m.user_id, m.spotify_album_id, m.created_at,
         u.subscription_tier, u.subscription_expires_at, u.role
       ORDER BY play_count DESC, total_seconds DESC
       LIMIT ${safeLimit}
@@ -888,9 +900,12 @@ export class DatabaseStorage implements IStorage {
         tags: r.tags,
         lyrics: r.lyrics,
         isAi: r.is_ai,
+        aiProvider: r.ai_provider ?? null,
+        freeAiSiteRestrictions: Boolean(r.free_ai_site_restrictions),
         price: r.price,
         isDownloadable: r.is_downloadable,
         userId: r.user_id,
+        spotifyAlbumId: r.spotify_album_id ?? null,
         createdAt: r.created_at,
         uploaderSubscriptionTier: isPremium ? (r.uploader_subscription_tier ?? "pro") : "free",
         uploaderDonationBadge: null,
@@ -919,9 +934,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
 
@@ -998,9 +1016,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
 
@@ -1079,9 +1100,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
     const rows = await db
@@ -1104,7 +1128,22 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateMusic(id: number, data: { title?: string; artist?: string; genre?: string; tags?: string; lyrics?: string | null; isAi?: boolean; imageFilename?: string | null; price?: number; isDownloadable?: boolean; spotifyAlbumId?: string | null }): Promise<Music | undefined> {
+  async updateMusic(
+    id: number,
+    data: {
+      title?: string;
+      artist?: string;
+      genre?: string;
+      tags?: string;
+      lyrics?: string | null;
+      isAi?: boolean;
+      imageFilename?: string | null;
+      price?: number;
+      isDownloadable?: boolean;
+      spotifyAlbumId?: string | null;
+      freeAiSiteRestrictions?: boolean;
+    },
+  ): Promise<Music | undefined> {
     const [updated] = await db.update(music).set(data).where(eq(music.id, id)).returning();
     return updated;
   }
@@ -3913,9 +3952,12 @@ export class DatabaseStorage implements IStorage {
       tags: music.tags,
       lyrics: music.lyrics,
       isAi: music.isAi,
+      aiProvider: music.aiProvider,
+      freeAiSiteRestrictions: music.freeAiSiteRestrictions,
       price: music.price,
       isDownloadable: music.isDownloadable,
       userId: music.userId,
+      spotifyAlbumId: music.spotifyAlbumId,
       createdAt: music.createdAt,
     };
     const rows = await db
