@@ -1319,12 +1319,20 @@ export default function CreateMusic() {
       const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}&purpose=file`;
       const res = await fetch(proxyUrl, { credentials: "include" });
       if (!res.ok) {
-        let msg = "다운로드에 실패했습니다.";
-        try {
-          const j = (await res.json()) as { message?: string };
-          if (j?.message) msg = String(j.message);
-        } catch {
-          /* ignore */
+        const statusLine = `${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
+        const raw = await res.text().catch(() => "");
+        let msg = "";
+        const trimmed = raw.trim();
+        if (trimmed) {
+          try {
+            const j = JSON.parse(trimmed) as { message?: string; error?: string; msg?: string };
+            msg = String(j.message || j.error || j.msg || "").trim();
+          } catch {
+            msg = trimmed.replace(/\s+/g, " ").slice(0, 280);
+          }
+        }
+        if (!msg) {
+          msg = `서버 응답 오류 (${statusLine}). 잠시 후 다시 시도해 주세요.`;
         }
         toast({ title: "다운로드 실패", description: msg, variant: "destructive" });
         return;
@@ -1345,10 +1353,14 @@ export default function CreateMusic() {
         persistTracks(next, { immediate: true });
         return next;
       });
-    } catch {
+    } catch (e) {
+      const hint =
+        e instanceof Error && e.message
+          ? `${e.message} (네트워크·연결 시간 초과·브라우저 제한일 수 있습니다.)`
+          : "네트워크 오류가 발생했습니다.";
       toast({
         title: "다운로드 실패",
-        description: "네트워크 오류가 발생했습니다.",
+        description: hint,
         variant: "destructive",
       });
     }
