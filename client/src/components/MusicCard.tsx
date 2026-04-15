@@ -59,15 +59,6 @@ function formatLrcTime(sec: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
 }
 
-/** 카드 AI 배지: Suno 계열 제공자명은 카드에 노출하지 않음(「AI · suno」 등) */
-function aiProviderSuffixForBadge(aiProvider: unknown): string {
-  const p = typeof aiProvider === "string" ? aiProvider.trim() : "";
-  if (!p) return "";
-  const q = p.toLowerCase();
-  if (q.includes("suno") || q === "sono") return "";
-  return ` · ${p}`;
-}
-
 export function LyricsSyncEditor({ audioUrl, plainLyrics, onSave, onClose }: {
   audioUrl: string;
   plainLyrics: string;
@@ -827,7 +818,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           <div className={`absolute ${chartRank != null && chartRank > 0 ? "top-11" : "top-2"} left-2 z-[11] flex flex-wrap items-center gap-1 max-w-[calc(100%-3rem)]`}>
             {music.isAi && (
               <span className="text-xs bg-blue-600/80 text-white px-2 py-0.5 rounded-full">
-                AI{aiProviderSuffixForBadge((music as any).aiProvider)}
+                AI
               </span>
             )}
             {music.lyrics && (
