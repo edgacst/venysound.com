@@ -194,12 +194,30 @@ export default function Pricing() {
           detail?: string;
           responseCode?: string;
           payupHttpStatus?: number;
+          payupResponseKeys?: string[];
+          payupResponsePreview?: string;
+          missing?: Record<string, boolean>;
         };
         const base = data.message || "카드 결제 준비에 실패했습니다";
-        const extra = [data.responseCode, data.detail, data.payupHttpStatus != null ? `HTTP ${data.payupHttpStatus}` : ""]
+        const keys = Array.isArray(data.payupResponseKeys) ? data.payupResponseKeys.join(",") : "";
+        const miss =
+          data.missing && typeof data.missing === "object"
+            ? Object.entries(data.missing)
+                .filter(([, v]) => v)
+                .map(([k]) => k)
+                .join(",")
+            : "";
+        const extra = [
+          data.responseCode,
+          data.detail,
+          data.payupHttpStatus != null ? `HTTP ${data.payupHttpStatus}` : "",
+          keys ? `keys:${keys}` : "",
+          miss ? `누락:${miss}` : "",
+          data.payupResponsePreview ? data.payupResponsePreview.slice(0, 200) : "",
+        ]
           .filter(Boolean)
           .join(" · ");
-        throw new Error(extra ? `${base} (${extra.slice(0, 400)})` : base);
+        throw new Error(extra ? `${base} (${extra.slice(0, 500)})` : base);
       }
       return res.json() as Promise<{
         starturl: string;

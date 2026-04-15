@@ -213,9 +213,9 @@ function pickPayupStr(obj: Record<string, unknown> | null | undefined, ...keys: 
 function pickPayupDirectOrderFields(data: Record<string, unknown>) {
   const responseCode = pickPayupStr(data, "responseCode", "RESPONSECODE", "resultCode", "RESULT_CODE") ?? "";
   const responseMsg = pickPayupStr(data, "responseMsg", "RESPONSEMSG", "resultMsg", "RESULT_MSG");
-  const payUrl = pickPayupStr(data, "payUrl", "payurl", "PAYURL");
-  const starturl = pickPayupStr(data, "starturl", "startUrl", "STARTURL");
-  const startparams = pickPayupStr(data, "startparams", "startParams", "STARTPARAMS");
+  const payUrl = pickPayupStr(data, "payUrl", "payurl", "PAYURL", "payURL");
+  const starturl = pickPayupStr(data, "starturl", "startUrl", "STARTURL", "startURL");
+  const startparams = pickPayupStr(data, "startparams", "startParams", "STARTPARAMS", "startParamsEncoded");
   const cancelUrl = pickPayupStr(data, "CANCELURL", "cancelUrl", "cancelURL");
   const cardCode = pickPayupStr(data, "CARDCODE", "cardCode", "cardcode") ?? "0000";
   return { responseCode, responseMsg, payUrl, starturl, startparams, cancelUrl, cardCode };
@@ -251,6 +251,28 @@ function formatPayupOrderAmountForRequest(amountWon: number): string {
     throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
   }
   return s.padStart(12, "0");
+}
+
+/**
+ * 규격서 3.1.1 서명 예시: `…|1004|…` 처럼 **비패딩 숫자**로 해시.
+ * 본문 `amount` 는 `formatPayupOrderAmountForRequest` 로 12자리 등일 수 있어, 일부 PG는 서명만 비패딩을 요구함.
+ * 본문과 동일 문자열로 서명해야 하면 `PAYUP_ORDER_SIGNATURE_AMOUNT=body`
+ */
+function formatPayupOrderAmountForSignature(amountWon: number, bodyAmount: string): string {
+  const mode = String(process.env.PAYUP_ORDER_SIGNATURE_AMOUNT ?? "").trim().toLowerCase();
+  if (mode === "body" || mode === "same" || mode === "match") {
+    return bodyAmount;
+  }
+  return String(Math.max(0, Math.floor(amountWon)));
+}
+
+/** 페이업 응답이 `{ data: { … } }` 형태일 때 한 단계 펼침 */
+function payupOrderResponseAsFlatRecord(d: Record<string, unknown>): Record<string, unknown> {
+  const box = d["data"] ?? d["result"];
+  if (box && typeof box === "object" && !Array.isArray(box)) {
+    return { ...d, ...(box as Record<string, unknown>) };
+  }
+  return d;
 }
 
 /** 자료에 따라 JSON 키를 대문자로 보내야 하는 가맹점 대비(복귀 URL 키는 규격서 `auth_return` 유지) */
@@ -6029,7 +6051,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "결제 금액이 페이업 전문 한도를 초과합니다." });
       }
 
-      const signature = signPayupDirectOrder(cred.merchantId, orderNumber, amtForOrder, cred.apiCertKey, timestamp);
+      const amtForSignature = formatPayupOrderAmountForSignature(amount, amtForOrder);
+      const signature = signPayupDirectOrder(cred.merchantId, orderNumber, amtForSignature, cred.apiCertKey, timestamp);
       const displayNameRaw = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email || "회원";
       const displayName = sanitizePayupOrderField(displayNameRaw, 50) || "회원";
       /** 규격서 3.1 userAgent 길이 2 — 모바일 WM, 그 외 PC */
@@ -6063,11 +6086,8 @@ export async function registerRoutes(
       if (String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
         delete orderBody.merchantId;
       }
-      /** 모바일(WM) 일부 가맹점: returnUrl 동시 전송(규격 표에는 없으나 페이업 측 요청 시) */
-      if (
-        userAgent === "WM" &&
-        String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "true").trim().toLowerCase() !== "false"
-      ) {
+      /** returnUrl 은 규격 표에 없음 — 불필요 파라미터 거절(6003) 방지: 명시 true 일 때만 전송 */
+      if (userAgent === "WM" && String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "").trim().toLowerCase() === "true") {
         orderBody.returnUrl = authReturnUrl;
       }
       if (userEmailTrim) {
@@ -6117,6 +6137,8 @@ export async function registerRoutes(
             bodyKeys: Object.keys(orderPayload),
             amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "pad12(default)",
             jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
+            signatureAmount: amtForSignature,
+            bodyAmount: amtForOrder,
             safeBody: safeBody.slice(0, 1500),
           },
           orderRes.bodyText?.slice(0, 800),
@@ -6135,9 +6157,16 @@ export async function registerRoutes(
         await db.delete(payments).where(eq(payments.id, insertedId));
         return res.status(422).json({ message: "페이업 주문 응답이 비어 있습니다." });
       }
-      const pf = pickPayupDirectOrderFields(d);
+      const flat = payupOrderResponseAsFlatRecord(d as Record<string, unknown>);
+      const pf = pickPayupDirectOrderFields(flat);
       if (pf.responseCode !== "0000" || !pf.payUrl || !pf.starturl || !pf.startparams) {
         await db.delete(payments).where(eq(payments.id, insertedId));
+        let preview = "";
+        try {
+          preview = JSON.stringify(flat).slice(0, 600);
+        } catch {
+          /* ignore */
+        }
         return res.status(422).json({
           message: pf.responseMsg || `페이업 주문 거절(${pf.responseCode || "?"})`,
           responseCode: pf.responseCode || undefined,
@@ -6147,6 +6176,8 @@ export async function registerRoutes(
             starturl: !pf.starturl,
             startparams: !pf.startparams,
           },
+          payupResponseKeys: Object.keys(flat).slice(0, 40),
+          payupResponsePreview: preview || undefined,
         });
       }
 
