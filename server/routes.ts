@@ -6119,7 +6119,8 @@ export async function registerRoutes(
           orderRes.bodyText?.slice(0, 800),
         );
         await db.delete(payments).where(eq(payments.id, insertedId));
-        return res.status(502).json({
+        /** 502는 리버스 프록시 장애와 혼동되므로, 페이업 거절·통신 실패는 422로 구분 */
+        return res.status(422).json({
           message: orderRes.message || "페이업 주문(order) 요청에 실패했습니다.",
           detail: orderRes.bodyText,
         });
@@ -6128,12 +6129,12 @@ export async function registerRoutes(
       const d = orderRes.data;
       if (!d || typeof d !== "object") {
         await db.delete(payments).where(eq(payments.id, insertedId));
-        return res.status(502).json({ message: "페이업 주문 응답이 비어 있습니다." });
+        return res.status(422).json({ message: "페이업 주문 응답이 비어 있습니다." });
       }
       const pf = pickPayupDirectOrderFields(d);
       if (pf.responseCode !== "0000" || !pf.payUrl || !pf.starturl || !pf.startparams) {
         await db.delete(payments).where(eq(payments.id, insertedId));
-        return res.status(502).json({
+        return res.status(422).json({
           message: pf.responseMsg || `페이업 주문 거절(${pf.responseCode || "?"})`,
         });
       }
