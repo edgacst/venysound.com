@@ -189,8 +189,17 @@ export default function Pricing() {
         userAgentKind: isMobile ? "MW" : "PC",
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { message?: string }).message || "카드 결제 준비에 실패했습니다");
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+          detail?: string;
+          responseCode?: string;
+          payupHttpStatus?: number;
+        };
+        const base = data.message || "카드 결제 준비에 실패했습니다";
+        const extra = [data.responseCode, data.detail, data.payupHttpStatus != null ? `HTTP ${data.payupHttpStatus}` : ""]
+          .filter(Boolean)
+          .join(" · ");
+        throw new Error(extra ? `${base} (${extra.slice(0, 400)})` : base);
       }
       return res.json() as Promise<{
         starturl: string;

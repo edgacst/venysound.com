@@ -273,6 +273,7 @@ function applyPayupOrderJsonKeyCasing(body: Record<string, string>): Record<stri
     USESKIPPAGE: "USESKIPPAGE",
     CARDCODE: "CARDCODE",
     QUOTA: "QUOTA",
+    returnUrl: "returnUrl",
   };
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(body)) {
@@ -6041,10 +6042,11 @@ export async function registerRoutes(
         100,
       );
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
-      /** 규격서 3.1 요청 전문 표: merchantId는 URL 경로만(본문 필드 목록에 없음). 본문에 넣어야 하는 가맹점만 PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY=true */
+      /** 페이업 운영은 URL뿐 아니라 JSON 본문에도 merchantId 가 필요한 경우가 많음(전문 파싱 오류 방지). 규격 PDF 표와 다를 때만 PAYUP_ORDER_OMIT_MERCHANT_IN_BODY=true */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
       const orderBody: Record<string, string> = {
+        merchantId: cred.merchantId,
         orderNumber,
         amount: amtForOrder,
         itemName,
@@ -6058,12 +6060,15 @@ export async function registerRoutes(
         /** 규격서 부록: 일시불 00 (2자리) */
         QUOTA: "00",
       };
-      /** 규격서 3.1 표에는 merchantId 없음(URL만). 본문 포함이 필요하면 INCLUDE=true, 예전 .env의 OMIT=false 도 본문 포함으로 인정 */
-      const payupIncludeMerchantBody =
-        String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true" ||
-        String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "false";
-      if (payupIncludeMerchantBody) {
-        orderBody.merchantId = cred.merchantId;
+      if (String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
+        delete orderBody.merchantId;
+      }
+      /** 모바일(WM) 일부 가맹점: returnUrl 동시 전송(규격 표에는 없으나 페이업 측 요청 시) */
+      if (
+        userAgent === "WM" &&
+        String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "true").trim().toLowerCase() !== "false"
+      ) {
+        orderBody.returnUrl = authReturnUrl;
       }
       if (userEmailTrim) {
         orderBody.userEmail = userEmailTrim;
@@ -6121,6 +6126,7 @@ export async function registerRoutes(
         return res.status(422).json({
           message: orderRes.message || "페이업 주문(order) 요청에 실패했습니다.",
           detail: orderRes.bodyText,
+          payupHttpStatus: orderRes.status,
         });
       }
 
@@ -6134,6 +6140,13 @@ export async function registerRoutes(
         await db.delete(payments).where(eq(payments.id, insertedId));
         return res.status(422).json({
           message: pf.responseMsg || `페이업 주문 거절(${pf.responseCode || "?"})`,
+          responseCode: pf.responseCode || undefined,
+          detail: pf.responseMsg,
+          missing: {
+            payUrl: !pf.payUrl,
+            starturl: !pf.starturl,
+            startparams: !pf.startparams,
+          },
         });
       }
 
