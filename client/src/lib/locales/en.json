@@ -663,6 +663,7 @@
     "syncApply": "Apply Synced Lyrics",
     "syncLyrics": "Lyrics Sync Editor",
     "alignLyricsAi": "AI auto-align",
+    "alignLyricsWip": "Not available yet. Please use the lyrics sync editor.",
     "alignLyricsSuccess": "Lyrics aligned and saved",
     "alignLyricsFailed": "AI lyrics alignment failed",
     "fetchImageFailed": "Failed to fetch image"

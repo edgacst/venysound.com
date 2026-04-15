@@ -606,6 +606,7 @@
     "syncApply": "シンク歌詞を適用",
     "syncLyrics": "歌詞シンクエディタ",
     "alignLyricsAi": "AI自動整列",
+    "alignLyricsWip": "準備中です。歌詞同期エディターをご利用ください。",
     "alignLyricsSuccess": "歌詞がAIで整列され保存されました",
     "alignLyricsFailed": "AI歌詞整列に失敗しました",
     "fetchImageFailed": "画像の取得に失敗しました"

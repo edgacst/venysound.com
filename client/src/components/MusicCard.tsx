@@ -354,30 +354,6 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
     },
   });
 
-  const alignLyricsMutation = useMutation({
-    mutationFn: async ({ lyrics }: { lyrics: string }) => {
-      const res = await fetch(`/api/music/${music.id}/align-lyrics`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lyrics }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err?.message as string) || t("music.alignLyricsFailedDefault", "가사 정렬 실패"));
-      }
-      return res.json() as Promise<{ lyrics: string }>;
-    },
-    onSuccess: (data) => {
-      setEditLyrics(data.lyrics);
-      toast({ title: t("music.alignLyricsSuccess") });
-      queryClient.invalidateQueries({ queryKey: ["/api/music", music.id] });
-    },
-    onError: (error: Error) => {
-      toast({ title: t("music.alignLyricsFailed"), description: error.message, variant: "destructive" });
-    },
-  });
-
   const purchaseMutation = useMutation({
     mutationFn: async (musicId: number) => {
       const res = await fetch("/api/purchases", {
@@ -1067,11 +1043,17 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                       variant="outline"
                       size="sm"
                       className="gap-1"
-                      disabled={alignLyricsMutation.isPending}
-                      onClick={() => alignLyricsMutation.mutate({ lyrics: editLyrics })}
+                      onClick={() =>
+                        toast({
+                          title: t(
+                            "music.alignLyricsWip",
+                            "구현중입니다. 가사싱크편집기를 이용하세요",
+                          ),
+                        })
+                      }
                       data-testid="button-align-lyrics-ai"
                     >
-                      {alignLyricsMutation.isPending ? <Loader2Icon size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                      <Sparkles size={14} />
                       {t('music.alignLyricsAi')}
                     </Button>
                   </div>
