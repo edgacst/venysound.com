@@ -253,7 +253,7 @@ function formatPayupOrderAmountForRequest(amountWon: number): string {
   return s.padStart(12, "0");
 }
 
-/** 자료에 따라 JSON 키를 대문자로 보내야 하는 가맹점 대비(복귀 URL 키는 페이업 문구상 `auth_return` 유지) */
+/** 자료에 따라 JSON 키를 대문자로 보내야 하는 가맹점 대비(복귀 URL 키는 규격서 `auth_return` 유지) */
 function applyPayupOrderJsonKeyCasing(body: Record<string, string>): Record<string, string> {
   const mode = String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim().toLowerCase();
   if (mode !== "upper" && mode !== "caps") {
@@ -273,7 +273,6 @@ function applyPayupOrderJsonKeyCasing(body: Record<string, string>): Record<stri
     USESKIPPAGE: "USESKIPPAGE",
     CARDCODE: "CARDCODE",
     QUOTA: "QUOTA",
-    returnUrl: "returnUrl",
   };
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(body)) {
@@ -6042,12 +6041,10 @@ export async function registerRoutes(
         100,
       );
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
-      /** 페이업 응답: `auth_return` 또는 `returnUrl` 필수 — `AUTH_RETURN` 등 다른 키는 인정되지 않음 */
+      /** 규격서 3.1 요청 전문 표: merchantId는 URL 경로만(본문 필드 목록에 없음). 본문에 넣어야 하는 가맹점만 PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY=true */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
-      /** 대부분 자료는 본문에 merchantId 포함 — 전문만 URL 기준이면 PAYUP_ORDER_OMIT_MERCHANT_IN_BODY=true */
       const orderBody: Record<string, string> = {
-        merchantId: cred.merchantId,
         orderNumber,
         amount: amtForOrder,
         itemName,
@@ -6058,14 +6055,15 @@ export async function registerRoutes(
         auth_return: authReturnUrl,
         USESKIPPAGE: "Y",
         CARDCODE: cardCode4,
-        QUOTA: "0",
+        /** 규격서 부록: 일시불 00 (2자리) */
+        QUOTA: "00",
       };
-      if (String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
-        delete orderBody.merchantId;
-      }
-      /** 모바일(WM)은 표준 결제 가이드상 returnUrl 필수인 경우가 있어 동일 URL을 병행 */
-      if (userAgent === "WM") {
-        orderBody.returnUrl = authReturnUrl;
+      /** 규격서 3.1 표에는 merchantId 없음(URL만). 본문 포함이 필요하면 INCLUDE=true, 예전 .env의 OMIT=false 도 본문 포함으로 인정 */
+      const payupIncludeMerchantBody =
+        String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true" ||
+        String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "false";
+      if (payupIncludeMerchantBody) {
+        orderBody.merchantId = cred.merchantId;
       }
       if (userEmailTrim) {
         orderBody.userEmail = userEmailTrim;

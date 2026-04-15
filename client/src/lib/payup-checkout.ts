@@ -17,9 +17,10 @@ export function submitPayupBatchRegisterForm(starturl: string, startparams: stri
 
 /**
  * [페이업] 인증결제 DANAL 다이렉트 규격서 3.2 — 결제창 시작.
+ * - 규격 예시: `STARTURL`·`STARTPARAMS`·`CANCELURL`·`CARDCODE` 히든 필드 + `form.action = starturl` POST.
  * - `STARTPARAMS`는 길이가 길 수 있어 숨김 `<textarea>`로 전송(일부 웹뷰에서 hidden input 잘림 완화).
  * - `accept-charset="UTF-8"`. iframe·웹뷰 이슈 시 빌드에 `VITE_PAYUP_DANAL_FORM_TARGET=_top` 시도.
- * - 자료에 `STARTURL` hidden 필드가 필수면 빌드 시 `VITE_PAYUP_DANAL_FORM_INCLUDE_STARTURL=true`.
+ * - 예외적으로 STARTURL 히든을 빼야 하면 `VITE_PAYUP_DANAL_FORM_OMIT_STARTURL=true`.
  */
 export type PayupDanalDirectCheckoutPayload = {
   starturl: string;
@@ -28,12 +29,8 @@ export type PayupDanalDirectCheckoutPayload = {
   cardCode: string;
 };
 
-function payupDanalIncludeStartUrlHiddenField(): boolean {
-  return (
-    String(import.meta.env.VITE_PAYUP_DANAL_FORM_INCLUDE_STARTURL ?? "")
-      .trim()
-      .toLowerCase() === "true"
-  );
+function payupDanalOmitStartUrlHiddenField(): boolean {
+  return String(import.meta.env.VITE_PAYUP_DANAL_FORM_OMIT_STARTURL ?? "").trim().toLowerCase() === "true";
 }
 
 export function submitPayupDanalDirectCheckout(payload: PayupDanalDirectCheckoutPayload): void {
@@ -61,7 +58,7 @@ export function submitPayupDanalDirectCheckout(payload: PayupDanalDirectCheckout
     form.appendChild(inp);
   };
 
-  if (payupDanalIncludeStartUrlHiddenField()) {
+  if (!payupDanalOmitStartUrlHiddenField()) {
     addHiddenInput("STARTURL", starturl);
   }
 
