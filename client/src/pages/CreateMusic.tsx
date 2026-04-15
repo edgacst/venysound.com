@@ -414,12 +414,9 @@ function togglePresetTokenInField(
   return { next: joinCommaUnique([...parts, token]), atMax: false };
 }
 
-/** 장르 입력란 + 스타일 입력란(칩이 채운 토큰 포함)을 서버 `tags` 한 줄로 합침 */
-function buildTagsForApi(genreOther: string, styleOther: string): string {
-  const g = joinCommaUnique(splitCommaList(genreOther));
-  const s = joinCommaUnique(splitCommaList(styleOther));
-  if (g && s) return `${g} · ${s}`;
-  return g || s;
+/** 서버 `tags`(Suno: customMode의 style, 설명 모드의 [스타일] 앞단) — 장르 입력란만 전달. 스타일 칩·스타일 입력란은 포함하지 않음 */
+function buildTagsForApi(genreOther: string): string {
+  return joinCommaUnique(splitCommaList(genreOther));
 }
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
@@ -1016,6 +1013,23 @@ export default function CreateMusic() {
     retry: 1,
   });
 
+  /** 장르 칩 → 입력란에 넣는 문자열(현재 언어 라벨, 한글 로케일이면 한글) */
+  const genrePresetLabelById = useMemo(() => {
+    const m = {} as Record<GenrePresetId, string>;
+    for (const id of GENRE_PRESET_IDS) {
+      m[id] = t(`createMusic.genreChip.${id}`, GENRE_API_TOKEN[id]);
+    }
+    return m;
+  }, [t]);
+
+  const genrePresetMapForToggle = useMemo((): Record<string, string> => {
+    const o: Record<string, string> = {};
+    for (const id of GENRE_PRESET_IDS) {
+      o[id] = genrePresetLabelById[id];
+    }
+    return o;
+  }, [genrePresetLabelById]);
+
   const [mode, setMode] = useState<CreateMode>("description");
   const [title, setTitle] = useState("");
   const [genreOther, setGenreOther] = useState("");
@@ -1582,7 +1596,7 @@ export default function CreateMusic() {
     submitModeRef.current = mode;
     if (mode === "custom") submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
-    const mergedTags = buildTagsForApi(genreOther, styleOther);
+    const mergedTags = buildTagsForApi(genreOther);
     submittedTagsRef.current = mergedTags;
     try {
       const body: Record<string, unknown> = {
@@ -1925,14 +1939,14 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.genreHint",
-                            "자주 쓰는 장르를 탭하거나 아래에 직접 입력하세요. 프리셋은 최대 {{n}}개까지 선택됩니다. 아래 스타일과 합쳐져 AI에 전달됩니다.",
+                            "자주 쓰는 장르를 탭하면 아래 입력란에 현재 언어 라벨(한국어 설정 시 한글)이 들어가며, 직접 수정·추가할 수 있습니다. 프리셋은 최대 {{n}}개까지. 이 내용만 생성 요청의 스타일/장르 태그로 전달됩니다.",
                             { n: MAX_GENRE_PRESETS },
                           )}
                         </p>
                         <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
                           <div className="flex flex-nowrap gap-2 w-max">
                           {GENRE_PRESET_IDS.map((id) => {
-                            const token = GENRE_API_TOKEN[id];
+                            const token = genrePresetLabelById[id];
                             const selected = fieldHasPresetToken(genreOther, token);
                             return (
                               <button
@@ -1944,7 +1958,7 @@ export default function CreateMusic() {
                                       prev,
                                       token,
                                       MAX_GENRE_PRESETS,
-                                      GENRE_API_TOKEN,
+                                      genrePresetMapForToggle,
                                     );
                                     if (atMax) {
                                       toast({
@@ -1998,7 +2012,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.styleHint",
-                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력하세요. 프리셋은 최대 {{n}}개까지 선택됩니다.",
+                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력해 메모로 쓸 수 있습니다. 프리셋은 최대 {{n}}개까지. 스타일 칩·입력란 내용은 생성 API의 태그(스타일 문자열)에 포함되지 않습니다.",
                             { n: MAX_STYLE_PRESETS },
                           )}
                         </p>

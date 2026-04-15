@@ -1503,7 +1503,7 @@
     "styleLabel": "风格",
     "stylePlaceholder": "例：K-ballad, 男声, 钢琴与弦乐",
     "genreSectionLabel": "曲风",
-    "genreHint": "点击预设会把对应英文词填入下方输入框，可继续编辑。同一时间最多 {{n}} 个预设词。与下方风格合并后发给模型。",
+    "genreHint": "点击预设会在下方输入框填入当前语言的标签，可继续编辑。同一时间最多 {{n}} 个。只有此曲风栏会作为风格/曲风标签发给模型。",
     "genreOtherPlaceholder": "例如：city pop、synthwave",
     "genreClear": "清除曲风",
     "genreMaxNote": "曲风预设最多可选 {{n}} 个。",
@@ -1532,7 +1532,7 @@
       "cafe_music": "咖啡馆音乐"
     },
     "styleSectionLabel": "风格",
-    "styleHint": "点击预设会填入下方输入框，可自行修改补充。同一时间最多 {{n}} 个预设词。",
+    "styleHint": "点击预设会填入下方输入框供备忘，可自行修改（最多 {{n}} 个）。风格芯片与此栏内容不会作为风格标签发给模型。",
     "styleOtherPlaceholder": "例如：混响偏重、lo-fi 底噪",
     "styleClear": "清除风格",
     "styleMaxNote": "风格预设最多可选 {{n}} 个。",
@@ -1572,11 +1572,11 @@
       "english_lyrics": "仅英文歌词"
     },
     "instrumentalLabel": "仅演奏（无人声）",
-    "instrumentalHint": "开启后向服务器请求纯器乐生成。乐器与氛围请用曲风/风格芯片或文字说明；在描述模式下请在下方写出器乐感觉。",
+    "instrumentalHint": "开启后向服务器请求纯器乐生成。乐器与氛围请写在曲风栏（会作为标签发送）以及下方描述/歌词栏。风格芯片不会进入标签。",
     "promptLabelInstrumental": "歌词（纯器乐可留空）",
     "promptPlaceholderInstrumental": "纯器乐时可留空。若要写，可简单写氛围或旋律提示（可选）。",
     "lyricsInputPlaceholderInstrumental": "例如：轻柔独奏钢琴、咖啡馆背景音乐、不要人声",
-    "instrumentalCustomHint": "纯器乐 + 直接输入歌词模式时，曲风/风格芯片与标题更重要，歌词框可以留空。",
+    "instrumentalCustomHint": "纯器乐 + 直接输入歌词模式时，曲风芯片/输入栏与标题更重要，歌词框可以留空。风格芯片不会作为标签发送，氛围请写在曲风栏或歌词栏。",
     "styleChip": {
       "male_vocal": "男声",
       "female_vocal": "女声",

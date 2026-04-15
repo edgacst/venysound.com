@@ -2362,8 +2362,7 @@ export async function registerRoutes(
       const rawTags = (tags || "").trim();
       const isImagePrompt = rawTags.length > 60 || /album\s*cover|cinematic|photo|image|visual|artwork/i.test(rawTags);
       const cleanedTags = isImagePrompt ? "" : rawTags;
-      // CreateMusic `buildTagsForApi`는 장르·스타일을 `장르 · 스타일` 한 줄로 합칩니다.
-      // 예전에는 전체 문자열에서 첫 토큰만 떼어 `music.genre`에 넣어 스타일 절(· 뒤)의 단어(techno 등)가 장르로 들어가 유통 메타와 맞지 않는 경우가 있었습니다.
+      // CreateMusic `buildTagsForApi`는 장르 입력란만 태그로 보냅니다(스타일 칩·스타일 입력란 미포함). `·` 구분은 과거 클라이언트 호환용으로만 유지.
       const genreSegmentForLookup = (() => {
         if (!cleanedTags) return "";
         const parts = cleanedTags.split(/\s*·\s*/);

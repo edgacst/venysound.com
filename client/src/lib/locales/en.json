@@ -1704,7 +1704,7 @@
     "styleLabel": "Style",
     "stylePlaceholder": "e.g. K-ballad, male vocal, piano and strings",
     "genreSectionLabel": "Genre",
-    "genreHint": "Tapping a preset adds its token to the field below (editable). Up to {{n}} preset tokens at once. Combined with the style field for the model.",
+    "genreHint": "Tapping a preset adds its label in your current language to the field below (editable). Up to {{n}} presets at once. Only this genre field is sent as the style/genre tag to the model.",
     "genreOtherPlaceholder": "e.g. city pop, synthwave",
     "genreClear": "Clear genres",
     "genreMaxNote": "You can select up to {{n}} genre presets.",
@@ -1733,7 +1733,7 @@
       "cafe_music": "Cafe music"
     },
     "styleSectionLabel": "Style",
-    "styleHint": "Tapping a preset fills the field below (you can edit). Up to {{n}} preset tokens at once.",
+    "styleHint": "Tapping a preset fills the field below for your notes (editable, up to {{n}}). Style chips and this field are not sent as the model style tag.",
     "styleOtherPlaceholder": "e.g. reverb-heavy mix, lo-fi crackle",
     "styleClear": "Clear style",
     "styleMaxNote": "You can select up to {{n}} style presets.",
@@ -1773,11 +1773,11 @@
       "english_lyrics": "English lyrics only"
     },
     "instrumentalLabel": "Instrumental only (no vocals)",
-    "instrumentalHint": "Sends a no-vocals request to the server. Pick instruments and vibe with genre/style chips or text; in description mode, describe the instrumental below.",
+    "instrumentalHint": "Sends a no-vocals request to the server. Put instruments and vibe in the genre field (sent as tags) and in the description/lyrics box. Style chips are not sent as tags.",
     "promptLabelInstrumental": "Lyrics (optional for instrumental)",
     "promptPlaceholderInstrumental": "You can leave this empty for instrumental. Optional hints for mood or melody.",
     "lyricsInputPlaceholderInstrumental": "e.g. soft solo piano, gentle cafe background, no vocals",
-    "instrumentalCustomHint": "For instrumental + lyrics mode, genre/style chips and title matter most. The lyrics box may stay empty.",
+    "instrumentalCustomHint": "For instrumental + lyrics mode, genre chips/field and title matter most; the lyrics box may stay empty. Style chips are not sent as tags—add mood in the genre field or lyrics box.",
     "styleChip": {
       "male_vocal": "Male vocal",
       "female_vocal": "Female vocal",
