@@ -856,8 +856,18 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       uploadCount,
       downloadCount,
       duration,
-      generationTaskId: typeof t.generationTaskId === "string" ? t.generationTaskId : undefined,
-      generationProvider: typeof t.generationProvider === "string" ? t.generationProvider : undefined,
+      generationTaskId:
+        typeof t.generationTaskId === "string"
+          ? t.generationTaskId
+          : typeof t.generation_task_id === "string"
+            ? t.generation_task_id
+            : undefined,
+      generationProvider:
+        typeof t.generationProvider === "string"
+          ? t.generationProvider
+          : typeof t.generation_provider === "string"
+            ? t.generation_provider
+            : undefined,
       audio_url: pickSavedTrackAudioUrl(t),
       image_url: (t.image_url ?? t.imageUrl ?? t.image_large_url ?? t.imageLargeUrl) as string | undefined,
       clip_id: t.clip_id ?? t.id,
@@ -902,6 +912,14 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
     if (!existing) {
       byId.set(t.id, t);
     } else {
+      const genTask =
+        (existing.generationTaskId && String(existing.generationTaskId).trim()) ||
+        (t.generationTaskId && String(t.generationTaskId).trim()) ||
+        undefined;
+      const genProv =
+        (existing.generationProvider && String(existing.generationProvider).trim()) ||
+        (t.generationProvider && String(t.generationProvider).trim()) ||
+        undefined;
       byId.set(t.id, {
         ...existing,
         audio_url: preferNonEmptyMediaUrl(existing.audio_url, t.audio_url),
@@ -909,6 +927,8 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
         uploadCount: Math.max(existing.uploadCount ?? 0, t.uploadCount ?? 0),
         downloadCount: Math.max(existing.downloadCount ?? 0, t.downloadCount ?? 0),
         publishedToSite: Boolean(existing.publishedToSite) || Boolean(t.publishedToSite),
+        generationTaskId: genTask,
+        generationProvider: genProv,
         duration:
           typeof existing.duration === "number" && existing.duration > 0
             ? existing.duration

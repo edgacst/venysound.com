@@ -1699,8 +1699,9 @@ export async function registerRoutes(
                 prompt: row.prompt,
                 originalPrompt: row.originalPrompt,
                 customMode: row.customMode,
-                generationTaskId: row.generationTaskId,
-                generationProvider: row.generationProvider,
+                /** 동기화 페이로드에 taskId가 빠지면 null로 덮여 배포 추적(publishments)이 깨짐 — 기존 값 보존 */
+                generationTaskId: sql`COALESCE(NULLIF(BTRIM(excluded.generation_task_id), ''), ${aiMusicSavedTracks.generationTaskId})`,
+                generationProvider: sql`COALESCE(NULLIF(BTRIM(excluded.generation_provider), ''), ${aiMusicSavedTracks.generationProvider})`,
                 /** 이전 PUT/기기 동기화로 0이 오면 기존 진행도가 사라지지 않게 보존 */
                 uploadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.uploadCount}, 0), COALESCE(excluded.upload_count, 0))`,
                 downloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.downloadCount}, 0), COALESCE(excluded.download_count, 0))`,
