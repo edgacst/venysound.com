@@ -1867,7 +1867,7 @@
     "submit": "Generate music",
     "generating": "Generating... (about 1–2 min)",
     "generatingElapsed": "Generating... (elapsed %s)",
-    "generatingSlowHint": "Tracks usually take 1–3 minutes; depending on quality and queue, it may take longer. Please keep this page open.",
+    "generatingSlowHint": "Often ~2 minutes, but the external AI queue or model can push it past 5 minutes. Please keep this page open.",
     "failed": "Generation failed",
     "resultsTitle": "Generated tracks",
     "untitled": "Untitled",

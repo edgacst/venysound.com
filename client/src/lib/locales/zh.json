@@ -1666,7 +1666,7 @@
     "submit": "生成音乐",
     "generating": "生成中…（约1～2分钟）",
     "generatingElapsed": "生成中…（已用时 %s）",
-    "generatingSlowHint": "生成曲目通常需要1～3分钟，根据音质与排队情况可能更长。请勿关闭本页面。",
+    "generatingSlowHint": "多数情况下约2分钟完成，但外部AI排队或模型可能导致超过5分钟。请勿关闭本页面。",
     "failed": "生成失败",
     "resultsTitle": "生成的曲目",
     "untitled": "无标题",

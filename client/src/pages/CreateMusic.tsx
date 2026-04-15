@@ -424,8 +424,8 @@ function buildTagsForApi(genreOther: string, styleOther: string): string {
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
-  if (apiState === "running" || apiState === "preview") return 1500;
-  return 2200;
+  if (apiState === "running" || apiState === "preview") return 1000;
+  return 1600;
 }
 /** 로컬 캐시 키(계정별). 서버 `GET/PUT /api/ai-music/library`와 병합해 PC·모바일 동기화. */
 /** React Query 키에 userId 포함 — 키를 공유하면 계정 전환 시 타인 라이브러리 캐시가 섞일 수 있음 */

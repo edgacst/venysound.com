@@ -1925,7 +1925,7 @@
     "submit": "음악 생성하기",
     "generating": "생성 중... (약 1~2분 소요)",
     "generatingElapsed": "생성 중... (경과 %s)",
-    "generatingSlowHint": "음원은 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
+    "generatingSlowHint": "많은 경우 2분 전후에 끝나지만, 외부 AI 서버 대기열·모델에 따라 5분 이상 걸릴 수 있습니다. 이 페이지를 닫지 마세요.",
     "failed": "생성 실패",
     "resultsTitle": "생성된 곡",
     "untitled": "제목 없음",
