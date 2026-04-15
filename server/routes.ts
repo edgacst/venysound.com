@@ -910,7 +910,9 @@ export async function registerRoutes(
   function pickRemoteClipAudioUrl(o: Record<string, unknown>): string | undefined {
     for (const k of [
       "source_audio_url",
+      "sourceAudioUrl",
       "source_stream_audio_url",
+      "sourceStreamAudioUrl",
       "audio_url",
       "audioUrl",
       "stream_audio_url",
@@ -2124,16 +2126,24 @@ export async function registerRoutes(
         if (!apiRes.ok) {
           return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: (data as { msg?: string }).msg ?? "조회 실패" });
         }
+        const bizCode = (data as { code?: number }).code;
+        if (typeof bizCode === "number" && bizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? `Suno API code ${bizCode}`;
+          return res.json({ state: "failed", message: String(msg), data: null });
+        }
         const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[]; suno_data?: unknown[] }; errorMessage?: string; param?: string } }).data;
-        const status = d?.status ?? "PENDING";
+        const statusRaw = d?.status ?? "PENDING";
+        const status = String(statusRaw).trim().toUpperCase();
         const resp = d?.response as { sunoData?: unknown[]; suno_data?: unknown[] } | undefined;
         const sunoMerged = resp?.sunoData ?? resp?.suno_data;
         const sunoList = Array.isArray(sunoMerged) ? sunoMerged : [];
         let customMode = false;
+        let expectedClipCount = 2;
         try {
           if (typeof d?.param === "string") {
-            const param = JSON.parse(d.param) as { customMode?: boolean };
+            const param = JSON.parse(d.param) as { customMode?: boolean; instrumental?: boolean };
             customMode = param.customMode === true;
+            if (param.instrumental === true) expectedClipCount = 1;
           }
         } catch {}
         const mapSunoRawsToClips = (raws: Record<string, unknown>[]) =>
@@ -2158,9 +2168,26 @@ export async function registerRoutes(
           const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
           return res.json({ state: "succeeded", data: list });
         }
+        const raws = sunoList as Record<string, unknown>[];
+        const listFromRaws = () => mapSunoRawsToClips(raws);
+        /**
+         * 업스트림이 SUCCESS로 안 올리고 FIRST_SUCCESS에 머무는 경우(지연·버전 차이) 대비:
+         * 기대 클립 수만큼 결과가 있고, 각각 재생 가능 오디오·최소 길이(초)가 있으면 완료로 간주.
+         */
+        if (status === "FIRST_SUCCESS" && raws.length >= expectedClipCount) {
+          const listEarly = listFromRaws();
+          const minDur = 8;
+          const ok =
+            listEarly.length >= expectedClipCount &&
+            listEarly.every((c) => (c.audio_url ?? "").trim().length > 12) &&
+            raws.every((r) => (pickClipDurationSec(r) ?? 0) >= minDur);
+          if (ok) {
+            return res.json({ state: "succeeded", data: listEarly });
+          }
+        }
         /** Suno 앱처럼 FIRST_SUCCESS 단계에서 커버·스트림 URL이 오면 미리듣기(폴링은 계속, 완료 시 succeeded) */
         if (status === "FIRST_SUCCESS" && sunoList.length > 0) {
-          const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
+          const list = listFromRaws();
           const hasMedia = list.some((x) => Boolean((x.audio_url ?? "").trim()) || Boolean((x.image_url ?? "").trim()));
           if (hasMedia) {
             return res.json({ state: "preview", data: list });
