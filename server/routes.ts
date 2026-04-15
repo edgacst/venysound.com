@@ -952,6 +952,24 @@ export async function registerRoutes(
     return undefined;
   }
 
+  /** Suno record-info 클립에 최종 파일 URL이 있으면 duration 미수신이어도 생성 완료로 간주해도 됨 */
+  function sunoClipHasFinalSourceAudio(r: Record<string, unknown>): boolean {
+    for (const k of ["source_audio_url", "sourceAudioUrl"] as const) {
+      const v = r[k];
+      if (typeof v === "string" && v.trim().length > 12) return true;
+    }
+    return false;
+  }
+
+  /** CreateMusic UI는 sonic-* (AIMusicAPI) 값을 보냄 — Suno generate API 모델명으로 매핑 */
+  function resolveSunoGenerateModel(mv: string | undefined | null): string {
+    const m = typeof mv === "string" ? mv.trim() : "";
+    if (m === "V5" || m === "V5_5" || m === "V4_5" || m === "V4_5PLUS" || m === "V4" || m === "V4_5ALL") return m;
+    if (m === "sonic-v5-5" || m === "sonic-v5-5-all") return "V5_5";
+    if (m === "sonic-v4-5" || m === "sonic-v4-5-all") return "V4_5";
+    return "V4_5ALL";
+  }
+
   // Suno 콜백 캐시는 complete 만 저장. first 를 캐시하면 폴링이 조기 종료되며 임시 stream URL 만 저장돼 시간이 지나 한 곡만 재생 실패하는 사례가 남.
   const sunoCallbackResults = new Map<
     string,
@@ -1924,14 +1942,7 @@ export async function registerRoutes(
     if (SUNOAPI_KEY) {
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
-      const model =
-        body.mv === "V5" ||
-        body.mv === "V5_5" ||
-        body.mv === "V4_5" ||
-        body.mv === "V4_5PLUS" ||
-        body.mv === "V4"
-          ? body.mv
-          : "V4_5ALL";
+      const model = resolveSunoGenerateModel(body.mv);
       const payload: Record<string, unknown> = {
         customMode,
         instrumental: makeInstrumental,
@@ -2180,7 +2191,9 @@ export async function registerRoutes(
           const ok =
             listEarly.length >= expectedClipCount &&
             listEarly.every((c) => (c.audio_url ?? "").trim().length > 12) &&
-            raws.every((r) => (pickClipDurationSec(r) ?? 0) >= minDur);
+            raws.every(
+              (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
+            );
           if (ok) {
             return res.json({ state: "succeeded", data: listEarly });
           }
