@@ -20,6 +20,8 @@ import { readVisitorKey, writeVisitorKey } from "@/lib/visitor-key";
 
 /** 체류 추정용 내부 ping 간격 (실제 페이지 path와 별도 — PV 집계에 포함되지 않음) */
 const DWELL_HEARTBEAT_MS = 8_000;
+/** 탭이 백그라운드일 때도 일자별 체류(max visited_at)가 늘도록 beacon ping (브라우저는 간격을 늘릴 수 있음) */
+const DWELL_BACKGROUND_HEARTBEAT_MS = 45_000;
 /** 짧은 체류도 0초가 되지 않게 첫 ping (탭이 보이는 동안만) */
 const DWELL_FIRST_PING_MS = 3_000;
 
@@ -303,14 +305,21 @@ function AnalyticsVisit() {
     return () => window.clearTimeout(early);
   }, [pathname, user?.id, authLoading]);
 
-  /** 탭이 켜져 있는 동안 체류용 ping (PV와 분리된 path — 관리자 체류(추정)만 늘림) */
+  /** 체류용 ping: 전면은 8초마다 POST, 백그라운드는 45초마다 beacon(숨은 탭에서만 체류가 0에 가깝게 남는 문제 완화) */
   useEffect(() => {
     if (authLoading) return undefined;
 
-    const heartbeat = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      sendDwellHeartbeatRef.current();
+    const heartbeatForeground = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        sendDwellHeartbeatRef.current();
+      }
     }, DWELL_HEARTBEAT_MS);
+
+    const heartbeatBackground = window.setInterval(() => {
+      if (document.visibilityState === "hidden") {
+        sendDwellHeartbeatBeaconRef.current();
+      }
+    }, DWELL_BACKGROUND_HEARTBEAT_MS);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -340,7 +349,8 @@ function AnalyticsVisit() {
     document.addEventListener("visibilitychange", onVisibilityChange);
     document.addEventListener("pagehide", runBeacon);
     return () => {
-      window.clearInterval(heartbeat);
+      window.clearInterval(heartbeatForeground);
+      window.clearInterval(heartbeatBackground);
       window.removeEventListener("beforeunload", runBeacon);
       window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("focus", onFocus);

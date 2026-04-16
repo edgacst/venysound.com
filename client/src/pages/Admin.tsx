@@ -2582,7 +2582,7 @@ export default function Admin() {
             <p className="text-xs text-muted-foreground mb-3">
               {t(
                 "admin.visitorSessionsHint",
-                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류(추정)는 해당 날짜 안 첫·마지막 기록 시각 차이입니다. 탭이 보이는 동안 약 3초 뒤 한 번, 이후 약 8초마다 체류 전용 ping이 들어가 짧은 방문도 0초만 나오지 않게 합니다(페이지뷰 수에는 포함되지 않음). 탭을 바로 닫거나 JS가 막히면 여전히 짧게 보일 수 있습니다. 국가·지역은 접속 시점 IP 기준(GeoIP)입니다.",
+                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류(추정)는 해당 날짜 안 첫·마지막 기록 시각 차이입니다. 탭이 앞에 있을 때는 약 3초 뒤 한 번·이후 약 8초마다 체류 전용 ping이 들어가고, 다른 탭으로 가 둔 경우에도 약 45초마다 beacon으로 ping을 보내 백그라운드 체류가 너무 짧게만 잡히는 것을 줄입니다(페이지뷰 수에는 포함되지 않음). 브라우저가 백그라운드 타이머를 강하게 쉬면 간격이 벌어질 수 있고, 탭을 바로 닫거나 JS가 막히면 여전히 짧게 보일 수 있습니다. 국가·지역은 접속 시점 IP 기준(GeoIP)입니다.",
               )}
             </p>
             <p className="text-xs text-muted-foreground mb-3">
