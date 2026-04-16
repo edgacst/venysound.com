@@ -253,7 +253,6 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const [editTitle, setEditTitle] = useState(music.title);
   const [editArtist, setEditArtist] = useState(music.artist);
   const [editGenre, setEditGenre] = useState(music.genre || "");
-  const [editTags, setEditTags] = useState(music.tags || "");
   const [editIsAi, setEditIsAi] = useState(music.isAi || false);
   const [editLyrics, setEditLyrics] = useState(music.lyrics || "");
   const [editCoverUrl, setEditCoverUrl] = useState<string | null>(null);
@@ -420,7 +419,6 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
     setEditTitle(music.title);
     setEditArtist(music.artist);
     setEditGenre(music.genre || "");
-    setEditTags(music.tags || "");
     setEditIsAi(music.isAi || false);
     setEditLyrics(music.lyrics || "");
     setEditCoverUrl(null);
@@ -479,7 +477,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
       return;
     }
 
-    const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: editTags, lyrics: editLyrics, isAi: editIsAi };
+    const data: any = { title: editTitle, artist: editArtist, genre: editGenre, tags: null, lyrics: editLyrics, isAi: editIsAi };
     if (uploaderIsPremium && !freeAiLocked) {
       data.isDownloadable = editIsDownloadable;
       const priceValue = typeof editPrice === "number" ? editPrice : 0;
@@ -983,10 +981,6 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             <div>
               <Label htmlFor="edit-genre">{t('music.genre')}</Label>
               <Input id="edit-genre" value={editGenre} onChange={(e) => setEditGenre(e.target.value)} data-testid="input-edit-genre" />
-            </div>
-            <div>
-              <Label htmlFor="edit-tags">{t('music.tagsComma')}</Label>
-              <Input id="edit-tags" value={editTags} onChange={(e) => setEditTags(e.target.value)} data-testid="input-edit-tags" />
             </div>
               </>
             )}

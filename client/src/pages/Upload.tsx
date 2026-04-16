@@ -44,7 +44,6 @@ const uploadSchema = z.object({
   title: z.string().min(1, "음원 제목을 입력해주세요"),
   artist: z.string().min(1, "아티스트 이름을 입력해주세요"),
   genre: z.string().optional(),
-  tags: z.string().optional(),
   lyrics: z.string().optional(),
   isAi: z.boolean().optional(),
   isDownloadable: z.boolean().optional(),
@@ -124,7 +123,6 @@ export default function Upload() {
       title: "",
       artist: user?.firstName || "",
       genre: "",
-      tags: "",
       lyrics: "",
       isAi: false,
       isDownloadable: false,
@@ -149,12 +147,10 @@ export default function Upload() {
     const coverUrl = sessionStorage.getItem("createMusic_uploadCoverUrl");
     const audioUrl = sessionStorage.getItem("createMusic_uploadAudioUrl");
     const title = sessionStorage.getItem("createMusic_uploadTitle");
-    const tags = sessionStorage.getItem("createMusic_uploadTags");
     const lyrics = sessionStorage.getItem("createMusic_uploadLyrics");
     if (title) form.setValue("title", title);
-    if (tags) form.setValue("tags", tags);
     if (lyrics) form.setValue("lyrics", lyrics);
-    if (title || tags || lyrics) {
+    if (title || lyrics) {
       try {
         sessionStorage.removeItem("createMusic_uploadTitle");
         sessionStorage.removeItem("createMusic_uploadTags");
@@ -581,21 +577,6 @@ export default function Upload() {
                     </div>
                   )}
                 </div>
-
-                <FormField
-                  control={form.control}
-                  name="tags"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('upload.tags', '태그 (쉼표로 구분)')}</FormLabel>
-                      <FormControl>
-                        <Input placeholder={t('upload.tagsPlaceholder', '예: 발라드, 겨울, 감성')} className="bg-background border-white/10" {...field} data-testid="input-tags" />
-                      </FormControl>
-                      <FormDescription>{t('upload.tagsDesc', '관련 키워드나 분위기를 쉼표(,)로 구분해 입력하세요')}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
                 <FormField
                   control={form.control}

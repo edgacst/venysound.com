@@ -46,7 +46,6 @@ interface TrackItem {
   mainGenre: string;
   subGenre: string;
   genre: string;
-  tags: string;
   isAi: boolean;
   isDownloadable: boolean;
   price: number;
@@ -104,7 +103,6 @@ export default function BulkUpload() {
       mainGenre: globalMainGenre,
       subGenre: globalSubGenre,
       genre: globalSubGenre || globalMainGenre,
-      tags: "",
       isAi: globalIsAi,
       isDownloadable: globalIsDownloadable,
       price: globalPrice,
@@ -186,7 +184,6 @@ export default function BulkUpload() {
         title: track.title,
         artist: track.artist,
         genre: track.genre || undefined,
-        tags: track.tags || undefined,
         isAi: track.isAi,
         filename: objectPath,
         imageFilename: track.coverUrl || null,
@@ -470,8 +467,8 @@ export default function BulkUpload() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {subGenres.length > 0 && (
+                            {subGenres.length > 0 && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <Select
                                   value={track.subGenre}
                                   onValueChange={(v) => handleSubGenreChange(track.id, v)}
@@ -488,16 +485,8 @@ export default function BulkUpload() {
                                     ))}
                                   </SelectContent>
                                 </Select>
-                              )}
-                              <Input
-                                value={track.tags}
-                                onChange={(e) => updateTrack(track.id, { tags: e.target.value })}
-                                placeholder={t('bulkUpload.tagsPlaceholder', '태그 (쉼표구분)')}
-                                className="bg-background border-white/10 text-sm"
-                                disabled={track.status === "uploading"}
-                                data-testid={`input-track-tags-${idx}`}
-                              />
-                            </div>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2">
                               {track.coverUrl ? (
                                 <div className="flex items-center gap-2">

@@ -14,7 +14,7 @@ import {
   type MusicStory, type StoryComment, type CreateMusicStoryRequest, type CreateStoryCommentRequest,
   type DistributionRelease
 } from "@shared/schema";
-import { eq, desc, asc, and, or, ilike, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
+import { eq, desc, asc, and, or, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users, payments, aiMusicUsage } from "@shared/models/auth";
 import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
@@ -86,7 +86,7 @@ export function resolveSiteAnnouncementContentForLang(
 export interface IStorage {
   // Music
   createMusic(musicData: InsertMusic & { userId: string }): Promise<Music>;
-  getMusicList(genre?: string, search?: string, tag?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
+  getMusicList(genre?: string, search?: string, page?: number, limit?: number): Promise<{ data: MusicWithUploaderTier[]; total: number }>;
   /** 글로벌 배포(발매일·승인일 기준) 또는 Spotify 앨범 연동 곡 — 홈 「신곡」 */
   getHomeNewReleases(limit?: number): Promise<MusicWithUploaderTier[]>;
   getMusicById(id: number): Promise<Music | undefined>;
@@ -552,7 +552,7 @@ export class DatabaseStorage implements IStorage {
     return newMusic;
   }
 
-  async getMusicList(genre?: string, search?: string, tag?: string, page: number = 1, limit: number = 30): Promise<{ data: Music[]; total: number }> {
+  async getMusicList(genre?: string, search?: string, page: number = 1, limit: number = 30): Promise<{ data: Music[]; total: number }> {
     const conditions = [];
     if (genre) {
       if (MUSIC_GENRE_GROUPS[genre]) {
@@ -562,10 +562,7 @@ export class DatabaseStorage implements IStorage {
       }
     }
     if (search) {
-      conditions.push(sql`(${music.title} ILIKE ${`%${search}%`} OR ${music.artist} ILIKE ${`%${search}%`} OR ${music.genre} ILIKE ${`%${search}%`} OR ${music.tags} ILIKE ${`%${search}%`})`);
-    }
-    if (tag) {
-      conditions.push(ilike(music.tags, `%${tag}%`));
+      conditions.push(sql`(${music.title} ILIKE ${`%${search}%`} OR ${music.artist} ILIKE ${`%${search}%`} OR ${music.genre} ILIKE ${`%${search}%`})`);
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

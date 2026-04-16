@@ -5,7 +5,7 @@ import { InternationalReleaseCard, type InternationalReleaseItem } from "@/compo
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Tag, Globe, Loader2 } from "lucide-react";
+import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -41,7 +41,6 @@ export default function Explore() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | undefined>(undefined);
-  const [selectedTag, setSelectedTag] = useState<string | undefined>(undefined);
   const [currentPage, setCurrentPage] = useState(1);
   
   const debouncedSearch = useDebounce(searchTerm, 500);
@@ -55,7 +54,7 @@ export default function Explore() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, selectedGenre, selectedTag]);
+  }, [debouncedSearch, selectedGenre]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -72,7 +71,6 @@ export default function Explore() {
   const { data: musicResult, isLoading, isError, error, refetch: refetchMusicList } = useMusicList({ 
     search: debouncedSearch,
     genre: selectedGenre,
-    tag: selectedTag,
     page: currentPage,
     limit: ITEMS_PER_PAGE,
     enabled: catalogTab === "site",
@@ -126,15 +124,6 @@ export default function Explore() {
     queryKey: ["/api/music/genres"],
     queryFn: async () => {
       const res = await fetch("/api/music/genres");
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const { data: popularTags } = useQuery<string[]>({
-    queryKey: ["/api/music/tags"],
-    queryFn: async () => {
-      const res = await fetch("/api/music/tags");
       if (!res.ok) return [];
       return res.json();
     },
@@ -349,30 +338,6 @@ export default function Explore() {
             </button>
           ))}
         </div>
-        )}
-
-        {catalogTab === "site" && Array.isArray(popularTags) && popularTags.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-6 scrollbar-hide items-center flex-wrap">
-            <span className="text-sm text-muted-foreground flex items-center gap-1 shrink-0">
-              <Tag size={14} />
-              {t('explore.tags', '태그')}
-            </span>
-            {popularTags.map((tag) => (
-              <button
-                key={tag}
-                onClick={() => setSelectedTag(selectedTag === tag ? undefined : tag)}
-                data-testid={`button-tag-${tag}`}
-                className={`
-                  px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors
-                  ${selectedTag === tag
-                    ? "bg-primary text-white"
-                    : "bg-secondary text-muted-foreground hover:bg-secondary/80"}
-                `}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         )}
 
         {catalogTab === "site" && (

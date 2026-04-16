@@ -47,7 +47,6 @@ export const api = {
       input: z.object({
         search: z.string().optional(),
         genre: z.string().optional(),
-        tag: z.string().optional(),
         page: z.string().optional(),
         limit: z.string().optional(),
       }).optional(),

@@ -867,7 +867,7 @@ export async function registerRoutes(
       (p) => `<url><loc>${base}${p || "/"}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${p ? "0.8" : "1.0"}</priority></url>`
     );
     try {
-      const { data: musicList } = await storage.getMusicList(undefined, undefined, undefined, 1, 10000);
+      const { data: musicList } = await storage.getMusicList(undefined, undefined, 1, 10000);
       for (const m of musicList) {
         urls.push(`<url><loc>${base}/music/${m.id}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`);
       }
@@ -2511,10 +2511,10 @@ export async function registerRoutes(
 
   // === Music Routes ===
   app.get(api.music.list.path, async (req, res) => {
-    const { genre, search, tag, page, limit } = req.query as { genre?: string, search?: string, tag?: string, page?: string, limit?: string };
+    const { genre, search, page, limit } = req.query as { genre?: string; search?: string; page?: string; limit?: string };
     const pageNum = Math.max(1, parseInt(page || "1", 10));
     const limitNum = Math.min(500, Math.max(1, parseInt(limit || "30", 10)));
-    const result = await storage.getMusicList(genre, search, tag, pageNum, limitNum);
+    const result = await storage.getMusicList(genre, search, pageNum, limitNum);
     res.json(result);
   });
 
@@ -2575,27 +2575,9 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/music/tags", async (_req, res) => {
-    try {
-      const result = await db.execute(sql`
-        WITH expanded AS (
-          SELECT trim(unnest(string_to_array(music.tags, ','))) AS tag
-          FROM music
-          WHERE music.tags IS NOT NULL AND trim(music.tags) != ''
-        )
-        SELECT tag, count(*)::int AS cnt
-        FROM expanded
-        WHERE tag != ''
-        GROUP BY tag
-        ORDER BY cnt DESC
-        LIMIT 30
-      `);
-      const tags = (result.rows as { tag: string; cnt: number }[]).map((r) => r.tag);
-      res.json(tags);
-    } catch (e) {
-      console.error("[music/tags]", e);
-      res.json([]);
-    }
+  /** 태그 UI 제거 후 호환용 — 항상 빈 배열 */
+  app.get("/api/music/tags", (_req, res) => {
+    res.json([]);
   });
 
   app.get("/api/music/genres", async (_req, res) => {
@@ -3072,7 +3054,7 @@ export async function registerRoutes(
       const isDownloadable = isPremium ? input.isDownloadable : false;
       const price = isPremium ? input.price : 0;
 
-      const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId });
+      const music = await storage.createMusic({ ...input, imageFilename, isDownloadable, price, userId, tags: null });
       // 비동기로 "좋아할 만한 신곡" 알림 (이메일 + 푸시 + 앱 내 알림)
       const baseUrl = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const musicUrl = `${baseUrl}/music/${music.id}`;

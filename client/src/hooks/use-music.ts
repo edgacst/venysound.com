@@ -6,7 +6,6 @@ import type { CreateMusicRequest, Music } from "@shared/schema";
 export function useMusicList(params?: {
   search?: string;
   genre?: string;
-  tag?: string;
   page?: number;
   limit?: number;
   enabled?: boolean;
@@ -14,7 +13,6 @@ export function useMusicList(params?: {
   const queryString = new URLSearchParams();
   if (params?.search) queryString.append("search", params.search);
   if (params?.genre && params.genre !== "All" && params.genre !== "전체") queryString.append("genre", params.genre);
-  if (params?.tag) queryString.append("tag", params.tag);
   if (params?.page) queryString.append("page", String(params.page));
   if (params?.limit) queryString.append("limit", String(params.limit));
 

@@ -21,7 +21,7 @@ import { useState, useEffect, useMemo } from "react";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
 import {
-  Play, Pause, Heart, UserPlus, UserCheck, Music, Clock, Tag,
+  Play, Pause, Heart, UserPlus, UserCheck, Music, Clock,
   MessageSquare, Send, Loader2, ArrowLeft, Gift, Download, Bell,
   DollarSign, ListPlus, Share2, Disc3, Headphones, BarChart3, TrendingUp,
   FileText, ChevronDown, ChevronUp, BookOpen, PenLine, Trash2
@@ -548,13 +548,6 @@ export default function MusicDetail() {
               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 flex-wrap">
                 <Clock size={14} />
                 <span>{formatDate(musicData.createdAt)}</span>
-                {musicData.tags && (
-                  <>
-                    <span className="mx-1">·</span>
-                    <Tag size={14} />
-                    <span>{musicData.tags}</span>
-                  </>
-                )}
               </div>
 
               <div className="flex items-center gap-3 flex-wrap">
@@ -977,12 +970,6 @@ export default function MusicDetail() {
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">{t('musicDetail.infoGenre', '장르')}</span>
                       <span className="font-medium" data-testid="text-info-genre">{musicData.genre}</span>
-                    </div>
-                  )}
-                  {musicData.tags && (
-                    <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground">{t('musicDetail.infoTags', '태그')}</span>
-                      <span className="font-medium text-right truncate" data-testid="text-info-tags" title={musicData.tags}>{musicData.tags}</span>
                     </div>
                   )}
                   <div className="flex justify-between gap-2">
