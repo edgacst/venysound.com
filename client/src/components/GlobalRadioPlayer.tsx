@@ -441,10 +441,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       trackEndLockRef.current = true;
 
       const endedSrc = el.src;
-      el.pause();
-      el.currentTime = 0;
-      el.removeAttribute("src");
-      el.load();
       setPlaying(false);
       const shouldLimit = !authLoading && !isAuthenticated;
       const unauthFirstEnd = shouldLimit && unauthFirstEndedCountRef.current === 0;
@@ -455,82 +451,127 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       } else {
         setUserStopped(false);
       }
+
+      const releaseEndLockAndClearAudio = () => {
+        try {
+          el.pause();
+          el.removeAttribute("src");
+          el.load();
+        } catch {
+          /* ignore */
+        }
+        trackEndLockRef.current = false;
+      };
+
       const state = useRadioPlayerStore.getState();
       const currentSlug = state.slug;
-      useRadioPlayerStore.setState({ streamUrl: null });
       const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
       const musicId = match ? parseInt(match[1], 10) : NaN;
       const advanceBody =
         match && Number.isFinite(musicId) ? JSON.stringify({ currentMusicId: musicId }) : JSON.stringify({});
-      if (currentSlug && shouldAutoAdvance) {
-        const def = i18n.t("radio.defaultChannelName");
-        const chName = (state.channelName ?? def).trim() || def;
-        fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          keepalive: true,
-          body: advanceBody,
-        })
-          .then(async (r) => (r.ok ? r.json() : null))
-          .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
-            const applyChannelPayload = (channelData: Record<string, unknown>) => {
-              if (channelData?.status !== "live") return;
-              const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
-              const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
-              if (nowPlayingId == null && !nowPlayingObjectPath) return;
-              const newStreamUrl =
-                nowPlayingObjectPath != null
-                  ? String(nowPlayingObjectPath)
-                  : nowPlayingId != null
-                    ? `/api/music/${Number(nowPlayingId)}/stream`
-                    : null;
-              if (!newStreamUrl) return;
-              const s = useRadioPlayerStore.getState();
-              if (s.userStopped || s.slug !== currentSlug) return;
-              const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
-              s.setStream(
-                currentSlug,
-                resolvedName,
-                newStreamUrl,
-                typeof channelData?.nowPlayingElapsedSeconds === "number"
-                  ? (channelData.nowPlayingElapsedSeconds as number)
-                  : undefined,
-              );
-            };
 
-            if (data?.ok && data.nextMusicId != null) {
-              const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
-              const s = useRadioPlayerStore.getState();
-              if (!s.userStopped && s.slug === currentSlug) {
-                s.setStream(currentSlug, chName, nextUrl);
-              }
+      /** 비로그인·스트림 없음: 즉시 끊기(기존과 동일) */
+      if (!currentSlug || !shouldAutoAdvance) {
+        useRadioPlayerStore.setState({ streamUrl: null });
+        releaseEndLockAndClearAudio();
+        if (unauthFirstEnd && currentSlug) {
+          toast({
+            title: t("radio.loginContinuousRadioTitle", "음악을 연속해서 들으려면 로그인 하세요"),
+            description: t("radio.loginContinuousRadioDesc", "로그인 후에는 다음 곡으로 자동 재생됩니다."),
+            variant: "default",
+            action: (
+              <ToastAction altText={t("common.ok", "확인")} onClick={() => redirectToLogin()}>
+                {t("common.ok", "확인")}
+              </ToastAction>
+            ),
+          });
+        }
+        if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+        return;
+      }
+
+      // 로그인 청취: client-advance 응답 전까지 src 유지 → 네트워크 지연 동안 덜컹 무음 방지
+      try {
+        el.pause();
+      } catch {
+        /* ignore */
+      }
+
+      const def = i18n.t("radio.defaultChannelName");
+      const chName = (state.channelName ?? def).trim() || def;
+
+      const failAdvance = () => {
+        useRadioPlayerStore.setState({ streamUrl: null });
+        releaseEndLockAndClearAudio();
+      };
+
+      fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        keepalive: true,
+        body: advanceBody,
+      })
+        .then(async (r) => (r.ok ? r.json() : null))
+        .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+          let didSetNext = false;
+          const applyChannelPayload = (channelData: Record<string, unknown>) => {
+            if (channelData?.status !== "live") return;
+            const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+            const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+            if (nowPlayingId == null && !nowPlayingObjectPath) return;
+            const newStreamUrl =
+              nowPlayingObjectPath != null
+                ? String(nowPlayingObjectPath)
+                : nowPlayingId != null
+                  ? `/api/music/${Number(nowPlayingId)}/stream`
+                  : null;
+            if (!newStreamUrl) return;
+            const s = useRadioPlayerStore.getState();
+            if (s.userStopped || s.slug !== currentSlug) return;
+            const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
+            s.setStream(
+              currentSlug,
+              resolvedName,
+              newStreamUrl,
+              typeof channelData?.nowPlayingElapsedSeconds === "number"
+                ? (channelData.nowPlayingElapsedSeconds as number)
+                : undefined,
+            );
+            didSetNext = true;
+          };
+
+          if (data?.ok && data.nextMusicId != null) {
+            const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
+            const s = useRadioPlayerStore.getState();
+            if (!s.userStopped && s.slug === currentSlug) {
+              s.setStream(currentSlug, chName, nextUrl);
+              didSetNext = true;
+            }
+            if (!didSetNext) failAdvance();
+            return;
+          }
+          if (data?.reason === "not_live") {
+            failAdvance();
+            return;
+          }
+          try {
+            const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+            if (!r2.ok) {
+              failAdvance();
               return;
             }
-            if (data?.reason === "not_live") return;
-            try {
-              const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
-              if (!r2.ok) return;
-              const channelData = await r2.json();
-              applyChannelPayload(channelData);
-            } catch {
-              /* ignore */
-            }
-          })
-          .catch(() => {});
-      }
-      if (unauthFirstEnd && currentSlug) {
-        toast({
-          title: t("radio.loginContinuousRadioTitle", "음악을 연속해서 들으려면 로그인 하세요"),
-          description: t("radio.loginContinuousRadioDesc", "로그인 후에는 다음 곡으로 자동 재생됩니다."),
-          variant: "default",
-          action: (
-            <ToastAction altText={t("common.ok", "확인")} onClick={() => redirectToLogin()}>
-              {t("common.ok", "확인")}
-            </ToastAction>
-          ),
+            const channelData = await r2.json();
+            applyChannelPayload(channelData);
+            if (!didSetNext) failAdvance();
+          } catch {
+            failAdvance();
+          }
+        })
+        .catch(() => {
+          failAdvance();
         });
-      }
+
       if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
     },
     [

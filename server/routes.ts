@@ -7513,7 +7513,12 @@ export async function registerRoutes(
       if (!snap || !Array.isArray(snap.musicIds) || snap.musicIds.length === 0) return res.json({ ok: false, reason: "no_playlist" });
       // 낙관적 락: 이미 다른 리스너가 진행했으면 무시
       if (currentMusicId != null && channel.nowPlayingMusicId !== currentMusicId) return res.json({ ok: false, reason: "already_advanced" });
-      const curIdx = currentMusicId != null ? snap.musicIds.indexOf(currentMusicId) : snap.currentIndex;
+      const curIdx =
+        currentMusicId != null
+          ? snap.musicIds[snap.currentIndex] === currentMusicId
+            ? snap.currentIndex
+            : snap.musicIds.indexOf(currentMusicId)
+          : snap.currentIndex;
       const nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
       const nextId = snap.musicIds[nextIndex];
       await storage.updateRadioChannel(channel.id, {
@@ -7578,8 +7583,12 @@ export async function registerRoutes(
         if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempNextSnapshotIndex != null) {
           nextIndex = ch.nowPlayingTempNextSnapshotIndex;
         } else if (ch.nowPlayingMusicId != null) {
-          const curIdx = snap.musicIds.indexOf(ch.nowPlayingMusicId);
-          nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
+          const curIdxAuto =
+            snap.musicIds[snap.currentIndex] === ch.nowPlayingMusicId
+              ? snap.currentIndex
+              : snap.musicIds.indexOf(ch.nowPlayingMusicId);
+          const curIdxSafe = curIdxAuto >= 0 ? curIdxAuto : snap.currentIndex;
+          nextIndex = (curIdxSafe + 1) % snap.musicIds.length;
         } else {
           nextIndex = 0;
         }
