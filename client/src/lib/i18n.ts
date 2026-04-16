@@ -18,11 +18,14 @@ i18n
       ja: { translation: ja },
     },
     fallbackLng: 'ko',
+    supportedLngs: ['ko', 'en', 'zh', 'ja'],
     interpolation: {
       escapeValue: false,
     },
+    // localStorage에 사용자가 고른 값이 있을 때만 반영. navigator 자동 감지는
+    // OS/브라우저가 영어면 '선택 안 함'인데도 영어로 넘어가는 문제를 일으킴.
     detection: {
-      order: ['localStorage', 'navigator'],
+      order: ['localStorage'],
       caches: ['localStorage'],
     },
   });

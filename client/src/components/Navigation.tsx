@@ -96,7 +96,7 @@ export function Navigation() {
   );
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b border-white/5 bg-background/80 backdrop-blur-xl">
+    <nav className="sticky top-0 z-40 w-full border-b border-white/15 bg-background/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl">
       <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
         <Link href="/" className="flex-shrink-0 min-w-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
@@ -350,7 +350,7 @@ export function Navigation() {
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle">
                         <Globe size={16} />
-                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'en'}`)}
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
@@ -375,7 +375,7 @@ export function Navigation() {
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle-guest">
                         <Globe size={16} />
-                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'en'}`)}
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
