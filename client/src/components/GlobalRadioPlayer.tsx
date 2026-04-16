@@ -480,11 +480,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             description: t("radio.loginContinuousRadioDesc", "로그인 후에는 다음 곡으로 자동 재생됩니다."),
             variant: "default",
             action: (
-              <ToastAction altText={t("common.ok", "확인")} onClick={() => redirectToLogin()}>
-                {t("common.ok", "확인")}
+              <ToastAction altText={t("nav.login", "로그인")} onClick={() => redirectToLogin()}>
+                {t("nav.login", "로그인")}
               </ToastAction>
             ),
           });
+          handleStop();
         }
         if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
         return;
@@ -585,6 +586,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       toast,
       t,
       i18n,
+      handleStop,
     ],
   );
 

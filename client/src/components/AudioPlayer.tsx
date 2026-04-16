@@ -5,6 +5,8 @@ import { X, SkipBack, SkipForward, Play, Pause, Volume2, VolumeX, FileText, Repe
 import { Button } from "@/components/ui/button";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { redirectToLogin } from "@/lib/queryClient";
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
@@ -495,9 +497,16 @@ export function GlobalAudioPlayer() {
   const unauthStoppedRef = useRef(false);
 
   useEffect(() => {
-    // 곡이 바뀌거나 로그인 상태가 바뀌면 토스트 플래그 초기화
+    // 새 곡·외부 트랙마다 비로그인 종료 토스트 1회 플래그만 초기화
     unauthEndedToastShownRef.current = false;
-    unauthStoppedRef.current = false;
+  }, [activeMusicId, activeExternalTrack]);
+
+  useEffect(() => {
+    // 비로그인으로 새 재생을 시작할 때만 "게스트 한도로 멈춤" 상태 해제 (closePlayer 후에도 로그인 안내용 ref 유지)
+    if (user?.id) return;
+    if (activeMusicId != null || activeExternalTrack != null) {
+      unauthStoppedRef.current = false;
+    }
   }, [activeMusicId, activeExternalTrack, user?.id]);
 
   useEffect(() => {
@@ -759,8 +768,36 @@ export function GlobalAudioPlayer() {
           unauthStoppedRef.current = true;
           toast({
             title: t("player.loginContinuousPlayTitle", "음악 연속 듣기를 하시려면 로그인 하세요"),
+            description: t("player.loginContinuousPlayDesc", "로그인하면 이어서 들을 수 있습니다."),
             variant: "default",
+            action: (
+              <ToastAction altText={t("nav.login", "로그인")} onClick={() => redirectToLogin()}>
+                {t("nav.login", "로그인")}
+              </ToastAction>
+            ),
           });
+          // 재생은 이미 종료됨 — 글로벌 플레이바·오디오 리소스만 정리 (연속 재생 분기는 위와 동일)
+          isClosingRef.current = true;
+          const aud = audioRef.current;
+          if (aud) {
+            try {
+              aud.pause();
+              aud.removeAttribute("src");
+              aud.load();
+            } catch {
+              /* ignore */
+            }
+          }
+          if (audioContextRef.current) {
+            audioContextRef.current.close().catch(() => {});
+            audioContextRef.current = null;
+            sourceNodeRef.current = null;
+            eqFiltersRef.current = [];
+          }
+          closePlayer();
+          setTimeout(() => {
+            isClosingRef.current = false;
+          }, 300);
         }
       }
     };
@@ -795,7 +832,7 @@ export function GlobalAudioPlayer() {
       audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
     };
-  }, [isSeeking, tracker, playNext, user, toast, t, displayMusic?.title]);
+  }, [isSeeking, tracker, playNext, user, toast, t, displayMusic?.title, closePlayer]);
 
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
