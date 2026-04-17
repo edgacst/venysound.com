@@ -848,6 +848,9 @@ export async function registerRoutes(
       "/music",
       "/popular",
       "/explore",
+      "/upload",
+      "/bulk-upload",
+      "/radio",
       "/community",
       "/about",
       "/pricing",
@@ -861,6 +864,7 @@ export async function registerRoutes(
       "/file-guide",
       "/suno-guide",
       "/create-music",
+      "/global-distribution-guide",
     ];
     const now = new Date().toISOString().slice(0, 10);
     let urls = staticPaths.map(

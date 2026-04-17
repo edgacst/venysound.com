@@ -30,7 +30,7 @@ function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   return <WsProvider userId={user?.id ?? undefined}>{children}</WsProvider>;
 }
 
-const DEFAULT_TITLE = "VenySound - 음악공유, 음원업로드, 음원공유사이트";
+const DEFAULT_TITLE = "VenySound - 음악만들기, AI음악생성, 라디오방송, 음악공유, 음원업로드";
 
 /** 라우트별 document.title 설정 (SEO·탭 제목·공유 시 제목) */
 function PageTitle() {
@@ -59,7 +59,7 @@ function PageTitle() {
       popular: "인기 음원 TOP 20 | VenySound",
       upload: "음원 업로드 | VenySound - 음원업로드",
       "bulk-upload": "대량 업로드 | VenySound - 음원업로드",
-      radio: "실시간 DJ 방송 · 베니방송국 | VenySound",
+      radio: "라디오방송·실시간 DJ 방송 | VenySound - 베니방송국",
       "radio/create": "방송 채널 만들기 | VenySound",
       guide: "스타트 가이드 | VenySound",
       pricing: "요금제 | VenySound",
@@ -70,7 +70,7 @@ function PageTitle() {
       notices: t("noticesPage.documentTitle"),
       community: "커뮤니티 | VenySound",
       credits: "지갑 | VenySound",
-      "create-music": "AI 음악 생성 | VenySound",
+      "create-music": "AI음악생성·AI음악만들기·음악만들기 | VenySound",
       "suno-guide": "음악 만들기 가이드 | VenySound",
       "global-distribution-guide": "글로벌 음원출시로 수익방법 | VenySound",
     };
