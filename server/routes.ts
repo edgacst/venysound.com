@@ -130,6 +130,45 @@ function subscriptionPaymentEmailKind(
   return getActivePaidTierIds(view, now).includes(paidTier) ? "renewed" : "started";
 }
 
+/** 구독 결제 완료 시 마이페이지·/notifications 에 표시되는 인앱 알림 (이메일과 별도) */
+async function notifyUserSubscriptionPaidInApp(input: {
+  userId: string;
+  tierPaid: PaidSubscriptionTierId;
+  billingPeriod: string | null | undefined;
+  amountWon: number;
+  source: "payup_card" | "bank_transfer";
+}): Promise<void> {
+  const labels: Record<string, string> = {
+    starter: "Starter",
+    basic: "Basic",
+    pro: "Pro",
+    premium: "Premium",
+  };
+  const planLabel = labels[input.tierPaid] ?? input.tierPaid;
+  const bp = input.billingPeriod === "yearly" || input.billingPeriod === "monthly" ? input.billingPeriod : null;
+  const periodLabel = bp === "yearly" ? "연간" : bp === "monthly" ? "월간" : "";
+  const message = periodLabel
+    ? `${planLabel} ${periodLabel} 구독 결제가 완료되었습니다. 멤버십·이용 기간은 마이페이지에서 확인할 수 있습니다.`
+    : `${planLabel} 구독 결제가 완료되었습니다. 멤버십·이용 기간은 마이페이지에서 확인할 수 있습니다.`;
+  try {
+    await storage.createNotification({
+      userId: input.userId,
+      type: "system",
+      message,
+      payload: {
+        subscriptionPaid: true,
+        planId: input.tierPaid,
+        billingPeriod: bp,
+        amountWon: input.amountWon,
+        source: input.source,
+      },
+      url: `/profile/${input.userId}`,
+    });
+  } catch (e) {
+    console.error("[subscription] in-app notify failed", e);
+  }
+}
+
 /**
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
  * plan 은 DB 대소문자 불일치를 허용하도록 정규화한다.
@@ -6523,6 +6562,13 @@ export async function registerRoutes(
           ? payment.billingPeriod
           : null;
       const bankRecipient = payUser ? `${payUser.firstName || ""} ${payUser.lastName || ""}`.trim() || null : null;
+      await notifyUserSubscriptionPaidInApp({
+        userId: payment.userId,
+        tierPaid,
+        billingPeriod: bankBp,
+        amountWon: payment.amount,
+        source: "payup_card",
+      });
       void sendSubscriptionEmail(payUser?.email, {
         kind: bankSubKind,
         planId: tierPaid,
@@ -6640,6 +6686,13 @@ export async function registerRoutes(
       const bankRecipient = payUser
         ? `${payUser.firstName || ""} ${payUser.lastName || ""}`.trim() || null
         : null;
+      await notifyUserSubscriptionPaidInApp({
+        userId: payment.userId,
+        tierPaid,
+        billingPeriod: bankBp,
+        amountWon: payment.amount,
+        source: "bank_transfer",
+      });
       void sendSubscriptionEmail(payUser?.email, {
         kind: bankSubKind,
         planId: tierPaid,
