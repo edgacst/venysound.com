@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://venysound.com/api/sitemap.xml
+Sitemap: https://venysound.com/sitemap.xml

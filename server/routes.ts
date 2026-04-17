@@ -839,9 +839,9 @@ export async function registerRoutes(
     res.status(200).json({ ok: true, ...(builtAt ? { builtAt } : {}) });
   });
 
-  // 사이트맵 (SEO) — /api 경로로 두어 정적·캐시와 겹치지 않게 함
-  app.get("/sitemap.xml", (_req, res) => res.redirect(301, "/api/sitemap.xml"));
-  app.get("/api/sitemap.xml", async (_req, res) => {
+  // 사이트맵 (SEO) — 루트 /sitemap.xml 이 표준. /api/sitemap.xml 은 구버전·GSC URL 호환.
+  // 일부 프록시가 /api/* 만 다르게 처리해 봇이 "가져올 수 없음"이 되는 경우가 있어 둘 다 200 본문 제공.
+  const sendSitemapXml = async (_req: Request, res: Response) => {
     const base = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
     const staticPaths = [
       "",
@@ -879,8 +879,11 @@ export async function registerRoutes(
       // DB 오류 시 정적 페이지만 포함
     }
     const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
+    res.setHeader("Cache-Control", "public, max-age=600");
     res.type("application/xml").send(xml);
-  });
+  };
+  app.get("/sitemap.xml", sendSitemapXml);
+  app.get("/api/sitemap.xml", sendSitemapXml);
 
   // === AI Music: Suno API (sunoapi.org) 또는 AIMusicAPI 프록시 ===
   const SUNOAPI_BASE = "https://api.sunoapi.org";
