@@ -48,6 +48,9 @@ import { submitPayupDanalDirectCheckout } from "@/lib/payup-checkout";
 
 const PAID_PLAN_ORDER: PaidSubscriptionTierId[] = ["starter", "basic", "pro", "premium"];
 
+/** PG 복귀가 끊겨도 요금제에서 주문 상태를 다시 확인할 수 있게 */
+const PAYUP_PENDING_ORDER_KEY = "venysound_payup_pending_order";
+
 export default function Pricing() {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
@@ -151,6 +154,11 @@ export default function Pricing() {
     const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
     const p = params.get("payup");
     if (p === "success") {
+      try {
+        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+      } catch {
+        /* ignore */
+      }
       toast({
         title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
         description: t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
@@ -160,6 +168,11 @@ export default function Pricing() {
       window.history.replaceState(null, "", "/pricing");
     }
     if (p === "cancel") {
+      try {
+        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+      } catch {
+        /* ignore */
+      }
       toast({
         title: t("pricing.payupCancelledTitle", "결제 취소"),
         description: t("pricing.payupCancelledDesc", "카드 결제를 완료하지 않았습니다."),
@@ -168,6 +181,11 @@ export default function Pricing() {
       window.history.replaceState(null, "", "/pricing");
     }
     if (p === "fail") {
+      try {
+        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+      } catch {
+        /* ignore */
+      }
       toast({
         title: t("pricing.payupFailTitle", "결제 실패"),
         description: t("pricing.payupFailDesc", "카드 승인에 실패했습니다. 다시 시도하거나 계좌이체를 이용해 주세요."),
@@ -177,12 +195,81 @@ export default function Pricing() {
     }
   }, [searchString, toast, t, queryClient]);
 
+  const [payupPendingOrder, setPayupPendingOrder] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user) {
+      setPayupPendingOrder(null);
+      return;
+    }
+    try {
+      const o = sessionStorage.getItem(PAYUP_PENDING_ORDER_KEY);
+      setPayupPendingOrder(o && o.trim() ? o.trim() : null);
+    } catch {
+      setPayupPendingOrder(null);
+    }
+  }, [user?.id]);
+
+  const payupStatusCheckMutation = useMutation({
+    mutationFn: async (orderNumber: string) => {
+      const res = await fetch(
+        `/api/subscription/payup/checkout-status?orderNumber=${encodeURIComponent(orderNumber)}`,
+        { credentials: "include", cache: "no-store" },
+      );
+      if (!res.ok) throw new Error("status");
+      return res.json() as Promise<{ status: "paid" | "pending" | "none" }>;
+    },
+    onSuccess: (data) => {
+      if (data.status === "paid") {
+        try {
+          sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+        } catch {
+          /* ignore */
+        }
+        setPayupPendingOrder(null);
+        toast({
+          title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
+          description: t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
+        });
+        void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        return;
+      }
+      if (data.status === "pending") {
+        toast({
+          title: t("pricing.payupStatusPendingTitle", "아직 결제 완료 처리 전입니다"),
+          description: t(
+            "pricing.payupStatusPendingDesc",
+            "PG에서 결제를 마쳤다면 잠시 후 다시「상태 확인」을 눌러 주세요. 계속 pending이면 고객센터로 문의해 주세요.",
+          ),
+        });
+        return;
+      }
+      try {
+        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+      } catch {
+        /* ignore */
+      }
+      setPayupPendingOrder(null);
+      toast({
+        title: t("pricing.payupStatusNoneTitle", "진행 중인 카드 주문이 없습니다"),
+        description: t("pricing.payupStatusNoneDesc", "취소했거나 다른 계정으로 결제했을 수 있습니다. 필요하면 카드 결제를 다시 시도해 주세요."),
+        variant: "destructive",
+      });
+    },
+    onError: () => {
+      toast({
+        title: t("pricing.payupStatusCheckFailed", "상태를 확인하지 못했습니다"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const payupSubscribeMutation = useMutation({
     mutationFn: async ({ period, planId }: { period: "monthly" | "yearly"; planId: PaidSubscriptionTierId }) => {
       const isMobile =
         typeof window !== "undefined" &&
-        typeof window.matchMedia === "function" &&
-        window.matchMedia("(max-width: 640px)").matches;
+        (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "") ||
+          (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 768px)").matches));
       const res = await apiRequest("POST", "/api/subscription/payup/order", {
         billingPeriod: period,
         planId,
@@ -228,6 +315,11 @@ export default function Pricing() {
       }>;
     },
     onSuccess: (data) => {
+      try {
+        sessionStorage.setItem(PAYUP_PENDING_ORDER_KEY, data.orderNumber);
+      } catch {
+        /* ignore */
+      }
       submitPayupDanalDirectCheckout({
         starturl: data.starturl,
         startparams: data.startparams,
@@ -501,6 +593,48 @@ export default function Pricing() {
     <PageTransition>
       <div className="min-h-screen bg-background flex flex-col">
         <Navigation />
+        {user && payupPendingOrder ? (
+          <div className="container max-w-7xl mx-auto px-4 pt-4" data-testid="card-payup-recovery">
+            <Card className="p-4 border-amber-500/40 bg-amber-500/10">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm">
+                <p className="text-muted-foreground">
+                  {t(
+                    "pricing.payupRecoveryHint",
+                    "카드 결제창에서 돌아온 뒤 멤버십이 그대로라면, 복귀 처리가 끝나기 전일 수 있습니다. 아래를 눌러 서버 상태를 확인해 보세요.",
+                  )}
+                </p>
+                <div className="flex flex-wrap gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={payupStatusCheckMutation.isPending}
+                    onClick={() => payupPendingOrder && payupStatusCheckMutation.mutate(payupPendingOrder)}
+                  >
+                    {payupStatusCheckMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    ) : null}
+                    {t("pricing.payupCheckStatus", "결제 상태 확인")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      try {
+                        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+                      } catch {
+                        /* ignore */
+                      }
+                      setPayupPendingOrder(null);
+                    }}
+                  >
+                    {t("pricing.payupRecoveryDismiss", "나중에")}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        ) : null}
         <div className="container max-w-7xl mx-auto px-4 py-12">
           <div className="text-center mb-12">
             <h1 className="text-4xl font-bold mb-4" data-testid="text-pricing-title">

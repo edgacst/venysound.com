@@ -46,8 +46,18 @@ export function submitPayupDanalDirectCheckout(payload: PayupDanalDirectCheckout
   form.action = starturl;
   form.setAttribute("accept-charset", "UTF-8");
   form.enctype = "application/x-www-form-urlencoded";
-  const formTarget = String(import.meta.env.VITE_PAYUP_DANAL_FORM_TARGET ?? "").trim().toLowerCase();
-  form.target = formTarget === "_top" || formTarget === "_blank" ? formTarget : "_self";
+  const formTargetEnv = String(import.meta.env.VITE_PAYUP_DANAL_FORM_TARGET ?? "").trim().toLowerCase();
+  const coarseMobile =
+    typeof window !== "undefined" &&
+    (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || "") ||
+      (typeof window.matchMedia === "function" && window.matchMedia("(max-width: 768px)").matches));
+  const formTarget =
+    formTargetEnv === "_top" || formTargetEnv === "_blank" || formTargetEnv === "_self"
+      ? formTargetEnv
+      : coarseMobile
+        ? "_top"
+        : "_self";
+  form.target = formTarget;
   form.style.display = "none";
 
   const addHiddenInput = (name: string, value: string) => {

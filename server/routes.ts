@@ -326,23 +326,41 @@ function sanitizePayupOrderField(input: string, maxLen: number): string {
   return s.slice(0, maxLen);
 }
 
+/** PG가 쿼리 키 이름을 바꿔 보내는 경우 대비 — 값이 주문 JSON 형태인지 */
+function looksLikePayupReturnParamsPayload(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 12) return false;
+  const head = t.startsWith("%7B") || t.startsWith("%7b") ? "{" : t.slice(0, 1);
+  if (head !== "{") return false;
+  let dec = t;
+  try {
+    if (t.includes("%")) dec = decodeURIComponent(t);
+  } catch {
+    /* keep t */
+  }
+  return /orderNumber|ORDERNUMBER|orderId|ORDER_ID|ORDERNO/i.test(dec);
+}
+
+function firstPayupReturnParamsFromFlatRecord(src: Record<string, unknown>): string {
+  const known = ["RETURNPARAMS", "returnParams", "ReturnParams", "return_params"];
+  for (const k of known) {
+    const v = src[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+  }
+  for (const [, v] of Object.entries(src)) {
+    if (typeof v === "string" && looksLikePayupReturnParamsPayload(v)) return v.trim();
+    if (Array.isArray(v) && typeof v[0] === "string" && looksLikePayupReturnParamsPayload(v[0])) return v[0].trim();
+  }
+  return "";
+}
+
 function readPayupReturnParamsFromReq(req: Request): string {
   const q = req.query as Record<string, unknown>;
   const b = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
-  const keys = ["RETURNPARAMS", "returnParams", "ReturnParams"];
-  for (const k of keys) {
-    const pick = (src: Record<string, unknown>) => {
-      const v = src[k];
-      if (typeof v === "string" && v.trim()) return v.trim();
-      if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
-      return "";
-    };
-    const fromQ = pick(q);
-    if (fromQ) return fromQ;
-    const fromB = pick(b);
-    if (fromB) return fromB;
-  }
-  return "";
+  const fromQ = firstPayupReturnParamsFromFlatRecord(q);
+  if (fromQ) return fromQ;
+  return firstPayupReturnParamsFromFlatRecord(b);
 }
 
 function payupTxnIdFromParsed(parsed: Record<string, unknown>): string | undefined {
@@ -6126,8 +6144,12 @@ export async function registerRoutes(
       if (String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
         orderBody.merchantId = cred.merchantId;
       }
-      /** returnUrl 은 규격 표에 없음 — 불필요 파라미터 거절(6003) 방지: 명시 true 일 때만 전송 */
-      if (userAgent === "WM" && String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "").trim().toLowerCase() === "true") {
+      /**
+       * 모바일(WM): 일부 단말·인앱 브라우저에서 복귀 안정화를 위해 returnUrl 권장.
+       * 가맹점이 6003 등으로 거절하면 PAYUP_ORDER_WM_RETURN_URL=false 로 끄세요.
+       */
+      const wmReturnOff = String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "").trim().toLowerCase() === "false";
+      if (userAgent === "WM" && !wmReturnOff) {
         orderBody.returnUrl = authReturnUrl;
       }
       if (userEmailTrim) {
@@ -6266,8 +6288,12 @@ export async function registerRoutes(
         (typeof body.orderId === "string" && body.orderId) ||
         "";
       if (!orderNumber) {
+        const q = req.query as Record<string, unknown>;
         console.warn("[payup] complete: orderNumber 없음", req.method, {
-          queryKeys: Object.keys(req.query || {}),
+          queryKeys: Object.keys(q),
+          queryValueLens: Object.entries(q)
+            .slice(0, 16)
+            .map(([k, v]) => [k, typeof v === "string" ? v.length : Array.isArray(v) ? String(v[0] ?? "").length : 0]),
           hasBody: Object.keys(body).length > 0,
           blobLen: blob.length,
         });
@@ -6300,13 +6326,19 @@ export async function registerRoutes(
 
       const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob);
       if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
-        console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber);
+        const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
+        console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
       const payData = payRes.data as Record<string, unknown>;
       if ((pickPayupStr(payData, "responseCode", "RESPONSECODE") ?? "") !== "0000") {
-        console.error("[payup] 승인 거절", pickPayupStr(payData, "responseMsg", "RESPONSEMSG"), orderNumber);
+        console.error(
+          "[payup] 승인 거절",
+          orderNumber,
+          pickPayupStr(payData, "responseCode", "RESPONSECODE"),
+          pickPayupStr(payData, "responseMsg", "RESPONSEMSG"),
+        );
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -6361,6 +6393,34 @@ export async function registerRoutes(
   };
   app.post("/api/subscription/payup/complete", handlePayupSubscriptionComplete);
   app.get("/api/subscription/payup/complete", handlePayupSubscriptionComplete);
+
+  /**
+   * 카드창 복귀 후 멤버십이 안 바뀐 것처럼 보일 때 — 동일 주문이 서버에서 paid 됐는지 확인 (폴링·복구 UI용)
+   */
+  app.get("/api/subscription/payup/checkout-status", isAuthenticated, async (req, res) => {
+    try {
+      const orderNumber = String(req.query.orderNumber ?? "").trim();
+      if (!orderNumber) {
+        return res.status(400).json({ message: "orderNumber 가 필요합니다." });
+      }
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const [row] = await db.select().from(payments).where(eq(payments.orderId, orderNumber));
+      if (!row || row.userId !== userId) {
+        return res.json({ status: "none" as const });
+      }
+      if (row.status === "paid") {
+        return res.json({ status: "paid" as const });
+      }
+      if (row.status === "pending" && row.paymentKey === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+        return res.json({ status: "pending" as const });
+      }
+      return res.json({ status: "none" as const });
+    } catch (err) {
+      console.error("[payup] checkout-status", err);
+      res.status(500).json({ message: "상태를 확인하지 못했습니다." });
+    }
+  });
 
   /** [페이업] 신용카드 부분취소 RESTful API — 관리자 전용 */
   app.post("/api/admin/payup/part-cancel", isAuthenticated, isAdmin, async (req, res) => {
