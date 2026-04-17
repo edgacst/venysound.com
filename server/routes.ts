@@ -181,6 +181,34 @@ async function applyBankTransferSubscriptionToUserFromPayment(payment: {
 /** [페이업] 인증결제 DANAL 다이렉트 — 주문(order) 후 결제창·auth_return·payUrl 승인 대기 */
 const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_direct";
 
+/** auth_return 쿼리의 PG TID 등으로 pending 구독 카드 주문 역추적 (주문 응답에서 payup_meta.pgTransactionId 등 저장 필요) */
+async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
+  const ref = pgRef.trim();
+  if (!ref) return undefined;
+  const rows = await db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        eq(payments.status, "pending"),
+        eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY),
+        or(
+          sql`coalesce(${payments.payupMeta}->>'pgTransactionId','') = ${ref}`,
+          sql`coalesce(${payments.payupMeta}->>'pgTid','') = ${ref}`,
+        ),
+      ),
+    )
+    .limit(3);
+  if (rows.length > 1) {
+    console.warn(
+      "[payup] complete: 동일 PG 참조로 pending 주문이 여러 건",
+      ref,
+      rows.map((r) => r.orderId),
+    );
+  }
+  return rows[0];
+}
+
 function payupSubscriptionSiteBase(): string {
   const s = (process.env.SITE_URL || "").trim().replace(/\/$/, "");
   if (!s) return "";
@@ -361,6 +389,52 @@ function readPayupReturnParamsFromReq(req: Request): string {
   const fromQ = firstPayupReturnParamsFromFlatRecord(q);
   if (fromQ) return fromQ;
   return firstPayupReturnParamsFromFlatRecord(b);
+}
+
+/**
+ * 일부 단말·GET 복귀에서 RETURNPARAMS 가 비고 쿼리에만 PG·결과 코드가 올 때 — payUrl 승인 POST용 JSON 문자열 재구성.
+ * 키는 페이업/단말이 보낸 표기를 그대로 유지(대소문자 혼용).
+ */
+function buildPayupReturnParamsBlobFromQueryBody(q: Record<string, unknown>, body: Record<string, unknown>): string {
+  const merged: Record<string, string> = {};
+  const ingest = (src: Record<string, unknown>) => {
+    for (const [k, v] of Object.entries(src)) {
+      const compact = k.replace(/_/g, "").toLowerCase();
+      const allowed =
+        compact === "transactionid" ||
+        compact === "tid" ||
+        compact === "ordernumber" ||
+        compact === "orderid" ||
+        compact === "moid" ||
+        compact === "returncode" ||
+        compact === "returnmsg" ||
+        compact === "amount";
+      if (!allowed) continue;
+      const s =
+        typeof v === "string"
+          ? v.trim()
+          : Array.isArray(v) && typeof v[0] === "string"
+            ? v[0].trim()
+            : "";
+      if (!s || s.length > 4096) continue;
+      merged[k] = s;
+    }
+  };
+  ingest(q);
+  ingest(body);
+  const hasSignal =
+    merged.transactionId ||
+    merged.TRANSACTIONID ||
+    merged.TID ||
+    merged.tid ||
+    merged.orderNumber ||
+    merged.ORDERNUMBER ||
+    merged.orderId ||
+    merged.ORDER_ID ||
+    merged.moid ||
+    merged.MOID;
+  if (!hasSignal) return "";
+  return JSON.stringify(merged);
 }
 
 function payupTxnIdFromParsed(parsed: Record<string, unknown>): string | undefined {
@@ -6267,12 +6341,18 @@ export async function registerRoutes(
       );
       const cardOut = (pf.cardCode && pf.cardCode.length >= 4 ? pf.cardCode : cardCode4).slice(0, 4);
 
-      await db
-        .update(payments)
-        .set({
-          payupMeta: { payUrl: pf.payUrl, startUrl: pf.starturl, cancelUrl: cancelOut, cardCode: cardOut },
-        })
-        .where(eq(payments.id, insertedId));
+      const pgTxnOrder = pickPayupStr(flat, "transactionId", "TRANSACTIONID", "tranId", "TRAN_ID");
+      const pgTidOrder = pickPayupStr(flat, "tid", "TID");
+      const payupMetaBase: Record<string, unknown> = {
+        payUrl: pf.payUrl,
+        startUrl: pf.starturl,
+        cancelUrl: cancelOut,
+        cardCode: cardOut,
+      };
+      if (pgTxnOrder) payupMetaBase.pgTransactionId = pgTxnOrder;
+      if (pgTidOrder && pgTidOrder !== pgTxnOrder) payupMetaBase.pgTid = pgTidOrder;
+
+      await db.update(payments).set({ payupMeta: payupMetaBase }).where(eq(payments.id, insertedId));
 
       return res.json({
         starturl: pf.starturl,
@@ -6296,7 +6376,12 @@ export async function registerRoutes(
         return;
       }
       const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
-      const blob = readPayupReturnParamsFromReq(req);
+      const q = req.query as Record<string, unknown>;
+      let blob = readPayupReturnParamsFromReq(req);
+      if (!blob.trim()) {
+        const synth = buildPayupReturnParamsBlobFromQueryBody(q, body);
+        if (synth) blob = synth;
+      }
       const parsed = blob ? tryParsePayupReturnJson(blob) : null;
 
       const pickFlat = (src: Record<string, unknown>, k: string): string => {
@@ -6305,8 +6390,6 @@ export async function registerRoutes(
         if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
         return "";
       };
-
-      const q = req.query as Record<string, unknown>;
       let orderNumber =
         (parsed && payupOrderNumberFromParsed(parsed)) ||
         (typeof body.orderNumber === "string" && body.orderNumber.trim()) ||
@@ -6328,6 +6411,23 @@ export async function registerRoutes(
           const canon = tidQ.toUpperCase();
           const [hit] = await db.select().from(payments).where(eq(payments.orderId, canon)).limit(1);
           if (hit) orderNumber = canon;
+        }
+      }
+
+      /** 쿼리 transactionId 가 PG TID 인 경우 — 주문 응답에서 저장한 payup_meta.pgTransactionId / pgTid 로 역조회 */
+      if (!orderNumber) {
+        const pgRef =
+          pickFlat(q, "transactionId") ||
+          pickFlat(q, "TRANSACTIONID") ||
+          pickFlat(q, "TID") ||
+          pickFlat(q, "tid") ||
+          pickFlat(body, "transactionId") ||
+          pickFlat(body, "TRANSACTIONID") ||
+          pickFlat(body, "TID") ||
+          pickFlat(body, "tid");
+        if (pgRef && !looksLikeVenysoundPayupMerchantOrderId(pgRef)) {
+          const hit = await findPendingPayupSubscriptionByPgRef(pgRef);
+          if (hit) orderNumber = hit.orderId;
         }
       }
 
@@ -6365,13 +6465,13 @@ export async function registerRoutes(
 
       const meta = payment.payupMeta as Record<string, unknown> | null | undefined;
       const payUrlRaw = meta && typeof meta.payUrl === "string" ? meta.payUrl.trim() : "";
-      if (!payUrlRaw || !blob) {
+      if (!payUrlRaw || !blob.trim()) {
         console.error("[payup] complete: payUrl 또는 RETURNPARAMS 없음", orderNumber);
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
 
-      const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob);
+      const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob.trim());
       if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
         console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
