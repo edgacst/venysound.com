@@ -6249,8 +6249,8 @@ export async function registerRoutes(
     }
   });
 
-  /** 규격서 3.3·3.4 — auth_return 수신 후 payUrl 로 RETURNPARAMS(JSON) 승인 */
-  app.post("/api/subscription/payup/complete", async (req, res) => {
+  /** 규격서 3.3·3.4 — auth_return 수신 후 payUrl 로 RETURNPARAMS(JSON) 승인. 일부 PG는 브라우저 GET 리다이렉트로 복귀 → GET·POST 모두 수신 */
+  const handlePayupSubscriptionComplete = async (req: Request, res: Response): Promise<void> => {
     try {
       const cred = getPayupCredentials();
       if (!cred.ok) {
@@ -6266,7 +6266,11 @@ export async function registerRoutes(
         (typeof body.orderId === "string" && body.orderId) ||
         "";
       if (!orderNumber) {
-        console.warn("[payup] complete: orderNumber 없음");
+        console.warn("[payup] complete: orderNumber 없음", req.method, {
+          queryKeys: Object.keys(req.query || {}),
+          hasBody: Object.keys(body).length > 0,
+          blobLen: blob.length,
+        });
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -6354,7 +6358,9 @@ export async function registerRoutes(
       console.error("PayUp subscription complete error:", err);
       redirectPricingPayupOutcome(res, "fail");
     }
-  });
+  };
+  app.post("/api/subscription/payup/complete", handlePayupSubscriptionComplete);
+  app.get("/api/subscription/payup/complete", handlePayupSubscriptionComplete);
 
   /** [페이업] 신용카드 부분취소 RESTful API — 관리자 전용 */
   app.post("/api/admin/payup/part-cancel", isAuthenticated, isAdmin, async (req, res) => {
