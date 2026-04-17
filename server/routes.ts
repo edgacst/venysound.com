@@ -223,7 +223,8 @@ function pickPayupDirectOrderFields(data: Record<string, unknown>) {
 
 /**
  * 페이업 AP 주문 `amount` 문자열.
- * - 기본 pad12: 12자리 0패딩
+ * - 기본(미설정): 비패딩 숫자만 전달 (페이업 운영: "5500" — "000000005500" 등 패딩 금지)
+ * - PAYUP_ORDER_AMOUNT_STYLE=pad12 : 12자리 0패딩 (구·테스트 가맹점만)
  * - PAYUP_ORDER_AMOUNT_STYLE=short|plain : 비패딩, 최대 10자리
  * - PAYUP_ORDER_AMOUNT_STYLE=pad10 : 10자리 0패딩
  * - 레거시: PAYUP_ORDER_AMOUNT_SHORT=true → short 와 동일
@@ -235,11 +236,12 @@ function formatPayupOrderAmountForRequest(amountWon: number): string {
     style = "short";
   }
   const s = String(Math.max(0, Math.floor(amountWon)));
-  if (style === "short" || style === "plain") {
-    if (s.length > 10) {
-      throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
+
+  if (style === "pad12" || style === "12") {
+    if (s.length > 12) {
+      throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
     }
-    return s;
+    return s.padStart(12, "0");
   }
   if (style === "pad10" || style === "10") {
     if (s.length > 10) {
@@ -247,16 +249,21 @@ function formatPayupOrderAmountForRequest(amountWon: number): string {
     }
     return s.padStart(10, "0");
   }
+  if (style === "short" || style === "plain") {
+    if (s.length > 10) {
+      throw new Error("PAYUP_AMOUNT_EXCEEDS_10_DIGITS");
+    }
+    return s;
+  }
   if (s.length > 12) {
     throw new Error("PAYUP_AMOUNT_EXCEEDS_12_DIGITS");
   }
-  return s.padStart(12, "0");
+  return s;
 }
 
 /**
- * 규격서 3.1.1 서명 예시: `…|1004|…` 처럼 **비패딩 숫자**로 해시.
- * 본문 `amount` 는 `formatPayupOrderAmountForRequest` 로 12자리 등일 수 있어, 일부 PG는 서명만 비패딩을 요구함.
- * 본문과 동일 문자열로 서명해야 하면 `PAYUP_ORDER_SIGNATURE_AMOUNT=body`
+ * 주문 서명: merchantId|orderNumber|amount|apiCertKey|timestamp 의 amount.
+ * 기본은 원 단위 정수 문자열(비패딩). 본문 amount와 **반드시 동일한 문자열**로 서명해야 하면 `PAYUP_ORDER_SIGNATURE_AMOUNT=body`
  */
 function formatPayupOrderAmountForSignature(amountWon: number, bodyAmount: string): string {
   const mode = String(process.env.PAYUP_ORDER_SIGNATURE_AMOUNT ?? "").trim().toLowerCase();
@@ -6164,7 +6171,7 @@ export async function registerRoutes(
             path: orderPath,
             bodyFormat: orderBodyFormat === "form" || orderBodyFormat === "urlencoded" ? "form" : "json",
             bodyKeys: Object.keys(orderPayload),
-            amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "pad12(default)",
+            amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "plain(default)",
             jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
             signatureAmount: amtForSignature,
             bodyAmount: amtForOrder,
