@@ -14,14 +14,29 @@ export function isPayupCardPaymentKey(paymentKey: string | null | undefined): bo
   return normalizePaymentKeyString(paymentKey).toLowerCase().startsWith("payup:");
 }
 
+/** 승인 완료 시 txnId, 주문 단계만 있을 때 pgTransactionId / pgTid */
+export function payupMetaTransactionIdFromPayupMeta(payupMeta: unknown): string {
+  const meta = payupMeta && typeof payupMeta === "object" ? (payupMeta as Record<string, unknown>) : null;
+  if (!meta) return "";
+  for (const k of ["txnId", "pgTransactionId", "pgTid"] as const) {
+    const v = meta[k];
+    const s =
+      typeof v === "string"
+        ? v.trim()
+        : typeof v === "number" && Number.isFinite(v)
+          ? String(v).trim()
+          : "";
+    if (s) return s;
+  }
+  return "";
+}
+
 function payupMetaTxnId(payment: { payupMeta: unknown }): string {
-  const meta = payment.payupMeta && typeof payment.payupMeta === "object" ? (payment.payupMeta as Record<string, unknown>) : null;
-  const tid = meta && typeof meta.txnId === "string" ? meta.txnId.trim() : "";
-  return tid;
+  return payupMetaTransactionIdFromPayupMeta(payment.payupMeta);
 }
 
 /**
- * 페이업 카드 구독 완료 건인지 (payment_key 가 payup: 이거나, 승인 시 저장한 payup_meta.txnId 가 있는 경우)
+ * 페이업 카드 구독 완료 건인지 (payment_key 가 payup: 이거나, payup_meta 의 txnId/pgTransactionId/pgTid)
  * bank_transfer 구독은 제외
  */
 export function isPayupCardSubscriptionPaymentRow(payment: {

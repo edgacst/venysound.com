@@ -462,9 +462,9 @@ export default function Admin() {
   const adminRowSupportsPayupPgRevert = (row: AdminRevenuePaymentRow): boolean => {
     if (row.paymentKind !== "subscription") return false;
     const pk = (row.paymentKey ?? "").trim().toLowerCase();
+    /** `payup:{txn}` 또는 meta 의 txnId/pgTransactionId/pgTid(서버 payupMetaTxnId) */
     if (pk.startsWith("payup:")) return true;
-    const tid = (row.payupMetaTxnId ?? "").trim();
-    return tid.length > 0;
+    return (row.payupMetaTxnId ?? "").trim().length > 0;
   };
 
   const { data: revenuePayments, isLoading: loadingRevenuePayments } = useQuery<{

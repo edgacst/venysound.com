@@ -2324,7 +2324,11 @@ export class DatabaseStorage implements IStorage {
         plan: payments.plan,
         billingPeriod: payments.billingPeriod,
         paymentKey: payments.paymentKey,
-        payupMetaTxnId: sql<string | null>`NULLIF(TRIM(${payments.payupMeta}->>'txnId'), '')`,
+        payupMetaTxnId: sql<string | null>`NULLIF(TRIM(COALESCE(
+          NULLIF(TRIM(${payments.payupMeta}->>'txnId'), ''),
+          NULLIF(TRIM(${payments.payupMeta}->>'pgTransactionId'), ''),
+          NULLIF(TRIM(${payments.payupMeta}->>'pgTid'), '')
+        )), '')`,
         createdAt: payments.createdAt,
         email: users.email,
         firstName: users.firstName,
