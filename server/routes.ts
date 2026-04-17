@@ -6484,13 +6484,27 @@ export async function registerRoutes(
       const paymentId = req.params.id as string;
       const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
-      if (payment.status !== "pending" || payment.paymentKey !== "bank_transfer") {
-        return res.status(400).json({ message: "계좌이체 대기 건만 삭제할 수 있습니다" });
+      if (payment.status !== "pending") {
+        return res.status(400).json({ message: "대기(pending) 건만 삭제할 수 있습니다" });
       }
-      await db.execute(sql`DELETE FROM payments WHERE id = ${payment.id} AND status = 'pending' AND payment_key = 'bank_transfer'`);
+      const key = String(payment.paymentKey ?? "");
+      if (key !== "bank_transfer" && key !== PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+        return res.status(400).json({
+          message: "계좌이체 입금 대기 또는 페이업 카드 구독(미승인) 대기 건만 삭제할 수 있습니다",
+        });
+      }
+      await db
+        .delete(payments)
+        .where(
+          and(
+            eq(payments.id, payment.id),
+            eq(payments.status, "pending"),
+            or(eq(payments.paymentKey, "bank_transfer"), eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY)),
+          ),
+        );
       res.json({ success: true });
     } catch (err) {
-      console.error("Delete pending bank payment error:", err);
+      console.error("Delete pending admin payment error:", err);
       res.status(500).json({ message: "삭제에 실패했습니다" });
     }
   });

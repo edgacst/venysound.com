@@ -1332,6 +1332,25 @@ export default function Admin() {
     },
   });
 
+  /** 페이업 카드 구독: PG 미승인·취소로 남은 pending 행만 (승인된 건은 삭제 불가) */
+  const deletePendingPayupSubMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/payments/${paymentId}`);
+      if (!res.ok) throw new Error("삭제에 실패했습니다");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
+      toast({
+        title: t("admin.pendingPayupDeleted", "페이업 미승인 대기 건을 삭제했습니다"),
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: err?.message || t("admin.deleteFailed", "삭제에 실패했습니다"), variant: "destructive" });
+    },
+  });
+
   const { data: creditRefundPendingList } = useQuery<AdminCreditRefundRow[]>({
     queryKey: ["/api/admin/credit-refund-requests", "pending"],
     queryFn: async () => {
@@ -2029,6 +2048,12 @@ export default function Admin() {
                     "PG 창에서 결제가 끝났어도 복귀 URL(/api/subscription/payup/complete)이 호출되지 않거나 승인 API가 실패하면 이 상태로 남습니다. 서버 로그의 [payup] complete 를 확인하세요.",
                   )}
                 </p>
+                <p className="text-muted-foreground pl-6 border-l-2 border-amber-500/40">
+                  {t(
+                    "admin.pendingPayupSubBannerCancel",
+                    "사용자가 PG에서 취소·창을 닫은 경우에도 주문 행은 남고, 페이업 관리자 카드승인에는 안 잡히는 것이 정상입니다. 페이업에서 해당 주문번호에 승인이 없음을 확인한 뒤, 아래「미승인 건 삭제」로 DB만 정리하세요.",
+                  )}
+                </p>
                 <div className="rounded border border-border/60 overflow-x-auto pl-6">
                   <table className="w-full text-left">
                     <thead className="bg-muted/30 border-b border-border/60">
@@ -2038,6 +2063,7 @@ export default function Admin() {
                         <th className="p-2 font-medium whitespace-nowrap">{t("admin.plan", "플랜")}</th>
                         <th className="p-2 font-medium whitespace-nowrap text-right">{t("admin.amount", "금액")}</th>
                         <th className="p-2 font-medium font-mono text-[10px]">orderId</th>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.manage", "관리")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2056,6 +2082,30 @@ export default function Admin() {
                           <td className="p-2 text-right tabular-nums">{p.amount?.toLocaleString?.() ?? p.amount}원</td>
                           <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[200px] truncate" title={p.orderId}>
                             {p.orderId}
+                          </td>
+                          <td className="p-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              disabled={deletePendingPayupSubMutation.isPending}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    t(
+                                      "admin.pendingPayupDeleteConfirm",
+                                      "페이업 관리자에서 이 주문번호에 카드 승인이 없음을 확인했습니다. 사이트 DB의 미승인 대기 건만 삭제합니다. (실제 승인 건이 있으면 삭제하지 마세요)",
+                                    ),
+                                  )
+                                ) {
+                                  return;
+                                }
+                                deletePendingPayupSubMutation.mutate(String(p.id));
+                              }}
+                            >
+                              <Trash2 className="mr-1" size={12} />
+                              {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
+                            </Button>
                           </td>
                         </tr>
                       ))}
