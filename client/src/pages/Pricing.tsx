@@ -410,8 +410,9 @@ export default function Pricing() {
     },
     onSuccess: (data) => {
       toast({ title: t("pricing.cancelSuccess", "구독 해지"), description: data.message });
-      queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
     },
     onError: (error: Error) => {
       toast({ title: t("pricing.cancelFailed", "해지 실패"), description: error.message, variant: "destructive" });

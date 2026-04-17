@@ -6048,19 +6048,39 @@ export async function registerRoutes(
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
-      const cancelPlanId = isPaidSubscriptionTierId(user.subscriptionTier ?? "") ? user.subscriptionTier : "pro";
+      const now = new Date();
+      if (!isUserPaidSubscriptionActive(user, now)) {
+        return res.status(400).json({ message: "현재 이용 중인 유료 구독이 없습니다." });
+      }
+
+      const displayed = computeDisplayedSubscriptionFromEntitlements(
+        user.subscriptionEntitlements,
+        user.subscriptionTier,
+        user.subscriptionExpiresAt,
+        now,
+      );
+      let cancelPlanId: PaidSubscriptionTierId = "pro";
+      if (isPaidSubscriptionTierId(displayed.subscriptionTier)) {
+        cancelPlanId = displayed.subscriptionTier as PaidSubscriptionTierId;
+      } else if (isPaidSubscriptionTierId(user.subscriptionTier ?? "")) {
+        cancelPlanId = String(user.subscriptionTier).trim().toLowerCase() as PaidSubscriptionTierId;
+      }
       const cancelRecipientName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || null;
       const cancelEmail = user.email;
 
-      await db.update(users).set({
-        tossBillingKey: null,
-        tossCustomerKey: null,
-        subscriptionPlan: null,
-        subscriptionTier: "free",
-        subscriptionExpiresAt: null,
-        subscriptionEntitlements: {},
-        updatedAt: new Date(),
-      }).where(eq(users.id, userId));
+      /**
+       * 회원「구독 해지」= **다음 자동 갱신(결제)만 중지**. 만료일·entitlements·구독 AI 지갑은 유지.
+       * 카드사/PG에서 결제가 취소·환불된 경우는 별도(웹훅·관리자 PG취소 반영)로 DB를 되돌려 즉시 무료화.
+       */
+      await db
+        .update(users)
+        .set({
+          tossBillingKey: null,
+          tossCustomerKey: null,
+          subscriptionPlan: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, userId));
 
       void sendSubscriptionEmail(cancelEmail, {
         kind: "cancelled",
@@ -6070,7 +6090,8 @@ export async function registerRoutes(
 
       res.json({
         success: true,
-        message: "구독이 해지되었습니다.",
+        message:
+          "다음 결제(갱신)는 중지되었습니다. 표시된 만료일까지는 유료 혜택(음악 생성 한도 등)이 그대로 유지됩니다.",
       });
     } catch (err) {
       console.error("Cancel subscription error:", err);
