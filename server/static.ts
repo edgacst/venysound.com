@@ -21,6 +21,11 @@ export function serveStatic(app: Express) {
   }
 
   const indexPath = path.resolve(distPath, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(
+      `SPA index 가 없습니다: ${indexPath}\n프로젝트 루트에서 npm run build (Vite → dist/public) 후 pm2 restart 하세요.`,
+    );
+  }
   let indexTemplate = fs.readFileSync(indexPath, "utf-8");
 
   const sendSpaIndex = (req: Request, res: Response) => {

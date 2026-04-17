@@ -338,7 +338,7 @@ function looksLikePayupReturnParamsPayload(s: string): boolean {
   } catch {
     /* keep t */
   }
-  return /orderNumber|ORDERNUMBER|orderId|ORDER_ID|ORDERNO/i.test(dec);
+  return /orderNumber|ORDERNUMBER|orderId|ORDER_ID|ORDERNO|moid|MOID|transactionId|TRANSACTIONID/i.test(dec);
 }
 
 function firstPayupReturnParamsFromFlatRecord(src: Record<string, unknown>): string {
@@ -382,7 +382,23 @@ function tryParsePayupReturnJson(blob: string): Record<string, unknown> | null {
 }
 
 function payupOrderNumberFromParsed(parsed: Record<string, unknown>): string | undefined {
-  return pickPayupStr(parsed, "orderNumber", "ORDERNUMBER", "orderId", "ORDER_ID", "ORDERNO", "ordernumber");
+  return pickPayupStr(
+    parsed,
+    "orderNumber",
+    "ORDERNUMBER",
+    "orderId",
+    "ORDER_ID",
+    "ORDERNO",
+    "ordernumber",
+    "moid",
+    "MOID",
+  );
+}
+
+/** 페이업이 쿼리 transactionId 에 가맹점 주문번호(S…)를 넣는 경우 — 카드사 TID 와 혼동 방지로 S 접두만 */
+function looksLikeVenysoundPayupMerchantOrderId(s: string): boolean {
+  const t = s.trim();
+  return /^S[A-Z0-9]{6,32}$/i.test(t);
 }
 
 function redirectPricingPayupOutcome(res: Response, outcome: "success" | "fail"): void {
@@ -6282,13 +6298,44 @@ export async function registerRoutes(
       const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
       const blob = readPayupReturnParamsFromReq(req);
       const parsed = blob ? tryParsePayupReturnJson(blob) : null;
-      const orderNumber =
+
+      const pickFlat = (src: Record<string, unknown>, k: string): string => {
+        const v = src[k];
+        if (typeof v === "string" && v.trim()) return v.trim();
+        if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+        return "";
+      };
+
+      const q = req.query as Record<string, unknown>;
+      let orderNumber =
         (parsed && payupOrderNumberFromParsed(parsed)) ||
-        (typeof body.orderNumber === "string" && body.orderNumber) ||
-        (typeof body.orderId === "string" && body.orderId) ||
+        (typeof body.orderNumber === "string" && body.orderNumber.trim()) ||
+        (typeof body.orderId === "string" && body.orderId.trim()) ||
+        pickFlat(body, "orderNumber") ||
+        pickFlat(body, "orderId") ||
+        pickFlat(body, "moid") ||
+        pickFlat(body, "MOID") ||
+        pickFlat(q, "orderNumber") ||
+        pickFlat(q, "orderId") ||
+        pickFlat(q, "moid") ||
+        pickFlat(q, "MOID") ||
         "";
+
+      /** 일부 복귀: 쿼리 transactionId 에 가맹점 주문번호(S…)만 있고 본문 JSON에는 orderNumber 키가 없음 */
       if (!orderNumber) {
-        const q = req.query as Record<string, unknown>;
+        const tidQ = pickFlat(q, "transactionId") || pickFlat(q, "TRANSACTIONID");
+        if (tidQ && looksLikeVenysoundPayupMerchantOrderId(tidQ)) {
+          const canon = tidQ.toUpperCase();
+          const [hit] = await db.select().from(payments).where(eq(payments.orderId, canon)).limit(1);
+          if (hit) orderNumber = canon;
+        }
+      }
+
+      if (orderNumber && looksLikeVenysoundPayupMerchantOrderId(orderNumber)) {
+        orderNumber = orderNumber.toUpperCase();
+      }
+
+      if (!orderNumber) {
         console.warn("[payup] complete: orderNumber 없음", req.method, {
           queryKeys: Object.keys(q),
           queryValueLens: Object.entries(q)
