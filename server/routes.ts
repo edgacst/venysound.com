@@ -45,7 +45,7 @@ import {
   creditRefundRequests,
   creditRefundEvents,
 } from "../shared/schema";
-import { eq, sql, inArray, and, or, desc, asc } from "drizzle-orm";
+import { eq, sql, inArray, and, or, desc, asc, ne } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -58,6 +58,7 @@ import {
   subscriptionTotalVatInclusiveWon,
   SUBSCRIPTION_PLAN_FALLBACK,
   isPaidSubscriptionTierId,
+  PAID_SUBSCRIPTION_TIER_IDS,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
 import {
@@ -167,6 +168,63 @@ async function notifyUserSubscriptionPaidInApp(input: {
   } catch (e) {
     console.error("[subscription] in-app notify failed", e);
   }
+}
+
+const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
+
+/**
+ * 페이업 PG에서 승인 후 취소·환불해도 서버는 자동으로 모름 — 이 호출로 payments 를 refunded 처리하고,
+ * 동일 회원에게 남은 **paid 유료 구독 결제**가 없으면 users 구독·구독 AI 지갑을 무료로 되돌림.
+ */
+async function revertPayupCardSubscriptionPaymentById(
+  paymentId: string,
+): Promise<{ ok: true; downgradedUser: boolean; userId: string } | { ok: false; message: string }> {
+  const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+  if (!payment) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
+  const pk = String(payment.paymentKey ?? "");
+  if (!pk.startsWith("payup:")) {
+    return { ok: false, message: "페이업 카드(payment_key 가 payup: 로 시작) 구독 건만 처리할 수 있습니다." };
+  }
+  if (payment.status !== "paid") {
+    return { ok: false, message: "paid 상태의 건만 처리할 수 있습니다." };
+  }
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(planNorm)) {
+    return { ok: false, message: "유료 구독 플랜 결제만 처리할 수 있습니다." };
+  }
+
+  return await db.transaction(async (tx) => {
+    const others = await tx
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.userId, payment.userId),
+          eq(payments.status, "paid"),
+          inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+          ne(payments.id, paymentId),
+        ),
+      )
+      .limit(1);
+    const hasOtherPaidSub = others.length > 0;
+    await tx.update(payments).set({ status: "refunded" }).where(eq(payments.id, paymentId));
+    if (!hasOtherPaidSub) {
+      await tx
+        .update(users)
+        .set({
+          subscriptionTier: "free",
+          subscriptionEntitlements: sql`'{}'::jsonb`,
+          subscriptionExpiresAt: null,
+          subscriptionPlan: null,
+          subscriptionAiWallet: sql`'[]'::jsonb`,
+          subscriptionAiPeriodKey: null,
+          subscriptionAiPeriodConsumedWon: 0,
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, payment.userId));
+    }
+    return { ok: true, downgradedUser: !hasOtherPaidSub, userId: payment.userId };
+  });
 }
 
 /**
@@ -6797,6 +6855,90 @@ export async function registerRoutes(
       console.error("[repair-bank-subscription]", err);
       const msg = err?.message === "NOT_A_PAID_SUBSCRIPTION_PLAN" ? "유효한 구독 플랜이 아닙니다" : "구독 반영에 실패했습니다";
       res.status(500).json({ message: msg });
+    }
+  });
+
+  /**
+   * 페이업에서 카드 구독 승인 후 취소·환불한 경우 — PG는 취소됐으나 DB만 paid 인 상태를 맞출 때 사용.
+   * 해당 payments 행을 refunded 로 두고, 회원에게 다른 paid 유료 구독 결제가 없으면 구독·구독 AI 지갑을 무료로 초기화.
+   */
+  app.post("/api/admin/payments/:id/revoke-payup-subscription", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = req.params.id as string;
+      const out = await revertPayupCardSubscriptionPaymentById(paymentId);
+      if (!out.ok) {
+        return res.status(400).json({ message: out.message });
+      }
+      if (out.downgradedUser) {
+        try {
+          await storage.createNotification({
+            userId: out.userId,
+            type: "system",
+            message:
+              "구독 결제가 환불·취소 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도는 무료 기준으로 다시 표시됩니다.",
+            payload: { subscriptionReverted: true },
+            url: "/pricing",
+          });
+        } catch (e) {
+          console.error("[admin revoke-payup-subscription] notify", e);
+        }
+      }
+      res.json({ success: true, downgradedUser: out.downgradedUser });
+    } catch (err: any) {
+      console.error("[admin revoke-payup-subscription]", err);
+      res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
+    }
+  });
+
+  /**
+   * 테스트·스테이징: 본인 최신 페이업 카드 구독 paid 건을 위와 동일하게 되돌림. 운영에서는 .env 에 넣지 말 것.
+   * PAYUP_ALLOW_USER_SELF_REVERT=true 일 때만 허용.
+   */
+  app.post("/api/subscription/payup/self-revert-last-card-payment", isAuthenticated, async (req, res) => {
+    try {
+      if (String(process.env.PAYUP_ALLOW_USER_SELF_REVERT ?? "").trim().toLowerCase() !== "true") {
+        return res.status(403).json({ message: "비활성화되어 있습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const [latest] = await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.userId, userId),
+            eq(payments.status, "paid"),
+            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+            sql`${payments.paymentKey} LIKE 'payup:%'`,
+          ),
+        )
+        .orderBy(desc(payments.createdAt))
+        .limit(1);
+      if (!latest) {
+        return res.status(404).json({ message: "되돌릴 페이업 카드 구독 결제(paid)가 없습니다." });
+      }
+      const out = await revertPayupCardSubscriptionPaymentById(latest.id);
+      if (!out.ok) {
+        return res.status(400).json({ message: out.message });
+      }
+      if (out.downgradedUser) {
+        try {
+          await storage.createNotification({
+            userId: out.userId,
+            type: "system",
+            message:
+              "구독 결제가 되돌려져 무료 플랜으로 조정되었습니다. AI 생성 한도는 무료 기준으로 다시 표시됩니다.",
+            payload: { subscriptionSelfReverted: true },
+            url: "/create-music",
+          });
+        } catch (e) {
+          console.error("[payup self-revert] notify", e);
+        }
+      }
+      res.json({ success: true, paymentId: latest.id, downgradedUser: out.downgradedUser });
+    } catch (err: any) {
+      console.error("[payup self-revert]", err);
+      res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
     }
   });
 

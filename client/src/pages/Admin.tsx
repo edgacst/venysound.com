@@ -1335,6 +1335,38 @@ export default function Admin() {
     },
   });
 
+  /** 페이업에서 PG 환불·취소 후 DB만 paid 인 카드 구독 건 — refunded + 필요 시 회원 무료화 */
+  const revokePayupPaidMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/admin/payments/${encodeURIComponent(paymentId)}/revoke-payup-subscription`,
+        {},
+      );
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(j.message || "처리에 실패했습니다");
+      }
+      return res.json() as Promise<{ success: boolean; downgradedUser?: boolean }>;
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: data.downgradedUser
+          ? t("admin.revokePayupDowngraded", "회원 구독을 무료로 되돌렸습니다.")
+          : t("admin.revokePayupRefundedOnly", "결제를 refunded 처리했습니다. (다른 유료 구독 건이 있어 티어는 유지)"),
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: err instanceof Error ? err.message : t("admin.updateFailed", "업데이트에 실패했습니다"),
+        variant: "destructive",
+      });
+    },
+  });
+
   /** 페이업 카드 구독: PG 미승인·취소로 남은 pending 행만 (승인된 건은 삭제 불가) */
   const deletePendingPayupSubMutation = useMutation({
     mutationFn: async (paymentId: string) => {
@@ -2187,12 +2219,13 @@ export default function Admin() {
                         <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColPlan", "플랜/주기")}</th>
                         <th className="p-2 font-medium whitespace-nowrap text-right">{t("admin.revenuePayColAmount", "금액")}</th>
                         <th className="p-2 font-medium font-mono text-[10px] max-w-[140px] truncate">orderId</th>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColPayup", "페이업")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {revenuePayments.rows.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-4 text-center text-muted-foreground">
+                          <td colSpan={7} className="p-4 text-center text-muted-foreground">
                             —
                           </td>
                         </tr>
@@ -2226,6 +2259,40 @@ export default function Admin() {
                               <td className="p-2 text-right tabular-nums font-medium">{row.amount.toLocaleString()}원</td>
                               <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[140px] truncate" title={row.orderId}>
                                 {row.orderId}
+                              </td>
+                              <td className="p-2 whitespace-nowrap">
+                                {row.paymentKind === "subscription" &&
+                                typeof row.paymentKey === "string" &&
+                                row.paymentKey.startsWith("payup:") ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-[10px] h-7 px-1.5"
+                                    disabled={revokePayupPaidMutation.isPending}
+                                    title={t(
+                                      "admin.revokePayupButtonTitle",
+                                      "페이업에서 이미 취소·환불한 카드 구독 건이면 눌러 DB를 맞춥니다.",
+                                    )}
+                                    onClick={() => {
+                                      if (
+                                        !window.confirm(
+                                          t(
+                                            "admin.revokePayupConfirm",
+                                            "이 결제를 refunded 로 표시하고, 다른 유료 구독 결제가 없으면 회원을 무료로 되돌립니다. 페이업에서 실제 취소가 끝난 건만 진행하세요.",
+                                          ),
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      revokePayupPaidMutation.mutate(row.id);
+                                    }}
+                                  >
+                                    {t("admin.revokePayupButton", "PG취소 반영")}
+                                  </Button>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
                               </td>
                             </tr>
                           );
