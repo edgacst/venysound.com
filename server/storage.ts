@@ -226,7 +226,7 @@ export interface IStorage {
   getAdminStatsBySource(): Promise<{ source: string; count: number }[]>;
   getAdminAnalyticsTrend(days: number): Promise<{ date: string; uniqueVisitors: number; pageViews: number }[]>;
   getTotalCreditsCharged(): Promise<number>;
-  /** `payments` 테이블 기준: status=paid 구독·크레딧 충전 원화 합계, 미입금(pending bank) 합계(기간 무관) */
+  /** `payments` 테이블 기준: status=paid 구독·크레딧 충전 원화 합계, 미입금(pending bank·별도 페이업 카드) 합계(기간 무관) */
   getAdminRevenueSummary(filters?: {
     start?: Date;
     endExclusive?: Date;
@@ -242,6 +242,9 @@ export interface IStorage {
     pendingSubscriptionCount: number;
     pendingCreditChargeWon: number;
     pendingCreditChargeCount: number;
+    /** 페이업 카드 구독: PG 승인 전·복귀 실패 등으로 `payment_key=payup_direct` 인 pending (routes 의 PAYUP_SUBSCRIPTION_PAYMENT_KEY 와 동일) */
+    pendingPayupSubscriptionWon: number;
+    pendingPayupSubscriptionCount: number;
     pendingTotalWon: number;
   }>;
   /** 관리자: 결제 완료 건 목록(회원 정보 포함). kind로 구독/크레딧 필터 */
@@ -2222,10 +2225,25 @@ export class DatabaseStorage implements IStorage {
       .from(payments)
       .where(pendCredWhere);
 
+    const pendPayupSubWhere = and(
+      eq(payments.status, "pending"),
+      eq(payments.paymentKey, "payup_direct"),
+      inArray(payments.plan, tierIds),
+    );
+    const [ppu] = await db
+      .select({
+        totalWon: sql<number>`coalesce(sum(${payments.amount}), 0)::int`,
+        cnt: sql<number>`count(*)::int`,
+      })
+      .from(payments)
+      .where(pendPayupSubWhere);
+
     const pendingSubscriptionWon = Number(ps?.totalWon ?? 0);
     const pendingSubscriptionCount = Number(ps?.cnt ?? 0);
     const pendingCreditChargeWon = Number(pc?.totalWon ?? 0);
     const pendingCreditChargeCount = Number(pc?.cnt ?? 0);
+    const pendingPayupSubscriptionWon = Number(ppu?.totalWon ?? 0);
+    const pendingPayupSubscriptionCount = Number(ppu?.cnt ?? 0);
 
     return {
       subscriptionByPlan,
@@ -2238,6 +2256,8 @@ export class DatabaseStorage implements IStorage {
       pendingSubscriptionCount,
       pendingCreditChargeWon,
       pendingCreditChargeCount,
+      pendingPayupSubscriptionWon,
+      pendingPayupSubscriptionCount,
       pendingTotalWon: pendingSubscriptionWon + pendingCreditChargeWon,
     };
   }

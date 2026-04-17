@@ -421,6 +421,9 @@ export default function Admin() {
     pendingSubscriptionCount: number;
     pendingCreditChargeWon: number;
     pendingCreditChargeCount: number;
+    /** PG 창에서 승인돼도 /complete·payUrl 단계 전이면 DB는 여전히 pending */
+    pendingPayupSubscriptionWon: number;
+    pendingPayupSubscriptionCount: number;
     pendingTotalWon: number;
   };
 
@@ -2101,7 +2104,25 @@ export default function Admin() {
                           {t("admin.revenueCountSuffix", "건")})
                         </span>
                       </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">
+                          {t("admin.revenuePendingPayupSub", "페이업 카드 (사이트 DB 미완료)")}
+                        </span>
+                        <span>
+                          {(revenueSummary.pendingPayupSubscriptionWon ?? 0).toLocaleString()}원 (
+                          {revenueSummary.pendingPayupSubscriptionCount ?? 0}
+                          {t("admin.revenueCountSuffix", "건")})
+                        </span>
+                      </li>
                     </ul>
+                    {(revenueSummary.pendingPayupSubscriptionCount ?? 0) > 0 ? (
+                      <p className="text-[11px] text-muted-foreground mt-2 border-t border-border/50 pt-2">
+                        {t(
+                          "admin.revenuePendingPayupSubExplain",
+                          "페이업 관리자에 승인이 있어도, 복귀 URL 처리·payUrl 승인 전에는 여기에만 잡힙니다. 아래「구독·크레딧 결제 내역」은 paid 건만 표시됩니다.",
+                        )}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </>
@@ -2125,7 +2146,10 @@ export default function Admin() {
               </select>
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              {t("admin.revenuePaymentsHint", "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다.")}
+              {t(
+                "admin.revenuePaymentsHint",
+                "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다. 페이업 PG만 승인된 상태는「미입금 상세」의 페이업 카드 줄·「미승인 카드」탭을 보세요.",
+              )}
             </p>
             {!loadingPendingPayupSub && pendingPayupSubPayments && pendingPayupSubPayments.length > 0 ? (
               <p className="text-xs text-muted-foreground mb-4 flex flex-wrap items-center gap-2" data-testid="hint-payup-pending-stats">
