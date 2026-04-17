@@ -5,8 +5,10 @@ import en from "./locales/en.json";
 import zh from "./locales/zh.json";
 import ja from "./locales/ja.json";
 
-/** 기존 i18next-browser-languagedetector와 동일 키 — 사용자 설정 유지 */
-const STORAGE_KEY = "i18nextLng";
+/** 사이트 전용 키 — 다른 서비스·확장이 쓰는 `i18nextLng`와 분리 */
+const PRIMARY_STORAGE_KEY = "venysound_i18n_lng";
+/** 예전 버전·타 라이브러리 호환 (읽기만 보조, 쓰기는 둘 다 동기화) */
+const LEGACY_STORAGE_KEY = "i18nextLng";
 
 const SUPPORTED = new Set(["ko", "en", "zh", "ja"]);
 
@@ -22,8 +24,10 @@ function normalizeLng(code: string | undefined | null): "ko" | "en" | "zh" | "ja
 function readPersistedLng(): "ko" | "en" | "zh" | "ja" {
   if (typeof window === "undefined") return "ko";
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) return normalizeLng(raw);
+    const primary = window.localStorage.getItem(PRIMARY_STORAGE_KEY);
+    if (primary) return normalizeLng(primary);
+    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) return normalizeLng(legacy);
   } catch {
     /* private mode 등 */
   }
@@ -32,7 +36,7 @@ function readPersistedLng(): "ko" | "en" | "zh" | "ja" {
 
 const initialLng = readPersistedLng();
 
-void i18n.use(initReactI18next).init({
+export const i18nReady = i18n.use(initReactI18next).init({
   lng: initialLng,
   debug: false,
   resources: {
@@ -48,16 +52,28 @@ void i18n.use(initReactI18next).init({
   },
 });
 
-/** 사용자가 메뉴에서 바꾼 뒤에도 새로고침 후 동일 언어 유지 */
-i18n.on("languageChanged", (lng) => {
-  const normalized = normalizeLng(lng);
+function persistLng(normalized: "ko" | "en" | "zh" | "ja") {
   try {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, normalized);
+      window.localStorage.setItem(PRIMARY_STORAGE_KEY, normalized);
+      window.localStorage.setItem(LEGACY_STORAGE_KEY, normalized);
     }
   } catch {
     /* ignore */
   }
+}
+
+/** HMR 시 리스너 중복 방지 */
+const g = globalThis as typeof globalThis & { __venysoundI18nListener?: boolean };
+if (!g.__venysoundI18nListener) {
+  g.__venysoundI18nListener = true;
+  i18n.on("languageChanged", (lng) => {
+    persistLng(normalizeLng(lng));
+  });
+}
+
+void i18nReady.then(() => {
+  persistLng(normalizeLng(i18n.language));
 });
 
 export default i18n;
