@@ -15,7 +15,7 @@ export function registerPayupRoutes(app: Express): void {
         testMode: s.testMode,
         baseUrl: s.baseUrl,
         hint: s.configured
-          ? "구독: 인증결제 다이렉트(order→창→complete). 부분취소: POST /api/admin/payup/part-cancel (관리자)"
+          ? "구독: 인증결제 다이렉트(order→창→complete). PG취소 동기화: POST/GET /api/webhooks/payup (선택 PAYUP_WEBHOOK_SECRET). 조회 보정: PAYUP_TXN_RECONCILE_PATH + POST /api/subscription/payup/reconcile-latest"
           : "가맹 승인 후 PAYUP_MERCHANT_ID, PAYUP_API_CERT_KEY 를 .env에 넣고 운영 전 PAYUP_USE_TEST=false 로 전환하세요.",
       },
     });

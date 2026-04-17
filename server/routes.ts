@@ -45,7 +45,7 @@ import {
   creditRefundRequests,
   creditRefundEvents,
 } from "../shared/schema";
-import { eq, sql, inArray, and, or, desc, asc, ne } from "drizzle-orm";
+import { eq, sql, inArray, and, or, desc, asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -85,6 +85,12 @@ import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
 import { payupDirectPostPayUrl } from "./payup/direct-pay";
 import { payupPostPartCancel } from "./payup/part-cancel";
+import { revertPayupCardSubscriptionPaymentById } from "./payup/revert-payup-subscription";
+import {
+  flattenPayupWebhookPayload,
+  tryRevertPaidPayupSubscriptionFromNotifyFlat,
+} from "./payup/payup-webhook-notify";
+import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
 
 /** 라디오 채널 카페 홈페이지 — http/https만 허용, 스킴 생략 시 https 부여 */
 function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | null } | { ok: false } {
@@ -171,61 +177,6 @@ async function notifyUserSubscriptionPaidInApp(input: {
 }
 
 const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
-
-/**
- * 페이업 PG에서 승인 후 취소·환불해도 서버는 자동으로 모름 — 이 호출로 payments 를 refunded 처리하고,
- * 동일 회원에게 남은 **paid 유료 구독 결제**가 없으면 users 구독·구독 AI 지갑을 무료로 되돌림.
- */
-async function revertPayupCardSubscriptionPaymentById(
-  paymentId: string,
-): Promise<{ ok: true; downgradedUser: boolean; userId: string } | { ok: false; message: string }> {
-  const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
-  if (!payment) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
-  const pk = String(payment.paymentKey ?? "");
-  if (!pk.startsWith("payup:")) {
-    return { ok: false, message: "페이업 카드(payment_key 가 payup: 로 시작) 구독 건만 처리할 수 있습니다." };
-  }
-  if (payment.status !== "paid") {
-    return { ok: false, message: "paid 상태의 건만 처리할 수 있습니다." };
-  }
-  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
-  if (!isPaidSubscriptionTierId(planNorm)) {
-    return { ok: false, message: "유료 구독 플랜 결제만 처리할 수 있습니다." };
-  }
-
-  return await db.transaction(async (tx) => {
-    const others = await tx
-      .select({ id: payments.id })
-      .from(payments)
-      .where(
-        and(
-          eq(payments.userId, payment.userId),
-          eq(payments.status, "paid"),
-          inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
-          ne(payments.id, paymentId),
-        ),
-      )
-      .limit(1);
-    const hasOtherPaidSub = others.length > 0;
-    await tx.update(payments).set({ status: "refunded" }).where(eq(payments.id, paymentId));
-    if (!hasOtherPaidSub) {
-      await tx
-        .update(users)
-        .set({
-          subscriptionTier: "free",
-          subscriptionEntitlements: sql`'{}'::jsonb`,
-          subscriptionExpiresAt: null,
-          subscriptionPlan: null,
-          subscriptionAiWallet: sql`'[]'::jsonb`,
-          subscriptionAiPeriodKey: null,
-          subscriptionAiPeriodConsumedWon: 0,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, payment.userId));
-    }
-    return { ok: true, downgradedUser: !hasOtherPaidSub, userId: payment.userId };
-  });
-}
 
 /**
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
@@ -6670,6 +6621,168 @@ export async function registerRoutes(
     } catch (err) {
       console.error("[payup] checkout-status", err);
       res.status(500).json({ message: "상태를 확인하지 못했습니다." });
+    }
+  });
+
+  const payupWebhookSecretOk = (req: Request): boolean => {
+    const secret = (process.env.PAYUP_WEBHOOK_SECRET ?? "").trim();
+    if (!secret) return true;
+    const auth = (req.get("authorization") ?? "").trim();
+    if (auth === `Bearer ${secret}`) return true;
+    if ((req.get("x-payup-webhook-secret") ?? "").trim() === secret) return true;
+    return false;
+  };
+
+  const handlePayupPgNotifyWebhook = async (req: Request, res: Response): Promise<void> => {
+    try {
+      if (!payupWebhookSecretOk(req)) {
+        res.status(401).json({ ok: false, message: "unauthorized" });
+        return;
+      }
+      let rawBody: unknown = req.body;
+      if (typeof rawBody === "string") {
+        try {
+          rawBody = JSON.parse(rawBody);
+        } catch {
+          rawBody = {};
+        }
+      }
+      const qFlat = flattenPayupWebhookPayload(req.query as unknown);
+      const bFlat = flattenPayupWebhookPayload(rawBody);
+      const flat = { ...qFlat, ...bFlat };
+      const result = await tryRevertPaidPayupSubscriptionFromNotifyFlat(flat);
+      if (result.action === "reverted" && result.downgradedUser && result.userId) {
+        try {
+          await storage.createNotification({
+            userId: result.userId,
+            type: "system",
+            message:
+              "구독 카드 결제가 페이업에서 취소·환불 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: "payup_webhook" },
+            url: "/create-music",
+          });
+        } catch (e) {
+          console.error("[payup webhook] notification", e);
+        }
+      }
+      if (String(process.env.PAYUP_WEBHOOK_DEBUG ?? "").trim().toLowerCase() === "true") {
+        console.log("[payup webhook]", result.action, result.detail, Object.keys(flat).slice(0, 40));
+      }
+      res.json({ ok: true, ...result });
+    } catch (e) {
+      console.error("[payup webhook]", e);
+      res.status(500).json({ ok: false, message: "webhook error" });
+    }
+  };
+
+  /** 페이업·PG에서 취소·환불 통지 URL로 등록 (본문 형식은 가맹점 계약 문서 기준). `PAYUP_WEBHOOK_SECRET` 설정 시 Bearer 또는 x-payup-webhook-secret 일치 필요 */
+  app.post("/api/webhooks/payup", handlePayupPgNotifyWebhook);
+  app.get("/api/webhooks/payup", handlePayupPgNotifyWebhook);
+
+  /**
+   * 로그인 사용자 최신 페이업 카드 구독(paid)에 대해 PG 조회 API로 취소 여부를 맞춤.
+   * `PAYUP_TXN_RECONCILE_PATH` 가 비어 있으면 HTTP 조회는 하지 않음(웹훅만으로 동기화 가능).
+   */
+  app.post("/api/subscription/payup/reconcile-latest", isAuthenticated, async (req, res) => {
+    try {
+      const force =
+        String((req.body as { force?: unknown } | undefined)?.force ?? "").trim().toLowerCase() === "true" ||
+        String(req.query.force ?? "").trim().toLowerCase() === "true";
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+      if (!pathSet) {
+        return res.json({
+          ok: true,
+          action: "http_not_configured" as const,
+          hint: "Set PAYUP_TXN_RECONCILE_PATH from PayUp docs, or register webhook to POST/GET /api/webhooks/payup",
+        });
+      }
+      const cred = getPayupCredentials();
+      if (!cred.ok) {
+        return res.json({ ok: true, action: "payup_credentials_missing" as const });
+      }
+      const [latest] = await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.userId, userId),
+            eq(payments.status, "paid"),
+            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+            sql`${payments.paymentKey} LIKE 'payup:%'`,
+          ),
+        )
+        .orderBy(desc(payments.createdAt))
+        .limit(1);
+      if (!latest) {
+        return res.json({ ok: true, action: "none" as const, reason: "no_paid_payup_subscription" });
+      }
+      const meta =
+        latest.payupMeta && typeof latest.payupMeta === "object" ? (latest.payupMeta as Record<string, unknown>) : {};
+      const last = meta.pgReconcileCheckedAt;
+      if (
+        !force &&
+        typeof last === "string" &&
+        last.length >= 10 &&
+        !Number.isNaN(Date.parse(last)) &&
+        Date.now() - Date.parse(last) < 180_000
+      ) {
+        return res.json({ ok: true, action: "throttled" as const });
+      }
+      const pk = String(latest.paymentKey ?? "");
+      const txnId = pk.startsWith("payup:") ? pk.slice(6).trim() : "";
+      if (!txnId) {
+        return res.json({ ok: true, action: "none" as const, reason: "no_txn_id" });
+      }
+      const pg = await payupHttpReconcileTransactionCancelled(cred, txnId);
+      const mergedMeta: Record<string, unknown> = {
+        ...meta,
+        pgReconcileCheckedAt: new Date().toISOString(),
+      };
+      if (!pg.ok) {
+        mergedMeta.pgReconcileLastError = pg.message;
+      } else if ("skipped" in pg && pg.skipped) {
+        mergedMeta.pgReconcileLastError = pg.reason;
+      } else {
+        mergedMeta.pgReconcileLastError = null;
+      }
+      await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, latest.id));
+
+      if (!pg.ok) {
+        return res.json({ ok: true, action: "http_error" as const, message: pg.message });
+      }
+      if ("skipped" in pg && pg.skipped) {
+        return res.json({ ok: true, action: "http_skipped" as const, reason: pg.reason });
+      }
+      if (!pg.cancelledAtPg) {
+        return res.json({ ok: true, action: "still_paid_at_pg" as const });
+      }
+      const out = await revertPayupCardSubscriptionPaymentById(latest.id);
+      if (!out.ok) {
+        return res.json({ ok: true, action: "revert_failed" as const, message: out.message });
+      }
+      if (out.downgradedUser) {
+        try {
+          await storage.createNotification({
+            userId: out.userId,
+            type: "system",
+            message:
+              "구독 카드 결제가 페이업에서 취소·환불로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: "payup_http_reconcile" },
+            url: "/create-music",
+          });
+        } catch (e) {
+          console.error("[payup reconcile-latest] notify", e);
+        }
+      }
+      res.json({
+        ok: true,
+        action: out.downgradedUser ? ("reverted" as const) : ("refunded_payment_only" as const),
+      });
+    } catch (err) {
+      console.error("[payup reconcile-latest]", err);
+      res.status(500).json({ message: "처리하지 못했습니다." });
     }
   });
 

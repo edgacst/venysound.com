@@ -229,6 +229,24 @@ export default function Pricing() {
     }
   }, [user?.id]);
 
+  /** 페이업에서 취소·환불된 뒤에도 서버 paid 가 남은 경우 — 조회 경로 설정 시 자동 보정 */
+  useEffect(() => {
+    if (!user) return;
+    void (async () => {
+      try {
+        const res = await apiRequest("POST", "/api/subscription/payup/reconcile-latest", {});
+        const data = (await res.json()) as { action?: string };
+        if (data?.action === "reverted") {
+          void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+          void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+          void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [user?.id, queryClient]);
+
   const payupStatusCheckMutation = useMutation({
     mutationFn: async (orderNumber: string) => {
       const res = await fetch(

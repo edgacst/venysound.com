@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import {
   Dialog,
   DialogContent,
@@ -987,6 +988,24 @@ export default function CreateMusic() {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
+
+  /** 페이업 PG 취소·환불이 웹훅/조회로 반영된 뒤 한도 캐시 갱신 */
+  useEffect(() => {
+    if (!user) return;
+    void (async () => {
+      try {
+        const res = await apiRequest("POST", "/api/subscription/payup/reconcile-latest", {});
+        const data = (await res.json()) as { action?: string };
+        if (data?.action === "reverted") {
+          void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+          void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+          void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+        }
+      } catch {
+        /* PG 조회 미설정·오프라인 등 */
+      }
+    })();
+  }, [user, queryClient]);
 
   const libraryHydratedForUserRef = useRef<string | null>(null);
   const librarySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
