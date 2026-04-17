@@ -1,33 +1,63 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
-import ko from './locales/ko.json';
-import en from './locales/en.json';
-import zh from './locales/zh.json';
-import ja from './locales/ja.json';
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import ko from "./locales/ko.json";
+import en from "./locales/en.json";
+import zh from "./locales/zh.json";
+import ja from "./locales/ja.json";
 
-i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    debug: false,
-    resources: {
-      ko: { translation: ko },
-      en: { translation: en },
-      zh: { translation: zh },
-      ja: { translation: ja },
-    },
-    fallbackLng: 'ko',
-    supportedLngs: ['ko', 'en', 'zh', 'ja'],
-    interpolation: {
-      escapeValue: false,
-    },
-    // localStorage에 사용자가 고른 값이 있을 때만 반영. navigator 자동 감지는
-    // OS/브라우저가 영어면 '선택 안 함'인데도 영어로 넘어가는 문제를 일으킴.
-    detection: {
-      order: ['localStorage'],
-      caches: ['localStorage'],
-    },
-  });
+/** 기존 i18next-browser-languagedetector와 동일 키 — 사용자 설정 유지 */
+const STORAGE_KEY = "i18nextLng";
+
+const SUPPORTED = new Set(["ko", "en", "zh", "ja"]);
+
+function normalizeLng(code: string | undefined | null): "ko" | "en" | "zh" | "ja" {
+  const base = String(code ?? "")
+    .trim()
+    .split(/[-_]/)[0]
+    .toLowerCase();
+  if (SUPPORTED.has(base)) return base as "ko" | "en" | "zh" | "ja";
+  return "ko";
+}
+
+function readPersistedLng(): "ko" | "en" | "zh" | "ja" {
+  if (typeof window === "undefined") return "ko";
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) return normalizeLng(raw);
+  } catch {
+    /* private mode 등 */
+  }
+  return "ko";
+}
+
+const initialLng = readPersistedLng();
+
+void i18n.use(initReactI18next).init({
+  lng: initialLng,
+  debug: false,
+  resources: {
+    ko: { translation: ko },
+    en: { translation: en },
+    zh: { translation: zh },
+    ja: { translation: ja },
+  },
+  fallbackLng: "ko",
+  supportedLngs: ["ko", "en", "zh", "ja"],
+  interpolation: {
+    escapeValue: false,
+  },
+});
+
+/** 사용자가 메뉴에서 바꾼 뒤에도 새로고침 후 동일 언어 유지 */
+i18n.on("languageChanged", (lng) => {
+  const normalized = normalizeLng(lng);
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, normalized);
+    }
+  } catch {
+    /* ignore */
+  }
+});
 
 export default i18n;
