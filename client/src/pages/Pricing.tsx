@@ -167,33 +167,48 @@ export default function Pricing() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       window.history.replaceState(null, "", "/pricing");
     }
-    if (p === "cancel") {
+    if (p === "cancel" || p === "fail") {
+      let pendingOrder = "";
+      try {
+        pendingOrder = (sessionStorage.getItem(PAYUP_PENDING_ORDER_KEY) ?? "").trim();
+      } catch {
+        /* ignore */
+      }
+      if (user && pendingOrder) {
+        void fetch("/api/subscription/payup/client-outcome", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderNumber: pendingOrder, outcome: p === "cancel" ? "cancel" : "fail" }),
+        })
+          .then(() => {
+            void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+          })
+          .catch(() => {
+            /* 알림 실패는 요금/토스트와 무관 */
+          });
+      }
       try {
         sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
       } catch {
         /* ignore */
       }
-      toast({
-        title: t("pricing.payupCancelledTitle", "결제 취소"),
-        description: t("pricing.payupCancelledDesc", "카드 결제를 완료하지 않았습니다."),
-        variant: "destructive",
-      });
-      window.history.replaceState(null, "", "/pricing");
-    }
-    if (p === "fail") {
-      try {
-        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
-      } catch {
-        /* ignore */
+      if (p === "cancel") {
+        toast({
+          title: t("pricing.payupCancelledTitle", "결제 취소"),
+          description: t("pricing.payupCancelledDesc", "카드 결제를 완료하지 않았습니다."),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: t("pricing.payupFailTitle", "결제 실패"),
+          description: t("pricing.payupFailDesc", "카드 승인에 실패했습니다. 다시 시도하거나 계좌이체를 이용해 주세요."),
+          variant: "destructive",
+        });
       }
-      toast({
-        title: t("pricing.payupFailTitle", "결제 실패"),
-        description: t("pricing.payupFailDesc", "카드 승인에 실패했습니다. 다시 시도하거나 계좌이체를 이용해 주세요."),
-        variant: "destructive",
-      });
       window.history.replaceState(null, "", "/pricing");
     }
-  }, [searchString, toast, t, queryClient]);
+  }, [searchString, toast, t, queryClient, user]);
 
   const [payupPendingOrder, setPayupPendingOrder] = useState<string | null>(null);
   useEffect(() => {

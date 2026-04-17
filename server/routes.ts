@@ -6615,6 +6615,67 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * PG 취소·승인 실패 후 브라우저가 `?payup=cancel|fail` 로만 복귀할 때 — 서버는 PG 취소를 직접 받지 못하므로
+   * 클라이언트가 sessionStorage 의 주문번호와 함께 호출하면 인앱 알림 1회(중복 방지: payup_meta.abandonNotifiedAt).
+   * SMS 는 본 API에 없음(페이업/별도 문자 대행 설정 필요).
+   */
+  app.post("/api/subscription/payup/client-outcome", isAuthenticated, async (req, res) => {
+    try {
+      const orderNumberRaw = String(req.body?.orderNumber ?? "").trim();
+      const orderNumber = orderNumberRaw.toUpperCase();
+      const outcome = String(req.body?.outcome ?? "").trim().toLowerCase();
+      if (!orderNumber || !looksLikeVenysoundPayupMerchantOrderId(orderNumber)) {
+        return res.status(400).json({ message: "유효하지 않은 주문번호입니다." });
+      }
+      if (outcome !== "cancel" && outcome !== "fail") {
+        return res.status(400).json({ message: "outcome 은 cancel 또는 fail 이어야 합니다." });
+      }
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const [row] = await db.select().from(payments).where(eq(payments.orderId, orderNumber)).limit(1);
+      if (!row || row.userId !== userId) {
+        return res.json({ ok: true as const });
+      }
+      if (row.status !== "pending" || row.paymentKey !== PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+        return res.json({ ok: true as const });
+      }
+      const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
+      if (typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10) {
+        return res.json({ ok: true as const, skipped: true as const });
+      }
+      const message =
+        outcome === "cancel"
+          ? "카드 구독 결제를 취소하셨습니다. 청구·승인 여부는 카드사·페이업 내역에서 확인할 수 있습니다."
+          : "카드 구독 결제가 승인 단계에서 완료되지 않았습니다. 잠시 후 다시 시도하거나 계좌이체를 이용해 주세요.";
+      try {
+        await storage.createNotification({
+          userId,
+          type: "system",
+          message,
+          payload: { payupAbandon: true, orderId: orderNumber, outcome },
+          url: "/pricing",
+        });
+      } catch (e) {
+        console.error("[payup] client-outcome notification", e);
+      }
+      await db
+        .update(payments)
+        .set({
+          payupMeta: {
+            ...meta,
+            abandonNotifiedAt: new Date().toISOString(),
+            abandonOutcome: outcome,
+          },
+        })
+        .where(eq(payments.id, row.id));
+      return res.json({ ok: true as const });
+    } catch (err) {
+      console.error("[payup] client-outcome", err);
+      return res.status(500).json({ message: "처리하지 못했습니다." });
+    }
+  });
+
   /** [페이업] 신용카드 부분취소 RESTful API — 관리자 전용 */
   app.post("/api/admin/payup/part-cancel", isAuthenticated, isAdmin, async (req, res) => {
     try {
