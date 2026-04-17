@@ -1,7 +1,8 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { injectSpaCanonicalPlaceholders } from "./spa-canonical";
 
 /** index.ts 와 동일 — tsx(ESM) 에서는 __dirname 이 없을 수 있음 */
 function projectRoot(): string {
@@ -19,9 +20,28 @@ export function serveStatic(app: Express) {
     );
   }
 
+  const indexPath = path.resolve(distPath, "index.html");
+  let indexTemplate = fs.readFileSync(indexPath, "utf-8");
+
+  const sendSpaIndex = (req: Request, res: Response) => {
+    const body = injectSpaCanonicalPlaceholders(indexTemplate, req);
+    res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(body);
+  };
+
+  // 직접 /index.html 요청은 정적 파일로 나가면 캐노니컬 미주입 → 홈으로 통일
+  app.get("/index.html", (req, res) => {
+    const i = req.originalUrl.indexOf("?");
+    const q = i >= 0 ? req.originalUrl.slice(i) : "";
+    res.redirect(301, "/" + q);
+  });
+
   // HTML은 캐시가 남으면 배포 반영이 안 된 것처럼 보이므로 no-store로 강제
   app.use(
     express.static(distPath, {
+      // true면 GET / 가 디스크 index.html로 바로 나가 캐노니컬 주입(sendSpaIndex)을 건너뜀
+      index: false,
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-store");
@@ -30,8 +50,7 @@ export function serveStatic(app: Express) {
     }),
   );
 
-  const indexPath = path.resolve(distPath, "index.html");
-  app.get("/", (_req, res) => res.sendFile(indexPath));
+  app.get("/", sendSpaIndex);
   // SPA: serve index.html for any other GET (e.g. /music/190). Express 5: /*splat does not match "/"
-  app.get("/*splat", (_req, res) => res.sendFile(indexPath));
+  app.get("/*splat", sendSpaIndex);
 }

@@ -5,6 +5,7 @@ import viteConfig from "../vite.config";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
+import { injectSpaCanonicalPlaceholders } from "./spa-canonical";
 
 const viteLogger = createLogger();
 
@@ -57,6 +58,7 @@ export async function setupVite(server: Server, app: Express) {
     try {
       const clientTemplate = path.resolve(import.meta.dirname, "..", "client", "index.html");
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      template = injectSpaCanonicalPlaceholders(template, req);
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);
