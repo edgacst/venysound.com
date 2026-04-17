@@ -6101,11 +6101,10 @@ export async function registerRoutes(
         100,
       );
       const orderPath = `/ap/api/payment/${encodeURIComponent(cred.merchantId)}/order`;
-      /** 페이업 운영은 URL뿐 아니라 JSON 본문에도 merchantId 가 필요한 경우가 많음(전문 파싱 오류 방지). 규격 PDF 표와 다를 때만 PAYUP_ORDER_OMIT_MERCHANT_IN_BODY=true */
+      /** 가맹점 ID는 주문 URL 경로에 포함됨. 페이업 운영: 규격 표에 없는 본문 필드는 전문 파싱 오류 유발 가능 — merchantId 는 기본으로 JSON에 넣지 않음. 필요 시만 PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY=true */
       /** 페이업·다날 AP 전문은 필드 길이·빈 값에 민감 — 이메일 없으면 키 자체를 보내지 않음 */
       const userEmailTrim = sanitizePayupOrderField((user.email || "").trim(), 50);
       const orderBody: Record<string, string> = {
-        merchantId: cred.merchantId,
         orderNumber,
         amount: amtForOrder,
         itemName,
@@ -6119,8 +6118,13 @@ export async function registerRoutes(
         /** 규격서 부록: 일시불 00 (2자리) */
         QUOTA: "00",
       };
-      if (String(process.env.PAYUP_ORDER_OMIT_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
-        delete orderBody.merchantId;
+      if (String(process.env.PAYUP_ORDER_INCLUDE_MERCHANT_IN_BODY ?? "").trim().toLowerCase() === "true") {
+        orderBody.merchantId = cred.merchantId;
+      }
+      /** 페이업: 규격 표에 없는 필드는 가급적 보내지 말라는 안내 — 전문 파싱 오류 시 true 로 시도 */
+      if (String(process.env.PAYUP_ORDER_STRIP_NONSPEC_FIELDS ?? "").trim().toLowerCase() === "true") {
+        delete orderBody.USESKIPPAGE;
+        delete orderBody.QUOTA;
       }
       /** returnUrl 은 규격 표에 없음 — 불필요 파라미터 거절(6003) 방지: 명시 true 일 때만 전송 */
       if (userAgent === "WM" && String(process.env.PAYUP_ORDER_WM_RETURN_URL ?? "").trim().toLowerCase() === "true") {
@@ -6173,6 +6177,8 @@ export async function registerRoutes(
             bodyKeys: Object.keys(orderPayload),
             amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "plain(default)",
             jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
+            payupOrderMerchantInBody: Boolean(orderPayload.merchantId || orderPayload.MERCHANTID),
+            payupOrderStripNonspec: String(process.env.PAYUP_ORDER_STRIP_NONSPEC_FIELDS ?? "").trim().toLowerCase() === "true",
             signatureAmount: amtForSignature,
             bodyAmount: amtForOrder,
             safeBody: safeBody.slice(0, 1500),
