@@ -983,6 +983,9 @@ export default function CreateMusic() {
   }>({
     queryKey: ["/api/ai-music/usage"],
     enabled: !!user,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 
   const libraryHydratedForUserRef = useRef<string | null>(null);

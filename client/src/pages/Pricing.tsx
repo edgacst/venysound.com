@@ -163,8 +163,9 @@ export default function Pricing() {
         title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
         description: t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
       window.history.replaceState(null, "", "/pricing");
     }
     if (p === "cancel" || p === "fail") {
@@ -206,6 +207,10 @@ export default function Pricing() {
           variant: "destructive",
         });
       }
+      /** 음악 생성 등 다른 탭·캐시에 남은 유료 한도 표시 제거 (취소해도 서버는 free 인데 클라만 오래된 경우) */
+      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       window.history.replaceState(null, "", "/pricing");
     }
   }, [searchString, toast, t, queryClient, user]);
@@ -247,6 +252,7 @@ export default function Pricing() {
         });
         void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
         void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
         return;
       }
       if (data.status === "pending") {
@@ -270,6 +276,9 @@ export default function Pricing() {
         description: t("pricing.payupStatusNoneDesc", "취소했거나 다른 계정으로 결제했을 수 있습니다. 필요하면 카드 결제를 다시 시도해 주세요."),
         variant: "destructive",
       });
+      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
     },
     onError: () => {
       toast({
