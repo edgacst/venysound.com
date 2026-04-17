@@ -61,6 +61,7 @@ import {
   History,
   UserPlus,
   Wallet,
+  CreditCard,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useUpload } from "@/hooks/use-upload";
@@ -1267,6 +1268,19 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
+  const { data: pendingPayupSubPayments, isLoading: loadingPendingPayupSub } = useQuery<any[]>({
+    queryKey: ["/api/admin/pending-payup-subscription-payments"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/pending-payup-subscription-payments", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
   const confirmBankMutation = useMutation({
     mutationFn: async (paymentId: string) => {
       await apiRequest("POST", `/api/admin/payments/${paymentId}/confirm-bank`);
@@ -1995,6 +2009,61 @@ export default function Admin() {
             <p className="text-xs text-muted-foreground mb-3">
               {t("admin.revenuePaymentsHint", "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다.")}
             </p>
+            {!loadingPendingPayupSub && pendingPayupSubPayments && pendingPayupSubPayments.length > 0 ? (
+              <div
+                className="rounded-md border border-amber-500/35 bg-amber-500/10 p-3 mb-4 text-xs space-y-2"
+                data-testid="alert-pending-payup-subscription"
+              >
+                <div className="flex items-start gap-2 font-medium text-amber-200/95">
+                  <CreditCard className="shrink-0 mt-0.5" size={16} />
+                  <span>
+                    {t(
+                      "admin.pendingPayupSubBannerTitle",
+                      "페이업 카드 구독: 승인 대기(pending) — 아래 결제 내역에는 나오지 않습니다.",
+                    )}
+                  </span>
+                </div>
+                <p className="text-muted-foreground pl-6">
+                  {t(
+                    "admin.pendingPayupSubBannerBody",
+                    "PG 창에서 결제가 끝났어도 복귀 URL(/api/subscription/payup/complete)이 호출되지 않거나 승인 API가 실패하면 이 상태로 남습니다. 서버 로그의 [payup] complete 를 확인하세요.",
+                  )}
+                </p>
+                <div className="rounded border border-border/60 overflow-x-auto pl-6">
+                  <table className="w-full text-left">
+                    <thead className="bg-muted/30 border-b border-border/60">
+                      <tr>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.requestDate", "요청일")}</th>
+                        <th className="p-2 font-medium">{t("admin.requester", "요청자")}</th>
+                        <th className="p-2 font-medium whitespace-nowrap">{t("admin.plan", "플랜")}</th>
+                        <th className="p-2 font-medium whitespace-nowrap text-right">{t("admin.amount", "금액")}</th>
+                        <th className="p-2 font-medium font-mono text-[10px]">orderId</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingPayupSubPayments.map((p: any) => (
+                        <tr key={p.id} className="border-b border-border/50 last:border-0">
+                          <td className="p-2 text-muted-foreground whitespace-nowrap">
+                            {p.createdAt ? new Date(p.createdAt).toLocaleString("ko-KR") : "—"}
+                          </td>
+                          <td className="p-2">
+                            {p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.email || p.userId}
+                          </td>
+                          <td className="p-2 text-muted-foreground whitespace-nowrap">
+                            {p.plan ?? "—"}
+                            {p.billingPeriod ? ` · ${p.billingPeriod}` : ""}
+                          </td>
+                          <td className="p-2 text-right tabular-nums">{p.amount?.toLocaleString?.() ?? p.amount}원</td>
+                          <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[200px] truncate" title={p.orderId}>
+                            {p.orderId}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
             {loadingRevenuePayments ? (
               <div className="flex justify-center py-6">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />

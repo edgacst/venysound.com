@@ -6521,6 +6521,33 @@ export async function registerRoutes(
     }
   });
 
+  /** 페이업 카드 구독: 주문 생성 후 /complete 승인 전까지 pending — 매출 목록(paid만)에는 안 나옴 */
+  app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (_req, res) => {
+    try {
+      const list = await db
+        .select({
+          id: payments.id,
+          userId: payments.userId,
+          orderId: payments.orderId,
+          amount: payments.amount,
+          plan: payments.plan,
+          billingPeriod: payments.billingPeriod,
+          createdAt: payments.createdAt,
+          email: users.email,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        })
+        .from(payments)
+        .leftJoin(users, eq(payments.userId, users.id))
+        .where(and(eq(payments.status, "pending"), eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY)))
+        .orderBy(desc(payments.createdAt));
+      res.json(list);
+    } catch (err) {
+      console.error("Pending PayUp subscription payments error:", err);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다" });
+    }
+  });
+
   // === Credits (크레딧) Routes ===
   app.get("/api/credits", isAuthenticated, async (req, res) => {
     try {
