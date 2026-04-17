@@ -263,6 +263,8 @@ export interface IStorage {
       plan: string | null;
       billingPeriod: string | null;
       paymentKey: string | null;
+      /** 승인 완료 시 payup_meta.txnId (payment_key 가 비정상일 때 PG취소 반영 판별용) */
+      payupMetaTxnId: string | null;
       createdAt: Date;
       email: string | null;
       firstName: string | null;
@@ -2277,6 +2279,7 @@ export class DatabaseStorage implements IStorage {
       plan: string | null;
       billingPeriod: string | null;
       paymentKey: string | null;
+      payupMetaTxnId: string | null;
       createdAt: Date;
       email: string | null;
       firstName: string | null;
@@ -2321,6 +2324,7 @@ export class DatabaseStorage implements IStorage {
         plan: payments.plan,
         billingPeriod: payments.billingPeriod,
         paymentKey: payments.paymentKey,
+        payupMetaTxnId: sql<string | null>`NULLIF(TRIM(${payments.payupMeta}->>'txnId'), '')`,
         createdAt: payments.createdAt,
         email: users.email,
         firstName: users.firstName,
@@ -2342,6 +2346,7 @@ export class DatabaseStorage implements IStorage {
       plan: r.plan,
       billingPeriod: r.billingPeriod,
       paymentKey: r.paymentKey,
+      payupMetaTxnId: r.payupMetaTxnId ?? null,
       createdAt: r.createdAt instanceof Date ? r.createdAt : new Date(String(r.createdAt)),
       email: r.email,
       firstName: r.firstName,

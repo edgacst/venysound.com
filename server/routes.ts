@@ -6710,7 +6710,13 @@ export async function registerRoutes(
             eq(payments.userId, userId),
             eq(payments.status, "paid"),
             inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
-            sql`${payments.paymentKey} LIKE 'payup:%'`,
+            or(
+              sql`${payments.paymentKey} ILIKE 'payup:%'`,
+              and(
+                sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+                sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+              ),
+            ),
           ),
         )
         .orderBy(desc(payments.createdAt))
@@ -6730,8 +6736,11 @@ export async function registerRoutes(
       ) {
         return res.json({ ok: true, action: "throttled" as const });
       }
-      const pk = String(latest.paymentKey ?? "");
-      const txnId = pk.startsWith("payup:") ? pk.slice(6).trim() : "";
+      const pk = String(latest.paymentKey ?? "").trim();
+      const fromPk = /^payup:(.+)$/i.exec(pk);
+      const txnId =
+        (fromPk?.[1] ?? "").trim() ||
+        (typeof meta.txnId === "string" ? meta.txnId.trim() : "");
       if (!txnId) {
         return res.json({ ok: true, action: "none" as const, reason: "no_txn_id" });
       }
@@ -6761,6 +6770,9 @@ export async function registerRoutes(
       const out = await revertPayupCardSubscriptionPaymentById(latest.id);
       if (!out.ok) {
         return res.json({ ok: true, action: "revert_failed" as const, message: out.message });
+      }
+      if (out.noop === "already_refunded") {
+        return res.json({ ok: true, action: "already_refunded_db" as const });
       }
       if (out.downgradedUser) {
         try {
@@ -6982,6 +6994,9 @@ export async function registerRoutes(
       if (!out.ok) {
         return res.status(400).json({ message: out.message });
       }
+      if (out.noop === "already_refunded") {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false });
+      }
       if (out.downgradedUser) {
         try {
           await storage.createNotification({
@@ -7022,7 +7037,13 @@ export async function registerRoutes(
             eq(payments.userId, userId),
             eq(payments.status, "paid"),
             inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
-            sql`${payments.paymentKey} LIKE 'payup:%'`,
+            or(
+              sql`${payments.paymentKey} ILIKE 'payup:%'`,
+              and(
+                sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+                sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+              ),
+            ),
           ),
         )
         .orderBy(desc(payments.createdAt))
@@ -7033,6 +7054,9 @@ export async function registerRoutes(
       const out = await revertPayupCardSubscriptionPaymentById(latest.id);
       if (!out.ok) {
         return res.status(400).json({ message: out.message });
+      }
+      if (out.noop === "already_refunded") {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false, paymentId: latest.id });
       }
       if (out.downgradedUser) {
         try {

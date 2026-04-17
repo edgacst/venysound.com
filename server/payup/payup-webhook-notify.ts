@@ -1,4 +1,4 @@
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { payments } from "../../shared/models/auth";
 import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
@@ -105,13 +105,13 @@ export async function tryRevertPaidPayupSubscriptionFromNotifyFlat(flat: Record<
     return { action: "skipped_ambiguous", detail: "no_transaction_id" };
   }
   for (const txnId of txnIds) {
-    const paymentKey = `payup:${txnId}`;
+    const keyLower = `payup:${txnId}`.toLowerCase();
     const [row] = await db
       .select({ id: payments.id })
       .from(payments)
       .where(
         and(
-          eq(payments.paymentKey, paymentKey),
+          sql`lower(trim(${payments.paymentKey})) = ${keyLower}`,
           eq(payments.status, "paid"),
           inArray(payments.plan, PAID_PLAN_IDS),
         ),
@@ -120,6 +120,9 @@ export async function tryRevertPaidPayupSubscriptionFromNotifyFlat(flat: Record<
     if (!row) continue;
     const out = await revertPayupCardSubscriptionPaymentById(row.id);
     if (out.ok) {
+      if (out.noop === "already_refunded") {
+        return { action: "none", detail: "already_refunded" };
+      }
       return {
         action: "reverted",
         paymentId: row.id,

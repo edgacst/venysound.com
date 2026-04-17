@@ -449,12 +449,22 @@ export default function Admin() {
     plan: string | null;
     billingPeriod: string | null;
     paymentKey: string | null;
+    /** 서버: payup_meta.txnId (payment_key 비정상 시 PG취소 반영 버튼용) */
+    payupMetaTxnId?: string | null;
     createdAt: string;
     email: string | null;
     firstName: string | null;
     lastName: string | null;
     username: string | null;
     paymentKind: "subscription" | "credit";
+  };
+
+  const adminRowSupportsPayupPgRevert = (row: AdminRevenuePaymentRow): boolean => {
+    if (row.paymentKind !== "subscription") return false;
+    const pk = (row.paymentKey ?? "").trim().toLowerCase();
+    if (pk.startsWith("payup:")) return true;
+    const tid = (row.payupMetaTxnId ?? "").trim();
+    return tid.length > 0;
   };
 
   const { data: revenuePayments, isLoading: loadingRevenuePayments } = useQuery<{
@@ -1347,12 +1357,22 @@ export default function Admin() {
         const j = (await res.json().catch(() => ({}))) as { message?: string };
         throw new Error(j.message || "처리에 실패했습니다");
       }
-      return res.json() as Promise<{ success: boolean; downgradedUser?: boolean }>;
+      return res.json() as Promise<{
+        success: boolean;
+        downgradedUser?: boolean;
+        alreadyRefunded?: boolean;
+      }>;
     },
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      if (data.alreadyRefunded) {
+        toast({
+          title: t("admin.revokePayupAlreadyRefunded", "이미 refunded 처리된 결제입니다."),
+        });
+        return;
+      }
       toast({
         title: data.downgradedUser
           ? t("admin.revokePayupDowngraded", "회원 구독을 무료로 되돌렸습니다.")
@@ -2261,9 +2281,7 @@ export default function Admin() {
                                 {row.orderId}
                               </td>
                               <td className="p-2 whitespace-nowrap">
-                                {row.paymentKind === "subscription" &&
-                                typeof row.paymentKey === "string" &&
-                                row.paymentKey.startsWith("payup:") ? (
+                                {adminRowSupportsPayupPgRevert(row) ? (
                                   <Button
                                     type="button"
                                     size="sm"
