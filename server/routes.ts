@@ -205,6 +205,8 @@ async function applyBankTransferSubscriptionToUserFromPayment(payment: {
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
   }
   const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+  /** 무료·만료 후 재구독 시 이전 구독 AI 지갑이 남으면 sync 시 이월+월충전이 중복 누적될 수 있음 */
+  const hadActivePaid = payUser ? isUserPaidSubscriptionActive(payUser, now) : false;
   const view = buildEntitlementsView(
     payUser?.subscriptionEntitlements,
     payUser?.subscriptionTier,
@@ -220,6 +222,13 @@ async function applyBankTransferSubscriptionToUserFromPayment(payment: {
       subscriptionTier: computed.subscriptionTier,
       subscriptionExpiresAt: computed.subscriptionExpiresAt,
       subscriptionPlan: payment.billingPeriod ?? null,
+      ...(hadActivePaid
+        ? {}
+        : {
+            subscriptionAiWallet: sql`'[]'::jsonb`,
+            subscriptionAiPeriodKey: null,
+            subscriptionAiPeriodConsumedWon: 0,
+          }),
       updatedAt: new Date(),
     })
     .where(eq(users.id, payment.userId));
