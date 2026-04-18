@@ -191,6 +191,25 @@ async function runAutoMigrations() {
       await pool.query(`INSERT INTO _migrations(name) VALUES($1) ON CONFLICT DO NOTHING`, [name]);
       console.log(`[migrate] ✓ ${name}`);
     } catch (err: any) {
+      const msg = String(err?.message ?? err);
+      const code = String(err?.code ?? "");
+      /** payments 소유자가 아닌 DB 유저로 ALTER 하면 실패 — 컬럼은 이미 있으면 적용 완료로 표시해 PM2 로그 스팸 방지 */
+      if (name === "015-payments-payup-meta" && (/must be owner/i.test(msg) || code === "42501")) {
+        try {
+          const col = await pool.query(
+            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments' AND column_name = 'payup_meta' LIMIT 1`,
+          );
+          if (col.rows.length > 0) {
+            await pool.query(`INSERT INTO _migrations(name) VALUES($1) ON CONFLICT DO NOTHING`, [name]);
+            console.log(
+              `[migrate] ✓ ${name} (payup_meta 컬럼 존재 — ALTER 권한 없음, 적용 완료로만 표시. 소유자 계정으로 ALTER 한 번 실행 권장)`,
+            );
+            continue;
+          }
+        } catch (e2: any) {
+          console.error(`[migrate] ✗ ${name} (컬럼 존재 확인 실패):`, e2?.message);
+        }
+      }
       console.error(`[migrate] ✗ ${name}:`, err.message);
     }
   }

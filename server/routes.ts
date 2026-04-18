@@ -263,6 +263,7 @@ const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_direct";
 async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
   const ref = pgRef.trim();
   if (!ref) return undefined;
+  const refNorm = ref.toLowerCase();
   const rows = await db
     .select()
     .from(payments)
@@ -271,8 +272,8 @@ async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
         eq(payments.status, "pending"),
         eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY),
         or(
-          sql`coalesce(${payments.payupMeta}->>'pgTransactionId','') = ${ref}`,
-          sql`coalesce(${payments.payupMeta}->>'pgTid','') = ${ref}`,
+          sql`lower(trim(coalesce(${payments.payupMeta}->>'pgTransactionId',''))) = ${refNorm}`,
+          sql`lower(trim(coalesce(${payments.payupMeta}->>'pgTid',''))) = ${refNorm}`,
         ),
       ),
     )
@@ -891,10 +892,22 @@ export async function registerRoutes(
 
   // WebSocket for visitor count + DM (noServer so /_vite_hmr can be handled by Vite)
   const wss = new WebSocketServer({ noServer: true });
+  wss.on("error", (err) => {
+    console.warn("[ws] WebSocketServer:", err.message);
+  });
   httpServer.on("upgrade", (request, socket, head) => {
     const pathname = request.url?.split("?")[0] || "";
     if (pathname === "/ws") {
-      wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+      try {
+        wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+      } catch (e: unknown) {
+        console.warn("[ws] handleUpgrade failed:", e instanceof Error ? e.message : e);
+        try {
+          socket.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
     }
     // else: let other listeners (e.g. Vite HMR) handle /_vite_hmr; do not respond so they can
   });
@@ -3632,6 +3645,14 @@ export async function registerRoutes(
     } catch (err: any) {
       if (err?.message?.includes("OPENAI_API_KEY")) {
         return res.status(503).json({ message: "AI 가사 정렬을 사용하려면 서버에 OPENAI_API_KEY를 설정해 주세요." });
+      }
+      const st = Number(err?.status ?? err?.statusCode ?? 0);
+      if (st === 429 || err?.code === "insufficient_quota") {
+        console.warn("align-lyrics: OpenAI quota/rate limit (429)");
+        return res.status(503).json({
+          message:
+            "OpenAI 사용 한도가 부족하거나 요청이 많습니다. 대시보드 결제·한도를 확인한 뒤 잠시 후 다시 시도해 주세요.",
+        });
       }
       console.error("align-lyrics error:", err);
       res.status(500).json({ message: err?.message || "가사 정렬에 실패했습니다" });
@@ -6490,11 +6511,15 @@ export async function registerRoutes(
       }
 
       const orderBodyFormat = String(process.env.PAYUP_ORDER_BODY_FORMAT ?? "").trim().toLowerCase();
-      const orderPost =
-        orderBodyFormat === "form" || orderBodyFormat === "urlencoded"
-          ? payupPostUrlEncodedJson<Record<string, unknown>>
-          : payupPostJson<Record<string, unknown>>;
-      const orderRes = await orderPost(cred, orderPath, orderPayload);
+      const useFormBody = orderBodyFormat === "form" || orderBodyFormat === "urlencoded";
+      const orderPostFirst = useFormBody ? payupPostUrlEncodedJson<Record<string, unknown>> : payupPostJson<Record<string, unknown>>;
+      let orderRes = await orderPostFirst(cred, orderPath, orderPayload);
+      if (!orderRes.ok && orderRes.status === 415 && useFormBody) {
+        console.warn(
+          "[payup] order: HTTP 415 (Unsupported Media Type) with form/urlencoded — retrying as application/json. .env 에서 PAYUP_ORDER_BODY_FORMAT=form 을 제거하는 것을 권장합니다.",
+        );
+        orderRes = await payupPostJson<Record<string, unknown>>(cred, orderPath, orderPayload);
+      }
       if (!orderRes.ok) {
         const safeBody = JSON.stringify(
           Object.fromEntries(
@@ -6508,7 +6533,7 @@ export async function registerRoutes(
             message: orderRes.message,
             orderNumber,
             path: orderPath,
-            bodyFormat: orderBodyFormat === "form" || orderBodyFormat === "urlencoded" ? "form" : "json",
+            bodyFormat: useFormBody ? "form(또는 urlencoded)" : "json",
             bodyKeys: Object.keys(orderPayload),
             amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "plain(default)",
             jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
@@ -6632,8 +6657,12 @@ export async function registerRoutes(
         const tidQ = pickFlat(q, "transactionId") || pickFlat(q, "TRANSACTIONID");
         if (tidQ && looksLikeVenysoundPayupMerchantOrderId(tidQ)) {
           const canon = tidQ.toUpperCase();
-          const [hit] = await db.select().from(payments).where(eq(payments.orderId, canon)).limit(1);
-          if (hit) orderNumber = canon;
+          const [hit] = await db
+            .select()
+            .from(payments)
+            .where(sql`lower(trim(${payments.orderId})) = ${canon.toLowerCase()}`)
+            .limit(1);
+          if (hit) orderNumber = String(hit.orderId ?? "").trim().toUpperCase();
         }
       }
 
