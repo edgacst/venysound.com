@@ -45,7 +45,7 @@ import {
   creditRefundRequests,
   creditRefundEvents,
 } from "../shared/schema";
-import { eq, sql, inArray, and, or, desc, asc } from "drizzle-orm";
+import { eq, sql, inArray, and, or, desc, asc, gte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
@@ -7447,27 +7447,77 @@ export async function registerRoutes(
     }
   });
 
-  /** 페이업 카드 구독: 주문 생성 후 /complete 승인 전까지 pending — 매출 목록(paid만)에는 안 나옴 */
-  app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (_req, res) => {
+  /**
+   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid·payment_key payup:% — 최근 paidDays 일.
+   * 매출 API(paid만)와 달리 미승인도 함께 노출한다.
+   */
+  app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const list = await db
-        .select({
-          id: payments.id,
-          userId: payments.userId,
-          orderId: payments.orderId,
-          amount: payments.amount,
-          plan: payments.plan,
-          billingPeriod: payments.billingPeriod,
-          createdAt: payments.createdAt,
-          email: users.email,
-          firstName: users.firstName,
-          lastName: users.lastName,
-        })
+      const paidDaysRaw = Number(String((req.query as { paidDays?: string }).paidDays ?? "").trim());
+      const paidDays = Number.isFinite(paidDaysRaw) ? Math.min(366, Math.max(1, paidDaysRaw)) : 90;
+      const paidSince = new Date(Date.now() - paidDays * 86_400_000);
+
+      const baseCols = {
+        id: payments.id,
+        userId: payments.userId,
+        orderId: payments.orderId,
+        amount: payments.amount,
+        plan: payments.plan,
+        billingPeriod: payments.billingPeriod,
+        createdAt: payments.createdAt,
+        paymentStatus: payments.status,
+        paymentKey: payments.paymentKey,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      };
+
+      const pendingList = await db
+        .select(baseCols)
         .from(payments)
         .leftJoin(users, eq(payments.userId, users.id))
         .where(and(eq(payments.status, "pending"), eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY)))
         .orderBy(desc(payments.createdAt));
-      res.json(list);
+
+      const paidList = await db
+        .select(baseCols)
+        .from(payments)
+        .leftJoin(users, eq(payments.userId, users.id))
+        .where(
+          and(
+            eq(payments.status, "paid"),
+            sql`${payments.paymentKey} ILIKE 'payup:%'`,
+            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+            gte(payments.createdAt, paidSince),
+          ),
+        )
+        .orderBy(desc(payments.createdAt))
+        .limit(500);
+
+      const seen = new Set<string>();
+      const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" }> = [];
+      for (const r of pendingList) {
+        const id = String(r.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        rows.push({ ...r, cardApprovalStatus: "pending" });
+      }
+      for (const r of paidList) {
+        const id = String(r.id);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        rows.push({ ...r, cardApprovalStatus: "approved" });
+      }
+      rows.sort((a, b) => {
+        if (a.cardApprovalStatus !== b.cardApprovalStatus) {
+          return a.cardApprovalStatus === "pending" ? -1 : 1;
+        }
+        const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(String(a.createdAt)).getTime();
+        const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(String(b.createdAt)).getTime();
+        return tb - ta;
+      });
+
+      res.json(rows);
     } catch (err) {
       console.error("Pending PayUp subscription payments error:", err);
       res.status(500).json({ message: "목록을 불러올 수 없습니다" });

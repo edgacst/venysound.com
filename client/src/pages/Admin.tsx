@@ -1281,10 +1281,14 @@ export default function Admin() {
     enabled: adminCheck?.isAdmin === true,
   });
 
+  /** 페이업 카드 구독: 미승인 전체 + 승인완료(최근 N일) — 서버 paidDays 쿼리와 맞출 것 */
+  const PAYUP_CARD_HISTORY_PAID_DAYS = 90;
   const { data: pendingPayupSubPayments, isLoading: loadingPendingPayupSub } = useQuery<any[]>({
-    queryKey: ["/api/admin/pending-payup-subscription-payments"],
+    queryKey: ["/api/admin/pending-payup-subscription-payments", PAYUP_CARD_HISTORY_PAID_DAYS],
     queryFn: async () => {
-      const res = await fetch("/api/admin/pending-payup-subscription-payments", {
+      const q = new URLSearchParams();
+      q.set("paidDays", String(PAYUP_CARD_HISTORY_PAID_DAYS));
+      const res = await fetch(`/api/admin/pending-payup-subscription-payments?${q.toString()}`, {
         credentials: "include",
         cache: "no-store",
       });
@@ -1293,6 +1297,10 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
   });
+  const pendingPayupCardOnlyCount = useMemo(
+    () => (pendingPayupSubPayments ?? []).filter((p: any) => String(p.paymentStatus ?? "").toLowerCase() === "pending").length,
+    [pendingPayupSubPayments],
+  );
 
   const confirmBankMutation = useMutation({
     mutationFn: async (paymentId: string) => {
@@ -1444,19 +1452,26 @@ export default function Admin() {
       <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-pending-payup-subscription-tab">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <CreditCard size={20} className="text-primary" />
-          {t("admin.tabPayupPendingTitle", "미승인 카드 구독만")}
+          {t("admin.tabPayupCardHistoryTitle", "카드 승인 내역")}
         </h2>
         <div className="text-sm text-muted-foreground mb-4 space-y-2">
           <p>
             {t(
+              "admin.payupCardHistoryBannerIntro",
+              "미승인(pending·주문만 생성) 건은 전부 표시됩니다. 승인 완료(paid) 건은 최근 {{days}}일 이내만 표시됩니다.",
+              { days: PAYUP_CARD_HISTORY_PAID_DAYS },
+            )}
+          </p>
+          <p>
+            {t(
               "admin.pendingPayupSubBannerBody",
-              "PG 창에서 결제가 끝났어도 복귀 URL(/api/subscription/payup/complete)이 호출되지 않거나 승인 API가 실패하면 이 상태로 남습니다. 서버 로그의 [payup] complete 를 확인하세요.",
+              "PG 창에서 결제가 끝났어도 복귀 URL(/api/subscription/payup/complete)이 호출되지 않거나 승인 API가 실패하면 미승인으로 남습니다. 서버 로그의 [payup] complete 를 확인하세요.",
             )}
           </p>
           <p className="text-xs border-l-2 border-amber-500/40 pl-3">
             {t(
               "admin.pendingPayupSubBannerCancel",
-              "사용자가 PG에서 취소·창을 닫은 경우에도 주문 행은 남고, 페이업 관리자 카드승인에는 안 잡히는 것이 정상입니다. 페이업에서 해당 주문번호에 승인이 없음을 확인한 뒤, 아래「미승인 건 삭제」로 DB만 정리하세요.",
+              "사용자가 PG에서 취소·창을 닫은 경우에도 주문 행은 남고, 페이업 관리자 카드승인에는 안 잡히는 것이 정상입니다. 페이업에서 해당 주문번호에 승인이 없음을 확인한 뒤, 미승인 행만「미승인 건 삭제」로 DB를 정리하세요.",
             )}
           </p>
         </div>
@@ -1465,93 +1480,126 @@ export default function Admin() {
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
         ) : pendingPayupSubPayments && pendingPayupSubPayments.length > 0 ? (
-          <div className="rounded-md border border-amber-500/35 bg-amber-500/10 overflow-x-auto">
+          <div className="rounded-md border border-border/60 overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/30 border-b border-border/60">
                 <tr>
+                  <th className="p-2 font-medium whitespace-nowrap">{t("admin.payupCardApprovalStatus", "승인")}</th>
                   <th className="p-2 font-medium whitespace-nowrap">{t("admin.requestDate", "요청일")}</th>
                   <th className="p-2 font-medium">{t("admin.requester", "요청자")}</th>
                   <th className="p-2 font-medium whitespace-nowrap">{t("admin.plan", "플랜")}</th>
                   <th className="p-2 font-medium whitespace-nowrap text-right">{t("admin.amount", "금액")}</th>
                   <th className="p-2 font-medium font-mono text-[10px]">orderId</th>
+                  <th className="p-2 font-medium font-mono text-[10px]">{t("admin.payupPaymentKeyCol", "paymentKey")}</th>
                   <th className="p-2 font-medium whitespace-nowrap">{t("admin.manage", "관리")}</th>
                 </tr>
               </thead>
               <tbody>
-                {pendingPayupSubPayments.map((p: any) => (
-                  <tr key={p.id} className="border-b border-border/50 last:border-0">
-                    <td className="p-2 text-muted-foreground whitespace-nowrap">
-                      {p.createdAt ? new Date(p.createdAt).toLocaleString("ko-KR") : "—"}
-                    </td>
-                    <td className="p-2">
-                      {p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.email || p.userId}
-                    </td>
-                    <td className="p-2 text-muted-foreground whitespace-nowrap">
-                      {p.plan ?? "—"}
-                      {p.billingPeriod ? ` · ${p.billingPeriod}` : ""}
-                    </td>
-                    <td className="p-2 text-right tabular-nums">{p.amount?.toLocaleString?.() ?? p.amount}원</td>
-                    <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[200px] truncate" title={p.orderId}>
-                      {p.orderId}
-                    </td>
-                    <td className="p-2">
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="default"
-                          disabled={finalizePayupPendingInquiryMutation.isPending}
-                          title={t(
-                            "admin.payupFinalizeButtonTitle",
-                            "카드사에 승인만 있고 DB가 pending 일 때 — PAYUP_TXN_RECONCILE_PATH 로 조회 후 반영",
-                          )}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                t(
-                                  "admin.payupFinalizeConfirm",
-                                  "페이업·카드사에서 이 주문이 실제 승인(미취소)인지 확인했습니다. PG 조회로 결제 완료·회원 구독을 반영합니다.",
-                                ),
-                              )
-                            ) {
-                              return;
-                            }
-                            finalizePayupPendingInquiryMutation.mutate(String(p.id));
-                          }}
-                        >
-                          {t("admin.payupFinalizeButton", "PG승인→DB반영")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          disabled={deletePendingPayupSubMutation.isPending}
-                          onClick={() => {
-                            if (
-                              !window.confirm(
-                                t(
-                                  "admin.pendingPayupDeleteConfirm",
-                                  "페이업 관리자에서 이 주문번호에 카드 승인이 없음을 확인했습니다. 사이트 DB의 미승인 대기 건만 삭제합니다. (실제 승인 건이 있으면 삭제하지 마세요)",
-                                ),
-                              )
-                            ) {
-                              return;
-                            }
-                            deletePendingPayupSubMutation.mutate(String(p.id));
-                          }}
-                        >
-                          <Trash2 className="mr-1" size={12} />
-                          {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {pendingPayupSubPayments.map((p: any) => {
+                  const isPending = String(p.paymentStatus ?? "").toLowerCase() === "pending";
+                  const pk = typeof p.paymentKey === "string" ? p.paymentKey : "";
+                  return (
+                    <tr
+                      key={p.id}
+                      className={
+                        isPending
+                          ? "border-b border-amber-500/25 bg-amber-500/[0.07] last:border-0"
+                          : "border-b border-border/50 last:border-0"
+                      }
+                    >
+                      <td className="p-2 whitespace-nowrap">
+                        {isPending ? (
+                          <Badge variant="outline" className="text-amber-800 border-amber-600/50 bg-amber-500/10">
+                            {t("admin.payupCardStatusPending", "미승인")}
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-emerald-900 dark:text-emerald-100">
+                            {t("admin.payupCardStatusApproved", "승인완료")}
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-2 text-muted-foreground whitespace-nowrap">
+                        {p.createdAt ? new Date(p.createdAt).toLocaleString("ko-KR") : "—"}
+                      </td>
+                      <td className="p-2">
+                        {p.firstName && p.lastName ? `${p.firstName} ${p.lastName}` : p.email || p.userId}
+                      </td>
+                      <td className="p-2 text-muted-foreground whitespace-nowrap">
+                        {p.plan ?? "—"}
+                        {p.billingPeriod ? ` · ${p.billingPeriod}` : ""}
+                      </td>
+                      <td className="p-2 text-right tabular-nums">{p.amount?.toLocaleString?.() ?? p.amount}원</td>
+                      <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[200px] truncate" title={p.orderId}>
+                        {p.orderId}
+                      </td>
+                      <td className="p-2 font-mono text-[10px] text-muted-foreground max-w-[140px] truncate" title={pk || "—"}>
+                        {pk || "—"}
+                      </td>
+                      <td className="p-2">
+                        {isPending ? (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="default"
+                              disabled={finalizePayupPendingInquiryMutation.isPending}
+                              title={t(
+                                "admin.payupFinalizeButtonTitle",
+                                "카드사에 승인만 있고 DB가 pending 일 때 — PAYUP_TXN_RECONCILE_PATH 로 조회 후 반영",
+                              )}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    t(
+                                      "admin.payupFinalizeConfirm",
+                                      "페이업·카드사에서 이 주문이 실제 승인(미취소)인지 확인했습니다. PG 조회로 결제 완료·회원 구독을 반영합니다.",
+                                    ),
+                                  )
+                                ) {
+                                  return;
+                                }
+                                finalizePayupPendingInquiryMutation.mutate(String(p.id));
+                              }}
+                            >
+                              {t("admin.payupFinalizeButton", "PG승인→DB반영")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              disabled={deletePendingPayupSubMutation.isPending}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    t(
+                                      "admin.pendingPayupDeleteConfirm",
+                                      "페이업 관리자에서 이 주문번호에 카드 승인이 없음을 확인했습니다. 사이트 DB의 미승인 대기 건만 삭제합니다. (실제 승인 건이 있으면 삭제하지 마세요)",
+                                    ),
+                                  )
+                                ) {
+                                  return;
+                                }
+                                deletePendingPayupSubMutation.mutate(String(p.id));
+                              }}
+                            >
+                              <Trash2 className="mr-1" size={12} />
+                              {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-center text-muted-foreground py-10">{t("admin.noPendingPayupSub", "미승인 카드 구독 대기 건이 없습니다.")}</p>
+          <p className="text-center text-muted-foreground py-10">
+            {t("admin.noPayupCardHistory", "표시할 페이업 카드 구독 내역이 없습니다.")}
+          </p>
         )}
       </Card>
     ),
@@ -1563,6 +1611,7 @@ export default function Admin() {
       finalizePayupPendingInquiryMutation.isPending,
       finalizePayupPendingInquiryMutation.mutate,
       t,
+      PAYUP_CARD_HISTORY_PAID_DAYS,
     ],
   );
 
@@ -1838,9 +1887,9 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="payup-pending" className="gap-1.5">
                 <CreditCard size={14} className="shrink-0" />
-                {t("admin.tabPayupPendingShort", "미승인 카드")}
+                {t("admin.tabPayupCardHistoryShort", "카드승인내역")}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-payup-pending-count">
-                  {pendingPayupSubPayments?.length ?? 0}
+                  {pendingPayupCardOnlyCount}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="credit-refunds" className="gap-1.5">
@@ -2268,19 +2317,24 @@ export default function Admin() {
             <p className="text-xs text-muted-foreground mb-3">
               {t(
                 "admin.revenuePaymentsHint",
-                "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다. 페이업 PG만 승인된 상태는「미입금 상세」의 페이업 카드 줄·「미승인 카드」탭을 보세요.",
+                "위 매출 요약과 동일한 기간·필터입니다. 결제 완료(paid) 건만 표시됩니다. 페이업 PG만 승인된 상태는「미입금 상세」의 페이업 카드 줄·「카드승인내역」탭을 보세요.",
               )}
             </p>
-            {!loadingPendingPayupSub && pendingPayupSubPayments && pendingPayupSubPayments.length > 0 ? (
+            {!loadingPendingPayupSub && pendingPayupCardOnlyCount > 0 ? (
               <p className="text-xs text-muted-foreground mb-4 flex flex-wrap items-center gap-2" data-testid="hint-payup-pending-stats">
                 <span>
                   {t(
                     "admin.pendingPayupStatsHint",
-                    "페이업 카드 미승인(pending) 건은 아래 결제 내역에 포함되지 않습니다. 목록·삭제는「미승인 카드」탭에서만 하세요.",
+                    "페이업 카드 미승인(pending) 건은 아래 결제 내역에 포함되지 않습니다. 미승인·최근 승인 목록은「카드승인내역」탭에서 보세요.",
                   )}
                 </span>
                 <Button type="button" variant="outline" size="sm" onClick={() => setAdminMainTab("payup-pending")}>
-                  {t("admin.tabPayupPendingShort", "미승인 카드")} ({pendingPayupSubPayments.length})
+                  {t("admin.tabPayupCardHistoryShort", "카드승인내역")} (
+                  {t("admin.payupCardHistoryJumpCounts", "미승인 {{p}} · 전체 {{t}}", {
+                    p: pendingPayupCardOnlyCount,
+                    t: pendingPayupSubPayments?.length ?? 0,
+                  })}
+                  )
                 </Button>
               </p>
             ) : null}
