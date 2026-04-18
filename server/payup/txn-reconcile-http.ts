@@ -20,7 +20,8 @@ function payupMergeApiResponseFlat(d: Record<string, unknown>): Record<string, u
 
 /**
  * 페이업 규격서에 맞는 **거래 조회** URL을 .env 에 넣었을 때만 호출합니다.
- * `PAYUP_TXN_RECONCILE_PATH` 예: `/v2/api/payment/{merchantId}/inquiry` (가맹점 문서 확인 필수)
+ * `PAYUP_TXN_RECONCILE_PATH` 는 규격별로 다름. 주문이 `/ap/api/payment/.../order` 이면 조회도 `/ap/api/...` 일 가능성이 큼(문서 필수).
+ * 예: `/ap/api/payment/{merchantId}/inquiry` — 404 시 v2 경로가 아닌지·세그먼트명(inquiry vs transaction 등)을 규격서로 확인.
  * 기본 서명: `cancel2` 와 동일 `merchantId|transactionId|apiCertKey` (문서가 다르면 `PAYUP_TXN_RECONCILE_SIGN_MODE` 확장)
  */
 export async function payupHttpReconcileTransactionCancelled(
