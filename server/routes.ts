@@ -7448,14 +7448,16 @@ export async function registerRoutes(
   });
 
   /**
-   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid·payment_key payup:% — 최근 paidDays 일.
-   * 매출 API(paid만)와 달리 미승인도 함께 노출한다.
+   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid·payment_key payup:% — 최근 paidDays 일(기본 365).
+   * 카드사·PG와 실시간 연동이 아니라 **사이트 DB** 기준이다. 매출 API(paid만)와 달리 미승인도 함께 노출한다.
    */
   app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const paidDaysRaw = Number(String((req.query as { paidDays?: string }).paidDays ?? "").trim());
-      const paidDays = Number.isFinite(paidDaysRaw) ? Math.min(366, Math.max(1, paidDaysRaw)) : 90;
+      const paidDays = Number.isFinite(paidDaysRaw) ? Math.min(1095, Math.max(1, paidDaysRaw)) : 365;
       const paidSince = new Date(Date.now() - paidDays * 86_400_000);
+      /** DB plan 대소문자·공백 차이로 inArray 가 빗나가는 경우 방지 (유료 구독 티어 ID 고정 집합) */
+      const paidPlanTierInListSql = sql`lower(trim(coalesce(${payments.plan}, ''))) in ('starter', 'basic', 'pro', 'premium')`;
 
       const baseCols = {
         id: payments.id,
@@ -7487,12 +7489,12 @@ export async function registerRoutes(
           and(
             eq(payments.status, "paid"),
             sql`${payments.paymentKey} ILIKE 'payup:%'`,
-            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+            paidPlanTierInListSql,
             gte(payments.createdAt, paidSince),
           ),
         )
         .orderBy(desc(payments.createdAt))
-        .limit(500);
+        .limit(800);
 
       const seen = new Set<string>();
       const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" }> = [];

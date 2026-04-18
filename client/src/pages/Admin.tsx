@@ -1282,7 +1282,7 @@ export default function Admin() {
   });
 
   /** 페이업 카드 구독: 미승인 전체 + 승인완료(최근 N일) — 서버 paidDays 쿼리와 맞출 것 */
-  const PAYUP_CARD_HISTORY_PAID_DAYS = 90;
+  const PAYUP_CARD_HISTORY_PAID_DAYS = 365;
   const { data: pendingPayupSubPayments, isLoading: loadingPendingPayupSub } = useQuery<any[]>({
     queryKey: ["/api/admin/pending-payup-subscription-payments", PAYUP_CARD_HISTORY_PAID_DAYS],
     queryFn: async () => {
