@@ -32,7 +32,7 @@ const TIER_RANK: Record<PaidSubscriptionTierId, number> = {
   premium: 4,
 };
 
-function parseIsoDate(iso: string): Date | null {
+export function parseIsoDate(iso: string): Date | null {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
 }

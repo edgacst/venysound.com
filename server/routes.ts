@@ -73,6 +73,7 @@ import {
   mergeEntitlementExpiry,
   getActivePaidTierIds,
   pruneExpiredEntitlements,
+  parseIsoDate,
 } from "@shared/subscription-entitlements";
 import {
   syncSubscriptionAiWalletForPaidUser,
@@ -186,11 +187,14 @@ const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
  * plan 은 DB 대소문자 불일치를 허용하도록 정규화한다.
  */
-async function applyBankTransferSubscriptionToUserFromPayment(payment: {
-  userId: string;
-  plan: string | null;
-  billingPeriod: string | null;
-}): Promise<{
+async function applyBankTransferSubscriptionToUserFromPayment(
+  payment: {
+    userId: string;
+    plan: string | null;
+    billingPeriod: string | null;
+  },
+  opts?: { subscriptionExpiresAtOverride?: Date },
+): Promise<{
   computed: ReturnType<typeof computeDisplayedSubscriptionFromEntitlements>;
   payUser: (typeof users.$inferSelect) | undefined;
   tierPaid: PaidSubscriptionTierId;
@@ -202,11 +206,24 @@ async function applyBankTransferSubscriptionToUserFromPayment(payment: {
   }
   const tierPaid = planNorm as PaidSubscriptionTierId;
   const now = new Date();
-  const expiresAt = new Date(now);
-  if (payment.billingPeriod === "monthly") {
-    expiresAt.setMonth(expiresAt.getMonth() + 1);
+  let expiresAt: Date;
+  if (opts?.subscriptionExpiresAtOverride) {
+    expiresAt = new Date(opts.subscriptionExpiresAtOverride);
+    if (Number.isNaN(expiresAt.getTime())) {
+      expiresAt = new Date(now);
+      if (payment.billingPeriod === "monthly") {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      } else {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+    }
   } else {
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    expiresAt = new Date(now);
+    if (payment.billingPeriod === "monthly") {
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+    } else {
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    }
   }
   const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
   /** 무료·만료 후 재구독 시 이전 구독 AI 지갑이 남으면 sync 시 이월+월충전이 중복 누적될 수 있음 */
@@ -7189,7 +7206,27 @@ export async function registerRoutes(
         return res.status(400).json({ message: "구독(유료 플랜) 결제 건만 복구할 수 있습니다" });
       }
 
-      const { computed, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+      /**
+       * 매 클릭마다 만료를 `지금+1달`로 다시 잡으면 merge 가 미세하게 연장되어
+       * subscription-ai-wallet 의 subPeriodRenewedForward 로 월 공급가가 반복 충전됨 → 기존 활성 만료일 고정.
+       */
+      const tierPaid = planNorm as PaidSubscriptionTierId;
+      const now = new Date();
+      const [payUserBefore] = await db.select().from(users).where(eq(users.id, payment.userId));
+      const view = buildEntitlementsView(
+        payUserBefore?.subscriptionEntitlements,
+        payUserBefore?.subscriptionTier,
+        payUserBefore?.subscriptionExpiresAt,
+        now,
+      );
+      const prevIso = view[tierPaid];
+      const prevPaidExpiry = prevIso ? parseIsoDate(prevIso) : null;
+      const applyOpts =
+        prevPaidExpiry && prevPaidExpiry > now && !Number.isNaN(prevPaidExpiry.getTime())
+          ? { subscriptionExpiresAtOverride: prevPaidExpiry }
+          : undefined;
+
+      const { computed, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment, applyOpts);
       // 복구 시에는 메일을 보내지 않음 (과거 입금 확인 메일과 중복 방지)
       res.json({ success: true, tier: computed.subscriptionTier, expiresAt: computed.subscriptionExpiresAt ?? expiresAt });
     } catch (err: any) {
