@@ -1840,12 +1840,12 @@ export default function Admin() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="min-h-screen bg-background flex flex-col w-full min-w-0 overflow-x-hidden">
         <Navigation />
-        <div className="container max-w-6xl mx-auto px-4 py-8">
-          <h1 className="text-2xl font-bold mb-2" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
+        <div className="container max-w-6xl mx-auto px-4 py-8 w-full min-w-0 max-w-full">
+          <h1 className="text-2xl font-bold mb-2 break-words" data-testid="text-admin-title">{t('admin.dashboard', '관리자 대시보드')}</h1>
           {adminCheck?.isAdmin === true && (
-            <p className="text-[11px] text-muted-foreground font-mono mb-6 leading-relaxed" data-testid="text-deploy-stamp">
+            <p className="text-[11px] text-muted-foreground font-mono mb-6 leading-relaxed break-words" data-testid="text-deploy-stamp">
               {t("admin.deployHint", "배포 확인")}:{" "}
               {deployBuild?.builtAt
                 ? `${t("admin.deployClientBundle", "프론트")} ${new Date(deployBuild.builtAt).toLocaleString("ko-KR")}`
@@ -1859,8 +1859,8 @@ export default function Admin() {
             </p>
           )}
 
-          <Tabs value={adminMainTab} onValueChange={setAdminMainTab} className="w-full">
-            <TabsList className="mb-4 flex flex-wrap gap-1 h-auto">
+          <Tabs value={adminMainTab} onValueChange={setAdminMainTab} className="w-full min-w-0 max-w-full">
+            <TabsList className="mb-4 flex h-auto w-full min-w-0 max-w-full flex-wrap justify-start gap-1 rounded-md bg-muted p-1 text-muted-foreground">
               <TabsTrigger value="stats" className="gap-1.5">
                 {t('admin.statsOverview', '통계')}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{stats?.totalUsers ?? "-"}</Badge>
@@ -1921,7 +1921,7 @@ export default function Admin() {
               </TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
-            <TabsContent value="stats">
+            <TabsContent className="min-w-0 max-w-full" value="stats">
         {/* 통계 총괄 */}
         <section className="mb-10">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" data-testid="text-stats-section">
@@ -1943,7 +1943,7 @@ export default function Admin() {
             <Eye size={16} />
             {t('admin.visitorAndPageViews', '방문자 · 페이지뷰')}
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+          <div className="grid min-w-0 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
             <Card className="p-3 sm:p-4 text-center border-primary/30 min-h-[100px] flex flex-col justify-center" data-testid="stat-visitor-count">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
                 <Activity size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.currentVisitors', '현재 접속자')}</span>
@@ -2093,7 +2093,7 @@ export default function Admin() {
               "최근 선택 일수 기준 합계입니다. 소셜 버튼 클릭은 이메일 단계와 별도로 집계됩니다.",
             )}
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-8">
+          <div className="grid min-w-0 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-8">
             {ANALYTICS_SIGNUP_CONVERSION_EVENTS.map((ev) => (
               <Card
                 key={ev}
@@ -2113,7 +2113,7 @@ export default function Admin() {
             <Database size={16} />
             {t('admin.serviceStats', '서비스 통계')}
           </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid min-w-0 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             <Card className="p-3 sm:p-4 text-center min-h-[100px] flex flex-col justify-center" data-testid="stat-total-users">
               <div className="text-xs sm:text-sm text-muted-foreground mb-1 flex items-center justify-center gap-1 flex-wrap">
                 <Users size={14} className="shrink-0" /> <span className="leading-tight">{t('admin.totalUsers', '전체 회원 수')}</span>
@@ -2157,7 +2157,7 @@ export default function Admin() {
             </Card>
           </div>
 
-          <Card className="p-4 mt-4 overflow-x-auto" data-testid="card-revenue-summary">
+          <Card className="mt-4 max-w-full min-w-0 overflow-x-auto p-4" data-testid="card-revenue-summary">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
               <h3 className="text-sm font-semibold flex items-center gap-2">
                 <Landmark className="w-4 h-4 shrink-0" />
@@ -2351,8 +2351,8 @@ export default function Admin() {
                   {revenuePayments.total}
                   {t("admin.revenueCountSuffix", "건")}
                 </p>
-                <div className="rounded-md border border-border/80 overflow-hidden min-w-[640px]">
-                  <table className="w-full text-xs text-left">
+                <div className="max-w-full min-w-0 overflow-x-auto rounded-md border border-border/80">
+                  <table className="w-full min-w-[640px] text-left text-xs">
                     <thead className="bg-muted/40 border-b border-border/80">
                       <tr>
                         <th className="p-2 font-medium whitespace-nowrap">{t("admin.revenuePayColTime", "일시")}</th>
@@ -2854,11 +2854,11 @@ export default function Admin() {
             />
           </Card>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Card className="p-4 overflow-hidden">
+          <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+            <Card className="min-w-0 overflow-hidden p-4">
               <h3 className="text-sm font-semibold mb-3">{t('admin.byRegion', '지역별 방문')}</h3>
               {Array.isArray(statsByRegion) && statsByRegion.length > 0 ? (
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-w-0 max-w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={statsByRegion.map((r) => ({ name: r.countryCode || r.region || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -2873,7 +2873,7 @@ export default function Admin() {
                 <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noRegionData', '수집된 지역 데이터 없음')}</p>
               )}
             </Card>
-            <Card className="p-4 overflow-hidden">
+            <Card className="min-w-0 overflow-hidden p-4">
               <h3 className="text-sm font-semibold mb-1">{t('admin.byDevice', '디바이스별 방문')}</h3>
               <p className="text-[11px] text-muted-foreground mb-2 leading-snug">
                 {t(
@@ -2882,7 +2882,7 @@ export default function Admin() {
                 )}
               </p>
               {Array.isArray(statsByDevice) && statsByDevice.length > 0 ? (
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-w-0 max-w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={statsByDevice.map((r) => ({ name: formatAnalyticsDeviceType(r.deviceType, t), count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -2904,11 +2904,11 @@ export default function Admin() {
           </div>
 
           {/* 유입 경로 · 기간별 추이 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <Card className="p-4 overflow-hidden">
+          <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2">
+            <Card className="min-w-0 overflow-hidden p-4">
               <h3 className="text-sm font-semibold mb-3">{t('admin.bySource', '유입 경로')}</h3>
               {Array.isArray(statsBySource) && statsBySource.length > 0 ? (
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-w-0 max-w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={statsBySource.map((r) => ({ name: r.source || "-", count: r.count }))} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -2923,16 +2923,16 @@ export default function Admin() {
                 <p className="text-muted-foreground text-sm py-8 text-center">{t('admin.noSourceData', '수집된 유입 경로 데이터 없음')}</p>
               )}
             </Card>
-            <Card className="p-4 overflow-hidden">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold">{t('admin.trend', '기간별 추이')}</h3>
-                <div className="flex gap-1">
+            <Card className="min-w-0 overflow-hidden p-4">
+              <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="min-w-0 text-sm font-semibold">{t('admin.trend', '기간별 추이')}</h3>
+                <div className="flex shrink-0 flex-wrap gap-1">
                   <Button type="button" variant={analyticsTrendDays === 7 ? "default" : "outline"} size="sm" onClick={() => setAnalyticsTrendDays(7)}>7{t('admin.days', '일')}</Button>
                   <Button type="button" variant={analyticsTrendDays === 30 ? "default" : "outline"} size="sm" onClick={() => setAnalyticsTrendDays(30)}>30{t('admin.days', '일')}</Button>
                 </div>
               </div>
               {Array.isArray(analyticsTrend) && analyticsTrend.length > 0 ? (
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-w-0 max-w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={analyticsTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -2950,7 +2950,7 @@ export default function Admin() {
             </Card>
           </div>
 
-          <Card className="p-4 mt-6 overflow-hidden">
+          <Card className="mt-6 max-w-full min-w-0 overflow-hidden p-4">
             <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
               <History size={16} className="shrink-0" />
               {t("admin.visitorSessionsByDate", "일자별 방문 요약")}
@@ -3216,7 +3216,7 @@ export default function Admin() {
           </Card>
         </section>
             </TabsContent>
-            <TabsContent value="posts">
+            <TabsContent className="min-w-0 max-w-full" value="posts">
         <h2 className="text-xl font-bold mb-4" data-testid="text-post-management-title">{t('admin.postManagement', '커뮤니티 글 관리')}</h2>
         <Card className="mb-6 overflow-hidden">
           <div className="overflow-x-auto">
@@ -3294,13 +3294,13 @@ export default function Admin() {
           )}
         </Card>
             </TabsContent>
-            <TabsContent value="copyright">
+            <TabsContent className="min-w-0 max-w-full" value="copyright">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-copyright-management-title">
           <Flag size={20} className="text-orange-500" /> {t('admin.copyrightManagement', '저작권 신고 관리')}
         </h2>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <Select value={reportStatusFilter} onValueChange={setReportStatusFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-report-filter">
+            <SelectTrigger className="w-full max-w-[180px] sm:w-[180px]" data-testid="select-report-filter">
               <SelectValue placeholder={t('admin.statusFilter', '상태 필터')} />
             </SelectTrigger>
             <SelectContent>
@@ -3440,7 +3440,7 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="user-reports">
+            <TabsContent className="min-w-0 max-w-full" value="user-reports">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-user-reports-title">
           <MessageSquare size={20} className="text-amber-500" /> {t('admin.userReports', '회원 신고 (메시지)')}
         </h2>
@@ -3494,7 +3494,7 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="users">
+            <TabsContent className="min-w-0 max-w-full" value="users">
         <h2 className="text-xl font-bold mb-4" data-testid="text-user-management-title">{t('admin.userManagement', '회원 관리')}</h2>
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <Input
@@ -3788,7 +3788,7 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="bank">
+            <TabsContent className="min-w-0 max-w-full" value="bank">
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-pending-bank-payments">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Landmark size={20} className="text-primary" /> {t('admin.pendingBankPayments', '계좌이체 입금 대기')}
@@ -3847,8 +3847,8 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="payup-pending">{pendingPayupSubscriptionPanel}</TabsContent>
-            <TabsContent value="credit-refunds">
+            <TabsContent className="min-w-0 max-w-full" value="payup-pending">{pendingPayupSubscriptionPanel}</TabsContent>
+            <TabsContent className="min-w-0 max-w-full" value="credit-refunds">
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-credit-refund-requests">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Undo2 size={20} className="text-primary" />
@@ -4042,7 +4042,7 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="withdrawal">
+            <TabsContent className="min-w-0 max-w-full" value="withdrawal">
         <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-withdrawal-management">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-withdrawal-management-title">
             <Banknote size={20} className="text-primary" /> {t('admin.withdrawalManagement', '출금 관리')}
@@ -4143,7 +4143,7 @@ export default function Admin() {
           </div>
         </Card>
             </TabsContent>
-            <TabsContent value="announcement">
+            <TabsContent className="min-w-0 max-w-full" value="announcement">
         <Card className="p-4 sm:p-6" data-testid="card-site-announcement">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Megaphone size={20} className="text-primary" /> {t('admin.siteAnnouncementLabel', '사이트 공지')}
@@ -4363,7 +4363,7 @@ export default function Admin() {
           )}
         </Card>
             </TabsContent>
-            <TabsContent value="guide-videos">
+            <TabsContent className="min-w-0 max-w-full" value="guide-videos">
         <Card className="p-4 sm:p-6" data-testid="card-guide-videos">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Video size={20} className="text-primary" /> {t('admin.guideVideos', '동영상 가이드 관리')}
@@ -4462,7 +4462,7 @@ export default function Admin() {
           )}
         </Card>
             </TabsContent>
-            <TabsContent value="curated">
+            <TabsContent className="min-w-0 max-w-full" value="curated">
         <Card className="p-4 sm:p-6">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <ListMusic size={20} className="text-primary" /> {t('admin.curatedPlaylists', '테마 플레이리스트')}
@@ -4747,7 +4747,7 @@ export default function Admin() {
           </DialogContent>
         </Dialog>
             </TabsContent>
-            <TabsContent value="radio-channels">
+            <TabsContent className="min-w-0 max-w-full" value="radio-channels">
         <Card className="p-4 sm:p-6">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Radio size={20} className="text-primary" /> {t('admin.radioChannels', '방송 채널')}
@@ -4830,7 +4830,7 @@ export default function Admin() {
           )}
         </Card>
             </TabsContent>
-            <TabsContent value="ai-music-logs">
+            <TabsContent className="min-w-0 max-w-full" value="ai-music-logs">
         <Card className="p-4 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <h2 className="text-xl font-bold flex items-center gap-2">
@@ -4964,7 +4964,7 @@ export default function Admin() {
           ) : null}
         </Card>
             </TabsContent>
-            <TabsContent value="backup">
+            <TabsContent className="min-w-0 max-w-full" value="backup">
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2" data-testid="text-backup-title">
             <Database className="w-5 h-5 text-emerald-400" />
