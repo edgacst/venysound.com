@@ -66,6 +66,54 @@ export function payupFlatLooksLikeApprovalOnly(flat: Record<string, string>): bo
   return false;
 }
 
+function inquiryPick(flat: Record<string, string>, keys: string[]): string {
+  for (const k of keys) {
+    const v = flat[k] ?? flat[k.toLowerCase()];
+    if (v != null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+
+/** PG 거래조회 응답: 승인 확정(취소 아님 + 응답코드 0000) */
+export function payupInquiryFlatIndicatesSuccessfulAuth0000(flat: Record<string, string>): boolean {
+  if (payupFlatIndicatesSuccessfulCancelOrRefund(flat)) return false;
+  const rc = inquiryPick(flat, [
+    "RESPONSECODE",
+    "responseCode",
+    "RESULT_CODE",
+    "resultCode",
+    "RETURNCODE",
+    "returnCode",
+  ]);
+  return rc === "0000";
+}
+
+/** PG 응답에 주문키가 없으면 검사 생략(일부 조회 API) */
+export function payupInquiryFlatExpectOrderMatch(flat: Record<string, string>, orderIdUpper: string): boolean {
+  const o = inquiryPick(flat, ["moid", "MOID", "orderNumber", "ORDERNUMBER", "orderId", "ORDER_ID"]).toUpperCase();
+  if (!o) return true;
+  return o === orderIdUpper;
+}
+
+export function payupInquiryFlatAmountMatchesIfPresent(
+  flat: Record<string, string>,
+  expectAmount: number,
+): { ok: true } | { ok: false; message: string } {
+  const amtStr = inquiryPick(flat, ["AMOUNT", "amount", "TOTAL", "total", "payAmount", "PAYAMOUNT"]);
+  if (!amtStr) return { ok: true };
+  const amt = Number(String(amtStr).replace(/,/g, ""));
+  if (!Number.isFinite(amt) || amt <= 0) return { ok: true };
+  if (amt !== expectAmount) {
+    return { ok: false, message: `PG 금액 ${amt}원과 주문 금액 ${expectAmount}원이 다릅니다.` };
+  }
+  return { ok: true };
+}
+
+export function payupInquiryFlatPickTransactionId(flat: Record<string, string>, fallbackTid: string): string {
+  const t = inquiryPick(flat, ["transactionId", "TRANSACTIONID", "tid", "TID", "tranId", "TRAN_ID"]);
+  return (t || fallbackTid).replace(/^payup:/i, "").trim();
+}
+
 function collectTransactionIdCandidates(flat: Record<string, string>): string[] {
   const ids = new Set<string>();
   for (const [k, v] of Object.entries(flat)) {

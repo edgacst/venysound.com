@@ -85,10 +85,14 @@ import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
 import { payupDirectPostPayUrl } from "./payup/direct-pay";
 import { payupPostPartCancel } from "./payup/part-cancel";
-import { revertPayupCardSubscriptionPaymentById } from "./payup/revert-payup-subscription";
+import { revertPayupCardSubscriptionPaymentById, payupMetaTransactionIdFromPayupMeta } from "./payup/revert-payup-subscription";
 import {
   flattenPayupWebhookPayload,
   tryRevertPaidPayupSubscriptionFromNotifyFlat,
+  payupInquiryFlatIndicatesSuccessfulAuth0000,
+  payupInquiryFlatExpectOrderMatch,
+  payupInquiryFlatAmountMatchesIfPresent,
+  payupInquiryFlatPickTransactionId,
 } from "./payup/payup-webhook-notify";
 import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
 
@@ -264,6 +268,127 @@ async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
     );
   }
   return rows[0];
+}
+
+/**
+ * /complete 복귀 없이 카드사·PG에만 승인된 pending(payup_direct) — 거래조회로 0000 확인 시 paid+구독 반영.
+ * `PAYUP_TXN_RECONCILE_PATH` 가 설정된 서버에서만 동작.
+ */
+async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
+  payment: typeof payments.$inferSelect,
+): Promise<
+  | { ok: true; paymentId: string; orderId: string; alreadyPaid?: boolean }
+  | { ok: false; message: string }
+> {
+  const [fresh] = await db.select().from(payments).where(eq(payments.id, payment.id));
+  if (!fresh) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
+  if (String(fresh.status ?? "").trim().toLowerCase() === "paid") {
+    return { ok: true, paymentId: fresh.id, orderId: fresh.orderId, alreadyPaid: true };
+  }
+  const pk = String(fresh.paymentKey ?? "").trim();
+  const st = String(fresh.status ?? "").trim().toLowerCase();
+  if (st !== "pending" || pk !== PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+    return { ok: false, message: "페이업 카드 구독 미승인(pending·payup_direct) 건만 PG 조회로 반영할 수 있습니다." };
+  }
+  const planNorm = String(fresh.plan ?? "").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(planNorm)) {
+    return { ok: false, message: "유료 구독 플랜 결제만 처리할 수 있습니다." };
+  }
+  const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+  if (!pathSet) {
+    return {
+      ok: false,
+      message:
+        "서버에 PAYUP_TXN_RECONCILE_PATH(거래 조회 URL)가 없으면 PG 승인만 있고 DB가 pending 인 경우를 자동으로 맞출 수 없습니다. .env 에 조회 URL을 넣은 뒤 다시 시도하세요.",
+    };
+  }
+  const cred = getPayupCredentials();
+  if (!cred.ok) return { ok: false, message: "페이업 자격 정보가 올바르지 않습니다." };
+  const tid = payupMetaTransactionIdFromPayupMeta(fresh.payupMeta);
+  if (!tid) {
+    return { ok: false, message: "주문에 저장된 PG 거래번호(pgTransactionId·pgTid·txnId)가 없습니다." };
+  }
+  const pg = await payupHttpReconcileTransactionCancelled(cred, tid);
+  if (!pg.ok) return { ok: false, message: pg.message };
+  if ("skipped" in pg && pg.skipped) {
+    return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
+  }
+  if (pg.cancelledAtPg) {
+    return { ok: false, message: "PG 조회상 이 거래는 취소·환불 상태입니다." };
+  }
+  const flat = pg.flat ?? {};
+  if (!payupInquiryFlatIndicatesSuccessfulAuth0000(flat)) {
+    return {
+      ok: false,
+      message:
+        "PG 조회 응답에서 승인 완료(응답코드 0000)를 확인하지 못했습니다. 페이업에서 이 주문의 TID가 실제 승인 건과 같은지 확인하세요.",
+    };
+  }
+  const oidWant = String(fresh.orderId ?? "").trim().toUpperCase();
+  if (!payupInquiryFlatExpectOrderMatch(flat, oidWant)) {
+    return { ok: false, message: "PG 응답의 주문번호와 이 DB 주문이 일치하지 않습니다." };
+  }
+  const amtChk = payupInquiryFlatAmountMatchesIfPresent(flat, fresh.amount);
+  if (!amtChk.ok) return { ok: false, message: amtChk.message };
+  const txnId = payupInquiryFlatPickTransactionId(flat, tid);
+
+  const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(fresh);
+  const now = new Date();
+  const meta =
+    fresh.payupMeta && typeof fresh.payupMeta === "object"
+      ? ({ ...(fresh.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const updatedRows = await db
+    .update(payments)
+    .set({
+      status: "paid",
+      paymentKey: `payup:${txnId.replace(/^payup:/i, "").trim()}`,
+      payupMeta: {
+        ...meta,
+        completedAt: now.toISOString(),
+        txnId,
+        finalizedFromPgInquiryAt: now.toISOString(),
+      },
+    })
+    .where(and(eq(payments.id, fresh.id), eq(payments.status, "pending")))
+    .returning({ id: payments.id });
+  if (!updatedRows.length) {
+    const [again] = await db.select().from(payments).where(eq(payments.id, fresh.id));
+    if (String(again?.status ?? "").toLowerCase() === "paid") {
+      return { ok: true, paymentId: again!.id, orderId: again!.orderId, alreadyPaid: true };
+    }
+    console.error("[payup] finalize-from-inquiry: subscription applied but payment not pending", fresh.id);
+    return {
+      ok: false,
+      message: "구독은 반영했으나 결제 행을 paid 로 바꾸지 못했습니다. 관리자에게 문의해 주세요.",
+    };
+  }
+
+  console.log("[payup] pending finalized via PG inquiry", fresh.orderId, txnId.slice(0, 12));
+
+  const bankBp = fresh.billingPeriod === "yearly" || fresh.billingPeriod === "monthly" ? fresh.billingPeriod : null;
+  const bankRecipient = payUser ? `${payUser.firstName || ""} ${payUser.lastName || ""}`.trim() || null : null;
+  try {
+    await notifyUserSubscriptionPaidInApp({
+      userId: fresh.userId,
+      tierPaid,
+      billingPeriod: bankBp,
+      amountWon: fresh.amount,
+      source: "payup_card",
+    });
+  } catch (e) {
+    console.error("[payup] finalize-from-inquiry notify", e);
+  }
+  void sendSubscriptionEmail(payUser?.email, {
+    kind: payUser ? subscriptionPaymentEmailKind(payUser, now, tierPaid) : "started",
+    planId: tierPaid,
+    billingPeriod: bankBp,
+    expiresAt: computed.subscriptionExpiresAt ?? expiresAt,
+    amountWon: fresh.amount,
+    recipientName: bankRecipient,
+  });
+
+  return { ok: true, paymentId: fresh.id, orderId: fresh.orderId };
 }
 
 function payupSubscriptionSiteBase(): string {
@@ -464,7 +589,10 @@ function buildPayupReturnParamsBlobFromQueryBody(q: Record<string, unknown>, bod
         compact === "orderid" ||
         compact === "moid" ||
         compact === "returncode" ||
+        compact === "responsecode" ||
+        compact === "resultcode" ||
         compact === "returnmsg" ||
+        compact === "responsemsg" ||
         compact === "amount";
       if (!allowed) continue;
       const s =
@@ -6651,6 +6779,64 @@ export async function registerRoutes(
     } catch (err) {
       console.error("[payup] checkout-status", err);
       res.status(500).json({ message: "상태를 확인하지 못했습니다." });
+    }
+  });
+
+  /**
+   * 카드사에는 승인됐는데 /complete 가 호출되지 않아 pending 만 남은 경우 —
+   * PAYUP_TXN_RECONCILE_PATH 로 PG 조회 후 0000 이면 paid+구독 반영.
+   * body.orderNumber 가 있으면 해당 주문만, 없으면 최근 pending 을 순서대로 시도.
+   */
+  app.post("/api/subscription/payup/sync-approved-pending", isAuthenticated, async (req, res) => {
+    try {
+      const rawOrder = String((req.body as { orderNumber?: unknown })?.orderNumber ?? "").trim();
+      const orderUpper = rawOrder.toUpperCase();
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+
+      const baseWhere = and(
+        eq(payments.userId, userId),
+        eq(payments.status, "pending"),
+        eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY),
+        inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+      );
+      const rows = await db
+        .select()
+        .from(payments)
+        .where(orderUpper ? and(baseWhere, eq(payments.orderId, orderUpper)) : baseWhere)
+        .orderBy(desc(payments.createdAt))
+        .limit(orderUpper ? 1 : 12);
+
+      if (!rows.length) {
+        return res.status(404).json({ ok: false, message: "해당 미승인 카드 구독 주문을 찾을 수 없습니다." });
+      }
+
+      let lastMsg = "";
+      for (const row of rows) {
+        const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(row);
+        if (out.ok) return res.json({ ok: true, ...out });
+        lastMsg = out.message;
+      }
+      return res.status(400).json({ ok: false, message: lastMsg || "PG 승인 반영에 실패했습니다." });
+    } catch (err) {
+      console.error("[payup] sync-approved-pending", err);
+      res.status(500).json({ ok: false, message: "처리하지 못했습니다." });
+    }
+  });
+
+  /** 관리자: 미승인 카드 구독 1건 — PG 조회로 실제 승인이면 paid+회원 구독 반영 */
+  app.post("/api/admin/payments/:id/finalize-payup-pending-inquiry", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = String(req.params.id ?? "").trim();
+      if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
+      const [p] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!p) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
+      const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(p);
+      if (!out.ok) return res.status(400).json({ message: out.message });
+      res.json({ success: true, orderId: out.orderId, alreadyPaid: out.alreadyPaid === true });
+    } catch (err) {
+      console.error("[admin finalize-payup-pending-inquiry]", err);
+      res.status(500).json({ message: "처리하지 못했습니다." });
     }
   });
 

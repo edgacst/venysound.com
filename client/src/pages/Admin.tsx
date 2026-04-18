@@ -1406,6 +1406,39 @@ export default function Admin() {
     },
   });
 
+  /** 카드사·PG에만 승인돼 있고 DB가 pending 인 건 — 거래조회(0000) 후 paid+구독 반영 */
+  const finalizePayupPendingInquiryMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/admin/payments/${encodeURIComponent(paymentId)}/finalize-payup-pending-inquiry`,
+        {},
+      );
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(j.message || "처리에 실패했습니다");
+      }
+      return res.json() as Promise<{ success: boolean; alreadyPaid?: boolean }>;
+    },
+    onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: data.alreadyPaid
+          ? t("admin.payupFinalizeAlreadyPaid", "이미 결제 완료 처리된 건입니다.")
+          : t("admin.payupFinalizeSuccess", "PG 승인을 확인해 결제 완료·구독을 반영했습니다."),
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: err instanceof Error ? err.message : t("admin.updateFailed", "업데이트에 실패했습니다"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const pendingPayupSubscriptionPanel = useMemo(
     () => (
       <Card className="p-4 sm:p-6 overflow-x-auto" data-testid="card-pending-payup-subscription-tab">
@@ -1462,28 +1495,55 @@ export default function Admin() {
                       {p.orderId}
                     </td>
                     <td className="p-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={deletePendingPayupSubMutation.isPending}
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              t(
-                                "admin.pendingPayupDeleteConfirm",
-                                "페이업 관리자에서 이 주문번호에 카드 승인이 없음을 확인했습니다. 사이트 DB의 미승인 대기 건만 삭제합니다. (실제 승인 건이 있으면 삭제하지 마세요)",
-                              ),
-                            )
-                          ) {
-                            return;
-                          }
-                          deletePendingPayupSubMutation.mutate(String(p.id));
-                        }}
-                      >
-                        <Trash2 className="mr-1" size={12} />
-                        {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          disabled={finalizePayupPendingInquiryMutation.isPending}
+                          title={t(
+                            "admin.payupFinalizeButtonTitle",
+                            "카드사에 승인만 있고 DB가 pending 일 때 — PAYUP_TXN_RECONCILE_PATH 로 조회 후 반영",
+                          )}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                t(
+                                  "admin.payupFinalizeConfirm",
+                                  "페이업·카드사에서 이 주문이 실제 승인(미취소)인지 확인했습니다. PG 조회로 결제 완료·회원 구독을 반영합니다.",
+                                ),
+                              )
+                            ) {
+                              return;
+                            }
+                            finalizePayupPendingInquiryMutation.mutate(String(p.id));
+                          }}
+                        >
+                          {t("admin.payupFinalizeButton", "PG승인→DB반영")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          disabled={deletePendingPayupSubMutation.isPending}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                t(
+                                  "admin.pendingPayupDeleteConfirm",
+                                  "페이업 관리자에서 이 주문번호에 카드 승인이 없음을 확인했습니다. 사이트 DB의 미승인 대기 건만 삭제합니다. (실제 승인 건이 있으면 삭제하지 마세요)",
+                                ),
+                              )
+                            ) {
+                              return;
+                            }
+                            deletePendingPayupSubMutation.mutate(String(p.id));
+                          }}
+                        >
+                          <Trash2 className="mr-1" size={12} />
+                          {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1495,7 +1555,15 @@ export default function Admin() {
         )}
       </Card>
     ),
-    [loadingPendingPayupSub, pendingPayupSubPayments, deletePendingPayupSubMutation.isPending, deletePendingPayupSubMutation.mutate, t],
+    [
+      loadingPendingPayupSub,
+      pendingPayupSubPayments,
+      deletePendingPayupSubMutation.isPending,
+      deletePendingPayupSubMutation.mutate,
+      finalizePayupPendingInquiryMutation.isPending,
+      finalizePayupPendingInquiryMutation.mutate,
+      t,
+    ],
   );
 
   const { data: creditRefundPendingList } = useQuery<AdminCreditRefundRow[]>({

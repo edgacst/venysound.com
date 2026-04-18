@@ -247,6 +247,41 @@ export default function Pricing() {
     })();
   }, [user?.id, queryClient]);
 
+  const payupSyncApprovedPendingMutation = useMutation({
+    mutationFn: async (orderNumber: string) => {
+      const res = await apiRequest("POST", "/api/subscription/payup/sync-approved-pending", {
+        orderNumber: orderNumber.trim(),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; alreadyPaid?: boolean };
+      if (!res.ok || !j.ok) throw new Error(j.message || "PG 승인 반영에 실패했습니다");
+      return j;
+    },
+    onSuccess: (data) => {
+      try {
+        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+      } catch {
+        /* ignore */
+      }
+      setPayupPendingOrder(null);
+      toast({
+        title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
+        description: data.alreadyPaid
+          ? t("pricing.payupAlreadySyncedDesc", "이미 반영된 주문입니다.")
+          : t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t("pricing.payupPgSyncFailedTitle", "PG 승인 반영 실패"),
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const payupStatusCheckMutation = useMutation({
     mutationFn: async (orderNumber: string) => {
       const res = await fetch(
@@ -256,7 +291,7 @@ export default function Pricing() {
       if (!res.ok) throw new Error("status");
       return res.json() as Promise<{ status: "paid" | "pending" | "none" }>;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, orderNumber) => {
       if (data.status === "paid") {
         try {
           sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
@@ -274,13 +309,45 @@ export default function Pricing() {
         return;
       }
       if (data.status === "pending") {
-        toast({
-          title: t("pricing.payupStatusPendingTitle", "아직 결제 완료 처리 전입니다"),
-          description: t(
-            "pricing.payupStatusPendingDesc",
-            "PG에서 결제를 마쳤다면 잠시 후 다시「상태 확인」을 눌러 주세요. 계속 pending이면 고객센터로 문의해 주세요.",
-          ),
-        });
+        void (async () => {
+          try {
+            const syncRes = await apiRequest("POST", "/api/subscription/payup/sync-approved-pending", {
+              orderNumber: orderNumber.trim(),
+            });
+            const j = (await syncRes.json().catch(() => ({}))) as {
+              ok?: boolean;
+              message?: string;
+              alreadyPaid?: boolean;
+            };
+            if (syncRes.ok && j.ok) {
+              try {
+                sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+              } catch {
+                /* ignore */
+              }
+              setPayupPendingOrder(null);
+              toast({
+                title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
+                description: j.alreadyPaid
+                  ? t("pricing.payupAlreadySyncedDesc", "이미 반영된 주문입니다.")
+                  : t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
+              });
+              void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
+              void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+              void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+          toast({
+            title: t("pricing.payupStatusPendingTitle", "아직 결제 완료 처리 전입니다"),
+            description: t(
+              "pricing.payupStatusPendingDescPgSync",
+              "카드사에는 승인만 있고 여기는 pending 이면「PG 승인 반영」을 눌러 주세요. (서버에 PAYUP_TXN_RECONCILE_PATH 필요)",
+            ),
+          });
+        })();
         return;
       }
       try {
@@ -657,6 +724,22 @@ export default function Pricing() {
                       <Loader2 className="w-4 h-4 animate-spin mr-1" />
                     ) : null}
                     {t("pricing.payupCheckStatus", "결제 상태 확인")}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={payupSyncApprovedPendingMutation.isPending || !payupPendingOrder}
+                    title={t(
+                      "pricing.payupPgSyncButtonTitle",
+                      "카드사 승인은 됐는데 사이트가 미승인일 때 — PG 거래조회로 paid 처리",
+                    )}
+                    onClick={() => payupPendingOrder && payupSyncApprovedPendingMutation.mutate(payupPendingOrder)}
+                  >
+                    {payupSyncApprovedPendingMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    ) : null}
+                    {t("pricing.payupPgSyncButton", "PG 승인 반영")}
                   </Button>
                   <Button
                     type="button"
