@@ -1,4 +1,4 @@
-import type { PayupCredentials } from "./config";
+import { type PayupCredentials, getPayupBaseUrl } from "./config";
 import { signPayupCancel2 } from "./signing";
 import { payupPostJson } from "./http";
 import {
@@ -49,7 +49,12 @@ export async function payupHttpReconcileTransactionCancelled(
     signature,
   });
   if (!out.ok) {
-    return { ok: false, message: out.message };
+    const base = getPayupBaseUrl().replace(/\/$/, "");
+    const suffix =
+      out.status === 404
+        ? ` — HTTP 404: ${base}${path.startsWith("/") ? path : `/${path}`} (페이업 "인증결제 다이렉트" 규격서의 거래조회 POST 경로·파라미터를 확인하거나 기술지원에 문의하세요. /v2 와 /ap/api 는 서로 다른 묶음입니다.)`
+        : ` — path: ${path}`;
+    return { ok: false, message: `${out.message}${suffix}` };
   }
   const flatRec = payupMergeApiResponseFlat(out.data as Record<string, unknown>);
   const flat: Record<string, string> = {};
