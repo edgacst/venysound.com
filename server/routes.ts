@@ -274,6 +274,7 @@ async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
         or(
           sql`lower(trim(coalesce(${payments.payupMeta}->>'pgTransactionId',''))) = ${refNorm}`,
           sql`lower(trim(coalesce(${payments.payupMeta}->>'pgTid',''))) = ${refNorm}`,
+          sql`lower(trim(coalesce(${payments.payupMeta}->>'merchantOrderId',''))) = ${refNorm}`,
         ),
       ),
     )
@@ -669,6 +670,8 @@ function payupOrderNumberFromParsed(parsed: Record<string, unknown>): string | u
     "ordernumber",
     "moid",
     "MOID",
+    "cpMoid",
+    "CPMOID",
   );
 }
 
@@ -954,6 +957,16 @@ export async function registerRoutes(
     broadcastVisitorCount();
     let wsUserId: string | null = null;
     wsRadioSlugs.set(ws, new Set());
+
+    ws.on("error", (e: Error) => {
+      const ne = e as NodeJS.ErrnoException;
+      const code = ne?.code ?? "";
+      if (code === "WS_ERR_UNEXPECTED_RSV_2_3" || /RSV2|RSV3/i.test(String(e?.message ?? ""))) {
+        console.warn("[ws] ignored non-WebSocket probe / bad frame:", code || e.message);
+        return;
+      }
+      console.warn("[ws] socket error:", e?.message || e);
+    });
 
     ws.on("message", async (data) => {
       try {
@@ -3604,6 +3617,23 @@ export async function registerRoutes(
     }
   });
 
+  function isOpenAiQuotaOrRateLimit(err: unknown): boolean {
+    const e = err as {
+      status?: number;
+      statusCode?: number;
+      code?: string;
+      message?: string;
+      error?: { code?: string; type?: string };
+    };
+    if (!e) return false;
+    if (e.status === 429 || e.statusCode === 429) return true;
+    if (e.code === "insufficient_quota" || e.error?.code === "insufficient_quota" || e.error?.type === "insufficient_quota")
+      return true;
+    const msg = String(e.message ?? "");
+    if (/429/.test(msg) && /quota|billing|insufficient_quota|rate limit/i.test(msg)) return true;
+    return false;
+  }
+
   /** AI 가사 자동 정렬: 플레인 가사 + 음원 → Whisper로 LRC 생성 후 저장 */
   app.post("/api/music/:id/align-lyrics", isAuthenticated, async (req, res) => {
     try {
@@ -3646,9 +3676,8 @@ export async function registerRoutes(
       if (err?.message?.includes("OPENAI_API_KEY")) {
         return res.status(503).json({ message: "AI 가사 정렬을 사용하려면 서버에 OPENAI_API_KEY를 설정해 주세요." });
       }
-      const st = Number(err?.status ?? err?.statusCode ?? 0);
-      if (st === 429 || err?.code === "insufficient_quota") {
-        console.warn("align-lyrics: OpenAI quota/rate limit (429)");
+      if (isOpenAiQuotaOrRateLimit(err)) {
+        console.warn("align-lyrics: OpenAI quota/rate limit (429 / insufficient_quota)");
         return res.status(503).json({
           message:
             "OpenAI 사용 한도가 부족하거나 요청이 많습니다. 대시보드 결제·한도를 확인한 뒤 잠시 후 다시 시도해 주세요.",
@@ -6512,13 +6541,13 @@ export async function registerRoutes(
 
       const orderBodyFormat = String(process.env.PAYUP_ORDER_BODY_FORMAT ?? "").trim().toLowerCase();
       const useFormBody = orderBodyFormat === "form" || orderBodyFormat === "urlencoded";
-      const orderPostFirst = useFormBody ? payupPostUrlEncodedJson<Record<string, unknown>> : payupPostJson<Record<string, unknown>>;
-      let orderRes = await orderPostFirst(cred, orderPath, orderPayload);
-      if (!orderRes.ok && orderRes.status === 415 && useFormBody) {
-        console.warn(
-          "[payup] order: HTTP 415 (Unsupported Media Type) with form/urlencoded — retrying as application/json. .env 에서 PAYUP_ORDER_BODY_FORMAT=form 을 제거하는 것을 권장합니다.",
-        );
-        orderRes = await payupPostJson<Record<string, unknown>>(cred, orderPath, orderPayload);
+      /** 페이업 AP `/order` 는 대부분 `application/json` 만 허용해 form-first 시 415가 난다 — 항상 JSON 우선, form 은 보조 */
+      let orderRes = await payupPostJson<Record<string, unknown>>(cred, orderPath, orderPayload);
+      if (!orderRes.ok && useFormBody) {
+        const formRes = await payupPostUrlEncodedJson<Record<string, unknown>>(cred, orderPath, orderPayload);
+        if (formRes.ok || orderRes.status === 415) {
+          orderRes = formRes;
+        }
       }
       if (!orderRes.ok) {
         const safeBody = JSON.stringify(
@@ -6533,7 +6562,7 @@ export async function registerRoutes(
             message: orderRes.message,
             orderNumber,
             path: orderPath,
-            bodyFormat: useFormBody ? "form(또는 urlencoded)" : "json",
+            bodyFormat: useFormBody ? "json_then_form_if_needed" : "json",
             bodyKeys: Object.keys(orderPayload),
             amountStyle: String(process.env.PAYUP_ORDER_AMOUNT_STYLE ?? "").trim() || "plain(default)",
             jsonKeys: String(process.env.PAYUP_ORDER_JSON_KEYS ?? "").trim() || "lower(default)",
@@ -6596,6 +6625,7 @@ export async function registerRoutes(
         startUrl: pf.starturl,
         cancelUrl: cancelOut,
         cardCode: cardOut,
+        merchantOrderId: orderNumber,
       };
       if (pgTxnOrder) payupMetaBase.pgTransactionId = pgTxnOrder;
       if (pgTidOrder && pgTidOrder !== pgTxnOrder) payupMetaBase.pgTid = pgTidOrder;

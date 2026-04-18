@@ -24,6 +24,28 @@ import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { pool } from "./db";
 
+/** 015 마이그레이션 소유자 오류 시 동일 안내가 PM2 로그를 도배하지 않도록 */
+let payup015OwnerHintLogged = false;
+
+async function paymentsPayupMetaColumnExists(): Promise<boolean> {
+  const r = await pool.query(
+    `SELECT 1 AS ok
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'payments' AND column_name = 'payup_meta'
+     LIMIT 1`,
+  );
+  if (r.rows.length > 0) return true;
+  const r2 = await pool.query(
+    `SELECT 1 AS ok
+     FROM pg_catalog.pg_attribute a
+     INNER JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+     INNER JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relname = 'payments' AND a.attname = 'payup_meta' AND NOT a.attisdropped
+     LIMIT 1`,
+  );
+  return r2.rows.length > 0;
+}
+
 // 마이그레이션 SQL을 코드에 직접 내장 (파일 읽기 방식은 배포 패키지에 포함 안 됨)
 const MIGRATIONS: { name: string; sql: string }[] = [
   {
@@ -193,24 +215,35 @@ async function runAutoMigrations() {
     } catch (err: any) {
       const msg = String(err?.message ?? err);
       const code = String(err?.code ?? "");
+      let skip015ConsoleError = false;
       /** payments 소유자가 아닌 DB 유저로 ALTER 하면 실패 — 컬럼은 이미 있으면 적용 완료로 표시해 PM2 로그 스팸 방지 */
       if (name === "015-payments-payup-meta" && (/must be owner/i.test(msg) || code === "42501")) {
         try {
-          const col = await pool.query(
-            `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments' AND column_name = 'payup_meta' LIMIT 1`,
-          );
-          if (col.rows.length > 0) {
+          const hasCol = await paymentsPayupMetaColumnExists();
+          if (hasCol) {
             await pool.query(`INSERT INTO _migrations(name) VALUES($1) ON CONFLICT DO NOTHING`, [name]);
             console.log(
               `[migrate] ✓ ${name} (payup_meta 컬럼 존재 — ALTER 권한 없음, 적용 완료로만 표시. 소유자 계정으로 ALTER 한 번 실행 권장)`,
             );
             continue;
           }
+          if (!payup015OwnerHintLogged) {
+            payup015OwnerHintLogged = true;
+            console.warn(
+              `[migrate] ⚠ ${name}: 테이블 소유자가 아니어서 ALTER 불가이며 payup_meta 컬럼도 없습니다.\n` +
+                `postgres 또는 payments 테이블 소유자로 접속해 다음을 실행한 뒤 재시작하세요:\n` +
+                `  ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS payup_meta jsonb;\n` +
+                `앱 DB 역할을 테이블 소유자와 맞추려면: ALTER TABLE public.payments OWNER TO <앱_DB_사용자>;`,
+            );
+          }
+          skip015ConsoleError = true;
         } catch (e2: any) {
           console.error(`[migrate] ✗ ${name} (컬럼 존재 확인 실패):`, e2?.message);
         }
       }
-      console.error(`[migrate] ✗ ${name}:`, err.message);
+      if (!skip015ConsoleError) {
+        console.error(`[migrate] ✗ ${name}:`, err.message);
+      }
     }
   }
 }
