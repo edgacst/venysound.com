@@ -7448,8 +7448,9 @@ export async function registerRoutes(
   });
 
   /**
-   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid·payment_key payup:% — 최근 paidDays 일(기본 365).
-   * 카드사·PG와 실시간 연동이 아니라 **사이트 DB** 기준이다. 매출 API(paid만)와 달리 미승인도 함께 노출한다.
+   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid — 최근 paidDays 일(기본 365).
+   * 승인 분은 **페이업 관리자 화면이 아니라 DB** 기준: `paid` 이고 (`payment_key` 가 payup: 로 시작하거나 `payup_meta.txnId` 가 있는 구독 건).
+   * 페이업에만 승인이 있고 DB가 아직 `pending`이면 미승인으로만 보이며, `/complete`·관리자「PG승인→DB반영」으로 맞춘 뒤 승인완료로 잡힌다.
    */
   app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (req, res) => {
     try {
@@ -7487,8 +7488,14 @@ export async function registerRoutes(
         .leftJoin(users, eq(payments.userId, users.id))
         .where(
           and(
-            eq(payments.status, "paid"),
-            sql`${payments.paymentKey} ILIKE 'payup:%'`,
+            sql`lower(trim(coalesce(${payments.status}, ''))) = 'paid'`,
+            or(
+              sql`${payments.paymentKey} ILIKE 'payup:%'`,
+              and(
+                sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+                sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+              ),
+            ),
             paidPlanTierInListSql,
             gte(payments.createdAt, paidSince),
           ),
