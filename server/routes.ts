@@ -82,6 +82,7 @@ import {
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
 import { runSubscriptionAiBudgetExhaustionIfNeeded } from "./subscription-ai-budget-exhaustion";
+import { setNotificationRealtimeSender } from "./realtime-notify";
 import { getPayupCredentials } from "./payup/config";
 import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
@@ -1167,6 +1168,8 @@ export async function registerRoutes(
       });
     }
   }
+
+  setNotificationRealtimeSender(sendToUser);
 
   // 배포 시 헬스 체크용 (인증 없음). builtAt = 마지막 npm run build 시각 (dist/public/build.json)
   app.get("/api/health", (_req, res) => {

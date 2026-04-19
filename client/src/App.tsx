@@ -14,6 +14,7 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
 import { WsProvider } from "@/contexts/WsContext";
+import { RealtimeInboxSync } from "@/hooks/use-realtime-inbox";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 import { readVisitorKey, writeVisitorKey } from "@/lib/visitor-key";
@@ -474,6 +475,7 @@ function App() {
             <TooltipProvider>
               <WsProviderWithAuth>
                 <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
+                  <RealtimeInboxSync />
                   <PageTitle />
                   <AnalyticsVisit />
                   <RouteSmoothScroll />

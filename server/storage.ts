@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { notifyUserNewNotification } from "./realtime-notify";
 import path from "path";
 import { existsSync } from "fs";
 import { 
@@ -1794,6 +1795,7 @@ export class DatabaseStorage implements IStorage {
   async createNotification(notifData: { userId: string, type: string, message: string, payload?: Record<string, unknown>, url?: string }): Promise<any> {
     const [notif] = await db.insert(notifications).values(notifData).returning();
     await this.pruneNotificationsForUser(notifData.userId, 20);
+    notifyUserNewNotification(notifData.userId, notif);
     return notif;
   }
 

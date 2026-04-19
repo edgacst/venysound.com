@@ -51,7 +51,6 @@ export default function Messages() {
   const [reportTargetUserId, setReportTargetUserId] = useState<string | null>(null);
   const [reportTargetConvoId, setReportTargetConvoId] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
   const dateLocale = i18n.language === 'ko' ? ko : i18n.language === 'ja' ? ja : i18n.language === 'zh' ? zhCN : undefined;
 
@@ -188,55 +187,6 @@ export default function Messages() {
         });
     }
   }, [user, params.userId, conversations, convosLoading, initialConvoCreated, toast, t]);
-
-  useEffect(() => {
-    if (!user) return;
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "auth", userId: user.id }));
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "new_message" && data.conversationId != null) {
-          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/messages/unread-count"] });
-          const cid = data.conversationId;
-          const payload = data.message;
-          if (payload && typeof cid === "number") {
-            const newMsg = {
-              id: payload.id,
-              conversation_id: cid,
-              sender_id: payload.sender_id ?? payload.senderId,
-              content: payload.content ?? "",
-              created_at: payload.created_at ?? payload.createdAt,
-              sender_first_name: payload.sender_first_name ?? "",
-              sender_last_name: payload.sender_last_name ?? "",
-              sender_image: payload.sender_image ?? null,
-            };
-            queryClient.setQueryData(
-              ["/api/conversations", cid, "messages"],
-              (old: any[] | undefined) => {
-                const list = old ?? [];
-                if (list.some((m: any) => String(m.id) === String(newMsg.id))) return list;
-                return [...list, newMsg];
-              }
-            );
-          }
-          queryClient.invalidateQueries({ queryKey: ["/api/conversations", cid, "messages"] });
-          queryClient.refetchQueries({ queryKey: ["/api/conversations", cid, "messages"] });
-        }
-      } catch {}
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [user, selectedConvoId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
