@@ -1325,6 +1325,74 @@ export async function registerRoutes(
     return "V4_5ALL";
   }
 
+  /** https://docs.sunoapi.org/suno-api/generate-music — 모델별 title 최대 길이 */
+  function sunoTitleMaxLenForModel(model: string): number {
+    if (model === "V4" || model === "V4_5ALL") return 80;
+    return 100;
+  }
+
+  function sanitizeSunoDerivedTitleLine(s: string): string {
+    let t = s.replace(/\s+/g, " ").trim();
+    t = t.replace(/^["'"「『（(\[]+/, "").replace(/["'"」』）)\]]+$/, "").trim();
+    return t;
+  }
+
+  /**
+   * Custom 모드에서 사용자가 title을 비운 경우: 가사(prompt) 본문에서 제목 후보 추출.
+   * - `제목:` / `Title:` 등 명시 라인 우선
+   * - 그다음 `[Verse]` 등 섹션 태그만 있는 줄은 건너뛰고, 첫 유효 텍스트 줄 사용
+   */
+  function deriveSunoTitleFromLyricsText(text: string, maxLen: number): string | null {
+    const raw = String(text ?? "").trim();
+    if (!raw) return null;
+
+    const labeled = raw.match(/(?:^|[\r\n])\s*(?:title|제목|곡명|타이틀)\s*[:：]\s*([^\r\n]+)/i);
+    if (labeled?.[1]) {
+      const t = sanitizeSunoDerivedTitleLine(labeled[1]);
+      if (t.length > 0) return t.length > maxLen ? t.slice(0, maxLen) : t;
+    }
+
+    const lines = raw.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (/^\[[^\]]+\]\s*$/.test(trimmed)) continue;
+      const rest = trimmed.replace(/^\[[^\]]+\]\s*/, "").trim();
+      const candidate = rest || trimmed;
+      const t = sanitizeSunoDerivedTitleLine(candidate);
+      if (t.length > 0) return t.length > maxLen ? t.slice(0, maxLen) : t;
+    }
+
+    const flat = sanitizeSunoDerivedTitleLine(raw.replace(/\r?\n/g, " "));
+    if (flat.length > 0) return flat.length > maxLen ? flat.slice(0, maxLen) : flat;
+    return null;
+  }
+
+  function resolveSunoCustomModeTitle(opts: {
+    explicitTitle: string;
+    lyricsPrimary: string;
+    lyricsFallback: string;
+    styleTags: string;
+    instrumental: boolean;
+    model: string;
+  }): string {
+    const maxLen = sunoTitleMaxLenForModel(opts.model);
+    const explicit = opts.explicitTitle.trim();
+    if (explicit) return explicit.slice(0, maxLen);
+
+    if (!opts.instrumental) {
+      for (const block of [opts.lyricsPrimary, opts.lyricsFallback]) {
+        const d = deriveSunoTitleFromLyricsText(block, maxLen);
+        if (d) return d;
+      }
+    }
+
+    const fromStyle = sanitizeSunoDerivedTitleLine(opts.styleTags);
+    if (fromStyle.length > 0) return fromStyle.slice(0, maxLen);
+
+    return "Untitled";
+  }
+
   // Suno 콜백 캐시는 complete 만 저장. first 를 캐시하면 폴링이 조기 종료되며 임시 stream URL 만 저장돼 시간이 지나 한 곡만 재생 실패하는 사례가 남.
   const sunoCallbackResults = new Map<
     string,
@@ -2318,7 +2386,14 @@ export async function registerRoutes(
       };
       if (customMode) {
         payload.style = (body.tags ?? "").trim() || "pop";
-        payload.title = (body.title ?? "").trim() || "Untitled";
+        payload.title = resolveSunoCustomModeTitle({
+          explicitTitle: String(body.title ?? ""),
+          lyricsPrimary: String(body.prompt ?? ""),
+          lyricsFallback: String(body.gpt_description_prompt ?? ""),
+          styleTags: String(body.tags ?? ""),
+          instrumental: makeInstrumental,
+          model,
+        });
         if (!makeInstrumental) payload.prompt = (body.prompt ?? "").trim() || "";
       } else {
         const stylePart = (body.tags ?? "").trim();
