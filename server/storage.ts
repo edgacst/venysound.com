@@ -2867,7 +2867,7 @@ export class DatabaseStorage implements IStorage {
           SELECT
             visitor_key,
             (array_agg(user_id ORDER BY visited_at DESC) FILTER (WHERE user_id IS NOT NULL))[1] AS user_id,
-            (array_agg(path ORDER BY visited_at DESC))[1] AS last_path,
+            (array_agg(path ORDER BY visited_at DESC) FILTER (WHERE path <> ${ANALYTICS_DWELL_HEARTBEAT_PATH}))[1] AS last_path,
             max(visited_at) AS last_seen_at
           FROM analytics_visits
           WHERE visited_at >= now() - make_interval(mins => ${safe})
@@ -2882,9 +2882,7 @@ export class DatabaseStorage implements IStorage {
         const userId = (r.user_id as string | null) ?? null;
         const vk = String(r.visitor_key ?? "");
         const lastAt = r.last_seen_at instanceof Date ? r.last_seen_at : new Date(String(r.last_seen_at));
-        const rawPath = (r.last_path as string | null) ?? null;
-        const lastPath =
-          rawPath === ANALYTICS_DWELL_HEARTBEAT_PATH ? null : rawPath;
+        const lastPath = (r.last_path as string | null) ?? null;
         let displayName: string;
         if (userId) {
           const fn = (r.first_name as string | null)?.trim();

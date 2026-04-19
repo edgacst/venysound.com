@@ -1994,7 +1994,7 @@ export default function Admin() {
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
                 {t(
                   "admin.currentVisitorsListSubtitle",
-                  "최근 15분 이내 기록 기준 고유 방문(브라우저·기기). 아래 표는 많아져도 스크롤 영역 안에서만 늘어납니다.",
+                  "최근 15분 이내 기록 기준 고유 방문(브라우저·기기). 마지막 경로는 실제 페이지뷰 기준(체류 전용 하트비트 /__vs_hb 는 제외)입니다. 아래 표는 많아져도 스크롤 영역 안에서만 늘어납니다.",
                 )}
               </p>
             </div>
@@ -2958,7 +2958,7 @@ export default function Admin() {
             <p className="text-xs text-muted-foreground mb-3">
               {t(
                 "admin.visitorSessionsHint",
-                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류(추정)는 해당 날짜 안 첫·마지막 기록 시각 차이입니다. 탭이 앞에 있을 때는 약 3초 뒤 한 번·이후 약 8초마다 체류 전용 ping이 들어가고, 다른 탭으로 가 둔 경우에도 약 45초마다 beacon으로 ping을 보내 백그라운드 체류가 너무 짧게만 잡히는 것을 줄입니다(페이지뷰 수에는 포함되지 않음). 브라우저가 백그라운드 타이머를 강하게 쉬면 간격이 벌어질 수 있고, 탭을 바로 닫거나 JS가 막히면 여전히 짧게 보일 수 있습니다. 국가·지역은 접속 시점 IP 기준(GeoIP)입니다.",
+                "날짜는 한국 시간(Asia/Seoul) 기준입니다. 체류(추정)는 그날 0시~24시 안에서 첫·마지막 기록(하트비트 포함) 시각 차이입니다. 자정을 넘긴 방문은 날짜가 나뉘어 각 날짜에 체류가 짧게 보일 수 있습니다. 탭이 앞에 있을 때는 약 3초 뒤 한 번·이후 약 8초마다 체류 전용 ping이 들어가고, 다른 탭으로 가 둔 경우에도 약 45초마다 beacon으로 ping을 보냅니다(페이지뷰 수에는 포함되지 않음). 브라우저가 백그라운드 타이머를 강하게 쉬면 간격이 벌어질 수 있고, 탭을 바로 닫거나 JS가 막히면 여전히 짧게 보일 수 있습니다. 기간별 추이 차트의 날짜는 DB visited_at을 UTC로 해석해 한국 날짜로 묶습니다(서버·DB 타임존 설정과 어긋나면 일자 요약과 숫자가 미세하게 다를 수 있음). 국가·지역은 접속 시점 IP 기준(GeoIP)입니다.",
               )}
             </p>
             <p className="text-xs text-muted-foreground mb-3">
