@@ -15,6 +15,40 @@ import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-whil
 
 const REFETCH_INTERVAL_MS = 8000;
 
+/** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
+function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
+  if (!url) return null;
+  const m = String(url).match(/\/api\/music\/(\d+)\/stream/);
+  return m ? Number.parseInt(m[1], 10) : null;
+}
+
+/**
+ * 서버(폴링·WS)가 이미 다음 곡으로 바뀌었는데, 클라이언트 오디오에는 아직 재생할 구간이 남은 경우
+ * 즉시 setStream 하면 곡이 덜 끊긴 채로 넘어가므로 갈아타기를 미룬다.
+ */
+function shouldDeferHandoffToNewRadioTrack(
+  el: HTMLAudioElement | null,
+  newStreamUrl: string,
+  currentStreamUrl: string | null,
+  opts?: { needsReload?: boolean },
+): boolean {
+  if (opts?.needsReload) return false;
+  const newId = musicIdFromSiteMusicStreamUrl(newStreamUrl);
+  const curId = musicIdFromSiteMusicStreamUrl(currentStreamUrl);
+  if (newId == null || curId == null || newId === curId) return false;
+  if (!el || el.paused || el.ended) return false;
+  try {
+    if (el.buffered?.length) {
+      const bufEnd = el.buffered.end(el.buffered.length - 1);
+      if (bufEnd - el.currentTime > 1.5) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+  const d = el.duration;
+  return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.25;
+}
+
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -68,6 +102,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (newStreamUrl !== currentUrl) {
           // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
           if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
+          const pollActiveEl = activeIndexRef.current === 0 ? audioARef.current : audioBRef.current;
+          if (shouldDeferHandoffToNewRadioTrack(pollActiveEl, newStreamUrl, currentUrl)) return;
           const def = i18n.t("radio.defaultChannelName");
           const resolvedName = String(data?.name ?? channelName ?? def).trim() || def;
           setStream(slug, resolvedName, newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
@@ -199,6 +235,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             if (newStreamUrl !== current || needsReload) {
               // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
               if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
+              if (!needsReload && shouldDeferHandoffToNewRadioTrack(activeEl, newStreamUrl, current, { needsReload: false })) {
+                return;
+              }
               const def = i18n.t("radio.defaultChannelName");
               const resolvedName = String(channelName ?? def).trim() || def;
               setStream(slug, resolvedName, newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
@@ -598,9 +637,18 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (trackEndLockRef.current) return;
       const d = el.duration;
       if (!Number.isFinite(d) || d < 2) return;
-      // ended 미발화 대비 폴백만 유지; d-0.5는 실제 종료보다 너무 일찍 client-advance를 유발함
-      if (el.currentTime < d - 0.08) return;
       if (el.ended) return;
+      // 스트리밍에서 duration이 과소·변동될 때 d-0.08 조건이 곡 중간에도 만족되어 조기 진행될 수 있음.
+      // 버퍼 끝이 재생 위치에 거의 붙었을 때만 ended 미발화 보조로 진행.
+      try {
+        if (el.buffered?.length) {
+          const bufEnd = el.buffered.end(el.buffered.length - 1);
+          if (bufEnd - el.currentTime > 0.85) return;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (el.currentTime < d - 0.04) return;
       processActiveTrackEnded(el);
     },
     [getActiveAudio, processActiveTrackEnded],

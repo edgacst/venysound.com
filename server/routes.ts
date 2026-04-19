@@ -8595,7 +8595,7 @@ export async function registerRoutes(
         }
 
         // 짧게 잡힌 메타데이터·클라이언트 시계 오차 대비 여유(너무 짧으면 곡이 끝나기 전에 다음 곡으로 넘어감)
-        const AUTO_ADVANCE_END_SLACK_MS = 2500;
+        const AUTO_ADVANCE_END_SLACK_MS = 4500;
         if (now - started < durationMs + AUTO_ADVANCE_END_SLACK_MS) continue;
 
         // 다음 곡 결정
