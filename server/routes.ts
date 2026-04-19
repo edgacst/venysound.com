@@ -81,6 +81,7 @@ import {
   adminSetSubscriptionAiPeriodConsumedWon,
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
+import { runSubscriptionAiBudgetExhaustionIfNeeded } from "./subscription-ai-budget-exhaustion";
 import { getPayupCredentials } from "./payup/config";
 import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
@@ -243,6 +244,7 @@ async function applyBankTransferSubscriptionToUserFromPayment(
       subscriptionTier: computed.subscriptionTier,
       subscriptionExpiresAt: computed.subscriptionExpiresAt,
       subscriptionPlan: payment.billingPeriod ?? null,
+      subscriptionAiBudgetExhaustionNoticeKey: null,
       ...(hadActivePaid
         ? {}
         : {
@@ -2199,6 +2201,13 @@ export async function registerRoutes(
     }
 
     if (usageWouldExceed) {
+      if (isSubWallet) {
+        try {
+          await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+        } catch (e) {
+          console.error("[ai-music create] budget exhaustion (pre-403)", e);
+        }
+      }
       const msgFree = `Free 플랜은 월 ${limit}곡까지 AI 음악 생성이 가능합니다. 유료 플랜으로 업그레이드하면 월 AI 사용 예산(원)이 늘어납니다.`;
       const msgPaidPeriod = `이번 기간 AI 음악 생성 한도(원화 예산)를 모두 사용했습니다. 이월·정기 충전분은 다음 갱신 주기에 안내된 방식으로 반영됩니다.`;
       const msgCalendar = `이번 달 AI 음악 생성 한도(원화 예산 ${limit.toLocaleString("ko-KR")}원)를 모두 사용했습니다.`;
@@ -2246,6 +2255,11 @@ export async function registerRoutes(
       if (isUserPaidSubscriptionActive(row, now)) {
         const ok = await deductSubscriptionAiWallet(userId, AI_MUSIC_WON_PER_TRACK, now);
         if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
+        try {
+          await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+        } catch (e) {
+          console.error("[ai-music create] budget exhaustion after deduct", e);
+        }
         return 0;
       }
       // 등급은 유료 표시이나 구독 만료 등: 지갑 원화 차감 + 사용량(원화 예산 누적) 반영

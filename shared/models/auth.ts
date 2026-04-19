@@ -48,6 +48,8 @@ export const users = pgTable("users", {
     .default(sql`'[]'::jsonb`),
   subscriptionAiPeriodKey: varchar("subscription_ai_period_key"),
   subscriptionAiPeriodConsumedWon: integer("subscription_ai_period_consumed_won").default(0),
+  /** 기간별 마커 — 해당 값이면 이미 AI 예산 소진 알림·즉시 무료 전환 처리됨 */
+  subscriptionAiBudgetExhaustionNoticeKey: varchar("subscription_ai_budget_exhaustion_notice_key"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

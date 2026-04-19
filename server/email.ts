@@ -383,3 +383,41 @@ export async function sendSubscriptionEmail(
     console.error("[email] sendSubscriptionEmail error:", err);
   }
 }
+
+/** 구독 AI 원화 예산 소진으로 즉시 무료 전환 시 1회 안내 (SMTP 미설정 시 생략) */
+export async function sendSubscriptionAiBudgetExhaustedEmail(
+  to: string | null | undefined,
+  params: { recipientName?: string | null },
+): Promise<void> {
+  if (!to || !String(to).trim()) return;
+  if (!isEmailConfigured()) return;
+
+  const siteUrl = (process.env.PUBLIC_SITE_URL || process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  const greet = params.recipientName?.trim()
+    ? `<p>${escapeHtml(params.recipientName.trim())}님, 안녕하세요.</p>`
+    : `<p>안녕하세요.</p>`;
+  const subject = "[Venysound] 구독 AI 예산이 소진되어 플랜이 Free로 전환되었습니다";
+  const html = `${greet}
+<p>이번 구독 기간에 포함된 <strong>AI 음악 생성 예산(원화)</strong>을 모두 사용하셨습니다.</p>
+<p>유료 구독 혜택은 즉시 종료되었으며, 계정은 <strong>Free 플랜</strong> 기준으로 이용됩니다. 다시 유료 플랜을 이용하시려면 플랜 페이지에서 구독을 신청해 주세요.</p>
+<p><a href="${siteUrl}/pricing">플랜 및 혜택 보기</a></p>
+<p>— Venysound</p>`;
+
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.default.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
+    });
+    await transporter.sendMail({
+      from: MAIL_FROM,
+      to: String(to).trim(),
+      subject,
+      html,
+    });
+  } catch (err) {
+    console.error("[email] sendSubscriptionAiBudgetExhaustedEmail error:", err);
+  }
+}

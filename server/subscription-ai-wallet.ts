@@ -39,6 +39,7 @@ async function performSubscriptionAiWalletSync(
   const desiredKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
   const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now);
   let wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
+  const sumBeforeSync = sumAiWallet(wallet);
   let consumed = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
   const curKey = u.subscriptionAiPeriodKey ?? null;
 
@@ -161,12 +162,14 @@ async function performSubscriptionAiWalletSync(
     }
   }
 
+  const sumAfterSync = sumAiWallet(wallet);
   await tx
     .update(users)
     .set({
       subscriptionAiWallet: wallet,
       subscriptionAiPeriodKey: desiredKey,
       subscriptionAiPeriodConsumedWon: consumed,
+      ...(sumAfterSync > sumBeforeSync ? { subscriptionAiBudgetExhaustionNoticeKey: null } : {}),
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId));

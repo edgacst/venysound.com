@@ -141,6 +141,7 @@ export async function revertPayupCardSubscriptionPaymentById(
           subscriptionEntitlements: sql`'{}'::jsonb`,
           subscriptionExpiresAt: null,
           subscriptionPlan: null,
+          subscriptionAiBudgetExhaustionNoticeKey: null,
           subscriptionAiWallet: sql`'[]'::jsonb`,
           subscriptionAiPeriodKey: null,
           subscriptionAiPeriodConsumedWon: 0,

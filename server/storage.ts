@@ -3121,6 +3121,7 @@ export class DatabaseStorage implements IStorage {
           subscriptionPlan: null,
           subscriptionExpiresAt: null,
           subscriptionEntitlements: {},
+          subscriptionAiBudgetExhaustionNoticeKey: null,
           updatedAt: new Date(),
         })
         .where(eq(users.id, id));
