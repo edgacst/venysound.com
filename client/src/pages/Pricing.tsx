@@ -650,16 +650,6 @@ export default function Pricing() {
             </div>
           ) : (
             <div className="space-y-2">
-              <Button
-                className={`w-full ${id === "pro" ? "bg-primary" : ""}`}
-                variant={id === "pro" ? "default" : id === "premium" ? "outline" : "secondary"}
-                size="sm"
-                onClick={() => handleBankTransferClick(id)}
-                data-testid={`button-bank-subscribe-${id}`}
-              >
-                <Landmark size={14} className="mr-2" />
-                {t("pricing.bankTransferSubscribe", "계좌이체로 구독하기")}
-              </Button>
               {payupStatus?.payup?.configured ? (
                 <Button
                   type="button"
@@ -687,9 +677,19 @@ export default function Pricing() {
                     : t("pricing.cardPayupSubscribe", "카드로 결제하기 (페이업)")}
                 </Button>
               ) : null}
+              <Button
+                className={`w-full ${id === "pro" ? "bg-primary" : ""}`}
+                variant={id === "pro" ? "default" : id === "premium" ? "outline" : "secondary"}
+                size="sm"
+                onClick={() => handleBankTransferClick(id)}
+                data-testid={`button-bank-subscribe-${id}`}
+              >
+                <Landmark size={14} className="mr-2" />
+                {t("pricing.bankTransferSubscribe", "계좌이체로 구독하기")}
+              </Button>
               <p className="text-xs text-muted-foreground text-center mt-1.5">
                 {payupStatus?.payup?.configured
-                  ? t("pricing.bankOrCardNote", "계좌이체 또는 카드(페이업)로 구독할 수 있습니다.")
+                  ? t("pricing.bankOrCardNote", "카드(페이업) 또는 계좌이체로 구독할 수 있습니다.")
                   : t("pricing.bankTransferOnlyNote", "당분간은 계좌 이체만 가능합니다")}
               </p>
             </div>
