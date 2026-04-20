@@ -24,6 +24,19 @@
     "user": "사용자",
     "userSuffix": "님"
   },
+  "siteHelpChat": {
+    "fabAria": "사이트 사용 안내",
+    "title": "사이트 사용 안내",
+    "placeholder": "예: 음악 업로드는 어떻게 하나요?",
+    "search": "찾기",
+    "close": "닫기",
+    "empty": "질문을 입력하고 찾기를 눌러 주세요.",
+    "noResults": "비슷한 안내를 찾지 못했습니다. FAQ를 확인해 보세요.",
+    "openLink": "페이지로 이동",
+    "footnote": "AI가 아닌 저장된 안내만 검색합니다.",
+    "errorLoad": "검색에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    "errorNetwork": "네트워크 오류입니다. 연결을 확인해 주세요."
+  },
   "home": {
     "heroTaglineBelowNav": "<row1><coffee>커피 한 잔 값</coffee>으로 작사, <composer>작곡가로서의 재능</composer>과</row1><row2>내가 만든 앨범 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>",
     "heroTaglineBelowNavMobile": "<row1><coffee>커피 한 잔 값</coffee>으로 <composer>작곡가로서</composer></row1><row2>내 음악 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>",

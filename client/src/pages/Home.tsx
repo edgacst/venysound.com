@@ -22,6 +22,7 @@ import { usePlayerStore } from "@/components/AudioPlayer";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
 import { HomeLearnMoreSheet, type HomeLearnMoreSheetMode } from "@/components/HomeLearnMoreSheet";
+import { SiteHelpChatFab } from "@/components/SiteHelpChatFab";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -1285,6 +1286,7 @@ export default function Home() {
         )}
       </section>
       <HomeLearnMoreSheet open={learnMoreOpen} onOpenChange={setLearnMoreOpen} mode={learnMoreMode} />
+      <SiteHelpChatFab />
       <Footer />
     </div>
   );
