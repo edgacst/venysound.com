@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
-import { useRadioPlayerStore } from "@/stores/radio-player";
+import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
 import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
 import { usePlayerStore } from "@/components/AudioPlayer";
 
@@ -203,7 +203,14 @@ export default function RadioChannel() {
 
   const lastSyncedIndexRef = useRef<number>(-1);
 
-  const { setStream: setRadioStream, setTrackTitle: setRadioTrackTitle, requestPlay: radioRequestPlay, requestPause: radioRequestPause, clear: clearRadioPlayer, isPlaying: radioIsPlaying } = useRadioPlayerStore();
+  const {
+    setStream: setRadioStream,
+    setTrackTitle: setRadioTrackTitle,
+    requestPlay: radioRequestPlay,
+    requestPause: radioRequestPause,
+    clear: clearRadioPlayer,
+    isPlaying: radioIsPlaying,
+  } = useRadioPlayerStore();
 
 
   function formatScheduleTime(iso: string | null | undefined): string {
@@ -228,7 +235,13 @@ export default function RadioChannel() {
   useEffect(() => {
     if (!channel || !listenerAudioSrc) return;
     usePlayerStore.getState().closePlayer();
-    setRadioStream(slug, channel.name, listenerAudioSrc, channel?.nowPlayingElapsedSeconds ?? undefined);
+    const prevUrl = useRadioPlayerStore.getState().streamUrl;
+    const seek = radioSeekSecondsForHandoff(
+      prevUrl,
+      listenerAudioSrc,
+      typeof channel?.nowPlayingElapsedSeconds === "number" ? channel.nowPlayingElapsedSeconds : null,
+    );
+    setRadioStream(slug, channel.name, listenerAudioSrc, seek);
     // 스트림이 설정되자마자 재생 요청 (사용자 제스처 컨텍스트가 유효할 때 빠르게 시도)
     if (!isOwner) {
       radioRequestPlay();

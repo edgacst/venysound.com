@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Pause, Play, X, Radio } from "lucide-react";
-import { useRadioPlayerStore } from "@/stores/radio-player";
+import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
 import { useWs } from "@/contexts/WsContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -107,7 +107,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           if (shouldDeferHandoffToNewRadioTrack(pollActiveEl, newStreamUrl, currentUrl)) return;
           const def = i18n.t("radio.defaultChannelName");
           const resolvedName = String(data?.name ?? channelName ?? def).trim() || def;
-          setStream(slug, resolvedName, newStreamUrl, data?.nowPlayingElapsedSeconds ?? undefined);
+          setStream(
+            slug,
+            resolvedName,
+            newStreamUrl,
+            radioSeekSecondsForHandoff(currentUrl, newStreamUrl, data?.nowPlayingElapsedSeconds as number | null | undefined),
+          );
         }
       } catch { /* ignore */ }
     }, REFETCH_INTERVAL_MS);
@@ -220,7 +225,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (msg.type === "radio_now_playing" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
         const musicId = msg.musicId != null ? Number(msg.musicId) : null;
         const objPath = (msg as any).nowPlayingObjectPath;
-        const elapsedSeconds = typeof (msg as any).elapsedSeconds === "number" ? (msg as any).elapsedSeconds : 0;
+        const elapsedSecondsRaw = typeof (msg as any).elapsedSeconds === "number" ? (msg as any).elapsedSeconds : 0;
         if (musicId === null && !objPath) {
           [audioARef.current, audioBRef.current].forEach((el) => {
             if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
@@ -241,7 +246,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               }
               const def = i18n.t("radio.defaultChannelName");
               const resolvedName = String(channelName ?? def).trim() || def;
-              setStream(slug, resolvedName, newStreamUrl, elapsedSeconds > 0 ? elapsedSeconds : undefined);
+              setStream(
+                slug,
+                resolvedName,
+                newStreamUrl,
+                radioSeekSecondsForHandoff(current, newStreamUrl, elapsedSecondsRaw > 0 ? elapsedSecondsRaw : null),
+              );
             }
           }
         }
@@ -571,14 +581,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             const s = useRadioPlayerStore.getState();
             if (s.userStopped || s.slug !== currentSlug) return;
             const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
-            s.setStream(
-              currentSlug,
-              resolvedName,
-              newStreamUrl,
+            const elapsed =
               typeof channelData?.nowPlayingElapsedSeconds === "number"
                 ? (channelData.nowPlayingElapsedSeconds as number)
-                : undefined,
-            );
+                : null;
+            s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
             didSetNext = true;
           };
 

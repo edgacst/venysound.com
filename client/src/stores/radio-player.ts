@@ -2,6 +2,35 @@ import { create } from "zustand";
 
 const _currentTimeRef = { current: 0 };
 
+function radioStreamSameAsset(prevUrl: string, nextUrl: string): boolean {
+  if (prevUrl === nextUrl) return true;
+  if (typeof window === "undefined") return false;
+  try {
+    return new URL(prevUrl, window.location.origin).pathname === new URL(nextUrl, window.location.origin).pathname;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 채널 동기화용 seek 초: **다른 곡·다른 소스로 갈아탈 때** 서버 elapsed는 전곡/경합으로 틀릴 수 있어 무시(0부터).
+ * 최초 진입(prev 없음) 또는 동일 스트림이면 서버 값 사용.
+ */
+export function radioSeekSecondsForHandoff(
+  prevStreamUrl: string | null | undefined,
+  nextStreamUrl: string,
+  serverElapsedSeconds: number | null | undefined,
+): number | undefined {
+  if (serverElapsedSeconds == null || typeof serverElapsedSeconds !== "number" || !Number.isFinite(serverElapsedSeconds)) {
+    return undefined;
+  }
+  const sec = Math.max(0, Math.floor(serverElapsedSeconds));
+  if (sec <= 0) return undefined;
+  if (!prevStreamUrl) return sec;
+  if (radioStreamSameAsset(prevStreamUrl, nextStreamUrl)) return sec;
+  return undefined;
+}
+
 type RadioPlayerState = {
   slug: string | null;
   channelName: string | null;

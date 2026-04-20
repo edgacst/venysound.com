@@ -17,7 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useIsLgUp } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
-import { useRadioPlayerStore } from "@/stores/radio-player";
+import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
@@ -270,8 +270,13 @@ export default function Home() {
         const def = t("radio.defaultChannelName");
         const resolvedName = String(data.name ?? pick.name ?? def).trim() || def;
         const elapsed =
-          typeof data.nowPlayingElapsedSeconds === "number" ? (data.nowPlayingElapsedSeconds as number) : undefined;
-        latest.setStream(slug, resolvedName, streamUrl, elapsed);
+          typeof data.nowPlayingElapsedSeconds === "number" ? (data.nowPlayingElapsedSeconds as number) : null;
+        latest.setStream(
+          slug,
+          resolvedName,
+          streamUrl,
+          radioSeekSecondsForHandoff(latest.streamUrl, streamUrl, elapsed),
+        );
       } catch {
         /* ignore */
       }
