@@ -8708,8 +8708,8 @@ export async function registerRoutes(
           continue;
         }
 
-        // 짧게 잡힌 메타데이터·클라이언트 시계 오차 대비 여유(너무 짧으면 곡이 끝나기 전에 다음 곡으로 넘어감)
-        const AUTO_ADVANCE_END_SLACK_MS = 4500;
+        // 스냅샷 길이가 실제보다 짧을 때 곡 중간에 넘어가는 것 방지: 고정 4.5초보다 곡 길이 비례 여유(상한 있음)
+        const AUTO_ADVANCE_END_SLACK_MS = Math.min(22_000, Math.max(8_000, Math.floor(durationMs * 0.12)));
         if (now - started < durationMs + AUTO_ADVANCE_END_SLACK_MS) continue;
 
         // 다음 곡 결정

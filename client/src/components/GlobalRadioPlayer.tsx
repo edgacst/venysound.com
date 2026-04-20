@@ -40,13 +40,14 @@ function shouldDeferHandoffToNewRadioTrack(
   try {
     if (el.buffered?.length) {
       const bufEnd = el.buffered.end(el.buffered.length - 1);
-      if (bufEnd - el.currentTime > 1.5) return true;
+      // 재생 버퍼에 아직 여유가 있으면 서버·WS가 다음 곡으로 바뀌어도 갈아타기 미룸(곡 중간 끊김 완화)
+      if (bufEnd - el.currentTime > 2) return true;
     }
   } catch {
     /* ignore */
   }
   const d = el.duration;
-  return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.25;
+  return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.2;
 }
 
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
@@ -638,17 +639,18 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const d = el.duration;
       if (!Number.isFinite(d) || d < 2) return;
       if (el.ended) return;
-      // 스트리밍에서 duration이 과소·변동될 때 d-0.08 조건이 곡 중간에도 만족되어 조기 진행될 수 있음.
-      // 버퍼 끝이 재생 위치에 거의 붙었을 때만 ended 미발화 보조로 진행.
+      // ended 미발화 보조용: 과도한 조기 진행 방지 — (1) reported duration 끝 근처 (2) 버퍼도 거의 소진
+      // duration이 실제보다 짧게 잡힌 경우, 버퍼 끝이 아직 metadata 끝보다 짧으면 조기 종료하지 않음
       try {
         if (el.buffered?.length) {
           const bufEnd = el.buffered.end(el.buffered.length - 1);
-          if (bufEnd - el.currentTime > 0.85) return;
+          if (bufEnd - el.currentTime > 0.55) return;
+          if (Number.isFinite(d) && bufEnd < d - 0.75 && d - el.currentTime > 0.9) return;
         }
       } catch {
         /* ignore */
       }
-      if (el.currentTime < d - 0.04) return;
+      if (el.currentTime < d - 0.18) return;
       processActiveTrackEnded(el);
     },
     [getActiveAudio, processActiveTrackEnded],
