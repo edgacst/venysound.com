@@ -1189,8 +1189,27 @@ export async function registerRoutes(
 
   // 사이트맵 (SEO) — 루트 /sitemap.xml 이 표준. /api/sitemap.xml 은 구버전·GSC URL 호환.
   // 일부 프록시가 /api/* 만 다르게 처리해 봇이 "가져올 수 없음"이 되는 경우가 있어 둘 다 200 본문 제공.
-  const sendSitemapXml = async (_req: Request, res: Response) => {
-    const base = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  function escapeXmlText(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  }
+
+  /** 네이버 등: <loc> 호스트가 수집·등록 도메인(www vs apex)과 같아야 "올바른 사이트맵"으로 인정되는 경우가 많음 */
+  function resolveSitemapBaseUrl(req: Request): string {
+    const forced = (process.env.SITEMAP_BASE_URL || "").trim().replace(/\/$/, "");
+    if (forced) return forced;
+
+    const rawHost = (req.get("x-forwarded-host") || req.get("host") || "").split(",")[0].trim();
+    const hostNoPort = rawHost.replace(/:\d+$/, "");
+    if (/^(www\.)?venysound\.com$/i.test(hostNoPort)) {
+      return `https://${hostNoPort.toLowerCase()}`;
+    }
+
+    return (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+  }
+
+  const sendSitemapXml = async (req: Request, res: Response) => {
+    const base = resolveSitemapBaseUrl(req);
+    const lastmod = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
     const staticPaths = [
       "",
       "/music",
@@ -1214,21 +1233,24 @@ export async function registerRoutes(
       "/create-music",
       "/global-distribution-guide",
     ];
-    const now = new Date().toISOString().slice(0, 10);
     let urls = staticPaths.map(
-      (p) => `<url><loc>${base}${p || "/"}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>${p ? "0.8" : "1.0"}</priority></url>`
+      (p) =>
+        `<url><loc>${escapeXmlText(`${base}${p || "/"}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>${p ? "0.8" : "1.0"}</priority></url>`
     );
     try {
       const { data: musicList } = await storage.getMusicList(undefined, undefined, 1, 10000);
       for (const m of musicList) {
-        urls.push(`<url><loc>${base}/music/${m.id}</loc><lastmod>${now}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`);
+        urls.push(
+          `<url><loc>${escapeXmlText(`${base}/music/${m.id}`)}</loc><lastmod>${lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`
+        );
       }
     } catch {
       // DB 오류 시 정적 페이지만 포함
     }
-    const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
     res.setHeader("Cache-Control", "public, max-age=600");
-    res.type("application/xml").send(xml);
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.send(xml);
   };
   app.get("/sitemap.xml", sendSitemapXml);
   app.get("/api/sitemap.xml", sendSitemapXml);
