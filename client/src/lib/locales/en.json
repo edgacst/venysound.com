@@ -34,7 +34,6 @@
     "noResults": "No matching help found. Try the FAQ.",
     "openLink": "Open page",
     "suggestedLabel": "Suggested questions",
-    "footnote": "No external AI — only prewritten Q&A is searched and shown.",
     "errorLoad": "Search failed. Please try again.",
     "errorNetwork": "Network error. Check your connection.",
     "errorParse": "Could not read the server response. Refresh and try again.",

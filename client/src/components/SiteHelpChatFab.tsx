@@ -25,7 +25,7 @@ type HelpSearchResponse = {
 };
 
 /**
- * 로컬 `/api/help-search` 기반 사용 안내(외부 LLM 없음).
+ * 로컬 `/api/help-search` 기반 사용 안내.
  * 하단 재생/라디오 바와 겹치지 않도록 여백을 둡니다.
  */
 export function SiteHelpChatFab() {
@@ -231,9 +231,6 @@ export function SiteHelpChatFab() {
                 ))}
               </ul>
             </ScrollArea>
-            <p className="text-[10px] text-muted-foreground leading-snug">
-              {t("siteHelpChat.footnote", "AI가 아닌 저장된 안내만 검색합니다.")}
-            </p>
           </CardContent>
         </Card>
       )}
