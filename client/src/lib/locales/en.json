@@ -33,7 +33,8 @@
     "empty": "Type a question and tap Search.",
     "noResults": "No matching help found. Try the FAQ.",
     "openLink": "Open page",
-    "footnote": "Searches saved help only (no AI).",
+    "suggestedLabel": "Suggested questions",
+    "footnote": "No external AI — only prewritten Q&A is searched and shown.",
     "errorLoad": "Search failed. Please try again.",
     "errorNetwork": "Network error. Check your connection."
   },

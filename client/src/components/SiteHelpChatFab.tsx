@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { Loader2, MessageCircle, Send, X } from "lucide-react";
@@ -12,6 +12,7 @@ type HelpCandidate = {
   id: string;
   title: string;
   summary: string;
+  answer: string;
   href?: string;
   score: number;
 };
@@ -19,6 +20,7 @@ type HelpCandidate = {
 type HelpSearchResponse = {
   query: string;
   candidates: HelpCandidate[];
+  suggestedQueries?: string[];
 };
 
 /**
@@ -33,36 +35,64 @@ export function SiteHelpChatFab() {
   const [candidates, setCandidates] = useState<HelpCandidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestedQueries, setSuggestedQueries] = useState<string[]>([]);
 
-  const runSearch = useCallback(async () => {
-    const trimmed = q.trim();
-    if (!trimmed) {
-      setSubmitted("");
-      setCandidates([]);
-      setError(null);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/help-search?q=${encodeURIComponent(trimmed)}`);
-      if (!res.ok) {
-        setError(t("siteHelpChat.errorLoad", "검색에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/help-search?q=");
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as HelpSearchResponse;
+        if (!cancelled && Array.isArray(data.suggestedQueries)) {
+          setSuggestedQueries(data.suggestedQueries);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const runSearch = useCallback(
+    async (override?: string) => {
+      const trimmed = (override ?? q).trim();
+      if (!trimmed) {
+        setSubmitted("");
         setCandidates([]);
-        setSubmitted(trimmed);
+        setError(null);
         return;
       }
-      const data = (await res.json()) as HelpSearchResponse;
-      setSubmitted(typeof data.query === "string" ? data.query : trimmed);
-      setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
-    } catch {
-      setError(t("siteHelpChat.errorNetwork", "네트워크 오류입니다. 연결을 확인해 주세요."));
-      setCandidates([]);
-      setSubmitted(trimmed);
-    } finally {
-      setLoading(false);
-    }
-  }, [q, t]);
+      if (override != null) setQ(trimmed);
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/help-search?q=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) {
+          setError(t("siteHelpChat.errorLoad", "검색에 실패했습니다. 잠시 후 다시 시도해 주세요."));
+          setCandidates([]);
+          setSubmitted(trimmed);
+          return;
+        }
+        const data = (await res.json()) as HelpSearchResponse;
+        setSubmitted(typeof data.query === "string" ? data.query : trimmed);
+        setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
+        if (Array.isArray(data.suggestedQueries) && data.suggestedQueries.length > 0) {
+          setSuggestedQueries(data.suggestedQueries);
+        }
+      } catch {
+        setError(t("siteHelpChat.errorNetwork", "네트워크 오류입니다. 연결을 확인해 주세요."));
+        setCandidates([]);
+        setSubmitted(trimmed);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [q, t],
+  );
 
   return (
     <div
@@ -90,6 +120,27 @@ export function SiteHelpChatFab() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3 px-4 pb-4">
+            {suggestedQueries.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-medium text-muted-foreground">
+                  {t("siteHelpChat.suggestedLabel", "이런 질문도 있어요")}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedQueries.map((s, i) => (
+                    <Button
+                      key={`${i}-${s.slice(0, 32)}`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-auto max-w-full whitespace-normal rounded-full px-2.5 py-1 text-left text-[11px] leading-snug"
+                      onClick={() => void runSearch(s)}
+                    >
+                      {s}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -110,7 +161,7 @@ export function SiteHelpChatFab() {
               </Button>
             </form>
             {error && <p className="text-xs text-destructive">{error}</p>}
-            <ScrollArea className="h-[min(45vh,16rem)] pr-3">
+            <ScrollArea className="h-[min(50vh,22rem)] pr-3">
               {!submitted && !loading && (
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {t("siteHelpChat.empty", "질문을 입력하고 찾기를 눌러 주세요.")}
@@ -131,7 +182,9 @@ export function SiteHelpChatFab() {
                 {candidates.map((c) => (
                   <li key={c.id} className="rounded-lg border border-border/60 bg-muted/30 p-3 text-sm">
                     <p className="font-medium text-foreground">{c.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{c.summary}</p>
+                    <p className="mt-2 text-xs text-foreground/90 leading-relaxed whitespace-pre-line">
+                      {(c.answer || c.summary).trim()}
+                    </p>
                     {c.href ? (
                       <div className="mt-2">
                         <Link href={c.href}>

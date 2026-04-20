@@ -49,7 +49,7 @@ import { eq, sql, inArray, and, or, desc, asc, gte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import geoip from "geoip-lite";
 import { getLoginPagePath, getRegisterPagePath, getAdminPagePath } from "./site-paths";
-import { searchHelpSiteKnowledge } from "./help-site-search";
+import { searchHelpSiteKnowledge, HELP_SEARCH_SUGGESTIONS } from "./help-site-search";
 import { fetchInternationalReleasesPage, getEnvInternationalFromUserIds } from "./spotify-international";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import { isAllowedSignupConversionEvent } from "@shared/analytics-conversion-events";
@@ -1196,9 +1196,18 @@ export async function registerRoutes(
       return;
     }
     const q = raw.trim();
+    if (!q) {
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json({
+        query: "",
+        candidates: [],
+        suggestedQueries: HELP_SEARCH_SUGGESTIONS,
+      });
+      return;
+    }
     const candidates = searchHelpSiteKnowledge(q, { limit: 10 });
     res.setHeader("Cache-Control", "public, max-age=120");
-    res.json({ query: q, candidates });
+    res.json({ query: q, candidates, suggestedQueries: HELP_SEARCH_SUGGESTIONS });
   });
 
   // 사이트맵 (SEO) — 루트 /sitemap.xml 이 표준. /api/sitemap.xml 은 구버전·GSC URL 호환.
