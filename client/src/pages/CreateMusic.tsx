@@ -11,7 +11,6 @@ import {
   Download,
   AlertCircle,
   Trash2,
-  CloudUpload,
   Search,
   Play,
   Globe,
@@ -21,7 +20,7 @@ import {
   FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link, useLocation } from "wouter";
+import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { LOGIN_PATH } from "@/lib/site-paths";
 import { cn } from "@/lib/utils";
@@ -494,7 +493,6 @@ function TrackCard({
   track,
   order,
   onRemove,
-  onUpload,
   onDownload,
   libraryDownloadAllowed,
   onScoreExport,
@@ -509,7 +507,6 @@ function TrackCard({
   track: SavedTrack;
   order: number;
   onRemove: () => void;
-  onUpload: () => void;
   onDownload: () => void;
   /** 무료 플랜: 사이트 공개 전에는 라이브러리 파일 다운로드 불가(유료·관리자는 항상 허용) */
   libraryDownloadAllowed: boolean;
@@ -530,7 +527,6 @@ function TrackCard({
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
   const hasDownloaded = (track.downloadCount ?? 0) > 0;
-  const hasUploaded = (track.uploadCount ?? 0) > 0;
   const doneActionClass = "text-emerald-600 dark:text-emerald-400 font-medium";
   /** 다크 배경에서 primary보다 대비가 좋은 액션 색(시안 계열) */
   const actionLinkClass =
@@ -565,7 +561,7 @@ function TrackCard({
               className="flex flex-wrap gap-1 text-[10px]"
               data-testid={`track-status-${track.id}`}
               role="status"
-              aria-label={t("createMusic.trackStatusAria", "다운로드·업로드·공개 상태")}
+              aria-label={t("createMusic.trackStatusAria", "다운로드·공개 상태")}
             >
               <span
                 className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
@@ -576,16 +572,6 @@ function TrackCard({
               >
                 {t("createMusic.statusDownload", "다운로드")}{" "}
                 {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
-              </span>
-              <span
-                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
-                  hasUploaded
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
-                    : "border-border/70 bg-muted/40 text-muted-foreground"
-                }`}
-              >
-                {t("createMusic.statusUpload", "업로드")}{" "}
-                {hasUploaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
               </span>
               <span
                 className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
@@ -701,17 +687,6 @@ function TrackCard({
                       </button>
                     </span>
                   )}
-                  <button
-                    type="button"
-                    onClick={onUpload}
-                    className={`inline-flex items-center gap-1 hover:underline ${hasUploaded ? doneActionClass : actionLinkClass}`}
-                  >
-                    <CloudUpload className="w-3 h-3 flex-shrink-0" />
-                    {t("createMusic.uploadThis", "업로드")}
-                    {typeof track.uploadCount === "number" && track.uploadCount > 0 && (
-                      <span className={countBadgeClass}>{track.uploadCount}</span>
-                    )}
-                  </button>
                   {isPublished ? (
                     <span className={`inline-flex items-center gap-1 ${doneActionClass}`}>
                       <Globe className="w-3 h-3 flex-shrink-0" />
@@ -963,7 +938,6 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
 
 export default function CreateMusic() {
   const { t } = useTranslation();
-  const [, setLocation] = useLocation();
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1079,10 +1053,6 @@ export default function CreateMusic() {
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
 
-  const totalUploads = useMemo(
-    () => savedTracks.reduce((sum, t) => sum + (t.uploadCount ?? 0), 0),
-    [savedTracks]
-  );
   const totalDownloads = useMemo(
     () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
     [savedTracks]
@@ -1322,28 +1292,6 @@ export default function CreateMusic() {
       setPublishingId(null);
     }
   }, [toast, persistTracks]);
-
-  const goUploadWithTrack = useCallback(
-    (track: SavedTrack) => {
-      try {
-        if (track.image_url) sessionStorage.setItem("createMusic_uploadCoverUrl", track.image_url);
-        if (track.title) sessionStorage.setItem("createMusic_uploadTitle", track.title);
-        if (track.audio_url) sessionStorage.setItem("createMusic_uploadAudioUrl", track.audio_url);
-        const lyricsText = (track.original_prompt ?? track.prompt ?? "").trim();
-        if (lyricsText) sessionStorage.setItem("createMusic_uploadLyrics", lyricsText);
-      } catch {}
-      // 업로드 횟수 카운트
-      setSavedTracks((prev) => {
-        const next = prev.map((t) =>
-          t.id === track.id ? { ...t, uploadCount: (t.uploadCount ?? 0) + 1 } : t
-        );
-        persistTracks(next, { immediate: true });
-        return next;
-      });
-      setLocation("/upload");
-    },
-    [setLocation, persistTracks]
-  );
 
   const playTrackInGlobalPlayer = useCallback((track: SavedTrack) => {
     if (!track.audio_url) return;
@@ -1722,7 +1670,10 @@ export default function CreateMusic() {
                 {t("createMusic.heroTitle3", "만들기")}
               </h1>
               <p className="text-muted-foreground">
-                {t("createMusic.heroDesc", "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드 후 업로드하여 공유할 수 있습니다.")}
+                {t(
+                  "createMusic.heroDesc",
+                  "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드한 뒤 「신곡으로 공개」해 사이트에 올릴 수 있습니다.",
+                )}
               </p>
               <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400 max-w-2xl mx-auto leading-relaxed underline decoration-red-600 dark:decoration-red-400 underline-offset-2">
                 {t(
@@ -2298,7 +2249,7 @@ export default function CreateMusic() {
                             ·
                           </span>
                           <span className="text-muted-foreground shrink-0">
-                            {t("createMusic.sectionLibraryHint", "재생·다운로드·업로드·공개")}
+                            {t("createMusic.sectionLibraryHint", "재생·다운로드·신곡 공개")}
                           </span>
                         </div>
                       </div>
@@ -2316,18 +2267,11 @@ export default function CreateMusic() {
                       <h2 className="text-lg font-bold shrink-0">
                         {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
                       </h2>
-                      {savedTracks.length > 0 && (totalUploads > 0 || totalDownloads > 0) && (
+                      {savedTracks.length > 0 && totalDownloads > 0 && (
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                          {totalDownloads > 0 && (
-                            <span>
-                              {t("createMusic.download", "다운로드")}: {totalDownloads}
-                            </span>
-                          )}
-                          {totalUploads > 0 && (
-                            <span>
-                              {t("createMusic.uploadThis", "업로드")}: {totalUploads}
-                            </span>
-                          )}
+                          <span>
+                            {t("createMusic.download", "다운로드")}: {totalDownloads}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -2437,7 +2381,6 @@ export default function CreateMusic() {
                                 track={track}
                                 order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
                                 onRemove={() => removeSavedTrack(track.id)}
-                                onUpload={() => goUploadWithTrack(track)}
                                 onDownload={() => handleDownloadTrack(track)}
                                 libraryDownloadAllowed={Boolean(aiUsage?.isPaidTier || track.publishedToSite)}
                                 onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
