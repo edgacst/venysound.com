@@ -1,17 +1,23 @@
 import { HELP_SITE_ENTRIES, type HelpSiteEntry } from "./help-site-knowledge";
 
-/** 홈 챗봇에 노출할 예상 질문 샘플(지식 항목의 `questions`에서 수집) */
+/** 홈 챗봇 칩: 항목마다 한 문장씩 돌아가며 뽑아 업로드만 연속 노출되지 않게 함 */
 export const HELP_SEARCH_SUGGESTIONS: string[] = (() => {
+  const lists = HELP_SITE_ENTRIES.map((e) => (e.questions ?? []).filter(Boolean));
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const e of HELP_SITE_ENTRIES) {
-    for (const q of e.questions ?? []) {
-      const t = q.trim();
+  let round = 0;
+  while (out.length < 12) {
+    let any = false;
+    for (const qs of lists) {
+      const t = qs[round]?.trim();
       if (!t || seen.has(t)) continue;
       seen.add(t);
       out.push(t);
-      if (out.length >= 12) return out;
+      any = true;
+      if (out.length >= 12) break;
     }
+    if (!any) break;
+    round++;
   }
   return out;
 })();
@@ -33,11 +39,25 @@ export type HelpSearchHit = {
   id: string;
   title: string;
   summary: string;
-  /** 사용자에게 보여줄 본문 */
   answer: string;
   href?: string;
   score: number;
 };
+
+/**
+ * 질의 문자열 안에 키워드가 부분 문자열로 들어가면 점수 부여(띄어쓰기 없는 한국어 대응).
+ */
+function scoreKeywordSubstrings(queryNorm: string, e: HelpSiteEntry): number {
+  let s = 0;
+  const seen = new Set<string>();
+  for (const kw of e.keywords ?? []) {
+    const kn = normalizeText(kw);
+    if (kn.length < 2 || seen.has(kn)) continue;
+    seen.add(kn);
+    if (queryNorm.includes(kn)) s += 14;
+  }
+  return s;
+}
 
 function scoreEntry(queryNorm: string, tokens: string[], e: HelpSiteEntry): number {
   const questionsJoined = (e.questions ?? []).map(normalizeText).join(" ");
@@ -51,21 +71,22 @@ function scoreEntry(queryNorm: string, tokens: string[], e: HelpSiteEntry): numb
       questionsJoined,
     ].join(" "),
   );
-  let score = 0;
-  if (queryNorm.length >= 2 && blob.includes(queryNorm)) score += 14;
+  let score = scoreKeywordSubstrings(queryNorm, e);
+
+  if (queryNorm.length >= 2 && blob.includes(queryNorm)) score += 16;
 
   for (const t of tokens) {
     if (t.length < 2) continue;
-    if (blob.includes(t)) score += 4;
+    if (blob.includes(t)) score += 5;
   }
 
   for (const qPhrase of e.questions ?? []) {
     const qn = normalizeText(qPhrase);
-    if (qn.length < 3) continue;
-    if (queryNorm.includes(qn) || qn.includes(queryNorm)) score += 22;
+    if (qn.length < 2) continue;
+    if (queryNorm.includes(qn) || qn.includes(queryNorm)) score += 24;
     for (const t of tokens) {
       if (t.length < 2) continue;
-      if (qn.includes(t)) score += 6;
+      if (qn.includes(t)) score += 7;
     }
   }
 
@@ -74,15 +95,15 @@ function scoreEntry(queryNorm: string, tokens: string[], e: HelpSiteEntry): numb
   const answerN = normalizeText(e.answer);
   for (const t of tokens) {
     if (t.length < 2) continue;
-    if (titleN.includes(t)) score += 3;
-    if (summaryN.includes(t)) score += 1;
-    if (answerN.includes(t)) score += 1;
+    if (titleN.includes(t)) score += 4;
+    if (summaryN.includes(t)) score += 2;
+    if (answerN.includes(t)) score += 2;
   }
   return score;
 }
 
 /**
- * 예상 질문·키워드·답변 텍스트로 단순 점수화(외부 API 없음).
+ * 예상 질문·키워드(부분 문자열)·답변 텍스트로 점수화(외부 API 없음).
  */
 export function searchHelpSiteKnowledge(
   rawQuery: string,
