@@ -21,6 +21,7 @@ type HelpSearchResponse = {
   query: string;
   candidates: HelpCandidate[];
   suggestedQueries?: string[];
+  error?: string;
 };
 
 /**
@@ -43,8 +44,14 @@ export function SiteHelpChatFab() {
     void (async () => {
       try {
         const res = await fetch("/api/help-search?q=");
+        const text = await res.text();
+        let data: HelpSearchResponse;
+        try {
+          data = JSON.parse(text) as HelpSearchResponse;
+        } catch {
+          return;
+        }
         if (!res.ok || cancelled) return;
-        const data = (await res.json()) as HelpSearchResponse;
         if (!cancelled && Array.isArray(data.suggestedQueries)) {
           setSuggestedQueries(data.suggestedQueries);
         }
@@ -71,15 +78,34 @@ export function SiteHelpChatFab() {
       setError(null);
       try {
         const res = await fetch(`/api/help-search?q=${encodeURIComponent(trimmed)}`);
+        const text = await res.text();
+        let data: HelpSearchResponse;
+        try {
+          data = JSON.parse(text) as HelpSearchResponse;
+        } catch {
+          setError(
+            t("siteHelpChat.errorParse", "응답을 읽지 못했습니다. 새로고침 후 다시 시도해 주세요."),
+          );
+          setCandidates([]);
+          setSubmitted(trimmed);
+          return;
+        }
         if (!res.ok) {
           setError(t("siteHelpChat.errorLoad", "검색에 실패했습니다. 잠시 후 다시 시도해 주세요."));
           setCandidates([]);
           setSubmitted(trimmed);
           return;
         }
-        const data = (await res.json()) as HelpSearchResponse;
         setSubmitted(typeof data.query === "string" ? data.query : trimmed);
         setCandidates(Array.isArray(data.candidates) ? data.candidates : []);
+        if (data.error === "help_search_internal") {
+          setError(
+            t(
+              "siteHelpChat.errorSoft",
+              "안내 검색 처리에 문제가 있었습니다. 아래 FAQ를 이용해 주세요.",
+            ),
+          );
+        }
         if (Array.isArray(data.suggestedQueries) && data.suggestedQueries.length > 0) {
           setSuggestedQueries(data.suggestedQueries);
         }
@@ -160,7 +186,14 @@ export function SiteHelpChatFab() {
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
             </form>
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && (
+              <p
+                className="rounded-md border border-border bg-muted/90 px-2.5 py-2 text-xs leading-snug text-foreground shadow-sm dark:bg-muted/70"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
             <ScrollArea className="h-[min(50vh,22rem)] pr-3">
               {!submitted && !loading && (
                 <p className="text-xs text-muted-foreground leading-relaxed">

@@ -107,13 +107,15 @@ function scoreEntry(queryNorm: string, tokens: string[], e: HelpSiteEntry): numb
 }
 
 /** 최고점에 가깝지 않은 항목·너무 약한 매칭은 제외 */
-function pruneHits(hits: HelpSearchHit[]): HelpSearchHit[] {
+function pruneHits(hits: HelpSearchHit[], maxOut: number): HelpSearchHit[] {
   if (hits.length === 0) return hits;
   const best = hits[0].score;
-  if (best < 16) return [];
-  const floor = Math.max(16, Math.floor(best * 0.62));
+  if (best < 14) return [];
+  const floor = Math.max(14, Math.floor(best * 0.58));
   const out = hits.filter((h) => h.score >= floor);
-  return out.slice(0, Math.min(3, limit));
+  const capped = out.slice(0, Math.min(3, maxOut));
+  if (capped.length > 0) return capped;
+  return [hits[0]];
 }
 
 /**
@@ -146,5 +148,5 @@ export function searchHelpSiteKnowledge(
   hits.sort(
     (a, b) => b.score - a.score || a.title.localeCompare(b.title, "ko"),
   );
-  return pruneHits(hits);
+  return pruneHits(hits, limit);
 }

@@ -1190,24 +1190,34 @@ export async function registerRoutes(
 
   /** 로컬 사용 안내 검색(외부 LLM 없음). 지식은 `server/help-site-knowledge.ts` */
   app.get("/api/help-search", (req: Request, res: Response) => {
-    const raw = typeof req.query.q === "string" ? req.query.q : "";
-    if (raw.length > 500) {
-      res.status(400).json({ error: "query_too_long" });
-      return;
-    }
-    const q = raw.trim();
-    if (!q) {
-      res.setHeader("Cache-Control", "public, max-age=300");
-      res.json({
+    try {
+      const raw = typeof req.query.q === "string" ? req.query.q : "";
+      if (raw.length > 500) {
+        res.status(400).json({ error: "query_too_long" });
+        return;
+      }
+      const q = raw.trim();
+      if (!q) {
+        res.setHeader("Cache-Control", "public, max-age=300");
+        res.json({
+          query: "",
+          candidates: [],
+          suggestedQueries: HELP_SEARCH_SUGGESTIONS,
+        });
+        return;
+      }
+      const candidates = searchHelpSiteKnowledge(q, { limit: 10 });
+      res.setHeader("Cache-Control", "public, max-age=120");
+      res.json({ query: q, candidates, suggestedQueries: HELP_SEARCH_SUGGESTIONS });
+    } catch (e) {
+      console.error("[api/help-search]", e);
+      res.status(200).json({
         query: "",
         candidates: [],
         suggestedQueries: HELP_SEARCH_SUGGESTIONS,
+        error: "help_search_internal",
       });
-      return;
     }
-    const candidates = searchHelpSiteKnowledge(q, { limit: 10 });
-    res.setHeader("Cache-Control", "public, max-age=120");
-    res.json({ query: q, candidates, suggestedQueries: HELP_SEARCH_SUGGESTIONS });
   });
 
   // 사이트맵 (SEO) — 루트 /sitemap.xml 이 표준. /api/sitemap.xml 은 구버전·GSC URL 호환.

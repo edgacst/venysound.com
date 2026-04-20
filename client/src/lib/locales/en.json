@@ -36,7 +36,9 @@
     "suggestedLabel": "Suggested questions",
     "footnote": "No external AI — only prewritten Q&A is searched and shown.",
     "errorLoad": "Search failed. Please try again.",
-    "errorNetwork": "Network error. Check your connection."
+    "errorNetwork": "Network error. Check your connection.",
+    "errorParse": "Could not read the server response. Refresh and try again.",
+    "errorSoft": "Help search had a problem. Please use the FAQ link below."
   },
   "home": {
     "heroTaglineBelowNav": "<row1><coffee>For the price of a cup of coffee</coffee>, your talent as a lyricist and <composer>composer</composer></row1><row2>Release your own album and earn <royalty>lifetime royalty income</royalty> — ready to try?</row2>",
