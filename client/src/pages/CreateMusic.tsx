@@ -414,9 +414,10 @@ function togglePresetTokenInField(
   return { next: joinCommaUnique([...parts, token]), atMax: false };
 }
 
-/** 서버 `tags`(Suno: customMode의 style, 설명 모드의 [스타일] 앞단) — 장르 입력란만 전달. 스타일 칩·스타일 입력란은 포함하지 않음 */
-function buildTagsForApi(genreOther: string): string {
-  return joinCommaUnique(splitCommaList(genreOther));
+/** Suno `tags` — 커스텀의 `style`, 설명 모드 `[스타일]` 앞단. 장르·스타일(칩·직접 입력)을 합쳐 중복 제거 후 전달 */
+function buildTagsForApi(genreOther: string, styleOther: string): string {
+  const merged = joinCommaUnique([...splitCommaList(genreOther), ...splitCommaList(styleOther)]);
+  return merged.length > 500 ? merged.slice(0, 500) : merged;
 }
 
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
@@ -851,6 +852,76 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       custom_mode: Boolean(t.custom_mode),
       publishedToSite: Boolean(t.publishedToSite ?? t.published_to_site),
     } as SavedTrack;
+  });
+}
+
+/** Suno 등이 비어 있는 제목 자리에 넣는 섹션 라벨 — 실제 곡명으로 쓰지 않음 */
+const LYRIC_SECTION_LINE =
+  /^\s*(\[[^\]]+\]|\([^)]+\)|Verse\s*\d*|V\s*\d+|CHORUS|Chorus|Bridge|Intro|Outro|Pre-Chorus|Hook|후렴|도입|간주)(\s*[:：])?\s*$/i;
+
+function isJunkDefaultTrackTitle(s: string | undefined): boolean {
+  if (s == null) return true;
+  const t = s.trim();
+  if (!t) return true;
+  if (t.length > 64) return false;
+  return LYRIC_SECTION_LINE.test(t);
+}
+
+/** 사용자 제목이 비었을 때 가사·프롬프트 본문에서 첫 유효 줄을 곡 제목 후보로 사용 */
+function inferTitleFromLyricsText(text: string, maxLen = 72): string | undefined {
+  const raw = (text || "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return undefined;
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  for (const line of lines) {
+    let s = line.replace(/^\[[^\]]+\]\s*/, "").replace(/^\([^)]+\)\s*/, "").trim();
+    if (!s) continue;
+    if (LYRIC_SECTION_LINE.test(s)) continue;
+    if (s.length < 2) continue;
+    s = s.replace(/^\d+[\.)]\s*/, "").trim();
+    if (!s || s.length < 2) continue;
+    if (LYRIC_SECTION_LINE.test(s)) continue;
+    const oneLine = s.replace(/\s+/g, " ");
+    if (oneLine.length > maxLen) return `${oneLine.slice(0, maxLen - 1).trimEnd()}…`;
+    return oneLine;
+  }
+  return undefined;
+}
+
+function resolveAiClipDisplayTitle(opts: {
+  userTitle: string;
+  apiTitle: string | undefined;
+  lyricsOrPrompt: string;
+}): string | undefined {
+  const u = opts.userTitle.trim();
+  if (u) return u;
+  const fromLyrics = inferTitleFromLyricsText(opts.lyricsOrPrompt);
+  if (fromLyrics) return fromLyrics;
+  const api = opts.apiTitle?.trim();
+  if (api && !isJunkDefaultTrackTitle(api)) return api;
+  return undefined;
+}
+
+function mapGeneratedClipsWithResolvedTitles(
+  clips: GeneratedTrack[],
+  opts: { userTitle: string; customMode: boolean; submittedLyrics: string },
+): GeneratedTrack[] {
+  return clips.map((tr) => {
+    const t = tr as Record<string, unknown>;
+    const apiTitle = typeof tr.title === "string" ? tr.title : typeof t.title === "string" ? (t.title as string) : undefined;
+    const promptFromClip =
+      (typeof tr.prompt === "string" ? tr.prompt : "") ||
+      (typeof t.prompt === "string" ? (t.prompt as string) : "") ||
+      "";
+    const lyricsOrPrompt = opts.customMode ? opts.submittedLyrics : promptFromClip || opts.submittedLyrics;
+    const title = resolveAiClipDisplayTitle({
+      userTitle: opts.userTitle,
+      apiTitle,
+      lyricsOrPrompt,
+    });
+    return { ...tr, title };
   });
 }
 
@@ -1478,30 +1549,43 @@ export default function CreateMusic() {
       const state = data.state ?? "pending";
       setStatus(state);
       if (state === "preview" && Array.isArray(data.data)) {
-        setPreviewTracks(data.data as GeneratedTrack[]);
+        const userTitle = submittedTitleRef.current.trim();
+        const customMode = submitModeRef.current === "custom";
+        setPreviewTracks(
+          mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
+            userTitle,
+            customMode,
+            submittedLyrics: submittedLyricsRef.current,
+          }),
+        );
       }
       if (state === "succeeded" && Array.isArray(data.data)) {
         generationStartRef.current = null;
         setPreviewTracks([]);
-        setResultTracks(data.data);
+        const userTitle = submittedTitleRef.current.trim();
+        const customMode = submitModeRef.current === "custom";
+        const resolvedClips = mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
+          userTitle,
+          customMode,
+          submittedLyrics: submittedLyricsRef.current,
+        });
+        setResultTracks(resolvedClips);
         setTaskId(null);
         const now = Date.now();
-        const userTitle = submittedTitleRef.current.trim();
         const userTags = submittedTagsRef.current.trim();
         const genTaskId = tid;
         const genProvider = provider ?? undefined;
-        const toSave: SavedTrack[] = (data.data as GeneratedTrack[]).map((tr, i) => {
+        const toSave: SavedTrack[] = resolvedClips.map((tr, i) => {
           const t = tr as Record<string, unknown>;
           return {
             ...tr,
-            title: userTitle ? userTitle : (tr.title ?? (t.title as string | undefined)),
             tags: userTags ? userTags : (tr.tags ?? (t.tags as string | undefined)),
             audio_url: pickSavedTrackAudioUrl(t) ?? (tr.audio_url as string | undefined),
             image_url: (tr.image_url ?? t.imageUrl) as string | undefined,
             id: `saved-${now}-${i}-${tr.clip_id ?? i}`,
             createdAt: now,
-            custom_mode: tr.custom_mode ?? (submitModeRef.current === "custom"),
-            original_prompt: submitModeRef.current === "custom" ? submittedLyricsRef.current : undefined,
+            custom_mode: tr.custom_mode ?? customMode,
+            original_prompt: customMode ? submittedLyricsRef.current : undefined,
             uploadCount: 0,
             downloadCount: 0,
             generationTaskId: genTaskId,
@@ -1564,9 +1648,10 @@ export default function CreateMusic() {
     setElapsedSec(0);
     generationStartRef.current = Date.now();
     submitModeRef.current = mode;
-    if (mode === "custom") submittedLyricsRef.current = promptTrim;
+    /** 커스텀·설명 공통: 제목 비움 시 가사/설명에서 제목 추론용 */
+    submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
-    const mergedTags = buildTagsForApi(genreOther);
+    const mergedTags = buildTagsForApi(genreOther, styleOther);
     submittedTagsRef.current = mergedTags;
     try {
       const body: Record<string, unknown> = {
@@ -1912,7 +1997,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.genreHint",
-                            "자주 쓰는 장르를 탭하면 아래 입력란에 현재 언어 라벨(한국어 설정 시 한글)이 들어가며, 직접 수정·추가할 수 있습니다. 프리셋은 최대 {{n}}개까지. 이 내용만 생성 요청의 스타일/장르 태그로 전달됩니다.",
+                            "자주 쓰는 장르를 탭하면 아래 입력란에 현재 언어 라벨(한국어 설정 시 한글)이 들어가며, 직접 수정·추가할 수 있습니다. 프리셋은 최대 {{n}}개까지. 아래 스타일(보컬·악기 등)과 합쳐져 생성 API의 장르/스타일 태그로 전달됩니다.",
                             { n: MAX_GENRE_PRESETS },
                           )}
                         </p>
@@ -1985,7 +2070,7 @@ export default function CreateMusic() {
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           {t(
                             "createMusic.styleHint",
-                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력해 메모로 쓸 수 있습니다. 프리셋은 최대 {{n}}개까지. 스타일 칩·입력란 내용은 생성 API의 태그(스타일 문자열)에 포함되지 않습니다.",
+                            "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력할 수 있습니다. 프리셋은 최대 {{n}}개까지. 위 장르와 합쳐져 Suno에 스타일 문자열로 전달됩니다. 같은 ‘여성 보컬’ 태그라도 모델·시드에 따라 비슷하게 들릴 수 있으며, 가사·설명에 톤(허스키, 어린 목소리 등)을 적으면 차이가 나기 쉽습니다.",
                             { n: MAX_STYLE_PRESETS },
                           )}
                         </p>
