@@ -601,43 +601,45 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             <img src={imageUrl} alt="" className="h-full w-full object-cover" />
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1 overflow-hidden text-[11px] sm:gap-1.5 sm:text-xs">
-            <span className="min-w-0 flex-1 truncate font-semibold text-foreground" data-testid={`text-title-${music.id}`}>
-              {music.title}
-            </span>
-            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
-            <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 truncate text-muted-foreground" data-testid={`text-artist-${music.id}`}>
-              {music.artist}
-              {uploaderDonationBadge ? <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" /> : null}
-            </span>
-            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
-            <button
-              type="button"
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-muted/80 hover:text-foreground"
-              onClick={handleLike}
-              data-testid={`button-like-${music.id}`}
-            >
-              <Heart size={12} className={isLiked ? "text-red-500 fill-red-500" : ""} />
-              <span className="tabular-nums" data-testid={`text-like-count-${music.id}`}>
-                {likeCount}
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden text-[11px] min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-2 sm:text-xs">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+              <span className="min-w-0 truncate font-semibold text-foreground" data-testid={`text-title-${music.id}`}>
+                {music.title}
               </span>
-            </button>
-            <span className="shrink-0 text-muted-foreground opacity-50">·</span>
-            <span
-              className="inline-flex shrink-0 items-center gap-0.5 tabular-nums text-muted-foreground"
-              data-testid={`text-play-count-${music.id}`}
-              title={t("music.playCount", "재생 수")}
-            >
-              <Headphones size={12} className="shrink-0" />
-              {playCount}
-            </span>
+              <span className="shrink-0 text-muted-foreground opacity-50">·</span>
+              <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 truncate text-muted-foreground" data-testid={`text-artist-${music.id}`}>
+                {music.artist}
+                {uploaderDonationBadge ? <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" /> : null}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center justify-end gap-2 tabular-nums min-[420px]:justify-start">
+              <button
+                type="button"
+                className="inline-flex h-7 w-[3.5rem] shrink-0 items-center justify-center gap-0.5 rounded-md text-muted-foreground hover:bg-muted/80 hover:text-foreground sm:h-6"
+                onClick={handleLike}
+                data-testid={`button-like-${music.id}`}
+              >
+                <Heart size={12} className={isLiked ? "text-red-500 fill-red-500" : ""} />
+                <span className="min-w-[1ch] text-right tabular-nums" data-testid={`text-like-count-${music.id}`}>
+                  {likeCount}
+                </span>
+              </button>
+              <span
+                className="inline-flex h-7 w-[3.5rem] shrink-0 items-center justify-center gap-0.5 text-muted-foreground sm:h-6"
+                data-testid={`text-play-count-${music.id}`}
+                title={t("music.playCount", "재생 수")}
+              >
+                <Headphones size={12} className="shrink-0" />
+                <span className="min-w-[1ch] text-right tabular-nums">{playCount}</span>
+              </span>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Button
               size="icon"
               variant="secondary"
-              className="h-8 w-8 rounded-full"
+              className="h-8 w-8 shrink-0 rounded-full"
               onClick={(e) => {
                 e.stopPropagation();
                 playMusic(music.id);
@@ -648,15 +650,17 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               {isPlaying ? <Pause className="h-4 w-4" fill="currentColor" /> : <Play className="h-4 w-4 ml-0.5" fill="currentColor" />}
             </Button>
             <Link href={`/music/${music.id}`} onClick={(e) => e.stopPropagation()}>
-              <Button size="icon" variant="ghost" className="h-8 w-8" data-testid={`button-open-detail-${music.id}`} aria-label={t("music.openDetail", { defaultValue: "상세 페이지" })}>
+              <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" data-testid={`button-open-detail-${music.id}`} aria-label={t("music.openDetail", { defaultValue: "상세 페이지" })}>
                 <ExternalLink className="h-4 w-4" />
               </Button>
             </Link>
-            {!freeAiLocked && (
+            {freeAiLocked ? (
+              <span className="inline-flex h-8 w-8 shrink-0" aria-hidden />
+            ) : (
               <Button
                 size="icon"
                 variant="ghost"
-                className="h-8 w-8"
+                className="h-8 w-8 shrink-0"
                 title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                 onClick={(e) => {
                   e.stopPropagation();
