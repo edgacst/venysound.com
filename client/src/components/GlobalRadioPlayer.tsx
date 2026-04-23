@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { redirectToLogin } from "@/lib/queryClient";
+import { markGuestListenQuotaConsumed } from "@/lib/guest-listen-quota";
 import { ToastAction } from "@/components/ui/toast";
 import { Link, useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
@@ -526,6 +527,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         useRadioPlayerStore.setState({ streamUrl: null });
         releaseEndLockAndClearAudio();
         if (unauthFirstEnd && currentSlug) {
+          markGuestListenQuotaConsumed();
           toast({
             title: t("radio.loginContinuousRadioTitle", "음악을 연속해서 들으려면 로그인 하세요"),
             description: t("radio.loginContinuousRadioDesc", "로그인 후에는 다음 곡으로 자동 재생됩니다."),

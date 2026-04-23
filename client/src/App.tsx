@@ -18,6 +18,7 @@ import { RealtimeInboxSync } from "@/hooks/use-realtime-inbox";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
 import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 import { readVisitorKey, writeVisitorKey } from "@/lib/visitor-key";
+import { syncGuestListenAuthState } from "@/lib/guest-listen-quota";
 
 /** 체류 추정용 내부 ping 간격 (실제 페이지 path와 별도 — PV 집계에 포함되지 않음) */
 const DWELL_HEARTBEAT_MS = 8_000;
@@ -27,7 +28,10 @@ const DWELL_BACKGROUND_HEARTBEAT_MS = 45_000;
 const DWELL_FIRST_PING_MS = 3_000;
 
 function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  useEffect(() => {
+    syncGuestListenAuthState({ loggedIn: !!user?.id, authLoading });
+  }, [user?.id, authLoading]);
   return <WsProvider userId={user?.id ?? undefined}>{children}</WsProvider>;
 }
 

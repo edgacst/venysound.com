@@ -7,6 +7,7 @@ import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { redirectToLogin } from "@/lib/queryClient";
+import { blockGuestPlaybackIfNeeded, markGuestListenQuotaConsumed } from "@/lib/guest-listen-quota";
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
@@ -75,14 +76,17 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   shuffleEnabled: false,
   shuffledOrder: [],
   playMusic: (id) => {
+    if (blockGuestPlaybackIfNeeded()) return;
     clearGlobalRadioForOnDemandPlayback();
     set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
   },
   playMusicWithLyrics: (id) => {
+    if (blockGuestPlaybackIfNeeded()) return;
     clearGlobalRadioForOnDemandPlayback();
     set({ activeMusicId: id, activeExternalTrack: null, pauseRequested: false, lyricsRequested: true });
   },
   playExternalTrack: (track) => {
+    if (blockGuestPlaybackIfNeeded()) return;
     clearGlobalRadioForOnDemandPlayback();
     set({ activeMusicId: null, activeExternalTrack: track, pauseRequested: false, lyricsRequested: false });
   },
@@ -105,7 +109,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       shuffledOrder: newShuffle ? shuffleArray(state.playlist) : [],
     };
   }),
-  addToQueue: (id) => set((state) => ({ queue: [...state.queue, id] })),
+  addToQueue: (id) => {
+    if (blockGuestPlaybackIfNeeded()) return;
+    set((state) => ({ queue: [...state.queue, id] }));
+  },
   removeFromQueue: (index) => set((state) => ({
     queue: state.queue.filter((_, i) => i !== index),
   })),
@@ -502,14 +509,6 @@ export function GlobalAudioPlayer() {
   }, [activeMusicId, activeExternalTrack]);
 
   useEffect(() => {
-    // 비로그인으로 새 재생을 시작할 때만 "게스트 한도로 멈춤" 상태 해제 (closePlayer 후에도 로그인 안내용 ref 유지)
-    if (user?.id) return;
-    if (activeMusicId != null || activeExternalTrack != null) {
-      unauthStoppedRef.current = false;
-    }
-  }, [activeMusicId, activeExternalTrack, user?.id]);
-
-  useEffect(() => {
     // 비로그인 상태에서 1곡 종료로 멈춘 뒤 로그인하면,
     // "이제 연속으로 들을 수 있음" 안내를 띄운다.
     if (user && unauthStoppedRef.current) {
@@ -766,6 +765,7 @@ export function GlobalAudioPlayer() {
         if (!unauthEndedToastShownRef.current) {
           unauthEndedToastShownRef.current = true;
           unauthStoppedRef.current = true;
+          markGuestListenQuotaConsumed();
           toast({
             title: t("player.loginContinuousPlayTitle", "음악 연속 듣기를 하시려면 로그인 하세요"),
             description: t("player.loginContinuousPlayDesc", "로그인하면 이어서 들을 수 있습니다."),

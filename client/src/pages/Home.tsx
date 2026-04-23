@@ -18,6 +18,7 @@ import { useIsLgUp } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
+import { isGuestPlaybackBlocked } from "@/lib/guest-listen-quota";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
@@ -233,6 +234,7 @@ export default function Home() {
   /** 메인 진입 시 이미 라디오를 켜두지 않았다면, 라이브 채널 하나로 자동 재생 (GlobalRadioPlayer가 재생 처리) */
   useEffect(() => {
     if (isAuthLoading) return;
+    if (!user && isGuestPlaybackBlocked()) return;
     if (!liveChannels?.length) return;
     const st = useRadioPlayerStore.getState();
     if (st.slug) return;
@@ -264,6 +266,7 @@ export default function Home() {
               ? `/api/music/${Number(nowPlayingId)}/stream`
               : null;
         if (!streamUrl) return;
+        if (!user && isGuestPlaybackBlocked()) return;
         const latest = useRadioPlayerStore.getState();
         if (latest.slug || latest.userStopped) return;
         const pLatest = usePlayerStore.getState();
@@ -285,7 +288,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [liveChannels, isAuthLoading, t]);
+  }, [liveChannels, isAuthLoading, user?.id, t]);
 
   const timeLocale = useMemo(() => {
     const l = (i18n.language || "ko").split("-")[0].toLowerCase();

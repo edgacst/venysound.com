@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { redirectToLogin } from "@/lib/queryClient";
+import { blockGuestPlaybackIfNeeded } from "@/lib/guest-listen-quota";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
 import { useRadioWaveformRef } from "@/contexts/RadioWaveformContext";
 import { usePlayerStore } from "@/components/AudioPlayer";
@@ -121,7 +122,7 @@ export default function RadioChannel() {
   const searchString = useSearch();
 
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const presentUserIdsRef = useRef<Set<string>>(new Set());
   const [currentLyric, setCurrentLyric] = useState<string | null>(null);
@@ -234,6 +235,8 @@ export default function RadioChannel() {
   // 채널 페이지에서 나갈 때(unmount): 전역 플레이어가 이어받아 재생 지속
   useEffect(() => {
     if (!channel || !listenerAudioSrc) return;
+    if (authLoading) return;
+    if (!user && blockGuestPlaybackIfNeeded()) return;
     usePlayerStore.getState().closePlayer();
     const prevUrl = useRadioPlayerStore.getState().streamUrl;
     const seek = radioSeekSecondsForHandoff(
@@ -246,7 +249,7 @@ export default function RadioChannel() {
     if (!isOwner) {
       radioRequestPlay();
     }
-  }, [slug, channel?.name, listenerAudioSrc]);
+  }, [slug, channel?.name, listenerAudioSrc, user?.id, authLoading]);
 
   // 곡 제목을 전역 store에 동기화 (글로벌 플레이바에 표시)
   useEffect(() => {
@@ -316,7 +319,11 @@ export default function RadioChannel() {
 
   useEffect(() => {
     if (isOwner || !slug || !listenerAudioSrc) return;
-    const onFirstInteraction = () => { radioRequestPlay(); };
+    if (authLoading) return;
+    const onFirstInteraction = () => {
+      if (!user && blockGuestPlaybackIfNeeded()) return;
+      radioRequestPlay();
+    };
     const opts: AddEventListenerOptions = { capture: true, once: true };
     document.addEventListener("click", onFirstInteraction, opts);
     document.addEventListener("keydown", onFirstInteraction, opts);
@@ -324,7 +331,7 @@ export default function RadioChannel() {
       document.removeEventListener("click", onFirstInteraction, opts);
       document.removeEventListener("keydown", onFirstInteraction, opts);
     };
-  }, [isOwner, slug, listenerAudioSrc, radioRequestPlay]);
+  }, [isOwner, slug, listenerAudioSrc, radioRequestPlay, user?.id, authLoading]);
 
   type ChatMsg = { id: number | string; userId: string; username?: string | null; content?: string; createdAt: string; type?: "system_join" | "system_leave" };
   const { data: chatList } = useQuery<ChatMsg[]>({
@@ -1232,7 +1239,10 @@ export default function RadioChannel() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => radioIsPlaying ? radioRequestPause() : radioRequestPlay()}
+                          onClick={() => {
+                            if (!radioIsPlaying && !user && blockGuestPlaybackIfNeeded()) return;
+                            radioIsPlaying ? radioRequestPause() : radioRequestPlay();
+                          }}
                           className="gap-2"
                         >
                           {radioIsPlaying ? <Pause size={16} /> : <Play size={16} />}
