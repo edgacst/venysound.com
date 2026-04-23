@@ -289,9 +289,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [setUserStopped, getActiveAudio]);
 
   const handlePause = useCallback(() => {
+    setUserStopped(true);
     const el = getActiveAudio();
     if (el) el.pause();
-    setUserStopped(true);
   }, [setUserStopped, getActiveAudio]);
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
@@ -451,6 +451,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el) el.play().catch(() => {});
     });
     navigator.mediaSession.setActionHandler("pause", () => {
+      setUserStopped(true);
       const el = getActiveAudio();
       if (el) el.pause();
     });
@@ -464,7 +465,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         navigator.mediaSession.setActionHandler("stop", null);
       } catch { /* ignore */ }
     };
-  }, [streamUrl, channelName, getActiveAudio, handleStop, t]);
+  }, [streamUrl, channelName, getActiveAudio, handleStop, setUserStopped, t]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
