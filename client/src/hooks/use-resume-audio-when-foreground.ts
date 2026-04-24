@@ -23,13 +23,27 @@ export function useResumeAudioWhenForeground(
       return true;
     };
 
+    const attemptPlay = (el: HTMLAudioElement) => {
+      el.muted = false;
+      el.volume = Math.max(el.volume, 1);
+      void el.play().catch(() => {});
+    };
+
     const tryResume = () => {
       if (!shouldRef.current()) return;
-      requestAnimationFrame(() => {
+      const run = () => {
         const a = getEl();
-        if (!a || !a.paused || a.ended || !hasPlayableSrc(a)) return;
-        a.play().catch(() => {});
-      });
+        if (!a || a.ended || !hasPlayableSrc(a)) return;
+        // 통화 직후 일부 단말은 paused가 아닌데도 무음이거나, paused인데 focus가 늦게 오는 경우가 있어 항상 play() 시도
+        attemptPlay(a);
+        window.setTimeout(() => {
+          if (!shouldRef.current()) return;
+          const a2 = getEl();
+          if (!a2 || a2.ended || !hasPlayableSrc(a2)) return;
+          if (a2.paused) attemptPlay(a2);
+        }, 320);
+      };
+      requestAnimationFrame(run);
     };
 
     const onVisibility = () => {

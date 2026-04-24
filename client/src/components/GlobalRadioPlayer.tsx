@@ -141,11 +141,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const a = audioARef.current;
     const b = audioBRef.current;
     let primary: HTMLAudioElement | null = null;
-    if (pathnameMatch(a) && a && !a.paused && !a.ended) primary = a;
-    else if (pathnameMatch(b) && b && !b.paused && !b.ended) primary = b;
-    else {
+    // 통화 등으로 OS가 pause만 걸어둔 경우: 재생 중인 트랙 우선, 없으면 같은 src의 paused 버퍼도 복구
+    if (pathnameMatch(a) && a && !a.ended && !a.paused) primary = a;
+    if (!primary && pathnameMatch(b) && b && !b.ended && !b.paused) primary = b;
+    if (!primary && pathnameMatch(a) && a && !a.ended) primary = a;
+    if (!primary && pathnameMatch(b) && b && !b.ended) primary = b;
+    if (!primary) {
       const def = getActiveAudio();
-      if (def && !def.paused && !def.ended) primary = def;
+      if (def && !def.ended && pathnameMatch(def)) primary = def;
     }
     if (!primary) return;
     primary.volume = 1;
@@ -162,7 +165,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       other.volume = 1;
     }
     setIsMuted(false);
-  }, [getActiveAudio]);
+    if (primary.paused) {
+      void primary
+        .play()
+        .then(() => {
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          setNeedsTap(true);
+        });
+    }
+  }, [getActiveAudio, setNeedsTap]);
 
   useEffect(() => {
     restoreAudibleOutput();
