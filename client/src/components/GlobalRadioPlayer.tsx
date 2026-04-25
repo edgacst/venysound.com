@@ -51,6 +51,15 @@ function shouldDeferHandoffToNewRadioTrack(
   return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.2;
 }
 
+function radioAudioPathMatchesStream(el: HTMLAudioElement | null, wanted: string): boolean {
+  if (!el?.src) return false;
+  try {
+    return new URL(el.src, window.location.origin).pathname === new URL(wanted, window.location.origin).pathname;
+  } catch {
+    return el.src === wanted;
+  }
+}
+
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -81,6 +90,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setUserStopped,
     setPlayNowRef,
     clear,
+    requestPlay,
   } = useRadioPlayerStore();
 
   // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
@@ -130,25 +140,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl) return;
     const wanted = s.streamUrl;
-    const pathnameMatch = (el: HTMLAudioElement | null) => {
-      if (!el?.src) return false;
-      try {
-        return new URL(el.src, location.origin).pathname === new URL(wanted, location.origin).pathname;
-      } catch {
-        return el.src === wanted;
-      }
-    };
     const a = audioARef.current;
     const b = audioBRef.current;
     let primary: HTMLAudioElement | null = null;
     // 통화 등으로 OS가 pause만 걸어둔 경우: 재생 중인 트랙 우선, 없으면 같은 src의 paused 버퍼도 복구
-    if (pathnameMatch(a) && a && !a.ended && !a.paused) primary = a;
-    if (!primary && pathnameMatch(b) && b && !b.ended && !b.paused) primary = b;
-    if (!primary && pathnameMatch(a) && a && !a.ended) primary = a;
-    if (!primary && pathnameMatch(b) && b && !b.ended) primary = b;
+    if (radioAudioPathMatchesStream(a, wanted) && a && !a.ended && !a.paused) primary = a;
+    if (!primary && radioAudioPathMatchesStream(b, wanted) && b && !b.ended && !b.paused) primary = b;
+    if (!primary && radioAudioPathMatchesStream(a, wanted) && a && !a.ended) primary = a;
+    if (!primary && radioAudioPathMatchesStream(b, wanted) && b && !b.ended) primary = b;
     if (!primary) {
       const def = getActiveAudio();
-      if (def && !def.ended && pathnameMatch(def)) primary = def;
+      if (def && !def.ended && radioAudioPathMatchesStream(def, wanted)) primary = def;
     }
     if (!primary) return;
     primary.volume = 1;
@@ -212,6 +214,150 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     if (isAuthenticated) unauthFirstEndedCountRef.current = 0;
   }, [isAuthenticated]);
+
+  /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
+  const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const runRadioRecoveryAfterSystemPause = useCallback(async () => {
+    const s0 = useRadioPlayerStore.getState();
+    if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
+
+    restoreAudibleOutput();
+    requestPlay();
+
+    await new Promise<void>((r) => void window.setTimeout(() => r(), 520));
+
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.streamUrl) return;
+    const wanted = s.streamUrl;
+    const active = getActiveAudio();
+    const looksPlaying =
+      active &&
+      !active.ended &&
+      radioAudioPathMatchesStream(active, wanted) &&
+      !active.paused &&
+      active.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    if (looksPlaying) return;
+
+    const target = getActiveAudio();
+    if (target && radioAudioPathMatchesStream(target, wanted)) {
+      try {
+        target.pause();
+        target.muted = false;
+        target.volume = 1;
+        target.removeAttribute("src");
+        target.load();
+        target.src = wanted;
+        target.load();
+        await target
+          .play()
+          .then(() => setNeedsTap(false))
+          .catch(() => setNeedsTap(true));
+      } catch {
+        setNeedsTap(true);
+      }
+    }
+
+    await new Promise<void>((r) => void window.setTimeout(() => r(), 280));
+
+    const s2 = useRadioPlayerStore.getState();
+    const el2 = getActiveAudio();
+    const recovered =
+      el2 &&
+      !el2.ended &&
+      s2.streamUrl &&
+      radioAudioPathMatchesStream(el2, s2.streamUrl) &&
+      !el2.paused;
+    if (recovered || s2.userStopped || !s2.slug || !s2.streamUrl) return;
+
+    try {
+      const res = await fetch(`/api/radio/channels/${s2.slug.trim().toLowerCase()}`, { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.status !== "live") return;
+      const nowPlayingId = data?.nowPlayingMusicId ?? null;
+      const nowPlayingObjectPath = data?.nowPlayingObjectPath ?? null;
+      if (nowPlayingId == null && !nowPlayingObjectPath) return;
+      const newStreamUrl =
+        nowPlayingObjectPath != null
+          ? String(nowPlayingObjectPath)
+          : nowPlayingId != null
+            ? `/api/music/${Number(nowPlayingId)}/stream`
+            : null;
+      if (!newStreamUrl) return;
+      if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
+      const def = i18n.t("radio.defaultChannelName");
+      const resolvedName = String(data?.name ?? s2.channelName ?? def).trim() || def;
+      setStream(
+        s2.slug,
+        resolvedName,
+        newStreamUrl,
+        radioSeekSecondsForHandoff(s2.streamUrl, newStreamUrl, data?.nowPlayingElapsedSeconds as number | null | undefined),
+      );
+      requestPlay();
+    } catch {
+      /* ignore */
+    }
+  }, [
+    restoreAudibleOutput,
+    getActiveAudio,
+    setNeedsTap,
+    authLoading,
+    isAuthenticated,
+    i18n,
+    setStream,
+    requestPlay,
+  ]);
+
+  const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.streamUrl || !s.slug) return;
+    if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
+    radioRecoverTimerRef.current = window.setTimeout(() => {
+      radioRecoverTimerRef.current = null;
+      void runRadioRecoveryAfterSystemPause();
+    }, 180);
+  }, [runRadioRecoveryAfterSystemPause]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") scheduleRadioRecoveryAfterSystemPause();
+    };
+    window.addEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
+    window.addEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      if (radioRecoverTimerRef.current != null) {
+        window.clearTimeout(radioRecoverTimerRef.current);
+        radioRecoverTimerRef.current = null;
+      }
+      window.removeEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
+      window.removeEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [scheduleRadioRecoveryAfterSystemPause]);
+
+  useEffect(() => {
+    if (!slug) return;
+    const schedule = scheduleRadioRecoveryAfterSystemPause;
+    const onMediaStall = () => {
+      if (document.visibilityState !== "visible") return;
+      const s = useRadioPlayerStore.getState();
+      if (s.userStopped || !s.streamUrl) return;
+      schedule();
+    };
+    const a = audioARef.current;
+    const b = audioBRef.current;
+    a?.addEventListener("stalled", onMediaStall);
+    a?.addEventListener("suspend", onMediaStall);
+    b?.addEventListener("stalled", onMediaStall);
+    b?.addEventListener("suspend", onMediaStall);
+    return () => {
+      a?.removeEventListener("stalled", onMediaStall);
+      a?.removeEventListener("suspend", onMediaStall);
+      b?.removeEventListener("stalled", onMediaStall);
+      b?.removeEventListener("suspend", onMediaStall);
+    };
+  }, [slug, scheduleRadioRecoveryAfterSystemPause]);
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
