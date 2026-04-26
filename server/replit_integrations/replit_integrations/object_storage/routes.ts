@@ -13,6 +13,46 @@ const UPLOADS_SUBDIR = path.join(LOCAL_UPLOADS_DIR, "uploads");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
+function storedExtensionForUpload(file: Express.Multer.File): string {
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  const extMap: Record<string, string> = {
+    ".mp3": ".mp3",
+    ".wav": ".wav",
+    ".ogg": ".ogg",
+    ".jpg": ".jpg",
+    ".jpeg": ".jpg",
+    ".png": ".png",
+    ".webp": ".webp",
+    ".gif": ".gif",
+    ".avif": ".avif",
+    ".jfif": ".jpg",
+    ".bmp": ".bmp",
+  };
+  if (extMap[ext]) return extMap[ext];
+
+  const mt = (file.mimetype || "").toLowerCase();
+  const mimeMap: Record<string, string> = {
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/ogg": ".ogg",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/pjpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+    "image/bmp": ".bmp",
+    "image/x-ms-bmp": ".bmp",
+  };
+  if (mimeMap[mt]) return mimeMap[mt];
+  if (mt.startsWith("audio/")) return ".mp3";
+  if (mt.startsWith("image/")) return ".jpg";
+  return ".mp3";
+}
+
 /**
  * Register object storage routes for file uploads.
  *
@@ -92,12 +132,7 @@ export function registerObjectStorageRoutes(app: Express): void {
         return res.status(400).json({ error: "파일이 없습니다" });
       }
       mkdirSync(UPLOADS_SUBDIR, { recursive: true });
-      const ext = path.extname(file.originalname) || ".mp3";
-      const extMap: Record<string, string> = {
-        ".mp3": ".mp3", ".wav": ".wav", ".ogg": ".ogg",
-        ".jpg": ".jpg", ".jpeg": ".jpg", ".png": ".png",
-      };
-      const safeExt = extMap[ext.toLowerCase()] || ".mp3";
+      const safeExt = storedExtensionForUpload(file);
       const rawDesired = (req.body?.desiredFilename as string)?.trim();
       const baseName = rawDesired ? sanitizeFilename(rawDesired) : "";
       const shortId = randomUUID().slice(0, 8);
@@ -143,6 +178,10 @@ export function registerObjectStorageRoutes(app: Express): void {
           ".jpg": "image/jpeg",
           ".jpeg": "image/jpeg",
           ".png": "image/png",
+          ".webp": "image/webp",
+          ".gif": "image/gif",
+          ".avif": "image/avif",
+          ".bmp": "image/bmp",
         };
         res.set("Content-Type", mime[ext.toLowerCase()] || "application/octet-stream");
         createReadStream(localPath).pipe(res);

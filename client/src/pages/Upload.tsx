@@ -308,7 +308,15 @@ export default function Upload() {
       let imagePath = unsplashUrl || null;
       if (imageFile) {
         const imageRes = await uploadImage(imageFile);
-        if (imageRes) imagePath = imageRes.objectPath;
+        if (imageRes) {
+          imagePath = imageRes.objectPath;
+        } else {
+          toast({
+            title: t("upload.error", "오류"),
+            description: t("upload.coverUploadFailed", "커버 이미지 업로드에 실패했습니다. 형식·용량을 확인한 뒤 다시 시도해 주세요."),
+            variant: "destructive",
+          });
+        }
       }
 
       createMusic(

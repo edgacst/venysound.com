@@ -4905,12 +4905,14 @@ export async function registerRoutes(
         fileId = fileId.replace(/^\//, "");
         if (!fileId) return null;
 
-        const baseId = fileId.replace(/\.(png|jpe?g|webp)$/i, "");
+        const baseId = fileId.replace(/\.(png|jpe?g|webp|gif|avif)$/i, "");
         const candidates = [
           { p: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
           { p: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
           { p: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
-        { p: path.join(uploadsDir, `${baseId}.webp`), ext: ".webp" },
+          { p: path.join(uploadsDir, `${baseId}.webp`), ext: ".webp" },
+          { p: path.join(uploadsDir, `${baseId}.gif`), ext: ".gif" },
+          { p: path.join(uploadsDir, `${baseId}.avif`), ext: ".avif" },
           { p: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
         ];
         const found = candidates.find((c) => existsSync(c.p));

@@ -71,6 +71,7 @@ export function useUpload(hookOptions: UseUploadOptions = {}) {
     async (file: File, name: string): Promise<UploadResponse> => {
       const response = await fetch("/api/uploads/request-url", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },
@@ -138,6 +139,7 @@ export function useUpload(hookOptions: UseUploadOptions = {}) {
           if (preferredName) formData.append("desiredFilename", preferredName);
           const res = await fetch((uploadResponse as any).uploadEndpoint || "/api/uploads/local", {
             method: "POST",
+            credentials: "include",
             body: formData,
           });
           if (!res.ok) {
@@ -192,6 +194,7 @@ export function useUpload(hookOptions: UseUploadOptions = {}) {
       // Use the actual file properties to request a per-file presigned URL
       const response = await fetch("/api/uploads/request-url", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

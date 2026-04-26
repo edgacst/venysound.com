@@ -10,6 +10,47 @@ const UPLOADS_SUBDIR = path.join(LOCAL_UPLOADS_DIR, "uploads");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
+/** 확장자가 없거나 비표준이어도 mimetype으로 올바른 확장자를 쓰면 커버 이미지가 깨지지 않습니다. */
+function storedExtensionForUpload(file: Express.Multer.File): string {
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  const extMap: Record<string, string> = {
+    ".mp3": ".mp3",
+    ".wav": ".wav",
+    ".ogg": ".ogg",
+    ".jpg": ".jpg",
+    ".jpeg": ".jpg",
+    ".png": ".png",
+    ".webp": ".webp",
+    ".gif": ".gif",
+    ".avif": ".avif",
+    ".jfif": ".jpg",
+    ".bmp": ".bmp",
+  };
+  if (extMap[ext]) return extMap[ext];
+
+  const mt = (file.mimetype || "").toLowerCase();
+  const mimeMap: Record<string, string> = {
+    "audio/mpeg": ".mp3",
+    "audio/mp3": ".mp3",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/ogg": ".ogg",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/pjpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+    "image/bmp": ".bmp",
+    "image/x-ms-bmp": ".bmp",
+  };
+  if (mimeMap[mt]) return mimeMap[mt];
+  if (mt.startsWith("audio/")) return ".mp3";
+  if (mt.startsWith("image/")) return ".jpg";
+  return ".mp3";
+}
+
 export class ObjectNotFoundError extends Error {
   constructor() {
     super("Object not found");
@@ -63,12 +104,7 @@ export function registerObjectStorageRoutes(app: Express): void {
       }
       mkdirSync(UPLOADS_SUBDIR, { recursive: true });
       const uuid = randomUUID();
-      const ext = path.extname(file.originalname) || ".mp3";
-      const extMap: Record<string, string> = {
-        ".mp3": ".mp3", ".wav": ".wav", ".ogg": ".ogg",
-        ".jpg": ".jpg", ".jpeg": ".jpg", ".png": ".png",
-      };
-      const safeExt = extMap[ext.toLowerCase()] || ".mp3";
+      const safeExt = storedExtensionForUpload(file);
       const filename = `${uuid}${safeExt}`;
       const destPath = path.join(UPLOADS_SUBDIR, filename);
       await writeFile(destPath, file.buffer);
@@ -101,6 +137,10 @@ export function registerObjectStorageRoutes(app: Express): void {
           ".jpg": "image/jpeg",
           ".jpeg": "image/jpeg",
           ".png": "image/png",
+          ".webp": "image/webp",
+          ".gif": "image/gif",
+          ".avif": "image/avif",
+          ".bmp": "image/bmp",
         };
         const contentType = mime[ext.toLowerCase()] || "application/octet-stream";
         const stat = statSync(localPath);
