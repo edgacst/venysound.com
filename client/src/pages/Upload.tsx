@@ -87,14 +87,14 @@ export default function Upload() {
       return null;
     });
     if (!file || !(file.type === "audio/mpeg" || file.name.toLowerCase().endsWith(".mp3"))) {
-      setImageFile(null);
+      // WAV/OGG 등은 이미 선택한 커버·랜덤 커버를 유지 (이전에는 여기서 imageFile을 비움)
       return;
     }
     jsmediatags.read(file, {
       onSuccess: (tag: { tags?: { picture?: { data: number[]; format: string } } }) => {
         const picture = tag.tags?.picture;
         if (!picture?.data?.length) {
-          setImageFile(null);
+          // 임베디드 없음: 사용자가 먼저 고른 이미지·랜덤 커버는 그대로 둠
           return;
         }
         const blob = new Blob([new Uint8Array(picture.data)], { type: picture.format });
@@ -106,7 +106,7 @@ export default function Upload() {
         toast({ title: t("upload.embeddedCoverUsed", "MP3에 포함된 커버를 사용합니다.") });
       },
       onError: () => {
-        setImageFile(null);
+        // 태그 파싱 실패 시에도 수동 커버는 유지
       },
     });
   }, [t]);
