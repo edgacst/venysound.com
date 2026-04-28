@@ -399,6 +399,8 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
   const uploaderIsPremium = uploaderTier === "premium";
   const uploaderDonationBadge = (music as { uploaderDonationBadge?: string | null }).uploaderDonationBadge ?? null;
+  /** 본인이 올린 곡에는 후원 배지 미표시(다른 사람에게는 업로더의 후원 티어 노출) */
+  const showDonationBadgeByArtist = Boolean(uploaderDonationBadge && !isOwner);
   /** 무료 플랜 AI 월 한도로 생성 후 사이트 공개된 곡 — 후원·유료 다운로드·벨소리 비활성(관리자 생성 로그는 해당 없음) */
   const freeAiLocked = music.freeAiSiteRestrictions === true;
 
@@ -609,7 +611,9 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               <span className="shrink-0 text-muted-foreground opacity-50">·</span>
               <span className="inline-flex min-w-0 flex-1 items-center gap-0.5 truncate text-muted-foreground" data-testid={`text-artist-${music.id}`}>
                 {music.artist}
-                {uploaderDonationBadge ? <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" /> : null}
+                {showDonationBadgeByArtist && uploaderDonationBadge ? (
+                  <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />
+                ) : null}
               </span>
             </div>
             <div className="flex shrink-0 items-center justify-end gap-2 tabular-nums min-[420px]:justify-start">
@@ -868,7 +872,9 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           </Link>
           <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground md:text-xs lg:text-sm" data-testid={`text-artist-${music.id}`}>
             <span className="truncate" title={music.artist}>{music.artist}</span>
-            {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />}
+            {showDonationBadgeByArtist && uploaderDonationBadge ? (
+              <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />
+            ) : null}
           </p>
           
           <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5" onClick={(e) => e.stopPropagation()}>

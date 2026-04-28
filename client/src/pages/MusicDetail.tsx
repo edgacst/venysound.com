@@ -312,6 +312,8 @@ export default function MusicDetail() {
   const isOwner = user?.id === musicData?.userId;
   const uploaderIsPremium = musicData?.uploaderSubscriptionTier === "premium";
   const uploaderDonationBadge = (musicData as { uploaderDonationBadge?: string | null } | undefined)?.uploaderDonationBadge ?? null;
+  /** 본인 곡 상세에서는 후원 배지 숨김 — 타인에게만 업로더 후원 티어 표시 */
+  const showUploaderDonationBadge = Boolean(uploaderDonationBadge && !isOwner);
   const isFollowingUploader = followStatus?.isFollowing === true;
   const freeAiLocked = musicData?.freeAiSiteRestrictions === true;
   const canDownload =
@@ -536,7 +538,9 @@ export default function MusicDetail() {
                       <span className="text-sm font-medium text-foreground">
                         {uploader.firstName || t('musicDetail.user', '사용자')}{uploader.lastName ? ` ${uploader.lastName}` : ""}
                       </span>
-                      {uploaderDonationBadge && <DonationBadge badge={uploaderDonationBadge} showLabel={true} size="sm" />}
+                      {showUploaderDonationBadge && uploaderDonationBadge ? (
+                        <DonationBadge badge={uploaderDonationBadge} showLabel={true} size="sm" />
+                      ) : null}
                     </div>
                   </Link>
                 )}

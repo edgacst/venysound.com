@@ -42,6 +42,29 @@ function extractUpcFromExternalReleaseRef(ref: string | null | undefined): strin
   return null;
 }
 
+/** users 조인 필드를 `MusicWithUploaderTier`의 업로더 티어·후원 뱃지로 합칩니다. */
+function mapMusicRowWithUploaderFields(
+  r: Record<string, unknown> & {
+    _uploaderTier: string | null;
+    _uploaderExpiresAt: Date | string | null;
+    _uploaderRole: string | null;
+    _uploaderDonationBadge: string | null;
+  },
+  now: Date,
+): MusicWithUploaderTier {
+  const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, _uploaderDonationBadge, ...rest } = r;
+  const subscriptionPremium =
+    (_uploaderTier === "pro" || _uploaderTier === "premium") &&
+    (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
+  const isPremium = _uploaderRole === "admin" || subscriptionPremium;
+  const badgeTrimmed = _uploaderDonationBadge != null ? String(_uploaderDonationBadge).trim() : "";
+  return {
+    ...(rest as object),
+    uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free",
+    uploaderDonationBadge: badgeTrimmed.length > 0 ? badgeTrimmed : null,
+  } as MusicWithUploaderTier;
+}
+
 export const MUSIC_GENRE_GROUPS: Record<string, string[]> = {
   "팝뮤직": ["팝뮤직", "팝발라드", "댄스팝", "일렉트로팝", "인디팝", "틴팝", "신스팝", "드림팝", "시티팝"],
   "국내가요": ["국내가요", "케이팝", "발라드", "트로트", "국내OST", "어쿠스틱가요", "K-POP", "KPOP"],
@@ -601,6 +624,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -613,12 +637,7 @@ export class DatabaseStorage implements IStorage {
     }
     const rows = await query;
     const now = new Date();
-    const data: MusicWithUploaderTier[] = rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    const data: MusicWithUploaderTier[] = rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
 
     return { data, total };
   }
@@ -654,6 +673,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .innerJoin(distributionReleases, eq(music.id, distributionReleases.musicId))
@@ -673,22 +693,7 @@ export class DatabaseStorage implements IStorage {
 
     const now = new Date();
     const toTiered = (rows: typeof rowsDr): MusicWithUploaderTier[] =>
-      rows.map((r) => {
-        const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as (typeof rowsDr)[0] & {
-          _uploaderTier: string | null;
-          _uploaderExpiresAt: Date | string | null;
-          _uploaderRole: string | null;
-        };
-        const subscriptionPremium =
-          (_uploaderTier === "pro" || _uploaderTier === "premium") &&
-          (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-        const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-        return {
-          ...rest,
-          uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free",
-          uploaderDonationBadge: null,
-        } as MusicWithUploaderTier;
-      });
+      rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
 
     let out = toTiered(rowsDr);
     const seen = new Set(out.map((m) => m.id));
@@ -707,6 +712,7 @@ export class DatabaseStorage implements IStorage {
           _uploaderTier: users.subscriptionTier,
           _uploaderExpiresAt: users.subscriptionExpiresAt,
           _uploaderRole: users.role,
+          _uploaderDonationBadge: users.donationBadge,
         })
         .from(music)
         .leftJoin(users, eq(music.userId, users.id))
@@ -763,6 +769,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -771,12 +778,7 @@ export class DatabaseStorage implements IStorage {
     const orderMap = new Map(ids.map((id, i) => [id, i]));
     rows.sort((a, b) => (orderMap.get(a.id) ?? 999) - (orderMap.get(b.id) ?? 999));
     const now = new Date();
-    return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as (typeof rows)[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    return rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
   }
 
   async getSimilarMusic(musicId: number, limit: number = 8): Promise<MusicWithUploaderTier[]> {
@@ -810,6 +812,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id));
@@ -841,12 +844,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const now = new Date();
-    return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    return rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
   }
 
   async getWeeklyTopTracks(limit: number = 10): Promise<(MusicWithUploaderTier & { playCount: number; totalSeconds: number })[]> {
@@ -872,6 +870,7 @@ export class DatabaseStorage implements IStorage {
         u.subscription_tier AS uploader_subscription_tier,
         u.subscription_expires_at AS uploader_subscription_expires_at,
         u.role AS uploader_role,
+        u.donation_badge AS uploader_donation_badge,
         COUNT(sl.id)::int AS play_count,
         COALESCE(SUM(sl.duration_seconds), 0)::int AS total_seconds
       FROM streaming_logs sl
@@ -881,7 +880,7 @@ export class DatabaseStorage implements IStorage {
       GROUP BY
         m.id, m.title, m.artist, m.filename, m.image_filename, m.genre, m.tags, m.lyrics,
         m.is_ai, m.ai_provider, m.free_ai_site_restrictions, m.price, m.is_downloadable, m.user_id, m.spotify_album_id, m.created_at,
-        u.subscription_tier, u.subscription_expires_at, u.role
+        u.subscription_tier, u.subscription_expires_at, u.role, u.donation_badge
       ORDER BY play_count DESC, total_seconds DESC
       LIMIT ${safeLimit}
     `);
@@ -911,7 +910,10 @@ export class DatabaseStorage implements IStorage {
         spotifyAlbumId: r.spotify_album_id ?? null,
         createdAt: r.created_at,
         uploaderSubscriptionTier: isPremium ? (r.uploader_subscription_tier ?? "pro") : "free",
-        uploaderDonationBadge: null,
+        uploaderDonationBadge:
+          r.uploader_donation_badge != null && String(r.uploader_donation_badge).trim()
+            ? String(r.uploader_donation_badge).trim()
+            : null,
       };
       return {
         ...base,
@@ -952,6 +954,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -969,6 +972,7 @@ export class DatabaseStorage implements IStorage {
           _uploaderTier: users.subscriptionTier,
           _uploaderExpiresAt: users.subscriptionExpiresAt,
           _uploaderRole: users.role,
+          _uploaderDonationBadge: users.donationBadge,
         })
         .from(music)
         .leftJoin(users, eq(music.userId, users.id))
@@ -977,14 +981,7 @@ export class DatabaseStorage implements IStorage {
     }
 
     const now = new Date();
-    return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium =
-        (_uploaderTier === "pro" || _uploaderTier === "premium") &&
-        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    return rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
   }
 
   async getWeeklyTopArtist(limitTracks: number = 5): Promise<{ userId: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; playCount: number; totalSeconds: number; tracks: MusicWithUploaderTier[] } | null> {
@@ -1034,6 +1031,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -1042,14 +1040,7 @@ export class DatabaseStorage implements IStorage {
       .limit(safeLimitTracks);
 
     const now = new Date();
-    const tracks: MusicWithUploaderTier[] = trackRows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof trackRows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium =
-        (_uploaderTier === "pro" || _uploaderTier === "premium") &&
-        (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    const tracks: MusicWithUploaderTier[] = trackRows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
 
     return {
       userId: artistId,
@@ -1117,18 +1108,14 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
       .where(eq(music.userId, userId))
       .orderBy(desc(music.createdAt));
     const now = new Date();
-    return rows.map((r) => {
-      const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-      const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-      return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier;
-    });
+    return rows.map((r) => mapMusicRowWithUploaderFields(r as any, now));
   }
 
   async updateMusic(
@@ -3993,6 +3980,7 @@ export class DatabaseStorage implements IStorage {
         _uploaderTier: users.subscriptionTier,
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
+        _uploaderDonationBadge: users.donationBadge,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
@@ -4000,16 +3988,8 @@ export class DatabaseStorage implements IStorage {
     const orderMap = new Map(entries.map((e, i) => [e.musicId, i]));
     const now = new Date();
     const tracks: MusicWithUploaderTier[] = rows
-      .map((r) => {
-        const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, ...rest } = r as typeof rows[0] & { _uploaderTier: string | null; _uploaderExpiresAt: Date | string | null; _uploaderRole: string | null };
-const subscriptionPremium = (_uploaderTier === "pro" || _uploaderTier === "premium") && (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
-      const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-        return { ...rest, uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free", uploaderDonationBadge: null } as MusicWithUploaderTier & { _sortOrder: number };
-      })
-      .map((t) => {
-        const sortOrder = orderMap.get(t.id) ?? 999;
-        return { ...t, _sortOrder: sortOrder };
-      })
+      .map((r) => mapMusicRowWithUploaderFields(r as any, now))
+      .map((t) => ({ ...t, _sortOrder: orderMap.get(t.id) ?? 999 }))
       .sort((a, b) => a._sortOrder - b._sortOrder)
       .map(({ _sortOrder, ...t }) => t as MusicWithUploaderTier);
     return {
