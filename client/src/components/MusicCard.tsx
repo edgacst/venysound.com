@@ -397,7 +397,8 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const canDelete = isOwner || isAdmin;
   const canReport = !!user && !isOwner;
   const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
-  const uploaderIsPremium = uploaderTier === "premium";
+  /** 후원/유료 다운로드 등 수익 기능: 플랜 회원(= pro|premium) 또는 관리자 업로드 곡에만 노출 */
+  const uploaderIsPremium = uploaderTier === "premium" || uploaderTier === "pro" || uploaderTier === "admin";
   const uploaderDonationBadge = (music as { uploaderDonationBadge?: string | null }).uploaderDonationBadge ?? null;
   /** 본인이 올린 곡에는 후원 배지 미표시(다른 사람에게는 업로더의 후원 티어 노출) */
   const showDonationBadgeByArtist = Boolean(uploaderDonationBadge && !isOwner);

@@ -310,7 +310,8 @@ export default function MusicDetail() {
   const isLiked = myLikes?.includes(musicId);
   const likeCount = likeCounts?.[musicId] || 0;
   const isOwner = user?.id === musicData?.userId;
-  const uploaderIsPremium = musicData?.uploaderSubscriptionTier === "premium";
+  const uploaderTier = musicData?.uploaderSubscriptionTier ?? null;
+  const uploaderIsPremium = uploaderTier === "premium" || uploaderTier === "pro" || uploaderTier === "admin";
   const uploaderDonationBadge = (musicData as { uploaderDonationBadge?: string | null } | undefined)?.uploaderDonationBadge ?? null;
   /** 본인 곡 상세에서는 후원 배지 숨김 — 타인에게만 업로더 후원 티어 표시 */
   const showUploaderDonationBadge = Boolean(uploaderDonationBadge && !isOwner);
