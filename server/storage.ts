@@ -42,6 +42,25 @@ function extractUpcFromExternalReleaseRef(ref: string | null | undefined): strin
   return null;
 }
 
+/** 업로더 후원 배지(수령액 기준). DB 스키마 변경 없이 계산합니다. */
+function donationBadgeFromReceivedWon(totalReceivedWon: number): string | null {
+  if (!Number.isFinite(totalReceivedWon) || totalReceivedWon <= 0) return null;
+  if (totalReceivedWon >= 1_500_000) return "sponsor";
+  if (totalReceivedWon >= 375_000) return "supporter";
+  if (totalReceivedWon >= 75_000) return "sprout";
+  if (totalReceivedWon >= 750) return "seed";
+  return null;
+}
+
+const tipReceivedTotalsByUser = db
+  .select({
+    userId: tips.toUserId,
+    totalReceivedWon: sql<number>`COALESCE(SUM(${tips.amount}), 0)::int`,
+  })
+  .from(tips)
+  .groupBy(tips.toUserId)
+  .as("tip_received_totals_by_user");
+
 /** users 조인 필드를 `MusicWithUploaderTier`의 업로더 티어·후원 뱃지로 합칩니다. */
 function mapMusicRowWithUploaderFields(
   r: Record<string, unknown> & {
@@ -49,19 +68,28 @@ function mapMusicRowWithUploaderFields(
     _uploaderExpiresAt: Date | string | null;
     _uploaderRole: string | null;
     _uploaderDonationBadge: string | null;
+    _uploaderTipReceivedWon?: number | null;
   },
   now: Date,
 ): MusicWithUploaderTier {
-  const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, _uploaderDonationBadge, ...rest } = r;
+  const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, _uploaderDonationBadge, _uploaderTipReceivedWon, ...rest } = r;
   const subscriptionPremium =
     (_uploaderTier === "pro" || _uploaderTier === "premium") &&
     (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
   const isPremium = _uploaderRole === "admin" || subscriptionPremium;
-  const badgeTrimmed = _uploaderDonationBadge != null ? String(_uploaderDonationBadge).trim() : "";
+  const receivedNum =
+    typeof _uploaderTipReceivedWon === "number"
+      ? _uploaderTipReceivedWon
+      : _uploaderTipReceivedWon != null
+        ? Number(_uploaderTipReceivedWon)
+        : 0;
+  const badgeFromReceived = donationBadgeFromReceivedWon(Number.isFinite(receivedNum) ? receivedNum : 0);
+  const fallbackTrimmed = _uploaderDonationBadge != null ? String(_uploaderDonationBadge).trim() : "";
+  const badge = badgeFromReceived ?? (fallbackTrimmed.length > 0 ? fallbackTrimmed : null);
   return {
     ...(rest as object),
     uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free",
-    uploaderDonationBadge: badgeTrimmed.length > 0 ? badgeTrimmed : null,
+    uploaderDonationBadge: badge,
   } as MusicWithUploaderTier;
 }
 
@@ -625,9 +653,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .orderBy(desc(music.createdAt))
       .limit(limit)
       .offset(offset);
@@ -674,10 +704,12 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .innerJoin(distributionReleases, eq(music.id, distributionReleases.musicId))
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(
         and(
           inArray(distributionReleases.status, releaseStatuses),
@@ -713,9 +745,11 @@ export class DatabaseStorage implements IStorage {
           _uploaderExpiresAt: users.subscriptionExpiresAt,
           _uploaderRole: users.role,
           _uploaderDonationBadge: users.donationBadge,
+          _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
         })
         .from(music)
         .leftJoin(users, eq(music.userId, users.id))
+        .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
         .where(and(...spotifyWhere))
         .orderBy(desc(music.createdAt))
         .limit(need);
@@ -770,9 +804,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(inArray(music.id, ids));
 
     const orderMap = new Map(ids.map((id, i) => [id, i]));
@@ -813,9 +849,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
-      .leftJoin(users, eq(music.userId, users.id));
+      .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId));
 
     // 1) 같은 세부 장르(예: 팝발라드) 우선
     let sameGenreRows: any[] = [];
@@ -955,9 +993,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(gte(music.createdAt, since))
       .orderBy(desc(music.createdAt))
       .limit(safeLimit);
@@ -973,9 +1013,11 @@ export class DatabaseStorage implements IStorage {
           _uploaderExpiresAt: users.subscriptionExpiresAt,
           _uploaderRole: users.role,
           _uploaderDonationBadge: users.donationBadge,
+          _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
         })
         .from(music)
         .leftJoin(users, eq(music.userId, users.id))
+        .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
         .orderBy(desc(music.createdAt))
         .limit(safeLimit);
     }
@@ -1032,9 +1074,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(eq(music.userId, artistId))
       .orderBy(desc(music.createdAt))
       .limit(safeLimitTracks);
@@ -1109,9 +1153,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(eq(music.userId, userId))
       .orderBy(desc(music.createdAt));
     const now = new Date();
@@ -3981,9 +4027,11 @@ export class DatabaseStorage implements IStorage {
         _uploaderExpiresAt: users.subscriptionExpiresAt,
         _uploaderRole: users.role,
         _uploaderDonationBadge: users.donationBadge,
+        _uploaderTipReceivedWon: tipReceivedTotalsByUser.totalReceivedWon,
       })
       .from(music)
       .leftJoin(users, eq(music.userId, users.id))
+      .leftJoin(tipReceivedTotalsByUser, eq(music.userId, tipReceivedTotalsByUser.userId))
       .where(inArray(music.id, musicIds));
     const orderMap = new Map(entries.map((e, i) => [e.musicId, i]));
     const now = new Date();
