@@ -913,13 +913,17 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             </div>
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-0.5">
-                {uploaderIsPremium && !freeAiLocked && !isOwner && user && (
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    onClick={(e) => { e.stopPropagation(); setTipOpen(true); }} 
+                {uploaderIsPremium && !freeAiLocked && !isOwner && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!user) return redirectToLogin();
+                      setTipOpen(true);
+                    }}
                     data-testid={`button-tip-${music.id}`}
-                    title={t('music.tipTitle')}
+                    title={t("music.tipTitle")}
                   >
                     <Gift size={14} className="text-yellow-500" />
                   </Button>
