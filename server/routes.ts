@@ -60,6 +60,7 @@ import {
   SUBSCRIPTION_PLAN_FALLBACK,
   isPaidSubscriptionTierId,
   PAID_SUBSCRIPTION_TIER_IDS,
+  apiUploaderSubscriptionTierForClient,
   type PaidSubscriptionTierId,
 } from "@shared/subscription-plan-pricing";
 import {
@@ -3201,7 +3202,7 @@ export async function registerRoutes(
           isDownloadable: r.is_downloadable,
           userId: r.user_id,
           createdAt: r.created_at,
-          uploaderSubscriptionTier: isPremium ? (tier ?? "pro") : "free",
+          uploaderSubscriptionTier: apiUploaderSubscriptionTierForClient(isPremium, r.uploader_role, tier),
           likeCount: Number(r.like_count || 0),
           streamSeconds: Number(r.stream_seconds || 0),
         };
@@ -3407,7 +3408,11 @@ export async function registerRoutes(
       const uploaderIsPremium = (uploader as any)?.role === "admin" || subscriptionPremium;
       res.json({
         ...music,
-        uploaderSubscriptionTier: uploaderIsPremium ? (uploader?.subscriptionTier ?? "pro") : "free",
+        uploaderSubscriptionTier: apiUploaderSubscriptionTierForClient(
+          uploaderIsPremium,
+          (uploader as { role?: string | null } | null)?.role,
+          uploader?.subscriptionTier,
+        ),
         uploaderDonationBadge: (uploader as any)?.donationBadge ?? null,
         uploader: uploader ? { id: uploader.id, firstName: uploader.firstName, lastName: uploader.lastName, profileImageUrl: uploader.profileImageUrl, email: uploader.email, subscriptionTier: uploader.subscriptionTier } : null,
       });

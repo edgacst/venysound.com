@@ -18,7 +18,7 @@ import {
 import { eq, desc, asc, and, or, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users, payments, aiMusicUsage } from "@shared/models/auth";
-import { PAID_SUBSCRIPTION_TIER_IDS } from "@shared/subscription-plan-pricing";
+import { PAID_SUBSCRIPTION_TIER_IDS, apiUploaderSubscriptionTierForClient } from "@shared/subscription-plan-pricing";
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   getAiMusicMonthlyUsageLimit,
@@ -88,7 +88,7 @@ function mapMusicRowWithUploaderFields(
   const badge = badgeFromReceived ?? (fallbackTrimmed.length > 0 ? fallbackTrimmed : null);
   return {
     ...(rest as object),
-    uploaderSubscriptionTier: isPremium ? (_uploaderTier ?? "pro") : "free",
+    uploaderSubscriptionTier: apiUploaderSubscriptionTierForClient(isPremium, _uploaderRole, _uploaderTier),
     uploaderDonationBadge: badge,
   } as MusicWithUploaderTier;
 }
@@ -947,7 +947,7 @@ export class DatabaseStorage implements IStorage {
         userId: r.user_id,
         spotifyAlbumId: r.spotify_album_id ?? null,
         createdAt: r.created_at,
-        uploaderSubscriptionTier: isPremium ? (r.uploader_subscription_tier ?? "pro") : "free",
+        uploaderSubscriptionTier: apiUploaderSubscriptionTierForClient(isPremium, r.uploader_role, r.uploader_subscription_tier),
         uploaderDonationBadge:
           r.uploader_donation_badge != null && String(r.uploader_donation_badge).trim()
             ? String(r.uploader_donation_badge).trim()

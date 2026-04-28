@@ -8,6 +8,25 @@ export function isPaidSubscriptionTierId(tier: string | null | undefined): boole
   return PAID_SUBSCRIPTION_TIER_IDS.includes(n as PaidSubscriptionTierId);
 }
 
+/**
+ * 음원 카드·상세 API용 업로더 티어 문자열.
+ * DB `subscription_tier`가 `starter`/`basic`이거나, 관리자인데 컬럼이 `free`로 남아 있어도
+ * 클라이언트(`pro` | `premium` | `admin`만 인식)에서 후원·벨 UI가 켜지도록 정규화합니다.
+ */
+export function apiUploaderSubscriptionTierForClient(
+  isPremium: boolean,
+  uploaderRole: string | null | undefined,
+  dbSubscriptionTier: string | null | undefined,
+): "free" | "admin" | "pro" | "premium" {
+  if (!isPremium) return "free";
+  const role = String(uploaderRole ?? "").trim().toLowerCase();
+  if (role === "admin") return "admin";
+  const t = String(dbSubscriptionTier ?? "").trim().toLowerCase();
+  if (t === "premium") return "premium";
+  if (isPaidSubscriptionTierId(t)) return "pro";
+  return "pro";
+}
+
 /** 구독 플랜 공급가(부가세 전, 원) — DB 오류·테스트 값 보정 시 사용. 연간 = 월×12×90%(할인) */
 export const SUBSCRIPTION_PLAN_FALLBACK: Record<
   PaidSubscriptionTierId,
