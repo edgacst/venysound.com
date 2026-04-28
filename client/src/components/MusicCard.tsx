@@ -662,20 +662,39 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             {freeAiLocked ? (
               <span className="inline-flex h-8 w-8 shrink-0" aria-hidden />
             ) : (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0"
-                title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRingtoneDialogOpen(true);
-                }}
-                data-testid={`button-ringtone-card-${music.id}`}
-                aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-              >
-                <Bell className="h-4 w-4 text-amber-400" />
-              </Button>
+              <span className="inline-flex items-center gap-0.5">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 shrink-0"
+                  title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setRingtoneDialogOpen(true);
+                  }}
+                  data-testid={`button-ringtone-card-${music.id}`}
+                  aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                >
+                  <Bell className="h-4 w-4 text-amber-400" />
+                </Button>
+                {uploaderIsPremium && !isOwner && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 shrink-0"
+                    title={t("music.tipTitle")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!user) return redirectToLogin();
+                      setTipOpen(true);
+                    }}
+                    data-testid={`button-tip-${music.id}`}
+                    aria-label={t("music.tipTitle")}
+                  >
+                    <Gift className="h-4 w-4 text-yellow-500" />
+                  </Button>
+                )}
+              </span>
             )}
             {showMenu && (
               <DropdownMenu>
@@ -894,41 +913,46 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                   </span>
                 )}
                 {!freeAiLocked && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
-                    title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRingtoneDialogOpen(true);
-                    }}
-                    data-testid={`button-ringtone-card-${music.id}`}
-                    aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                  >
-                    <Bell size={15} />
-                  </Button>
+                  <span className="inline-flex items-center gap-0.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-amber-400 hover:text-amber-300"
+                      title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRingtoneDialogOpen(true);
+                      }}
+                      data-testid={`button-ringtone-card-${music.id}`}
+                      aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                    >
+                      <Bell size={15} />
+                    </Button>
+                    {uploaderIsPremium && !isOwner && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-yellow-500 hover:text-yellow-400"
+                        title={t("music.tipTitle")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!user) return redirectToLogin();
+                          setTipOpen(true);
+                        }}
+                        data-testid={`button-tip-${music.id}`}
+                        aria-label={t("music.tipTitle")}
+                      >
+                        <Gift size={14} />
+                      </Button>
+                    )}
+                  </span>
                 )}
               </div>
             </div>
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center gap-0.5">
-                {uploaderIsPremium && !freeAiLocked && !isOwner && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (!user) return redirectToLogin();
-                      setTipOpen(true);
-                    }}
-                    data-testid={`button-tip-${music.id}`}
-                    title={t("music.tipTitle")}
-                  >
-                    <Gift size={14} className="text-yellow-500" />
-                  </Button>
-                )}
                 {uploaderIsPremium && !freeAiLocked && !isOwner && user && music.isDownloadable && music.price && music.price > 0 && (
                   <Button 
                     variant="ghost" 
