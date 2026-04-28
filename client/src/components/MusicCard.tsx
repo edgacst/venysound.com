@@ -15,6 +15,7 @@ import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
 import { DonationBadge } from "@/components/DonationBadge";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
+import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -397,8 +398,12 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const canDelete = isOwner || isAdmin;
   const canReport = !!user && !isOwner;
   const uploaderTier = (music as { uploaderSubscriptionTier?: string | null }).uploaderSubscriptionTier;
-  /** 후원/유료 다운로드 등 수익 기능: 플랜 회원(= pro|premium) 또는 관리자 업로드 곡에만 노출 */
-  const uploaderIsPremium = uploaderTier === "premium" || uploaderTier === "pro" || uploaderTier === "admin";
+  /** 후원/벨 등: 유료 플랜·관리자 업로드 (API 정규화 + starter/basic 등 구버전/캐시 대비) */
+  const uploaderIsPremium =
+    uploaderTier === "premium" ||
+    uploaderTier === "pro" ||
+    uploaderTier === "admin" ||
+    isPaidSubscriptionTierId(uploaderTier);
   const uploaderDonationBadge = (music as { uploaderDonationBadge?: string | null }).uploaderDonationBadge ?? null;
   /** 본인이 올린 곡에는 후원 배지 미표시(다른 사람에게는 업로더의 후원 티어 노출) */
   const showDonationBadgeByArtist = Boolean(uploaderDonationBadge && !isOwner);
@@ -898,8 +903,8 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           </p>
           
           <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between gap-1.5 overflow-hidden">
-              <span className="text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground truncate max-w-[65%]">
+            <div className="flex min-w-0 items-center justify-between gap-1.5">
+              <span className="min-w-0 flex-1 truncate text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground">
                 {music.genre || t('music.other')}
               </span>
               <div className="flex shrink-0 items-center gap-0.5">

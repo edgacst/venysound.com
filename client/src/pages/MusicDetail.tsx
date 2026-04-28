@@ -26,6 +26,7 @@ import {
   DollarSign, ListPlus, Share2, Disc3, Headphones, BarChart3, TrendingUp,
   FileText, ChevronDown, ChevronUp, BookOpen, PenLine, Trash2
 } from "lucide-react";
+import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return "";
@@ -311,7 +312,11 @@ export default function MusicDetail() {
   const likeCount = likeCounts?.[musicId] || 0;
   const isOwner = user?.id === musicData?.userId;
   const uploaderTier = musicData?.uploaderSubscriptionTier ?? null;
-  const uploaderIsPremium = uploaderTier === "premium" || uploaderTier === "pro" || uploaderTier === "admin";
+  const uploaderIsPremium =
+    uploaderTier === "premium" ||
+    uploaderTier === "pro" ||
+    uploaderTier === "admin" ||
+    isPaidSubscriptionTierId(uploaderTier);
   const uploaderDonationBadge = (musicData as { uploaderDonationBadge?: string | null } | undefined)?.uploaderDonationBadge ?? null;
   /** 본인 곡 상세에서는 후원 배지 숨김 — 타인에게만 업로더 후원 티어 표시 */
   const showUploaderDonationBadge = Boolean(uploaderDonationBadge && !isOwner);
