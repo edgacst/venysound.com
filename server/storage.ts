@@ -55,7 +55,7 @@ function donationBadgeFromReceivedWon(totalReceivedWon: number): string | null {
 const tipReceivedTotalsByUser = db
   .select({
     userId: tips.toUserId,
-    totalReceivedWon: sql<number>`COALESCE(SUM(${tips.amount}), 0)::int`,
+    totalReceivedWon: sql<number>`COALESCE(SUM(${tips.amount}), 0)::int`.as("totalReceivedWon"),
   })
   .from(tips)
   .groupBy(tips.toUserId)
