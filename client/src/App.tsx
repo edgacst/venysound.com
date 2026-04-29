@@ -20,6 +20,29 @@ import { ANALYTICS_DWELL_HEARTBEAT_PATH } from "@shared/analytics-constants";
 import { readVisitorKey, writeVisitorKey } from "@/lib/visitor-key";
 import { syncGuestListenAuthState } from "@/lib/guest-listen-quota";
 
+/** SPA 클라이언트 라우트 전환 시 page_view (첫 로드는 index.html gtag config가 처리) */
+function Ga4SpaPageViews() {
+  const [pathname] = useLocation();
+  const prevPathRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const path = pathname || "/";
+    if (prevPathRef.current === undefined) {
+      prevPathRef.current = path;
+      return;
+    }
+    if (prevPathRef.current === path) return;
+    prevPathRef.current = path;
+    const w = window as Window & { gtag?: (...args: unknown[]) => void };
+    if (typeof w.gtag !== "function") return;
+    w.gtag("event", "page_view", {
+      page_path: path + (window.location.search || ""),
+      page_title: document.title,
+      page_location: window.location.href,
+    });
+  }, [pathname]);
+  return null;
+}
+
 /** 체류 추정용 내부 ping 간격 (실제 페이지 path와 별도 — PV 집계에 포함되지 않음) */
 const DWELL_HEARTBEAT_MS = 8_000;
 /** 탭이 백그라운드일 때도 일자별 체류(max visited_at)가 늘도록 beacon ping (브라우저는 간격을 늘릴 수 있음) */
@@ -481,6 +504,7 @@ function App() {
                 <RadioWaveformProvider waveformBufferRef={radioWaveformRef}>
                   <RealtimeInboxSync />
                   <PageTitle />
+                  <Ga4SpaPageViews />
                   <AnalyticsVisit />
                   <RouteSmoothScroll />
                   <Routes />
