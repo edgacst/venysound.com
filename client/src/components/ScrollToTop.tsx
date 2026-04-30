@@ -54,7 +54,7 @@ export function ScrollToTop() {
     <Button
       size="icon"
       variant="secondary"
-      className="fixed right-4 z-[60] size-11 rounded-full border border-border bg-card/95 shadow-lg backdrop-blur hover:bg-card"
+      className="fixed right-4 z-[60] size-11 rounded-full border border-yellow-300 bg-yellow-400 text-black shadow-lg backdrop-blur hover:bg-yellow-500"
       style={{
         marginRight: "env(safe-area-inset-right)",
         bottom: `calc(${bottomRem}rem + env(safe-area-inset-bottom) + ${extraLiftPx}px)`,

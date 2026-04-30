@@ -103,6 +103,7 @@ const STYLE_PRESET_IDS = [
   "female_vocal",
   "duet",
   "whisper_vocal",
+  "husky_voice",
   "rap_vocal",
   "falsetto_vocal",
   "soul_vocals",
@@ -182,6 +183,7 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
   female_vocal: "female vocal",
   duet: "duet vocals",
   whisper_vocal: "whisper-soft vocals",
+  husky_voice: "husky voice",
   rap_vocal: "rap vocals",
   falsetto_vocal: "falsetto vocals",
   soul_vocals: "soulful lead vocals",
@@ -257,6 +259,12 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 
 /** 동시에 고를 수 있는 스타일 프리셋 개수 */
 const MAX_STYLE_PRESETS = 6;
+
+const STYLE_CHIP_FALLBACK_LABEL: Partial<Record<StylePresetId, string>> = {
+  falsetto_vocal: "가성(팔세토) 보컬",
+  stacked_vocals: "하모니 보컬(겹화음/다층 보컬)",
+  husky_voice: "허스키 보이스",
+};
 
 /**
  * 「설명으로 생성」일 때만 사용. 가사·분위기 주제를 한글 문장으로 API 앞단에 붙임(Suno 등이 한글 설명 수용).
@@ -420,6 +428,35 @@ function buildTagsForApi(genreOther: string, styleOther: string): string {
   return merged.length > 500 ? merged.slice(0, 500) : merged;
 }
 
+function orderPresetTagsForPrompt(tags: string): string {
+  const parts = splitCommaList(tags);
+  const weights = (p: string): number => {
+    const s = p.toLowerCase();
+    if (s.includes("lyrics") || s.includes("vocal") || s.includes("rap")) return 10;
+    if (/(guitar|piano|violin|cello|flute|sax|trumpet|harp|organ|kalimba|sitar|strings|orchestral|brass|horn|woodwind|synth|bass|drums|percussion|808)/.test(s)) {
+      return 20;
+    }
+    if (/(bpm|tempo|upbeat|downtempo|swing|shuffle|four-on-the-floor|breakbeat|trap)/.test(s)) return 30;
+    if (/(mood|atmosphere|nostalgic|melancholic|dreamy|dark|bright|aggressive|healing|romance)/.test(s)) return 40;
+    if (/(mix|reverb|stereo|sidechain|saturation|vinyl|tape|lo-fi|crackle)/.test(s)) return 50;
+    return 60;
+  };
+  return parts
+    .sort((a, b) => weights(a) - weights(b) || a.localeCompare(b))
+    .join(", ");
+}
+
+function buildPresetBoostBlock(tags: string, opts: { instrumentalOnly: boolean; customMode: boolean }): string {
+  const ordered = orderPresetTagsForPrompt(tags);
+  if (!ordered) return "";
+  if (opts.customMode) {
+    return opts.instrumentalOnly
+      ? `MUSICAL STYLE (important): ${ordered}\nINSTRUMENTAL ONLY`
+      : `MUSICAL STYLE (important): ${ordered}`;
+  }
+  return `Make sure the generated music strongly matches these style keywords (important): ${ordered}`;
+}
+
 /** 외부 AI가 끝난 뒤 화면에 반영되기까지의 지연을 줄이기 위한 폴링 (생성 자체 속도는 API 한계) */
 function nextAiMusicPollMs(apiState: string): number {
   if (apiState === "running" || apiState === "preview") return 1000;
@@ -528,17 +565,14 @@ function TrackCard({
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
   const hasDownloaded = (track.downloadCount ?? 0) > 0;
-  const doneActionClass = "text-emerald-600 dark:text-emerald-400 font-medium";
-  /** 다크 배경에서 primary보다 대비가 좋은 액션 색(시안 계열) */
-  const actionLinkClass =
-    "text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors";
-  const publishLinkClass =
-    "text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors";
+  const doneActionClass = "text-emerald-700 font-medium";
+  const actionLinkClass = "text-cyan-700 hover:text-cyan-800 transition-colors";
+  const publishLinkClass = "text-amber-700 hover:text-amber-800 transition-colors";
   const countBadgeClass =
-    "inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[9px] font-bold tabular-nums leading-none";
+    "inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-emerald-500/15 text-emerald-800 text-[9px] font-bold tabular-nums leading-none";
   return (
-    <div className="rounded-xl border border-border/80 bg-muted/25 shadow-sm p-3 flex gap-3 items-start w-full">
-      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-muted flex items-center justify-center text-[10px] font-medium text-muted-foreground">
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-3 flex gap-3 items-start w-full">
+      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-medium text-slate-700">
         {order}
       </span>
       {track.image_url && (
@@ -551,7 +585,7 @@ function TrackCard({
               <span className="truncate">{title}</span>
               {durationLabel ? (
                 <span
-                  className="text-muted-foreground font-normal tabular-nums shrink-0"
+                  className="text-slate-600 font-normal tabular-nums shrink-0"
                   title={t("createMusic.trackRuntimeTitle", "재생 길이")}
                 >
                   {durationLabel}
@@ -567,8 +601,8 @@ function TrackCard({
               <span
                 className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
                   hasDownloaded
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
-                    : "border-border/70 bg-muted/40 text-muted-foreground"
+                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
+                    : "border-slate-200 bg-slate-50 text-slate-600"
                 }`}
               >
                 {t("createMusic.statusDownload", "다운로드")}{" "}
@@ -577,15 +611,15 @@ function TrackCard({
               <span
                 className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
                   isPublished
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
-                    : "border-border/70 bg-muted/40 text-muted-foreground"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900"
+                    : "border-slate-200 bg-slate-50 text-slate-600"
                 }`}
               >
                 {t("createMusic.statusPublish", "공개")}{" "}
                 {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
               <button
                 type="button"
                 onClick={() => setShowLyrics((v) => !v)}
@@ -715,7 +749,7 @@ function TrackCard({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive"
+            className="h-7 w-7 flex-shrink-0 text-slate-500 hover:text-destructive"
             onClick={onRemove}
             title={t("createMusic.remove", "목록에서 삭제")}
           >
@@ -723,21 +757,21 @@ function TrackCard({
           </Button>
         </div>
         {(showLyrics || showStyle) && (
-          <div className="mt-1 pt-2 border-t border-border/50 space-y-3">
+          <div className="mt-1 pt-2 border-t border-slate-200 space-y-3">
             {showStyle && styleDescription && (
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">{t("createMusic.musicStyleLabel", "음악스타일")}</p>
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words font-sans max-h-24 overflow-y-auto bg-muted/30 rounded p-2">
+                <p className="text-xs font-medium text-slate-600 mb-1">{t("createMusic.musicStyleLabel", "음악스타일")}</p>
+                <pre className="text-xs text-slate-700 whitespace-pre-wrap break-words font-sans max-h-24 overflow-y-auto bg-slate-50 border border-slate-200 rounded p-2">
                   {styleDescription}
                 </pre>
               </div>
             )}
             {showLyrics && (
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1">
+                <p className="text-xs font-medium text-slate-600 mb-1">
                   {isLyricsMode ? t("createMusic.lyricsLabel", "가사") : t("createMusic.descriptionEnteredLabel", "입력한 음악 설명")}
                 </p>
-                <pre className="text-xs text-muted-foreground whitespace-pre-wrap break-words font-sans max-h-40 overflow-y-auto bg-muted/30 rounded p-2">
+                <pre className="text-xs text-slate-700 whitespace-pre-wrap break-words font-sans max-h-40 overflow-y-auto bg-slate-50 border border-slate-200 rounded p-2">
                   {fullText || t("createMusic.noLyricsOrDescription", "저장된 가사/설명이 없습니다.")}
                 </pre>
               </div>
@@ -1686,6 +1720,15 @@ export default function CreateMusic() {
     const mergedTags = buildTagsForApi(genreOther, styleOther);
     submittedTagsRef.current = mergedTags;
     try {
+      const presetBoost = buildPresetBoostBlock(mergedTags, { instrumentalOnly, customMode });
+      const boostedPrompt =
+        customMode && !instrumentalOnly
+          ? presetBoost
+            ? `${presetBoost}\n\nLYRICS:\n${promptTrim}`
+            : promptTrim
+          : presetBoost
+            ? `${presetBoost}\n\n${promptTrim}`
+            : promptTrim;
       const body: Record<string, unknown> = {
         custom_mode: customMode,
         mv: creationModelVersion,
@@ -1693,8 +1736,8 @@ export default function CreateMusic() {
         tags: mergedTags || undefined,
       };
       if (instrumentalOnly) body.make_instrumental = true;
-      if (customMode) body.prompt = promptTrim;
-      else body.gpt_description_prompt = promptTrim;
+      if (customMode) body.prompt = boostedPrompt;
+      else body.gpt_description_prompt = boostedPrompt;
 
       const res = await fetch("/api/ai-music/create", {
         method: "POST",
@@ -1768,12 +1811,12 @@ export default function CreateMusic() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div className="min-h-screen bg-white text-slate-900 flex flex-col">
         <Navigation />
 
-        <section className="relative overflow-hidden py-12 px-4">
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-900/40 via-background to-pink-900/20 pointer-events-none" />
-          <div className="container max-w-[1600px] mx-auto relative z-10 px-4 md:px-6">
+        <section className="relative overflow-hidden py-10 px-0">
+          <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-slate-50 pointer-events-none" />
+          <div className="mx-auto w-full max-w-[1360px] relative z-10 px-4 md:px-8">
             <div className="text-center mb-10">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm mb-4">
                 <Sparkles className="w-4 h-4" />
@@ -1812,25 +1855,22 @@ export default function CreateMusic() {
             {user && (
               <>
                 {aiUsage != null && (
-                  <div className="max-w-2xl mx-auto mb-4 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="w-full max-w-none mx-auto mb-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
                       <Link
                         href="/credits"
-                        className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-center hover:bg-amber-500/15 transition-colors min-h-[5.5rem]"
+                        className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-center hover:bg-amber-500/15 transition-colors min-h-[4.25rem]"
                       >
-                        <div className="flex items-center gap-2 text-xs font-medium text-amber-200/90">
+                        <div className="flex items-center gap-2 text-xs font-medium text-amber-900/90">
                           <Coins className="w-4 h-4 text-amber-400 shrink-0" />
-                          {t("createMusic.walletBalanceLabel", "지갑 잔액")}
+                          {t("createMusic.walletBalanceLabel", "지갑잔액/후원·유료 음원 구매 등 (지갑 충전 페이지)")}
                         </div>
-                        <strong className="text-xl tabular-nums text-white">
+                        <strong className="text-xl tabular-nums text-slate-900">
                           {Math.max(0, Number(aiUsage.walletCredits ?? aiUsage.creditsBalance ?? 0)).toLocaleString()}
                           <span className="text-sm font-medium text-amber-100/90 ml-0.5">{t("common.won", "원")}</span>
                         </strong>
-                        <span className="text-[11px] text-amber-100/70 leading-tight px-1">
-                          {t("createMusic.walletBalanceSub", "후원·유료 음원 구매 등 (지갑 충전 페이지)")}
-                        </span>
                       </Link>
-                      <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-violet-500/35 bg-violet-500/10 px-4 py-3 text-center min-h-[5.5rem]">
+                      <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-violet-500/35 bg-violet-500/10 px-4 py-2.5 text-center min-h-[4.25rem]">
                         {(() => {
                           /** 서버와 동일 규칙(한도 숫자로 추측하지 않음 — 캐시/구버전 응답에서 PC·모바일 표시 불일치 방지) */
                           const q =
@@ -1848,42 +1888,42 @@ export default function CreateMusic() {
                           if (q.kind === "unlimited") {
                             return (
                               <>
-                                <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                                <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
                                   <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
                                   {t("createMusic.aiQuotaTitle", "AI 사용 한도")}
                                 </div>
-                                <strong className="text-lg text-white">{t("createMusic.quotaUnlimited", "무제한")}</strong>
-                                <span className="text-[11px] text-violet-100/70">{t("createMusic.quotaAdminNote", "관리자 계정")}</span>
+                                <strong className="text-lg text-slate-900">{t("createMusic.quotaUnlimited", "무제한")}</strong>
+                                <span className="text-[11px] text-slate-700">{t("createMusic.quotaAdminNote", "관리자 계정")}</span>
                               </>
                             );
                           }
                           if (q.kind === "songs") {
                             return (
                               <>
-                                <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                                <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
                                   <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
-                                  {t("createMusic.freeAiQuotaLabel", "무료 AI 생성")}
+                                  {t(
+                                    "createMusic.freeAiQuotaLabel",
+                                    "무료 AI 생성/ 지갑 충전 잔액과 별도 · 매월 1일 기준으로 초기화",
+                                  )}
                                 </div>
-                                <strong className="text-xl tabular-nums text-white">
+                                <strong className="text-xl tabular-nums text-slate-900">
                                   {t("createMusic.freeAiQuotaCount", "이번 달 {{used}} / {{limit}}곡", {
                                     used: q.used,
                                     limit: Math.max(0, q.limit),
                                   })}
                                 </strong>
-                                <span className="text-[11px] text-violet-100/70 leading-tight px-1">
-                                  {t("createMusic.freeAiQuotaSub", "충전 크레딧과 별도 · 월이 바뀌면 초기화")}
-                                </span>
                               </>
                             );
                           }
                           const remaining = q.limit >= 0 ? Math.max(0, q.limit - q.used) : 0;
                           return (
                             <>
-                              <div className="flex items-center gap-2 text-xs font-medium text-violet-200/90">
+                              <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
                                 <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
                                 {t("createMusic.subscriptionAiLabelWon", "구독 AI 한도(원, 이월 포함)")}
                               </div>
-                              <strong className="text-xl tabular-nums text-white">
+                              <strong className="text-xl tabular-nums text-slate-900">
                                 {t("createMusic.subscriptionAiQuotaCountWon", "이번 달 {{used}} / {{limit}}원", {
                                   used: q.used.toLocaleString(),
                                   limit: q.limit.toLocaleString(),
@@ -1959,25 +1999,24 @@ export default function CreateMusic() {
                     </Link>
                   </p>
                 )}
-                <div
-                  className="w-full rounded-3xl border-2 border-border/80 bg-card/55 backdrop-blur-md shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_64px_-16px_rgba(0,0,0,0.55)] overflow-hidden"
-                  data-testid="create-music-workspace"
-                >
-                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(320px,1fr),minmax(480px,1.5fr)] gap-0 items-stretch w-full">
-                  {/* 왼쪽: 생성 폼 */}
-                  <div className="flex flex-col items-stretch p-5 md:p-7 lg:p-8 border-b-2 border-border/80 lg:border-b-0 lg:border-r-2 lg:border-r-purple-500/25 bg-gradient-to-br from-purple-950/35 via-card/40 to-background/30">
+                <div className="w-full space-y-6" data-testid="create-music-workspace">
+                  {/* 상단: 음악 생성 섹션 (넓게) */}
+                  <div className="w-full rounded-3xl border-2 border-border/60 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(0,0,0,0.25)] overflow-hidden">
+                    <div className="grid grid-cols-1 gap-0 items-stretch w-full">
+                    {/* 왼쪽: 생성 폼 */}
+                    <div className="flex flex-col items-stretch p-5 md:p-7 lg:p-8 bg-white">
                     <div className="mb-4 flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/25 text-purple-200 ring-1 ring-purple-400/30">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700 ring-1 ring-purple-200">
                         <Wand2 className="h-4 w-4" aria-hidden />
                       </span>
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-purple-200/90">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
                           {t("createMusic.sectionCreateLabel", "새로 만들기")}
                         </p>
                         <p className="text-[11px] text-muted-foreground">{t("createMusic.sectionCreateHint", "프롬프트를 입력하고 생성을 누르세요")}</p>
                       </div>
                     </div>
-                    <form onSubmit={handleSubmit} className="rounded-2xl border-2 border-purple-500/35 bg-background/85 shadow-inner shadow-black/20 p-6 md:p-8 w-full max-w-xl space-y-4 ring-1 ring-white/5">
+                    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 w-full max-w-none space-y-4">
                       <div>
                         <label className="block text-sm font-medium mb-2">{t("createMusic.modeLabel", "생성 방식")}</label>
                         <div className="flex gap-3">
@@ -2006,7 +2045,7 @@ export default function CreateMusic() {
                           type="text"
                           value={title}
                           onChange={(e) => setTitle(e.target.value)}
-                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2"
+                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2"
                           placeholder={t("createMusic.titlePlaceholder", "예: Starry Night")}
                           maxLength={80}
                         />
@@ -2033,8 +2072,8 @@ export default function CreateMusic() {
                             { n: MAX_GENRE_PRESETS },
                           )}
                         </p>
-                        <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
-                          <div className="flex flex-nowrap gap-2 w-max">
+                        <div className="-mx-2 px-2 pb-1">
+                          <div className="flex flex-wrap gap-2 max-h-[4.75rem] overflow-hidden">
                           {GENRE_PRESET_IDS.map((id) => {
                             const token = genrePresetLabelById[id];
                             const selected = fieldHasPresetToken(genreOther, token);
@@ -2065,8 +2104,8 @@ export default function CreateMusic() {
                                 className={cn(
                                   "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
-                                    ? "border-primary/70 bg-primary/25 text-primary-foreground shadow-sm shadow-primary/10"
-                                    : "border-border/80 bg-background/70 text-muted-foreground hover:border-primary/35 hover:bg-muted/40",
+                                    ? "border-primary/50 bg-primary/10 text-primary shadow-sm shadow-primary/5"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-primary/35 hover:bg-slate-50",
                                 )}
                               >
                                 {t(`createMusic.genreChip.${id}`, GENRE_API_TOKEN[id])}
@@ -2079,14 +2118,16 @@ export default function CreateMusic() {
                           type="text"
                           value={genreOther}
                           onChange={(e) => setGenreOther(e.target.value)}
-                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2 text-sm"
+                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2 text-sm"
                           placeholder={t("createMusic.genreOtherPlaceholder", "예: city pop, synthwave")}
                           maxLength={120}
                         />
                       </div>
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-end justify-between gap-2">
-                          <label className="block text-sm font-medium">{t("createMusic.styleSectionLabel", "스타일")}</label>
+                          <label className="block text-sm font-medium">
+                            {t("createMusic.styleSectionLabel", "보컬/악기 스타일")}
+                          </label>
                           {styleOther.trim() && (
                             <button
                               type="button"
@@ -2095,7 +2136,7 @@ export default function CreateMusic() {
                               }}
                               className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
                             >
-                              {t("createMusic.styleClear", "스타일 초기화")}
+                              {t("createMusic.styleClear", "보컬/악기 스타일 초기화")}
                             </button>
                           )}
                         </div>
@@ -2106,8 +2147,8 @@ export default function CreateMusic() {
                             { n: MAX_STYLE_PRESETS },
                           )}
                         </p>
-                        <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
-                          <div className="flex flex-nowrap gap-2 w-max">
+                        <div className="-mx-2 px-2 pb-1">
+                          <div className="flex flex-wrap gap-2 max-h-[4.75rem] overflow-hidden">
                           {STYLE_PRESET_IDS.map((id) => {
                             const token = STYLE_API_TOKEN[id];
                             const selected = fieldHasPresetToken(styleOther, token);
@@ -2138,11 +2179,11 @@ export default function CreateMusic() {
                                 className={cn(
                                   "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
-                                    ? "border-fuchsia-500/70 bg-fuchsia-500/20 text-fuchsia-100 shadow-sm shadow-fuchsia-500/10"
-                                    : "border-border/80 bg-background/70 text-muted-foreground hover:border-fuchsia-500/35 hover:bg-muted/40",
+                                    ? "border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-700 shadow-sm shadow-fuchsia-500/5"
+                                    : "border-slate-200 bg-white text-slate-700 hover:border-fuchsia-500/35 hover:bg-slate-50",
                                 )}
                               >
-                                {t(`createMusic.styleChip.${id}`, STYLE_API_TOKEN[id])}
+                                {t(`createMusic.styleChip.${id}`, STYLE_CHIP_FALLBACK_LABEL[id] ?? STYLE_API_TOKEN[id])}
                               </button>
                             );
                           })}
@@ -2152,12 +2193,12 @@ export default function CreateMusic() {
                           type="text"
                           value={styleOther}
                           onChange={(e) => setStyleOther(e.target.value)}
-                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-2 text-sm"
+                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2 text-sm"
                           placeholder={t("createMusic.styleOtherPlaceholder", "예: reverb-heavy mix, lo-fi crackle")}
                           maxLength={160}
                         />
                       </div>
-                      <div className="flex items-start gap-3 rounded-xl border border-border/70 bg-muted/15 px-4 py-3">
+                      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                         <Checkbox
                           id="create-music-instrumental"
                           checked={instrumentalOnly}
@@ -2168,7 +2209,7 @@ export default function CreateMusic() {
                           <label htmlFor="create-music-instrumental" className="text-sm font-medium leading-snug cursor-pointer block">
                             {t("createMusic.instrumentalLabel", "연주만 (보컬 없음)")}
                           </label>
-                          <p className="text-xs text-muted-foreground leading-relaxed">
+                          <p className="text-xs text-slate-600 leading-relaxed">
                             {t(
                               "createMusic.instrumentalHint",
                               "켜면 서버에 무보컬 생성을 요청합니다. 피아노·기타 등은 스타일 칩·직접 입력으로 지정하고, 설명 모드에서는 아래 칸에 연주곡 분위기를 적어 주세요.",
@@ -2187,7 +2228,7 @@ export default function CreateMusic() {
                         <textarea
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          className="w-full rounded-lg bg-background/80 border border-border px-4 py-3 min-h-[120px] resize-y"
+                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
                           placeholder={
                             mode === "custom"
                               ? instrumentalOnly
@@ -2241,8 +2282,8 @@ export default function CreateMusic() {
                                 { n: MAX_DESCRIPTION_THEMES },
                               )}
                             </p>
-                            <div className="overflow-x-auto overflow-y-hidden overscroll-x-contain -mx-2 px-2 pb-1 scroll-smooth touch-pan-x">
-                              <div className="flex flex-nowrap gap-2 w-max">
+                            <div className="-mx-2 px-2 pb-1">
+                              <div className="flex flex-wrap gap-2 max-h-[4.75rem] overflow-hidden">
                                 {DESCRIPTION_THEME_IDS.map((id) => {
                                   const snippet = DESCRIPTION_THEME_SNIPPET[id];
                                   const selected = prompt.includes(snippet);
@@ -2271,8 +2312,8 @@ export default function CreateMusic() {
                                       className={cn(
                                         "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                         selected
-                                          ? "border-amber-500/80 bg-amber-500/20 text-amber-100 shadow-sm shadow-amber-500/15"
-                                          : "border-border/80 bg-background/70 text-muted-foreground hover:border-amber-500/40 hover:bg-muted/40",
+                                          ? "border-amber-500/50 bg-amber-500/10 text-amber-900 shadow-sm shadow-amber-500/10"
+                                          : "border-slate-200 bg-white text-slate-700 hover:border-amber-500/40 hover:bg-slate-50",
                                       )}
                                     >
                                       {t(`createMusic.themeChip.${id}`, id)}
@@ -2292,7 +2333,7 @@ export default function CreateMusic() {
                           value={creationModelVersion}
                           onValueChange={(v) => setCreationModelVersion(v as "sonic-v4-5" | "sonic-v5-5")}
                         >
-                          <SelectTrigger className="w-full max-w-md bg-background/80">
+                          <SelectTrigger className="w-full max-w-md bg-white border-slate-200">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -2343,29 +2384,31 @@ export default function CreateMusic() {
 
                     <div className="mt-6 flex flex-wrap gap-3">
                       <Link href="/suno-guide">
-                        <Button variant="outline" className="rounded-full gap-2 border-purple-500/30 bg-background/60 hover:bg-purple-500/10">
+                        <Button variant="outline" className="rounded-full gap-2 border-slate-200 bg-white hover:bg-slate-50">
                           <Wand2 className="w-4 h-4" />
                           {t("createMusic.guideCta", "음악 만들기 가이드")}
                         </Button>
                       </Link>
                     </div>
                   </div>
+                </div>
 
-                  {/* 오른쪽: 생성된 곡 목록 (저장됨, 삭제할 때까지 유지) */}
-                  <div className="flex flex-col p-5 md:p-7 lg:p-8 lg:min-h-[320px] min-w-0 bg-gradient-to-bl from-fuchsia-950/20 via-card/30 to-background/30">
+                {/* 하단: 곡 보관함 섹션 (아래로, 넓게) */}
+                <div className="w-full rounded-3xl border-2 border-slate-200 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(0,0,0,0.25)] overflow-hidden">
+                  <div className="flex flex-col p-5 md:p-7 lg:p-8 min-w-0 bg-white">
                     <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fuchsia-500/20 text-fuchsia-200 ring-1 ring-fuchsia-400/25">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200">
                         <Music className="h-4 w-4" aria-hidden />
                       </span>
                       <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
                         <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-snug">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/90 shrink-0">
-                            {t("createMusic.sectionLibraryLabel", "생성된 곡")}
+                          <span className="text-xs font-semibold uppercase tracking-wider text-fuchsia-700 shrink-0">
+                            {t("createMusic.sectionLibraryLabel", "곡 보관함")}
                           </span>
-                          <span className="text-muted-foreground/70 shrink-0 select-none" aria-hidden>
+                          <span className="text-slate-400 shrink-0 select-none" aria-hidden>
                             ·
                           </span>
-                          <span className="text-muted-foreground shrink-0">
+                          <span className="text-slate-600 shrink-0">
                             {t("createMusic.sectionLibraryHint", "재생·다운로드·신곡 공개")}
                           </span>
                         </div>
@@ -2379,188 +2422,106 @@ export default function CreateMusic() {
                         </p>
                       ) : null}
                     </div>
-                    <div className="rounded-2xl border-2 border-fuchsia-500/30 bg-background/80 shadow-inner shadow-black/15 p-4 md:p-6 flex-1 flex flex-col min-h-0 ring-1 ring-white/5">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
-                      <h2 className="text-lg font-bold shrink-0">
-                        {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
-                      </h2>
-                      {savedTracks.length > 0 && totalDownloads > 0 && (
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                          <span>
-                            {t("createMusic.download", "다운로드")}: {totalDownloads}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {savedTracks.length > 0 && (
-                      <div className="relative mb-3">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                        <input
-                          type="text"
-                          value={savedTracksSearch}
-                          onChange={(e) => setSavedTracksSearch(e.target.value)}
-                          placeholder={t("createMusic.searchPlaceholder", "제목·스타일·가사로 검색")}
-                          className="w-full rounded-lg bg-background/80 border border-border pl-9 pr-3 py-2 text-sm"
-                        />
-                      </div>
-                    )}
-                    {(status === "pending" || status === "running" || status === "preview") && (() => {
-                        const m = Math.floor(elapsedSec / 60);
-                        const s = elapsedSec % 60;
-                        const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
-                        return (
-                      <div className="mb-4 space-y-1.5">
-                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          {t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`}
-                        </div>
-                        <p className="text-xs text-muted-foreground/90 leading-relaxed pl-6">
-                          {t(
-                            "createMusic.generatingSlowHint",
-                            "음원은 보통 1~3분 걸리며, 품질·대기열에 따라 더 길어질 수 있습니다. 이 페이지를 닫지 마세요.",
-                          )}
-                        </p>
-                      </div>
-                        );
-                      })()}
-                    {previewTracks.length > 0 && taskId && (
-                      <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-500/[0.07] p-3 space-y-2 ring-1 ring-emerald-400/10">
-                        <p className="text-xs font-semibold text-emerald-200 tracking-wide">
-                          {t("createMusic.previewBadge", "미리듣기")}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          {t(
-                            "createMusic.previewHint",
-                            "첫 음원이나 커버가 준비되면 여기서 바로 들을 수 있습니다. 최종 파일이 완성되면 아래 보관함에 자동으로 추가됩니다.",
-                          )}
-                        </p>
-                        <ul className="space-y-2">
-                          {previewTracks.map((tr, i) => {
-                            const st = generatedPreviewToSavedTrack(tr, taskId, i);
-                            const canPlay = Boolean(st.audio_url?.trim());
-                            const dur = formatAiTrackDurationMmss(st.duration);
-                            return (
-                              <li
-                                key={`preview-row-${taskId}-${i}-${st.clip_id ?? i}`}
-                                className="flex items-center gap-3 rounded-lg border border-border/70 bg-background/70 p-2"
-                              >
-                                {st.image_url ? (
-                                  <img src={st.image_url} alt="" className="w-11 h-11 rounded-md object-cover shrink-0" />
-                                ) : (
-                                  <div className="w-11 h-11 rounded-md bg-muted shrink-0 flex items-center justify-center">
-                                    <Music className="w-5 h-5 text-muted-foreground" aria-hidden />
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-medium truncate flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
-                                    <span>{st.title || t("createMusic.untitled", "제목 없음")}</span>
-                                    {dur ? (
-                                      <span className="text-muted-foreground font-normal tabular-nums shrink-0">{dur}</span>
-                                    ) : null}
-                                  </p>
-                                </div>
-                                {canPlay ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="shrink-0 gap-1 h-8"
-                                    onClick={() => playTrackInGlobalPlayer(st)}
-                                    title={t("createMusic.play", "재생")}
-                                  >
-                                    <Play className="w-3.5 h-3.5" />
-                                    {t("createMusic.play", "재생")}
-                                  </Button>
-                                ) : (
-                                  <span className="text-[10px] text-muted-foreground shrink-0 max-w-[5.5rem] text-right leading-snug">
-                                    {t("createMusic.previewAudioSoon", "오디오 준비 중")}
-                                  </span>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    )}
-                    {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
-                      <p className="text-muted-foreground text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 왼쪽에서 음악을 생성해 보세요.")}</p>
-                    ) : sortedFilteredSavedTracks.length === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        {t("createMusic.noSearchResults", "검색 결과가 없습니다.")}
-                      </p>
-                    ) : (
-                      <>
-                        <div className="flex flex-col gap-4 min-w-0">
-                          <div className="flex-1 min-w-0 space-y-3 pr-1">
-                            {savedTracksPageSlice.map((track, index) => (
-                              <TrackCard
-                                key={track.id}
-                                track={track}
-                                order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
-                                onRemove={() => removeSavedTrack(track.id)}
-                                onDownload={() => handleDownloadTrack(track)}
-                                libraryDownloadAllowed={Boolean(aiUsage?.isPaidTier || track.publishedToSite)}
-                                onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
-                                scoreExportLoading={scorePdfTrackId === track.id}
-                                scorePdfEnabled={scorePdfEnabled}
-                                onPlay={() => playTrackInGlobalPlayer(track)}
-                                onPublish={() => setPublishConfirmTrack(track)}
-                                isPublishing={publishingId === track.id}
-                                isPublished={!!track.publishedToSite}
-                                t={t as TTranslate}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        {savedTracksTotalPages > 1 && (
-                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-border/50">
-                            <p className="text-xs text-muted-foreground tabular-nums">
-                              {t("createMusic.listPaginationRange", "{{from}}–{{to}}번째 / 총 {{total}}곡", {
-                                from:
-                                  (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + 1,
-                                to: Math.min(
-                                  sortedFilteredSavedTracks.length,
-                                  savedTracksSafePage * SAVED_TRACKS_LIST_PAGE_SIZE
-                                ),
-                                total: sortedFilteredSavedTracks.length,
-                              })}
-                            </p>
-                            <div className="flex items-center gap-2 justify-end">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                disabled={savedTracksSafePage <= 1}
-                                onClick={() => setSavedTracksListPage((p) => Math.max(1, p - 1))}
-                              >
-                                <ChevronLeft className="w-4 h-4" />
-                                {t("createMusic.listPagePrev", "이전")}
-                              </Button>
-                              <span className="text-sm text-muted-foreground tabular-nums min-w-[5.5rem] text-center">
-                                {savedTracksSafePage} / {savedTracksTotalPages}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-1"
-                                disabled={savedTracksSafePage >= savedTracksTotalPages}
-                                onClick={() =>
-                                  setSavedTracksListPage((p) => Math.min(savedTracksTotalPages, p + 1))
-                                }
-                              >
-                                {t("createMusic.listPageNext", "다음")}
-                                <ChevronRight className="w-4 h-4" />
-                              </Button>
-                            </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-6 flex-1 flex flex-col min-h-0">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
+                        <h2 className="text-lg font-bold shrink-0">
+                          {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
+                        </h2>
+                        {savedTracks.length > 0 && totalDownloads > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                            <span>
+                              {t("createMusic.download", "다운로드")}: {totalDownloads}
+                            </span>
                           </div>
                         )}
-                      </>
-                    )}
+                      </div>
+
+                      {savedTracks.length > 0 && (
+                        <div className="relative mb-3">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={savedTracksSearch}
+                            onChange={(e) => setSavedTracksSearch(e.target.value)}
+                            placeholder={t("createMusic.searchPlaceholder", "제목·스타일·가사로 검색")}
+                            className="w-full rounded-lg bg-white border border-slate-200 pl-9 pr-3 py-2 text-sm"
+                          />
+                        </div>
+                      )}
+
+                      {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
+                        <p className="text-slate-600 text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 위에서 음악을 생성해 보세요.")}</p>
+                      ) : sortedFilteredSavedTracks.length === 0 ? (
+                        <p className="text-slate-600 text-sm">{t("createMusic.noSearchResults", "검색 결과가 없습니다.")}</p>
+                      ) : (
+                        <>
+                          <div className="flex flex-col gap-4 min-w-0">
+                            <div className="flex-1 min-w-0 space-y-3 pr-1">
+                              {savedTracksPageSlice.map((track, index) => (
+                                <TrackCard
+                                  key={track.id}
+                                  track={track}
+                                  order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
+                                  onRemove={() => removeSavedTrack(track.id)}
+                                  onDownload={() => handleDownloadTrack(track)}
+                                  libraryDownloadAllowed={Boolean(aiUsage?.isPaidTier || track.publishedToSite)}
+                                  onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
+                                  scoreExportLoading={scorePdfTrackId === track.id}
+                                  scorePdfEnabled={scorePdfEnabled}
+                                  onPlay={() => playTrackInGlobalPlayer(track)}
+                                  onPublish={() => setPublishConfirmTrack(track)}
+                                  isPublishing={publishingId === track.id}
+                                  isPublished={!!track.publishedToSite}
+                                  t={t as TTranslate}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          {savedTracksTotalPages > 1 && (
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4 pt-4 border-t border-slate-200">
+                              <p className="text-xs text-slate-600 tabular-nums">
+                                {t("createMusic.listPaginationRange", "{{from}}–{{to}}번째 / 총 {{total}}곡", {
+                                  from: (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + 1,
+                                  to: Math.min(sortedFilteredSavedTracks.length, savedTracksSafePage * SAVED_TRACKS_LIST_PAGE_SIZE),
+                                  total: sortedFilteredSavedTracks.length,
+                                })}
+                              </p>
+                              <div className="flex items-center gap-2 justify-end">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1"
+                                  disabled={savedTracksSafePage <= 1}
+                                  onClick={() => setSavedTracksListPage((p) => Math.max(1, p - 1))}
+                                >
+                                  <ChevronLeft className="w-4 h-4" />
+                                  {t("createMusic.listPagePrev", "이전")}
+                                </Button>
+                                <span className="text-sm text-slate-600 tabular-nums min-w-[5.5rem] text-center">
+                                  {savedTracksSafePage} / {savedTracksTotalPages}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1"
+                                  disabled={savedTracksSafePage >= savedTracksTotalPages}
+                                  onClick={() => setSavedTracksListPage((p) => Math.min(savedTracksTotalPages, p + 1))}
+                                >
+                                  {t("createMusic.listPageNext", "다음")}
+                                  <ChevronRight className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
-                  </div>
+                </div>
+                </div>
                 </div>
               </>
             )}
