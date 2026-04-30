@@ -109,6 +109,9 @@ export const aiMusicGenerationLogs = pgTable(
     requestTitle: varchar("request_title", { length: 512 }),
     requestSummary: text("request_summary"),
     creditsCharged: integer("credits_charged").default(0).notNull(),
+    /** pending: 생성 요청만 기록(미과금) · charged: 성공 확정 후 과금 완료 · failed: 실패·미과금(또는 과금 오류) */
+    chargeStatus: varchar("charge_status", { length: 32 }).notNull().default("charged"),
+    failureMessage: text("failure_message"),
     /** 사이트 공개 등 배포 이력: [{ musicId, clipId?, deployment, publishedAt }] */
     publishments: jsonb("publishments")
       .$type<{ musicId: number; clipId?: string | null; deployment: string; publishedAt: string }[]>()

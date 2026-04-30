@@ -672,6 +672,8 @@ export default function Admin() {
     requestTitle: string | null;
     requestSummary: string | null;
     creditsCharged: number;
+    chargeStatus: string | null;
+    failureMessage: string | null;
     publishments: { musicId: number; clipId?: string | null; deployment: string; publishedAt: string }[] | null;
     userEmail: string | null;
     userFirstName: string | null;
@@ -4878,12 +4880,13 @@ export default function Admin() {
           )}
           {!aiMusicGenLogsError && aiMusicGenLogs.length > 0 ? (
             <div className="overflow-x-auto max-h-[70vh] overflow-y-auto border border-border rounded-md">
-              <table className="w-full text-xs sm:text-sm min-w-[960px]">
+              <table className="w-full text-xs sm:text-sm min-w-[1120px]">
                 <thead className="sticky top-0 bg-muted/95 z-10 border-b border-border">
                   <tr>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogWhen', '일시')}</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogUser', '회원')}</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogBilling', '과금')}</th>
+                    <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogChargeOutcome', '과금·결과')}</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogPlanAt', '당시 플랜')}</th>
                     <th className="text-left py-2 px-2 font-medium">{t('admin.aiLogProvider', 'API')}</th>
                     <th className="text-left py-2 px-2 font-medium">taskId</th>
@@ -4910,6 +4913,15 @@ export default function Admin() {
                           : row.billingKind === "admin"
                             ? t('admin.aiBillingAdmin', '관리자')
                             : row.billingKind;
+                    const chargeSt = (row.chargeStatus ?? "charged").toLowerCase();
+                    const chargeOutcomeLabel =
+                      chargeSt === "pending"
+                        ? t("admin.aiChargePending", "대기(생성 중)")
+                        : chargeSt === "charging"
+                          ? t("admin.aiChargeCharging", "과금 처리 중")
+                          : chargeSt === "failed"
+                            ? t("admin.aiChargeFailed", "실패·미과금")
+                            : t("admin.aiChargeCharged", "과금 완료");
                     const displayUser =
                       row.userFirstName?.trim() ||
                       row.userEmail?.split("@")[0] ||
@@ -4927,6 +4939,19 @@ export default function Admin() {
                             {billingLabel}
                             {row.creditsCharged > 0 ? " · -" + row.creditsCharged + "C" : ""}
                           </Badge>
+                        </td>
+                        <td className="py-2 px-2 max-w-[220px]">
+                          <Badge
+                            variant={chargeSt === "failed" ? "destructive" : chargeSt === "pending" || chargeSt === "charging" ? "outline" : "secondary"}
+                            className="text-[10px] mb-1"
+                          >
+                            {chargeOutcomeLabel}
+                          </Badge>
+                          {row.failureMessage ? (
+                            <div className="text-[10px] text-muted-foreground line-clamp-4 break-words" title={row.failureMessage}>
+                              {row.failureMessage}
+                            </div>
+                          ) : null}
                         </td>
                         <td className="py-2 px-2">{row.subscriptionTierAt ?? "-"}</td>
                         <td className="py-2 px-2">{row.provider}</td>

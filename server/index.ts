@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS ai_music_generation_logs (
   request_title VARCHAR(512),
   request_summary TEXT,
   credits_charged INTEGER NOT NULL DEFAULT 0,
+  charge_status VARCHAR(32) NOT NULL DEFAULT 'charged',
+  failure_message TEXT,
   publishments JSONB DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_ai_music_gen_logs_user ON ai_music_generation_logs(user_id);

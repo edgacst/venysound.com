@@ -38,6 +38,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "radio-channels-home-ticker-text.sql", name: "radio_channels.home_ticker_text" },
   { file: "create-ai-music-usage.sql", name: "ai_music_usage" },
   { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
+  { file: "ai-music-generation-logs-charge-outcome.sql", name: "ai_music_generation_logs.charge_status" },
   { file: "ai-music-saved-library.sql", name: "ai_music_saved_tracks" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
   { file: "music-spotify-album-id.sql", name: "music spotify_album_id 컬럼" },

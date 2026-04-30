@@ -1893,9 +1893,12 @@ export async function registerRoutes(
       prompt?: string;
       gpt_description_prompt?: string;
     };
+    /** 기본 charged(기존 행). 생성 직후만 pending. */
+    chargeStatus?: "pending" | "charged" | "failed";
+    failureMessage?: string | null;
   }): Promise<void> {
     try {
-      const { userId, user, taskId, provider, body, walletCreditsCharged } = params;
+      const { userId, user, taskId, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
       const nowLog = new Date();
       const displayed = computeDisplayedSubscriptionFromEntitlements(
         user?.subscriptionEntitlements,
@@ -1924,11 +1927,158 @@ export async function registerRoutes(
         requestTitle: body.title?.trim().slice(0, 500) || null,
         requestSummary,
         creditsCharged,
+        chargeStatus: chargeStatus ?? "charged",
+        failureMessage: failureMessage ?? null,
         publishments: [],
       });
     } catch (e) {
       console.error("[ai-music generation log insert]", e);
     }
+  }
+
+  async function notifyAiMusicCreateCreditsIfNeeded(userIdForNotify: string, wonCharged: number) {
+    if (wonCharged <= 0) return;
+    try {
+      await storage.createNotification({
+        userId: userIdForNotify,
+        type: "system",
+        message: `AI 음악 생성 요청으로 ${wonCharged.toLocaleString("ko-KR")}원이 차감되었습니다.`,
+        payload: { wonCharged, creditsCharged: wonCharged, kind: "ai_music_create" },
+        url: "/credits",
+      });
+    } catch (e) {
+      console.error("[ai-music billing notify]", e);
+    }
+  }
+
+  /** 생성 성공(업스트림 완료) 확정 시 1회 과금. 무료 플랜 월 한도는 taskId 발급 시점에 반영됨 → 여기서는 0만 반환. */
+  async function performAiMusicBillingForUser(userIdForBill: string, now: Date): Promise<number> {
+    const [user0] = await db.select().from(users).where(eq(users.id, userIdForBill));
+    if (!user0) throw new Error("USER_NOT_FOUND");
+    await maybePersistSubscriptionRow(userIdForBill, user0);
+    const [row] = await db.select().from(users).where(eq(users.id, userIdForBill));
+    const r = row!;
+    if (r.role === "admin") return 0;
+    if ((r.subscriptionTier ?? "free") === "free") {
+      return 0;
+    }
+    const usagePeriodKey = getAiMusicUsagePeriodKey(r, r.role ?? null, now);
+    if (isUserPaidSubscriptionActive(r, now)) {
+      const ok = await deductSubscriptionAiWallet(userIdForBill, AI_MUSIC_WON_PER_TRACK, now);
+      if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
+      try {
+        await runSubscriptionAiBudgetExhaustionIfNeeded(userIdForBill, now);
+      } catch (e) {
+        console.error("[ai-music billing] budget exhaustion after deduct", e);
+      }
+      return 0;
+    }
+    await db.transaction(async (tx) => {
+      const [u] = await tx.select().from(users).where(eq(users.id, userIdForBill));
+      const currentCredits = u?.credits ?? 0;
+      if (currentCredits < AI_MUSIC_WON_PER_TRACK) {
+        throw new Error("INSUFFICIENT_CREDITS");
+      }
+      await tx
+        .update(users)
+        .set({ credits: currentCredits - AI_MUSIC_WON_PER_TRACK, updatedAt: new Date() })
+        .where(eq(users.id, userIdForBill));
+      await tx.insert(creditTransactions).values({
+        userId: userIdForBill,
+        type: "ai_music_create",
+        amount: -AI_MUSIC_WON_PER_TRACK,
+        description: "AI 음악 생성",
+      });
+      await tx.execute(sql`
+        INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+        VALUES (${userIdForBill}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+        ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
+      `);
+    });
+    return AI_MUSIC_WON_PER_TRACK;
+  }
+
+  async function markAiMusicGenerationFailedOnUpstream(userIdMark: string, taskIdMark: string, message: string): Promise<void> {
+    try {
+      const trimmed = String(message ?? "생성 실패").slice(0, 4000);
+      const [logRow] = await db
+        .select({ id: aiMusicGenerationLogs.id, billingKind: aiMusicGenerationLogs.billingKind })
+        .from(aiMusicGenerationLogs)
+        .where(
+          and(
+            eq(aiMusicGenerationLogs.userId, userIdMark),
+            eq(aiMusicGenerationLogs.taskId, taskIdMark),
+            eq(aiMusicGenerationLogs.chargeStatus, "pending"),
+          ),
+        )
+        .limit(1);
+      if (!logRow) return;
+      await db
+        .update(aiMusicGenerationLogs)
+        .set({ chargeStatus: "failed", failureMessage: trimmed })
+        .where(eq(aiMusicGenerationLogs.id, logRow.id));
+      if (logRow.billingKind === "free") {
+        const [u] = await db.select().from(users).where(eq(users.id, userIdMark));
+        if (u) {
+          const pk = getAiMusicUsagePeriodKey(u, u.role ?? null, new Date());
+          await db.execute(sql`
+            UPDATE ai_music_usage
+            SET count = GREATEST(0, count - 1), updated_at = NOW()
+            WHERE user_id = ${userIdMark} AND period_month = ${pk}
+          `);
+        }
+      }
+    } catch (e) {
+      console.error("[ai-music mark upstream failed]", e);
+    }
+  }
+
+  /** 폴링에서 succeeded 최초 1회만 과금(멱등). */
+  async function tryFinalizeAiMusicSuccessBilling(
+    userIdFin: string,
+    taskIdFin: string,
+  ): Promise<{ applied: boolean; wonCharged: number; balanceWon: number }> {
+    const now = new Date();
+    const claimed = await db
+      .update(aiMusicGenerationLogs)
+      .set({ chargeStatus: "charging" })
+      .where(
+        and(
+          eq(aiMusicGenerationLogs.userId, userIdFin),
+          eq(aiMusicGenerationLogs.taskId, taskIdFin),
+          eq(aiMusicGenerationLogs.chargeStatus, "pending"),
+        ),
+      )
+      .returning({ id: aiMusicGenerationLogs.id });
+    const [uEarly] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
+    const balanceEarly = uEarly?.credits ?? 0;
+    if (claimed.length === 0) {
+      return { applied: false, wonCharged: 0, balanceWon: balanceEarly };
+    }
+    const logId = claimed[0].id;
+    let wonCharged = 0;
+    try {
+      wonCharged = await performAiMusicBillingForUser(userIdFin, now);
+      await db
+        .update(aiMusicGenerationLogs)
+        .set({ chargeStatus: "charged", creditsCharged: wonCharged })
+        .where(eq(aiMusicGenerationLogs.id, logId));
+      await notifyAiMusicCreateCreditsIfNeeded(userIdFin, wonCharged);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      await db
+        .update(aiMusicGenerationLogs)
+        .set({
+          chargeStatus: "failed",
+          failureMessage: `과금 처리 실패: ${err}`.slice(0, 4000),
+        })
+        .where(eq(aiMusicGenerationLogs.id, logId));
+      console.error("[ai-music tryFinalize billing]", e);
+      const [uErr] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
+      return { applied: false, wonCharged: 0, balanceWon: uErr?.credits ?? 0 };
+    }
+    const [uAfter] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
+    return { applied: true, wonCharged, balanceWon: uAfter?.credits ?? 0 };
   }
 
   type LibraryRowForLogBackfill = {
@@ -1994,6 +2144,7 @@ export async function registerRoutes(
           requestTitle: title,
           requestSummary,
           creditsCharged: 0,
+          chargeStatus: "charged",
           publishments: [],
         });
       } catch (e) {
@@ -2366,70 +2517,6 @@ export async function registerRoutes(
     const customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
 
-    /** @returns 이번 요청에서 지갑(users.credits, 원)에서 차감한 원화(없으면 0). 유효 유료 구독은 월 예산만 소모. */
-    async function incrementAiMusicUsageAndDeductCredits(): Promise<number> {
-      if (row.role === "admin") return 0;
-      // Free: 월 2곡까지만, 지갑 차감 없이 카운트만
-      if ((row.subscriptionTier ?? "free") === "free") {
-        await db.execute(sql`
-          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
-        `);
-        return 0;
-      }
-      // 유효 유료 플랜: 구독 AI 이월 지갑에서 차감(자동결제 시 이월분+정기 충전분 합산은 동기화 시 반영)
-      if (isUserPaidSubscriptionActive(row, now)) {
-        const ok = await deductSubscriptionAiWallet(userId, AI_MUSIC_WON_PER_TRACK, now);
-        if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
-        try {
-          await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
-        } catch (e) {
-          console.error("[ai-music create] budget exhaustion after deduct", e);
-        }
-        return 0;
-      }
-      // 등급은 유료 표시이나 구독 만료 등: 지갑 원화 차감 + 사용량(원화 예산 누적) 반영
-      await db.transaction(async (tx) => {
-        const [u] = await tx.select().from(users).where(eq(users.id, userId));
-        const currentCredits = u?.credits ?? 0;
-        if (currentCredits < AI_MUSIC_WON_PER_TRACK) {
-          throw new Error("INSUFFICIENT_CREDITS");
-        }
-        await tx
-          .update(users)
-          .set({ credits: currentCredits - AI_MUSIC_WON_PER_TRACK, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-        await tx.insert(creditTransactions).values({
-          userId,
-          type: "ai_music_create",
-          amount: -AI_MUSIC_WON_PER_TRACK,
-          description: "AI 음악 생성",
-        });
-        await tx.execute(sql`
-          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-          VALUES (${userId}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
-          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
-        `);
-      });
-      return AI_MUSIC_WON_PER_TRACK;
-    }
-
-    async function notifyCreditsDeductedForAiCreate(wonCharged: number) {
-      if (wonCharged <= 0) return;
-      try {
-        await storage.createNotification({
-          userId,
-          type: "system",
-          message: `AI 음악 생성 요청으로 ${wonCharged.toLocaleString("ko-KR")}원이 차감되었습니다.`,
-          payload: { wonCharged, creditsCharged: wonCharged, kind: "ai_music_create" },
-          url: "/credits",
-        });
-      } catch (e) {
-        console.error("[ai-music create] credit notification", e);
-      }
-    }
-
     if (SUNOAPI_KEY) {
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
@@ -2485,34 +2572,35 @@ export async function registerRoutes(
           console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
-        const creditsCharged = await incrementAiMusicUsageAndDeductCredits();
-        await notifyCreditsDeductedForAiCreate(creditsCharged);
+        if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin") {
+          await db.execute(sql`
+            INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+            VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
+            ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+          `);
+        }
         await insertAiMusicGenerationLog({
           userId,
           user,
           taskId,
           provider: "suno",
-          walletCreditsCharged: creditsCharged,
+          walletCreditsCharged: 0,
+          chargeStatus: "pending",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
         });
         const [uAfterSuno] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
         return res.json({
           task_id: taskId,
           provider: "suno",
-          won_charged: creditsCharged,
+          won_charged: 0,
+          billing_deferred: true,
           balance_won: uAfterSuno?.credits ?? 0,
-          credits_charged: creditsCharged,
+          credits_charged: 0,
           credits_balance: uAfterSuno?.credits ?? 0,
         });
       } catch (e) {
         console.error("[ai-music create suno]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
-        if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
-          return res.status(402).json({
-            message: "지갑 잔액(원)이 부족합니다. 충전 후 다시 시도해 주세요.",
-            code: "INSUFFICIENT_CREDITS",
-          });
-        }
         const payload: { message: string; code: string; detail?: string } = {
           message: "음악 생성 요청 중 오류가 발생했습니다.",
           code: "AI_MUSIC_CREATE_ERROR",
@@ -2562,34 +2650,35 @@ export async function registerRoutes(
         console.warn("[ai-music create aimusicapi] 응답 구조:", JSON.stringify(data).slice(0, 300));
         return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
       }
-      const creditsCharged = await incrementAiMusicUsageAndDeductCredits();
-      await notifyCreditsDeductedForAiCreate(creditsCharged);
+      if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin") {
+        await db.execute(sql`
+          INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+          VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
+          ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+        `);
+      }
       await insertAiMusicGenerationLog({
         userId,
         user,
         taskId,
         provider: "aimusicapi",
-        walletCreditsCharged: creditsCharged,
+        walletCreditsCharged: 0,
+        chargeStatus: "pending",
         body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
       });
       const [uAfterAimusic] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
       res.json({
         task_id: taskId,
         provider: "aimusicapi",
-        won_charged: creditsCharged,
+        won_charged: 0,
+        billing_deferred: true,
         balance_won: uAfterAimusic?.credits ?? 0,
-        credits_charged: creditsCharged,
+        credits_charged: 0,
         credits_balance: uAfterAimusic?.credits ?? 0,
       });
     } catch (e) {
       console.error("[ai-music create]", e);
       const errMsg = e instanceof Error ? e.message : String(e);
-      if (errMsg === "INSUFFICIENT_CREDITS" || errMsg.includes("INSUFFICIENT_CREDITS")) {
-        return res.status(402).json({
-          message: "지갑 잔액(원)이 부족합니다. 충전 후 다시 시도해 주세요.",
-          code: "INSUFFICIENT_CREDITS",
-        });
-      }
       const payload: { message: string; code: string; detail?: string } = {
         message: "음악 생성 요청 중 오류가 발생했습니다.",
         code: "AI_MUSIC_CREATE_ERROR",
@@ -2606,11 +2695,25 @@ export async function registerRoutes(
     const taskId = req.params.taskId;
     const provider = (req.query.provider as string) || AI_MUSIC_PROVIDER;
     if (!taskId) return res.status(400).json({ message: "task_id가 필요합니다." });
+    // @ts-ignore
+    const pollUserId = req.user?.claims?.sub as string | undefined;
 
     if (provider === "suno" && SUNOAPI_KEY) {
       try {
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
+          if (cached.state === "succeeded" && pollUserId) {
+            const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
+            sunoCallbackResults.delete(taskId);
+            return res.json({
+              ...cached,
+              billing: {
+                applied: billing.applied,
+                won_charged: billing.wonCharged,
+                credits_balance: billing.balanceWon,
+              },
+            });
+          }
           sunoCallbackResults.delete(taskId);
           return res.json(cached);
         }
@@ -2638,6 +2741,7 @@ export async function registerRoutes(
         const bizCode = (data as { code?: number }).code;
         if (typeof bizCode === "number" && bizCode !== 200) {
           const msg = (data as { msg?: string }).msg ?? `Suno API code ${bizCode}`;
+          if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, String(msg));
           return res.json({ state: "failed", message: String(msg), data: null });
         }
         const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[]; suno_data?: unknown[] }; errorMessage?: string; param?: string } }).data;
@@ -2675,7 +2779,12 @@ export async function registerRoutes(
             return res.json({ state: "running", data: null });
           }
           const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
-          return res.json({ state: "succeeded", data: list });
+          let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+          if (pollUserId) {
+            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
+            billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+          }
+          return res.json({ state: "succeeded", data: list, billing });
         }
         const raws = sunoList as Record<string, unknown>[];
         const listFromRaws = () => mapSunoRawsToClips(raws);
@@ -2693,7 +2802,12 @@ export async function registerRoutes(
               (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
             );
           if (ok) {
-            return res.json({ state: "succeeded", data: listEarly });
+            let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+            if (pollUserId) {
+              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
+              billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+            }
+            return res.json({ state: "succeeded", data: listEarly, billing });
           }
         }
         /** Suno 앱처럼 FIRST_SUCCESS 단계에서 커버·스트림 URL이 오면 미리듣기(폴링은 계속, 완료 시 succeeded) */
@@ -2705,7 +2819,9 @@ export async function registerRoutes(
           }
         }
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
-          return res.json({ state: "failed", message: d?.errorMessage ?? "생성에 실패했습니다.", data: null });
+          const failMsg = String(d?.errorMessage ?? "생성에 실패했습니다.");
+          if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, failMsg);
+          return res.json({ state: "failed", message: failMsg, data: null });
         }
         return res.json({ state: status === "TEXT_SUCCESS" || status === "FIRST_SUCCESS" ? "running" : "pending", data: null });
       } catch (e) {
@@ -2760,9 +2876,18 @@ export async function registerRoutes(
             duration: dur,
           };
         });
-        return res.json({ state: "succeeded", data: list });
+        let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+        if (pollUserId) {
+          const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
+          billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+        }
+        return res.json({ state: "succeeded", data: list, billing });
       }
-      if (state === "failed") return res.json({ state: "failed", message: (first as { error?: string }).error ?? "생성에 실패했습니다.", data: null });
+      if (state === "failed") {
+        const failMsg = (first as { error?: string }).error ?? "생성에 실패했습니다.";
+        if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, String(failMsg));
+        return res.json({ state: "failed", message: failMsg, data: null });
+      }
       res.json({ state: state === "running" ? "running" : "pending", data: null });
     } catch (e) {
       console.error("[ai-music task]", e);
@@ -5800,6 +5925,8 @@ export async function registerRoutes(
           requestTitle: aiMusicGenerationLogs.requestTitle,
           requestSummary: aiMusicGenerationLogs.requestSummary,
           creditsCharged: aiMusicGenerationLogs.creditsCharged,
+          chargeStatus: aiMusicGenerationLogs.chargeStatus,
+          failureMessage: aiMusicGenerationLogs.failureMessage,
           publishments: aiMusicGenerationLogs.publishments,
           userEmail: users.email,
           userFirstName: users.firstName,

@@ -1569,6 +1569,35 @@ export default function CreateMusic() {
           customMode,
           submittedLyrics: submittedLyricsRef.current,
         });
+        const billing = (data as { billing?: { applied?: boolean; won_charged?: number; credits_balance?: number } }).billing;
+        if (billing?.applied) {
+          queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+          const bal = billing.credits_balance;
+          if (typeof bal === "number" && Number.isFinite(bal) && bal >= 0) {
+            queryClient.setQueryData(["/api/credits"], { credits: bal, balanceWon: bal });
+            queryClient.setQueryData(["/api/ai-music/usage"], (prev: Record<string, unknown> | undefined) =>
+              prev && typeof prev === "object"
+                ? { ...prev, creditsBalance: bal, walletCredits: bal }
+                : prev,
+            );
+          }
+          const won = Number(billing.won_charged) || 0;
+          if (won > 0) {
+            toast({
+              title: t("createMusic.toastWonDeductTitle", "차감 안내"),
+              description:
+                typeof bal === "number" && Number.isFinite(bal) && bal >= 0
+                  ? t("createMusic.toastWonDeductWithBalance", "{{n}}원이 차감되었습니다. 지갑 잔액 {{bal}}원", {
+                      n: won.toLocaleString(),
+                      bal: bal.toLocaleString(),
+                    })
+                  : t("createMusic.toastWonDeduct", "{{n}}원이 차감되었습니다.", { n: won.toLocaleString() }),
+            });
+          }
+        }
         setResultTracks(resolvedClips);
         setTaskId(null);
         const now = Date.now();
@@ -1613,12 +1642,15 @@ export default function CreateMusic() {
         setPreviewTracks([]);
         setErrorMessage(data.message ?? "생성에 실패했습니다.");
         setTaskId(null);
+        queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/credits/transactions"] });
       }
       if (state === "pending" || state === "running" || state === "preview") {
         setTimeout(() => pollTask(tid, provider), nextAiMusicPollMs(state));
       }
     },
-    [persistTracks, queryClient]
+    [persistTracks, queryClient, toast, t]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
