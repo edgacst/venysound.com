@@ -28,6 +28,19 @@ export function serveStatic(app: Express) {
   }
   let indexTemplate = fs.readFileSync(indexPath, "utf-8");
 
+  /** AdSense ads.txt — 크롤러/대시보드가 text/plain 루트 파일을 기대 */
+  const adsTxtPath = path.resolve(distPath, "ads.txt");
+  app.get("/ads.txt", (_req, res) => {
+    if (!fs.existsSync(adsTxtPath)) {
+      res.status(404).setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      return res.send("ads.txt missing — run npm run build after adding client/public/ads.txt\n");
+    }
+    res.status(200).setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.sendFile(adsTxtPath);
+  });
+
   const sendSpaIndex = (req: Request, res: Response) => {
     const body = injectSpaCanonicalPlaceholders(indexTemplate, req);
     res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
