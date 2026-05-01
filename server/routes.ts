@@ -15,6 +15,7 @@ import { setupAuth, isAuthenticated, registerAuthRoutes } from "./auth";
 import { registerObjectStorageRoutes, ObjectStorageService, ObjectNotFoundError } from "./localObjectStorage";
 import { generateImageBuffer } from "./imageClient";
 import { alignLyricsToAudio } from "./lyricsAlign";
+import { generatePreviewSongLyrics } from "./previewSongLyrics";
 import { generatePromoSocialKit } from "./promoSocialKit";
 import {
   sendNewMusicNotificationEmail,
@@ -2439,6 +2440,31 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[ai-music check]", e);
       return res.status(500).json({ ok: false, message: "연결 실패" });
+    }
+  });
+
+  /** 가사 초안 미리보기(과금 없음). OpenAI 키 필요. */
+  app.post("/api/ai-music/preview-lyrics", isAuthenticated, async (req, res) => {
+    try {
+      const body = req.body as { partialLyrics?: unknown; moodDescription?: unknown; styleHint?: unknown };
+      const partialLyrics = typeof body.partialLyrics === "string" ? body.partialLyrics : "";
+      const moodDescription = typeof body.moodDescription === "string" ? body.moodDescription : "";
+      const styleHint = typeof body.styleHint === "string" ? body.styleHint : "";
+      if (!partialLyrics.trim() && !moodDescription.trim()) {
+        return res.status(400).json({ message: "가사 일부 또는 음악 설명·주제 중 하나는 입력해 주세요." });
+      }
+      const lyrics = await generatePreviewSongLyrics({ partialLyrics, moodDescription, styleHint });
+      res.json({ lyrics });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "OPENAI_API_KEY_MISSING") {
+        return res.status(503).json({
+          message:
+            "가사 미리보기는 서버에 OPENAI_API_KEY 또는 AI_INTEGRATIONS_OPENAI_API_KEY가 필요합니다. 관리자에게 문의해 주세요.",
+        });
+      }
+      console.error("[ai-music preview-lyrics]", e);
+      res.status(500).json({ message: "가사 미리보기 생성에 실패했습니다." });
     }
   });
 
