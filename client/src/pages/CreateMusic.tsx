@@ -1142,8 +1142,6 @@ export default function CreateMusic() {
   /** 커스텀 모드에서: 가사 편집(부분/전체 입력) vs 전체 가사 자동 작성 */
   const [customLyricsMode, setCustomLyricsMode] = useState<"edit" | "full">("edit");
   const [prompt, setPrompt] = useState("");
-  /** 설명/가사 직접 모드 공통: 가사 AI 미리보기(과금 없음) 로딩 */
-  const [lyricsPreviewLoading, setLyricsPreviewLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "pending" | "running" | "preview" | "succeeded" | "failed">("idle");
@@ -1691,77 +1689,17 @@ export default function CreateMusic() {
     [persistTracks, queryClient, toast, t]
   );
 
-  const showLyricsAssist = (mode === "custom" || mode === "description") && !instrumentalOnly;
-
-  const handlePreviewLyrics = async () => {
-    if (!user) return;
-    const mood = prompt.trim();
-    const styleHint = buildTagsForApi(genreOther, styleOther);
-    if (!mood) {
-      toast({
-        title: t("createMusic.previewLyricsNeedInput", "가사 일부 또는 설명·주제를 입력해 주세요."),
-        variant: "destructive",
-      });
-      return;
-    }
-    setLyricsPreviewLoading(true);
-    try {
-      const res = await fetch("/api/ai-music/preview-lyrics", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          partialLyrics: mood,
-          moodDescription: mood,
-          styleHint,
-        }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { lyrics?: string; message?: string; detail?: string };
-      if (!res.ok) {
-        const title = data.message ?? t("createMusic.previewLyricsFailed", "가사 미리보기에 실패했습니다.");
-        const desc = typeof data.detail === "string" && data.detail.trim() ? data.detail.trim().slice(0, 500) : undefined;
-        toast({
-          title,
-          ...(desc ? { description: desc } : {}),
-          variant: "destructive",
-        });
-        return;
-      }
-      const lyrics = typeof data.lyrics === "string" ? data.lyrics : "";
-      if (!lyrics.trim()) {
-        toast({
-          title: t("createMusic.previewLyricsEmpty", "생성된 가사가 비었습니다. 다시 시도해 주세요."),
-          variant: "destructive",
-        });
-        return;
-      }
-      setPrompt(lyrics);
-      toast({
-        title: t("createMusic.previewLyricsDone", "가사 미리보기를 반영했습니다. 필요하면 수정한 뒤 음악 생성을 누르세요."),
-      });
-    } catch {
-      toast({
-        title: t("createMusic.networkErrorGeneric", "네트워크 오류가 발생했습니다."),
-        variant: "destructive",
-      });
-    } finally {
-      setLyricsPreviewLoading(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     const promptTrim = prompt.trim();
-    const wantsFullLyrics =
-      !instrumentalOnly && customLyricsMode === "full" && (mode === "custom" || mode === "description");
-    const effectiveCustomMode =
-      mode === "custom" || (mode === "description" && !instrumentalOnly && customLyricsMode === "full");
+    const customMode = mode === "custom";
+    const wantsFullLyrics = !instrumentalOnly && customLyricsMode === "full" && customMode;
     if (mode === "custom" && !promptTrim && !instrumentalOnly && !wantsFullLyrics) {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
     }
-    if (mode === "description" && !promptTrim && !wantsFullLyrics) {
+    if (mode === "description" && !promptTrim) {
       toast({
         title: t(
           "createMusic.descriptionOrThemeRequired",
@@ -1778,20 +1716,20 @@ export default function CreateMusic() {
     setStatus("pending");
     setElapsedSec(0);
     generationStartRef.current = Date.now();
-    submitModeRef.current = effectiveCustomMode ? "custom" : mode;
+    submitModeRef.current = mode;
     /** 커스텀·설명 공통: 제목 비움 시 가사/설명에서 제목 추론용 */
     submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
     const mergedTags = buildTagsForApi(genreOther, styleOther);
     submittedTagsRef.current = mergedTags;
     try {
-      const presetBoost = buildPresetBoostBlock(mergedTags, { instrumentalOnly, customMode: effectiveCustomMode });
+      const presetBoost = buildPresetBoostBlock(mergedTags, { instrumentalOnly, customMode });
       const fullLyricsInstruction =
-        effectiveCustomMode && !instrumentalOnly && customLyricsMode === "full"
+        customMode && !instrumentalOnly && customLyricsMode === "full"
           ? "Write complete lyrics for a full song. Use a clear structure like [Verse], [Pre-Chorus], [Chorus], [Bridge]. Keep it coherent and singable."
           : "";
       const boostedPrompt =
-        effectiveCustomMode && !instrumentalOnly
+        customMode && !instrumentalOnly
           ? fullLyricsInstruction
             ? promptTrim
               ? `${presetBoost ? `${presetBoost}\n\n` : ""}${fullLyricsInstruction}\n\nLYRICS SEED:\n${promptTrim}`
@@ -1803,13 +1741,13 @@ export default function CreateMusic() {
             ? `${presetBoost}\n\n${promptTrim}`
             : promptTrim;
       const body: Record<string, unknown> = {
-        custom_mode: effectiveCustomMode,
+        custom_mode: customMode,
         mv: creationModelVersion,
         title: title.trim() || undefined,
         tags: mergedTags || undefined,
       };
       if (instrumentalOnly) body.make_instrumental = true;
-      if (effectiveCustomMode) body.prompt = boostedPrompt;
+      if (customMode) body.prompt = boostedPrompt;
       else body.gpt_description_prompt = boostedPrompt;
 
       const res = await fetch("/api/ai-music/create", {
@@ -2319,13 +2257,9 @@ export default function CreateMusic() {
                               : customLyricsMode === "full"
                                 ? t("createMusic.promptLabelSeed", "가사 일부 (선택) — 나머지는 AI가 작성")
                                 : t("createMusic.promptLabel", "가사 (필수)")
-                            : showLyricsAssist
-                              ? customLyricsMode === "full"
-                                ? t("createMusic.promptLabelSeed", "가사 일부 (선택) — 나머지는 AI가 작성")
-                                : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")
-                              : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")}
+                            : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")}
                         </label>
-                        {showLyricsAssist && (
+                        {mode === "custom" && !instrumentalOnly && (
                           <div className="mb-2 flex flex-wrap items-center gap-2">
                             <button
                               type="button"
@@ -2356,17 +2290,6 @@ export default function CreateMusic() {
                                 ? t("createMusic.customLyricsModeFullHint", "비워도 생성됩니다. 일부만 적으면 그 톤으로 이어서 씁니다.")
                                 : t("createMusic.customLyricsModeEditHint", "일부만 적어도 됩니다. [Verse]/[Chorus] 구조를 쓰면 좋아요.")}
                             </span>
-                            {(customLyricsMode === "full" || prompt.trim().length > 0) && (
-                              <button
-                                type="button"
-                                onClick={() => void handlePreviewLyrics()}
-                                disabled={lyricsPreviewLoading}
-                                className="inline-flex items-center gap-2 rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-900 hover:bg-violet-100 disabled:opacity-60"
-                              >
-                                {lyricsPreviewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
-                                {t("createMusic.previewLyricsButton", "가사 미리보기 (AI)")}
-                              </button>
-                            )}
                           </div>
                         )}
                         <textarea
@@ -2386,23 +2309,16 @@ export default function CreateMusic() {
                                       "후렴/첫 벌 등 ‘일부 가사’만 적어두면, 그 톤으로 나머지를 자동 완성합니다. 비워도 전체 가사를 자동 생성해요.",
                                     )
                                   : t("createMusic.promptPlaceholder", "[Verse]\n가사 입력...\n\n[Chorus]\n후렴구...")
-                              : showLyricsAssist
-                                ? customLyricsMode === "full"
-                                  ? t(
-                                      "createMusic.promptPlaceholderSeed",
-                                      "후렴/첫 벌 등 ‘일부 가사’만 적어두면, 그 톤으로 나머지를 자동 완성합니다. 비워도 전체 가사를 자동 생성해요.",
-                                    )
-                                  : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
-                                : instrumentalOnly
-                                  ? t(
-                                      "createMusic.lyricsInputPlaceholderInstrumental",
-                                      "예: 잔잔한 솔로 피아노, 카페 배경용으로 부드럽게, 보컬 없이",
-                                    )
-                                  : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
+                              : instrumentalOnly
+                                ? t(
+                                    "createMusic.lyricsInputPlaceholderInstrumental",
+                                    "예: 잔잔한 솔로 피아노, 카페 배경용으로 부드럽게, 보컬 없이",
+                                  )
+                                : t("createMusic.lyricsInputPlaceholder", "가사가 있으면 가사를 입력하고, 없으면 원하는 분위기나 설명을 입력하세요.")
                           }
                           required={mode === "custom" && !instrumentalOnly && customLyricsMode !== "full"}
                         />
-                        {showLyricsAssist && customLyricsMode === "edit" && (
+                        {mode === "custom" && !instrumentalOnly && customLyricsMode === "edit" && (
                           <p className="mt-1.5 text-xs text-muted-foreground">
                             {t(
                               "createMusic.lyricsHint",
@@ -2410,11 +2326,11 @@ export default function CreateMusic() {
                             )}
                           </p>
                         )}
-                        {showLyricsAssist && customLyricsMode === "full" && (
+                        {mode === "custom" && !instrumentalOnly && customLyricsMode === "full" && (
                           <p className="mt-1.5 text-xs text-muted-foreground">
                             {t(
-                              "createMusic.previewLyricsHint",
-                              "「가사 미리보기」로 초안을 채운 뒤 자유롭게 수정한 다음 음악 생성을 누르세요. (서버에 OpenAI 키가 설정된 경우에만 동작합니다.)",
+                              "createMusic.customLyricsFullSubmitHint",
+                              "비워도 「음악 생성」 시 전체 가사 작성이 함께 요청됩니다. 일부만 적으면 그 톤에 맞춰 이어집니다.",
                             )}
                           </p>
                         )}
