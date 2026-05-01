@@ -1716,10 +1716,13 @@ export default function CreateMusic() {
           styleHint,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { lyrics?: string; message?: string };
+      const data = (await res.json().catch(() => ({}))) as { lyrics?: string; message?: string; detail?: string };
       if (!res.ok) {
+        const title = data.message ?? t("createMusic.previewLyricsFailed", "가사 미리보기에 실패했습니다.");
+        const desc = typeof data.detail === "string" && data.detail.trim() ? data.detail.trim().slice(0, 500) : undefined;
         toast({
-          title: data.message ?? t("createMusic.previewLyricsFailed", "가사 미리보기에 실패했습니다."),
+          title,
+          ...(desc ? { description: desc } : {}),
           variant: "destructive",
         });
         return;
