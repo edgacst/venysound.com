@@ -2160,15 +2160,29 @@ export async function registerRoutes(
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (user) await maybePersistSubscriptionRow(userId, user);
       const [userFresh] = user ? await db.select().from(users).where(eq(users.id, userId)) : [undefined];
-      const row = userFresh ?? user;
+      let row = userFresh ?? user;
       const now = new Date();
-      const isSubWallet = row?.role !== "admin" && isUserPaidSubscriptionActive(row, now);
-      if (isSubWallet) {
-        const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
-        if (w) {
-          const limit = w.limitDisplay;
-          const usedThisMonth = w.periodConsumed;
-          const usagePeriodKey = w.periodKey;
+      /** 활성 유료 + 구독 AI 지갑: 동기화 후 잔액이 1곡 미만이면 소진 처리(과금 직후 호출 누락·탭만 열어둔 경우 보정) 후 행 재조회. */
+      if (row?.role !== "admin" && isUserPaidSubscriptionActive(row, now)) {
+        let wSub = await syncSubscriptionAiWalletForPaidUser(userId, now);
+        if (wSub && wSub.walletSum < AI_MUSIC_WON_PER_TRACK) {
+          try {
+            await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+          } catch (e) {
+            console.error("[ai-music usage] subscription ai budget exhaustion", e);
+          }
+          const [rowAfter] = await db.select().from(users).where(eq(users.id, userId));
+          if (rowAfter) row = rowAfter;
+          if (row && row.role !== "admin" && isUserPaidSubscriptionActive(row, now)) {
+            wSub = await syncSubscriptionAiWalletForPaidUser(userId, now);
+          } else {
+            wSub = null;
+          }
+        }
+        if (row?.role !== "admin" && isUserPaidSubscriptionActive(row, now) && wSub) {
+          const limit = wSub.limitDisplay;
+          const usedThisMonth = wSub.periodConsumed;
+          const usagePeriodKey = wSub.periodKey;
           const isPaidTier = true;
           const deductsCreditsPerCreate = false;
           const walletCredits = row?.credits ?? 0;
@@ -2182,8 +2196,8 @@ export async function registerRoutes(
             creditsBalance: walletCredits,
             quota: { kind: quotaKind, used: usedThisMonth, limit },
             /** 플랜 월 공급가(부가세 제외) 합 — basic 단일이면 9000. 표시 한도(limit)는 이월 지갑+사용 누적 */
-            subscriptionAiPlanGrantWon: w.monthlyGrant,
-            subscriptionAiWalletRemainingWon: w.walletSum,
+            subscriptionAiPlanGrantWon: wSub.monthlyGrant,
+            subscriptionAiWalletRemainingWon: wSub.walletSum,
             wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
             creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
             deductsCreditsPerCreate,

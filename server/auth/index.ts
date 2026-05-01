@@ -24,6 +24,7 @@ import {
 import { getLoginPagePath } from "../site-paths";
 import { recordSignupSuccessAfterNewOauth } from "../oauthSignupAnalytics";
 import { storage } from "../storage";
+import { ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted } from "../subscription-ai-budget-exhaustion";
 
 /** 신규 가입 시 사이트 종 알림(인앱) 환영 — 재생·라디오 로직과 무관 */
 async function createSignupWelcomeNotification(userId: string, displayName: string): Promise<void> {
@@ -673,6 +674,11 @@ export function registerAuthRoutes(app: Express): void {
     try {
       const userId = req.user.claims.sub;
       await authStorage.downgradeExpiredSubscription(userId);
+      try {
+        await ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted(userId, new Date());
+      } catch (e) {
+        console.error("[auth/me] subscription AI budget exhaustion check", e);
+      }
       const user = await authStorage.getUser(userId);
       if (!user) {
         return res.status(401).json({ message: "Unauthorized" });

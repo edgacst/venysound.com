@@ -21,6 +21,18 @@ export function subscriptionAiBudgetExhaustionMarker(periodKey: string): string 
  * 유료 구독 AI 지갑으로 다음 곡(150원)을 더 만들 수 없을 때:
  * 1회 인앱 알림 + 메일(중복 방지 DB 키) 후 구독 혜택을 즉시 free로 정리(옵션 4-A).
  */
+/**
+ * 활성 유료 + 구독 AI 지갑 잔액이 1곡 미만일 때만 free화.
+ * 과금 직후 `runSubscription…` 호출이 누락된 경우·탭만 열어둔 경우 보정용 (auth/me·usage 등).
+ */
+export async function ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted(userId: string, now: Date): Promise<void> {
+  const [row] = await db.select().from(users).where(eq(users.id, userId));
+  if (!row || row.role === "admin" || !isUserPaidSubscriptionActive(row, now)) return;
+  const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
+  if (!w || w.walletSum >= AI_MUSIC_WON_PER_TRACK) return;
+  await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+}
+
 export async function runSubscriptionAiBudgetExhaustionIfNeeded(userId: string, now: Date): Promise<void> {
   await syncSubscriptionAiWalletForPaidUser(userId, now);
 
