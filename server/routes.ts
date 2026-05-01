@@ -83,7 +83,10 @@ import {
   adminSetSubscriptionAiPeriodConsumedWon,
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
-import { runSubscriptionAiBudgetExhaustionIfNeeded } from "./subscription-ai-budget-exhaustion";
+import {
+  runSubscriptionAiBudgetExhaustionIfNeeded,
+  ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted,
+} from "./subscription-ai-budget-exhaustion";
 import { setNotificationRealtimeSender } from "./realtime-notify";
 import { getPayupCredentials } from "./payup/config";
 import { signPayupDirectOrder } from "./payup/signing";
@@ -6500,12 +6503,17 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
+      const now = new Date();
+      try {
+        await ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted(userId, now);
+      } catch (e) {
+        console.error("[subscription/me] subscription AI budget exhaustion check", e);
+      }
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) {
         return res.json({ subscription: null, tier: "free" });
       }
 
-      const now = new Date();
       const { subscriptionEntitlements, subscriptionTier, subscriptionExpiresAt, needsWrite } = subscriptionRowNeedsSync(
         user,
         now,
