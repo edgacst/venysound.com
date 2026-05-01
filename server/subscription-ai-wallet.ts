@@ -5,7 +5,6 @@ import {
   isUserPaidSubscriptionActive,
   sumActivePaidAiMusicMonthlyWonBudget,
   getAiMusicUsagePeriodKey,
-  calendarMonthKeyUtc,
   AI_MUSIC_WON_PER_TRACK,
 } from "@shared/subscription-entitlements";
 import {
@@ -44,22 +43,6 @@ async function performSubscriptionAiWalletSync(
   const curKey = u.subscriptionAiPeriodKey ?? null;
 
   if (curKey === desiredKey) {
-    /** 구독 키는 맞는데 consumed 만 0으로 고착된 경우: 레거시 ai_music_usage(달력 YYYY-MM)에 원화 누적만 있는 케이스 복구 */
-    if (consumed === 0 && desiredKey.startsWith("sub:")) {
-      const calKey = calendarMonthKeyUtc(now);
-      const [usageCal] = await tx
-        .select()
-        .from(aiMusicUsage)
-        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, calKey)));
-      const c = usageCal?.count ?? 0;
-      if (c >= AI_MUSIC_WON_PER_TRACK) {
-        consumed = Math.min(c, monthlyGrant * 3);
-        await tx
-          .update(users)
-          .set({ subscriptionAiPeriodConsumedWon: consumed, updatedAt: new Date() })
-          .where(eq(users.id, userId));
-      }
-    }
     if (JSON.stringify(wallet) !== JSON.stringify(parseAiWallet(u.subscriptionAiWallet))) {
       await tx
         .update(users)
@@ -81,19 +64,8 @@ async function performSubscriptionAiWalletSync(
       .select()
       .from(aiMusicUsage)
       .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, desiredKey)));
-    let usedLegacy = Math.max(0, usageDesired?.count ?? 0);
-    /** sub: 키로는 ai_music_usage 행이 없고 달력 월 행에만 원화 누적이 있는 레거시(배포 후 consumed 0 초기화 방지) */
-    if (usedLegacy === 0 && desiredKey.startsWith("sub:")) {
-      const calKey = calendarMonthKeyUtc(now);
-      const [usageCal] = await tx
-        .select()
-        .from(aiMusicUsage)
-        .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, calKey)));
-      const c = usageCal?.count ?? 0;
-      if (c >= AI_MUSIC_WON_PER_TRACK) {
-        usedLegacy = Math.min(c, monthlyGrant * 3);
-      }
-    }
+    /** 달력 YYYY-MM ai_music_usage 는 무료(곡 수)·만료 후 크레딧(원)용이라, 구독 지갑(sub:)과 섞지 않음 — 충전 직후 0/9000이 달력 잔여로 1650/9000 되는 버그 방지 */
+    const usedLegacy = Math.max(0, usageDesired?.count ?? 0);
     const startWon = Math.max(0, monthlyGrant - usedLegacy);
     wallet = appendAiWalletGrant(wallet, startWon, now);
     consumed = usedLegacy;
