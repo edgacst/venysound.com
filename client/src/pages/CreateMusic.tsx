@@ -1928,49 +1928,70 @@ export default function CreateMusic() {
                             );
                           }
                           const remaining = q.limit >= 0 ? Math.max(0, q.limit - q.used) : 0;
+                          const planWon = aiUsage.subscriptionAiPlanGrantWon;
+                          const walletWon = aiUsage.subscriptionAiWalletRemainingWon;
+                          const perWon = aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150;
+                          const hasPackLine =
+                            typeof planWon === "number" &&
+                            Number.isFinite(planWon) &&
+                            typeof walletWon === "number" &&
+                            Number.isFinite(walletWon);
                           return (
                             <>
                               <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
                                 <Sparkles className="w-4 h-4 text-violet-300 shrink-0" />
-                                {t("createMusic.subscriptionAiLabelWon", "구독 AI 한도(원, 이월 포함)")}
+                                {t("createMusic.subscriptionAiLabelWon", "구독 AI 예산 (베이직 등)")}
                               </div>
-                              <strong className="text-xl tabular-nums text-slate-900">
-                                {t("createMusic.subscriptionAiQuotaCountWon", "이번 달 {{used}} / {{limit}}원", {
-                                  used: q.used.toLocaleString(),
-                                  limit: q.limit.toLocaleString(),
-                                })}
-                              </strong>
-                              {typeof aiUsage.subscriptionAiPlanGrantWon === "number" &&
-                              typeof aiUsage.subscriptionAiWalletRemainingWon === "number" ? (
+                              {hasPackLine ? (
+                                <strong className="text-base sm:text-lg tabular-nums text-slate-900 leading-snug text-center px-0.5">
+                                  {t("createMusic.subscriptionAiPackLine", "충전금 {{charged}}원 · 사용량 {{used}}원 · 남은 사용 가능 금액 {{remaining}}원", {
+                                    charged: Math.max(0, Math.floor(planWon)).toLocaleString(),
+                                    used: Math.max(0, Math.floor(q.used)).toLocaleString(),
+                                    remaining: Math.max(0, Math.floor(walletWon)).toLocaleString(),
+                                  })}
+                                </strong>
+                              ) : (
+                                <strong className="text-xl tabular-nums text-slate-900">
+                                  {t("createMusic.subscriptionAiQuotaCountWon", "이번 달 {{used}} / {{limit}}원", {
+                                    used: q.used.toLocaleString(),
+                                    limit: q.limit.toLocaleString(),
+                                  })}
+                                </strong>
+                              )}
+                              {hasPackLine && q.limit > planWon ? (
                                 <span className="text-[10px] text-violet-200/85 leading-tight px-1 block">
                                   {t(
-                                    "createMusic.subscriptionAiQuotaBreakdownWon",
-                                    "플랜 월 공급가 {{plan}}원 · 이월 지갑 잔액 {{wallet}}원 (총 한도 = 사용 + 잔액)",
+                                    "createMusic.subscriptionAiPackTotalNote",
+                                    "이번 기간 총 한도 {{total}}원(플랜 월 {{plan}}원·이월 등 반영)",
                                     {
-                                      plan: aiUsage.subscriptionAiPlanGrantWon.toLocaleString(),
-                                      wallet: aiUsage.subscriptionAiWalletRemainingWon.toLocaleString(),
+                                      total: Math.max(0, Math.floor(q.limit)).toLocaleString(),
+                                      plan: Math.max(0, Math.floor(planWon)).toLocaleString(),
                                     },
                                   )}
                                 </span>
                               ) : null}
                               <span className="text-[11px] text-violet-100/70 leading-tight px-1">
-                                {String(aiUsage.usagePeriodKey ?? "").startsWith("sub:")
-                                  ? t(
-                                      "createMusic.subscriptionAiQuotaSubWonMonthlyCycle",
-                                      "남은 예산 {{n}}원 · 생성 1회당 {{per}}원. 달이 바뀌어도 구독 만료 전까지 한도는 이어지며, 재결제 시 초기화됩니다.",
-                                      {
-                                        n: remaining.toLocaleString(),
-                                        per: (aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150).toLocaleString(),
-                                      },
-                                    )
-                                  : t(
-                                      "createMusic.subscriptionAiQuotaSubWon",
-                                      "남은 월 예산 {{n}}원 · 생성 1회당 {{per}}원 (충전 잔액은 AI에 사용 안 됨)",
-                                      {
-                                        n: remaining.toLocaleString(),
-                                        per: (aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150).toLocaleString(),
-                                      },
-                                    )}
+                                {hasPackLine
+                                  ? t("createMusic.subscriptionAiPackPerCreate", "생성 1회당 {{per}}원 차감 · 예산이 0원이 되면 무료 플랜으로 전환됩니다.", {
+                                      per: perWon.toLocaleString(),
+                                    })
+                                  : String(aiUsage.usagePeriodKey ?? "").startsWith("sub:")
+                                    ? t(
+                                        "createMusic.subscriptionAiQuotaSubWonMonthlyCycle",
+                                        "남은 예산 {{n}}원 · 생성 1회당 {{per}}원. 달이 바뀌어도 구독 만료 전까지 한도는 이어지며, 재결제 시 초기화됩니다.",
+                                        {
+                                          n: remaining.toLocaleString(),
+                                          per: perWon.toLocaleString(),
+                                        },
+                                      )
+                                    : t(
+                                        "createMusic.subscriptionAiQuotaSubWon",
+                                        "남은 월 예산 {{n}}원 · 생성 1회당 {{per}}원 (충전 잔액은 AI에 사용 안 됨)",
+                                        {
+                                          n: remaining.toLocaleString(),
+                                          per: perWon.toLocaleString(),
+                                        },
+                                      )}
                               </span>
                             </>
                           );
