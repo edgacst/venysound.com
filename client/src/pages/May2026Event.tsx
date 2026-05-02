@@ -8,12 +8,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 
 type May2026Public = {
   signupWindowStart: string;
   signupWindowEndExclusive: string;
   promoGrantWon: number;
   promoWalletExpiresAt: string;
+  approvedMemberCap?: number;
+  approvedMemberCount?: number;
 };
 
 type May2026Me = {
@@ -43,6 +46,7 @@ function formatRangeKo(startIso: string, endExclusiveIso: string) {
 }
 
 export default function May2026Event() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -93,6 +97,7 @@ export default function May2026Event() {
       toast({ title: "신청이 접수되었습니다. 관리자 승인 후 안내드립니다." });
       setApplyMessage("");
       void qc.invalidateQueries({ queryKey: ["/api/events/may-2026/me"] });
+      void qc.invalidateQueries({ queryKey: ["/api/events/may-2026/public"] });
     },
     onError: (e: Error) => {
       toast({ title: e.message, variant: "destructive" });
@@ -104,6 +109,9 @@ export default function May2026Event() {
     pub?.signupWindowStart && pub?.signupWindowEndExclusive
       ? formatRangeKo(pub.signupWindowStart, pub.signupWindowEndExclusive)
       : "2026년 5월 가입분";
+  const cap = Math.max(1, Number(pub?.approvedMemberCap ?? 100));
+  const approvedCount = Math.max(0, Math.floor(Number(pub?.approvedMemberCount ?? 0)));
+  const capFull = approvedCount >= cap;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -111,13 +119,26 @@ export default function May2026Event() {
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-10 pb-24">
         <p className="text-xs font-medium text-violet-300 mb-2">이벤트</p>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 text-foreground">2026년 5월 신규가입 이벤트</h1>
-        <p className="text-sm text-zinc-300 mb-8">{rangeLabel}</p>
+        <p className="text-sm text-zinc-300 mb-3">{rangeLabel}</p>
+        <p
+          className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-medium tabular-nums mb-8 ${
+            capFull ? "border-amber-500/50 bg-amber-950/40 text-amber-100" : "border-violet-500/40 bg-violet-950/40 text-violet-100"
+          }`}
+          data-testid="may-2026-cap-badge"
+        >
+          {t("may2026Page.capBadge", "승인 {{current}} / {{max}}명 (100명 한정)", { current: approvedCount, max: cap })}
+        </p>
 
         {/* 앱은 :root가 어두운 테마인데 html에 .dark 클래스가 없어 dark: 미적용 → prose-slate만 쓰면 본문이 어두운 색으로 남음. prose-invert로 본문 대비 확보 */}
         <div className="prose prose-invert prose-sm max-w-none space-y-8 text-sm leading-relaxed text-zinc-100 prose-headings:text-foreground prose-p:text-zinc-200 prose-strong:text-white prose-li:text-zinc-200 prose-a:text-violet-300">
           <section className="rounded-xl border border-border bg-card p-5 space-y-3 not-prose">
             <h2 className="text-base font-semibold text-foreground">요약</h2>
             <ul className="list-disc pl-5 space-y-1 text-zinc-200">
+              <li>
+                {t("may2026Page.capSummary", "이벤트 전용 잔액은 관리자 승인을 받은 회원에게만 지급되며, 승인 인원은 선착순 최대 {{max}}명입니다.", {
+                  max: cap,
+                })}
+              </li>
               <li>
                 대상 회원에게 관리자 승인 후 <strong className="text-white">AI 음악 생성 전용 {grant.toLocaleString("ko-KR")}원</strong>이
                 지급됩니다.
@@ -211,6 +232,9 @@ export default function May2026Event() {
 
                   {me.eligibleSignup && (!me.application || me.application.status === "rejected") ? (
                     <div className="space-y-2">
+                      {capFull ? (
+                        <p className="text-sm text-amber-200">{t("may2026Page.capFullNotice", "승인 인원이 마감되어 새 신청을 받지 않습니다.")}</p>
+                      ) : null}
                       <label className="text-sm font-medium text-white">이벤트 가입 신청 (선택 메모)</label>
                       <Textarea
                         value={applyMessage}
@@ -219,15 +243,17 @@ export default function May2026Event() {
                         rows={3}
                         maxLength={2000}
                         className="resize-y"
+                        disabled={capFull}
                       />
                       <Button
                         type="button"
-                        disabled={applyMutation.isPending}
+                        disabled={applyMutation.isPending || capFull}
                         onClick={() => applyMutation.mutate(applyMessage.trim())}
                         className="gap-2"
+                        title={capFull ? t("may2026Page.applyDisabledCap", "승인 인원 마감") : undefined}
                       >
                         {applyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        이벤트 가입 신청
+                        {capFull ? t("may2026Page.applyDisabledCap", "승인 인원 마감") : "이벤트 가입 신청"}
                       </Button>
                     </div>
                   ) : null}

@@ -5,6 +5,9 @@ import { users, may2026EventApplications } from "../shared/schema";
 /** 관리자 승인 시 지급하는 이벤트 AI 전용 금액(원) */
 export const MAY_2026_EVENT_PROMO_GRANT_WON = 3000;
 
+/** 관리자 승인(회원) 상한 — `status = approved` 기준, 동일 회원 중복 행은 distinct user 로 1명만 산정 */
+export const MAY_2026_EVENT_APPROVED_MEMBER_CAP = 100;
+
 /** 한국시간 2026-05-01 00:00 ~ 2026-05-31 23:59:59 가입분 (exclusive 상한: 2026-06-01 00:00 KST) */
 export function may2026SignupWindowStartUtc(): Date {
   return new Date("2026-04-30T15:00:00.000Z");
@@ -56,4 +59,13 @@ export async function getMay2026EventApplicationForUser(userId: string) {
 export async function userHasApprovedMay2026Event(userId: string): Promise<boolean> {
   const row = await getMay2026EventApplicationForUser(userId);
   return row?.status === "approved";
+}
+
+/** 승인된 이벤트 회원 수(회원 기준 중복 제거) */
+export async function countMay2026ApprovedMembers(): Promise<number> {
+  const result = await db.execute(
+    sql`SELECT count(DISTINCT user_id)::int AS c FROM may_2026_event_applications WHERE status = 'approved'`,
+  );
+  const c = Number((result.rows[0] as { c?: unknown } | undefined)?.c ?? 0);
+  return Math.max(0, Number.isFinite(c) ? c : 0);
 }

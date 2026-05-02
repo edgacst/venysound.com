@@ -39,6 +39,12 @@
     "errorParse": "Could not read the server response. Refresh and try again.",
     "errorSoft": "Help search had a problem. Please use the FAQ link below."
   },
+  "may2026Page": {
+    "capBadge": "Approved {{current}} / {{max}} (100-member cap)",
+    "capSummary": "Promo credits are granted only after admin approval, for up to {{max}} members on a first-approved basis.",
+    "capFullNotice": "The approval cap has been reached; new applications are closed.",
+    "applyDisabledCap": "Cap reached"
+  },
   "home": {
     "heroTaglineBelowNav": "<row1><coffee>For the price of a cup of coffee</coffee>, your talent as a lyricist and <composer>composer</composer></row1><row2>Release your own album and earn <royalty>lifetime royalty income</royalty> — ready to try?</row2>",
     "heroTaglineBelowNavMobile": "<row1><coffee>For the price of a cup of coffee</coffee>, as a <composer>composer</composer></row1><row2>Release your music and build <royalty>lifetime royalty income</royalty> — want to try?</row2>",

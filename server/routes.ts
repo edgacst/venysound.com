@@ -108,11 +108,13 @@ import {
   voidExpiredPromoAiCreditsForUser,
   isUserCreatedInMay2026CampaignWindow,
   MAY_2026_EVENT_PROMO_GRANT_WON,
+  MAY_2026_EVENT_APPROVED_MEMBER_CAP,
   may2026PromoWalletExpiresAtUtc,
   may2026SignupWindowEndExclusiveUtc,
   may2026SignupWindowStartUtc,
   getMay2026EventApplicationForUser,
   userHasApprovedMay2026Event,
+  countMay2026ApprovedMembers,
 } from "./may-2026-event";
 
 /** 라디오 채널 카페 홈페이지 — http/https만 허용, 스킴 생략 시 https 부여 */
@@ -7969,13 +7971,21 @@ export async function registerRoutes(
   });
 
   /** 5월 신규가입 이벤트 — 공개 메타(비로그인) */
-  app.get("/api/events/may-2026/public", (_req, res) => {
-    res.json({
-      signupWindowStart: may2026SignupWindowStartUtc().toISOString(),
-      signupWindowEndExclusive: may2026SignupWindowEndExclusiveUtc().toISOString(),
-      promoGrantWon: MAY_2026_EVENT_PROMO_GRANT_WON,
-      promoWalletExpiresAt: may2026PromoWalletExpiresAtUtc().toISOString(),
-    });
+  app.get("/api/events/may-2026/public", async (_req, res) => {
+    try {
+      const approvedMemberCount = await countMay2026ApprovedMembers();
+      res.json({
+        signupWindowStart: may2026SignupWindowStartUtc().toISOString(),
+        signupWindowEndExclusive: may2026SignupWindowEndExclusiveUtc().toISOString(),
+        promoGrantWon: MAY_2026_EVENT_PROMO_GRANT_WON,
+        promoWalletExpiresAt: may2026PromoWalletExpiresAtUtc().toISOString(),
+        approvedMemberCap: MAY_2026_EVENT_APPROVED_MEMBER_CAP,
+        approvedMemberCount,
+      });
+    } catch (e) {
+      console.error("[events/may-2026/public]", e);
+      res.status(500).json({ message: "이벤트 정보를 불러오지 못했습니다." });
+    }
   });
 
   /** 이벤트 신청 상태·프로모 잔액(로그인) */
@@ -8034,6 +8044,12 @@ export async function registerRoutes(
       }
       if (existing?.status === "approved") {
         return res.status(409).json({ message: "이미 승인된 이벤트 회원입니다." });
+      }
+      const approvedMembers = await countMay2026ApprovedMembers();
+      if (approvedMembers >= MAY_2026_EVENT_APPROVED_MEMBER_CAP) {
+        return res.status(403).json({
+          message: `이벤트 승인 인원이 ${MAY_2026_EVENT_APPROVED_MEMBER_CAP}명에 도달하여 신청을 받지 않습니다.`,
+        });
       }
       await db.insert(may2026EventApplications).values({
         userId,
@@ -8100,6 +8116,14 @@ export async function registerRoutes(
       const targetUserId = appRow.userId;
       const expiresAt = may2026PromoWalletExpiresAtUtc();
       await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(90261026)`);
+        const capCheck = await tx.execute(
+          sql`SELECT count(DISTINCT user_id)::int AS c FROM may_2026_event_applications WHERE status = 'approved'`,
+        );
+        const approvedNow = Number((capCheck.rows[0] as { c?: unknown } | undefined)?.c ?? 0);
+        if (!Number.isFinite(approvedNow) || approvedNow >= MAY_2026_EVENT_APPROVED_MEMBER_CAP) {
+          throw new Error("MAY2026_APPROVAL_CAP_FULL");
+        }
         const [u] = await tx.select().from(users).where(eq(users.id, targetUserId)).limit(1);
         if (!u) throw new Error("USER_NOT_FOUND");
         const cur = Math.max(0, Number(u.promoAiCreditsWon ?? 0));
@@ -8135,7 +8159,13 @@ export async function registerRoutes(
       res.json({ ok: true });
     } catch (e) {
       console.error("[admin/may-2026-event/approve]", e);
-      res.status(500).json({ message: (e as Error)?.message || "승인 처리에 실패했습니다." });
+      const msg = (e as Error)?.message || "";
+      if (msg === "MAY2026_APPROVAL_CAP_FULL") {
+        return res.status(409).json({
+          message: `승인 가능 인원이 ${MAY_2026_EVENT_APPROVED_MEMBER_CAP}명에 도달했습니다. (동시 승인 시도일 수 있습니다. 목록을 새로고침해 주세요.)`,
+        });
+      }
+      res.status(500).json({ message: msg || "승인 처리에 실패했습니다." });
     }
   });
 
