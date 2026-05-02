@@ -34,6 +34,9 @@ export const users = pgTable("users", {
     .default(sql`'{}'::jsonb`),
   /** 지갑 잔액(원, 정수). DB 컬럼명은 레거시로 credits 유지 */
   credits: integer("credits").default(0),
+  /** 5월 이벤트 등: AI 음악 생성에만 사용, 출금·일반 지갑 환불 대상 아님. 만료 시 소멸 */
+  promoAiCreditsWon: integer("promo_ai_credits_won").default(0).notNull(),
+  promoAiCreditsExpiresAt: timestamp("promo_ai_credits_expires_at", { withTimezone: true }),
   balance: integer("balance").default(0),
   donationBadge: varchar("donation_badge"), // 'seed' | 'sprout' | 'supporter' | 'sponsor'
   registerSource: varchar("register_source"), // 'email' | 'google' | 'naver' | 'kakao' | 'facebook' | 'tiktok'

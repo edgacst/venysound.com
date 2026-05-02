@@ -44,6 +44,7 @@ import {
   creditTransactions,
   creditRefundRequests,
   creditRefundEvents,
+  may2026EventApplications,
 } from "../shared/schema";
 import { eq, sql, inArray, and, or, desc, asc, gte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -103,6 +104,16 @@ import {
   payupInquiryFlatPickTransactionId,
 } from "./payup/payup-webhook-notify";
 import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
+import {
+  voidExpiredPromoAiCreditsForUser,
+  isUserCreatedInMay2026CampaignWindow,
+  MAY_2026_EVENT_PROMO_GRANT_WON,
+  may2026PromoWalletExpiresAtUtc,
+  may2026SignupWindowEndExclusiveUtc,
+  may2026SignupWindowStartUtc,
+  getMay2026EventApplicationForUser,
+  userHasApprovedMay2026Event,
+} from "./may-2026-event";
 
 /** 라디오 채널 카페 홈페이지 — http/https만 허용, 스킴 생략 시 https 부여 */
 function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | null } | { ok: false } {
@@ -1901,8 +1912,11 @@ export async function registerRoutes(
     failureMessage?: string | null;
   }): Promise<void> {
     try {
-      const { userId, user, taskId, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
+      const { userId, taskId, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
       const nowLog = new Date();
+      await voidExpiredPromoAiCreditsForUser(userId, nowLog);
+      const [userDb] = await db.select().from(users).where(eq(users.id, userId));
+      const user = userDb ?? params.user;
       const displayed = computeDisplayedSubscriptionFromEntitlements(
         user?.subscriptionEntitlements,
         user?.subscriptionTier,
@@ -1911,8 +1925,19 @@ export async function registerRoutes(
       );
       const tier = displayed.subscriptionTier;
       const subscriptionActive = isUserPaidSubscriptionActive(user, nowLog);
-      const billingKind =
-        user?.role === "admin" ? "admin" : tier === "free" ? "free" : subscriptionActive ? "subscription" : "credits";
+      const promoWon = Math.max(0, Number(user?.promoAiCreditsWon ?? 0));
+      const promoExp = user?.promoAiCreditsExpiresAt ?? null;
+      const promoNotExpired = !promoExp || new Date(promoExp).getTime() > nowLog.getTime();
+      const canBillPromo = user?.role !== "admin" && promoNotExpired && promoWon >= AI_MUSIC_WON_PER_TRACK;
+      const billingKind = user?.role === "admin"
+        ? "admin"
+        : subscriptionActive && tier !== "free"
+          ? "subscription"
+          : canBillPromo
+            ? "promo"
+            : tier === "free"
+              ? "free"
+              : "credits";
       const creditsCharged = Math.max(0, Math.floor(Number(walletCreditsCharged) || 0));
       const promptText = (body.prompt ?? body.gpt_description_prompt ?? "").trim();
       const parts = [
@@ -1954,19 +1979,25 @@ export async function registerRoutes(
     }
   }
 
-  /** 생성 성공(업스트림 완료) 확정 시 1회 과금. 무료 플랜 월 한도는 taskId 발급 시점에 반영됨 → 여기서는 0만 반환. */
+  /** 생성 성공(업스트림 완료) 확정 시 1회 과금. 무료 플랜 월 한도는 taskId 발급 시점에 반영됨 → 여기서는 0만 반환(이벤트 전용 잔액 `promo`는 예외). */
   async function performAiMusicBillingForUser(userIdForBill: string, now: Date): Promise<number> {
     const [user0] = await db.select().from(users).where(eq(users.id, userIdForBill));
     if (!user0) throw new Error("USER_NOT_FOUND");
     await maybePersistSubscriptionRow(userIdForBill, user0);
+    await voidExpiredPromoAiCreditsForUser(userIdForBill, now);
     const [row] = await db.select().from(users).where(eq(users.id, userIdForBill));
     const r = row!;
     if (r.role === "admin") return 0;
-    if ((r.subscriptionTier ?? "free") === "free") {
-      return 0;
-    }
     const usagePeriodKey = getAiMusicUsagePeriodKey(r, r.role ?? null, now);
-    if (isUserPaidSubscriptionActive(r, now)) {
+    const displayed = computeDisplayedSubscriptionFromEntitlements(
+      r.subscriptionEntitlements,
+      r.subscriptionTier,
+      r.subscriptionExpiresAt,
+      now,
+    );
+    const tier = displayed.subscriptionTier ?? "free";
+
+    if (isUserPaidSubscriptionActive(r, now) && tier !== "free") {
       const ok = await deductSubscriptionAiWallet(userIdForBill, AI_MUSIC_WON_PER_TRACK, now);
       if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
       try {
@@ -1976,6 +2007,40 @@ export async function registerRoutes(
       }
       return 0;
     }
+
+    const promoWon = Math.max(0, Number(r.promoAiCreditsWon ?? 0));
+    const promoExp = r.promoAiCreditsExpiresAt ?? null;
+    const promoNotExpired = !promoExp || new Date(promoExp).getTime() > now.getTime();
+    if (promoNotExpired && promoWon >= AI_MUSIC_WON_PER_TRACK) {
+      await db.transaction(async (tx) => {
+        const [u] = await tx.select().from(users).where(eq(users.id, userIdForBill));
+        const pw = Math.max(0, Number(u?.promoAiCreditsWon ?? 0));
+        if (pw < AI_MUSIC_WON_PER_TRACK) throw new Error("INSUFFICIENT_CREDITS");
+        await tx
+          .update(users)
+          .set({ promoAiCreditsWon: pw - AI_MUSIC_WON_PER_TRACK, updatedAt: new Date() })
+          .where(eq(users.id, userIdForBill));
+        await tx.insert(creditTransactions).values({
+          userId: userIdForBill,
+          type: "promo_ai_music",
+          amount: -AI_MUSIC_WON_PER_TRACK,
+          description: "AI 음악 생성 (5월 이벤트 전용 잔액)",
+        });
+        if (tier !== "free") {
+          await tx.execute(sql`
+            INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+            VALUES (${userIdForBill}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
+            ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
+          `);
+        }
+      });
+      return AI_MUSIC_WON_PER_TRACK;
+    }
+
+    if ((tier ?? "free") === "free") {
+      return 0;
+    }
+
     await db.transaction(async (tx) => {
       const [u] = await tx.select().from(users).where(eq(users.id, userIdForBill));
       const currentCredits = u?.credits ?? 0;
@@ -2162,6 +2227,7 @@ export async function registerRoutes(
       const userId = req.user?.claims?.sub as string;
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (user) await maybePersistSubscriptionRow(userId, user);
+      await voidExpiredPromoAiCreditsForUser(userId, new Date());
       const [userFresh] = user ? await db.select().from(users).where(eq(users.id, userId)) : [undefined];
       let row = userFresh ?? user;
       const now = new Date();
@@ -2197,6 +2263,12 @@ export async function registerRoutes(
             isPaidTier,
             walletCredits,
             creditsBalance: walletCredits,
+            promoAiCreditsWon: row?.promoAiCreditsWon ?? 0,
+            promoAiCreditsExpiresAt: row?.promoAiCreditsExpiresAt
+              ? row.promoAiCreditsExpiresAt instanceof Date
+                ? row.promoAiCreditsExpiresAt.toISOString()
+                : String(row.promoAiCreditsExpiresAt)
+              : null,
             quota: { kind: quotaKind, used: usedThisMonth, limit },
             /** 플랜 월 공급가(부가세 제외) 합 — basic 단일이면 9000. 표시 한도(limit)는 이월 지갑+사용 누적 */
             subscriptionAiPlanGrantWon: wSub.monthlyGrant,
@@ -2227,6 +2299,12 @@ export async function registerRoutes(
         isPaidTier,
         walletCredits,
         creditsBalance: walletCredits,
+        promoAiCreditsWon: row?.promoAiCreditsWon ?? 0,
+        promoAiCreditsExpiresAt: row?.promoAiCreditsExpiresAt
+          ? row.promoAiCreditsExpiresAt instanceof Date
+            ? row.promoAiCreditsExpiresAt.toISOString()
+            : String(row.promoAiCreditsExpiresAt)
+          : null,
         quota: { kind: quotaKind, used: usedThisMonth, limit },
         wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
         creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
@@ -2240,6 +2318,8 @@ export async function registerRoutes(
         isPaidTier: false,
         walletCredits: 0,
         creditsBalance: 0,
+        promoAiCreditsWon: 0,
+        promoAiCreditsExpiresAt: null,
         quota: { kind: "songs" as const, used: 0, limit: FREE_AI_MUSIC_LIMIT_PER_MONTH },
         wonPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
         creditsPerMusicCreate: AI_MUSIC_WON_PER_TRACK,
@@ -2456,12 +2536,19 @@ export async function registerRoutes(
       return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
     }
     await maybePersistSubscriptionRow(userId, user0);
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    const row = user!;
+    await voidExpiredPromoAiCreditsForUser(userId, new Date());
+    const [row] = await db.select().from(users).where(eq(users.id, userId));
+    if (!row) {
+      return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+    }
     const now = new Date();
     const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
     const isSubWallet = row.role !== "admin" && isUserPaidSubscriptionActive(row, now);
     const tierNow = row.subscriptionTier ?? "free";
+    const promoWonCreate = Math.max(0, Number(row.promoAiCreditsWon ?? 0));
+    const promoExpCreate = row.promoAiCreditsExpiresAt ?? null;
+    const promoNotExpiredCreate = !promoExpCreate || new Date(promoExpCreate).getTime() > now.getTime();
+    const canUsePromoWallet = row.role !== "admin" && promoNotExpiredCreate && promoWonCreate >= AI_MUSIC_WON_PER_TRACK;
 
     let used = 0;
     let limit = 0;
@@ -2474,7 +2561,7 @@ export async function registerRoutes(
       limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
       used = usage?.count ?? 0;
-      usageWouldExceed = limit >= 0 && used >= limit;
+      usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
     } else if (isSubWallet) {
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (!w) {
@@ -2492,7 +2579,7 @@ export async function registerRoutes(
       limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
       const [usage] = await db.select().from(aiMusicUsage).where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
       used = usage?.count ?? 0;
-      usageWouldExceed = limit >= 0 && used + AI_MUSIC_WON_PER_TRACK > limit;
+      usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used + AI_MUSIC_WON_PER_TRACK > limit;
     }
 
     if (usageWouldExceed) {
@@ -2589,7 +2676,7 @@ export async function registerRoutes(
           console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
-        if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin") {
+        if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin" && !canUsePromoWallet) {
           await db.execute(sql`
             INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
             VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
@@ -2598,7 +2685,7 @@ export async function registerRoutes(
         }
         await insertAiMusicGenerationLog({
           userId,
-          user,
+          user: row,
           taskId,
           provider: "suno",
           walletCreditsCharged: 0,
@@ -2667,7 +2754,7 @@ export async function registerRoutes(
         console.warn("[ai-music create aimusicapi] 응답 구조:", JSON.stringify(data).slice(0, 300));
         return res.status(502).json({ message: "API 응답에 task_id가 없습니다." });
       }
-      if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin") {
+      if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin" && !canUsePromoWallet) {
         await db.execute(sql`
           INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
           VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
@@ -2676,7 +2763,7 @@ export async function registerRoutes(
       }
       await insertAiMusicGenerationLog({
         userId,
-        user,
+        user: row,
         taskId,
         provider: "aimusicapi",
         walletCreditsCharged: 0,
@@ -2936,8 +3023,21 @@ export async function registerRoutes(
         return res.status(400).json({ message: "audioUrl이 필요합니다." });
       }
 
-      // 무료 유저: AI 공개곡 1곡 제한
-      if (!isPaidTier) {
+      const publishLogTaskId = typeof publishTaskId === "string" ? publishTaskId.trim() : "";
+      let publishBillingKind: string | null = null;
+      if (publishLogTaskId) {
+        const [gl0] = await db
+          .select({ billingKind: aiMusicGenerationLogs.billingKind })
+          .from(aiMusicGenerationLogs)
+          .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, publishLogTaskId)))
+          .limit(1);
+        publishBillingKind = gl0?.billingKind ?? null;
+      }
+      const mayEventMultiPublish =
+        (await userHasApprovedMay2026Event(userId)) || publishBillingKind === "promo";
+
+      // 무료 유저: AI 공개곡 1곡 제한 (5월 이벤트 승인·이벤트 전용 잔액으로 생성한 곡 예외)
+      if (!isPaidTier && !mayEventMultiPublish) {
         const existing = await db.execute(sql`SELECT COUNT(*) as cnt FROM music WHERE user_id = ${userId} AND is_ai = true`);
         const cnt = Number((existing.rows[0] as any)?.cnt ?? 0);
         if (cnt >= 1) {
@@ -3019,7 +3119,7 @@ export async function registerRoutes(
       const trackTitle = (title || "AI 생성 음악").trim();
       const artistName = user?.firstName || user?.email?.split("@")[0] || "AI Artist";
 
-      const logTaskId = typeof publishTaskId === "string" ? publishTaskId.trim() : "";
+      const logTaskId = publishLogTaskId;
       let freeAiSiteRestrictions = false;
       if (logTaskId) {
         const [genLog] = await db
@@ -3028,7 +3128,7 @@ export async function registerRoutes(
           .where(and(eq(aiMusicGenerationLogs.userId, userId), eq(aiMusicGenerationLogs.taskId, logTaskId)))
           .limit(1);
         /** 관리자는 billing_kind 가 admin — 무료 한도 전용 제한 플래그 미적용 */
-        if (genLog?.billingKind === "free") {
+        if (genLog?.billingKind === "free" || genLog?.billingKind === "promo") {
           freeAiSiteRestrictions = true;
         }
       }
@@ -3036,6 +3136,8 @@ export async function registerRoutes(
       if (!isPaidTier) {
         freeAiSiteRestrictions = true;
       }
+
+      const ownerSiteDownload = mayEventMultiPublish;
 
       // 4) DB에 음악 등록
       const resolvedAiProvider =
@@ -3053,7 +3155,7 @@ export async function registerRoutes(
         aiProvider: resolvedAiProvider,
         freeAiSiteRestrictions,
         price: 0,
-        isDownloadable: false, // 무료·유료 모두 AI 공개곡은 기본 다운로드 불가 (관리자가 수동 허용)
+        isDownloadable: ownerSiteDownload,
         userId,
       });
 
@@ -7841,10 +7943,234 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const balanceWon = await storage.getUserCredits(userId);
-      res.json({ balanceWon, credits: balanceWon });
+      await voidExpiredPromoAiCreditsForUser(userId, new Date());
+      const [uCr] = await db
+        .select({
+          credits: users.credits,
+          promoAiCreditsWon: users.promoAiCreditsWon,
+          promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId));
+      const balanceWon = uCr?.credits ?? 0;
+      res.json({
+        balanceWon,
+        credits: balanceWon,
+        promoAiCreditsWon: uCr?.promoAiCreditsWon ?? 0,
+        promoAiCreditsExpiresAt: uCr?.promoAiCreditsExpiresAt
+          ? uCr.promoAiCreditsExpiresAt instanceof Date
+            ? uCr.promoAiCreditsExpiresAt.toISOString()
+            : String(uCr.promoAiCreditsExpiresAt)
+          : null,
+      });
     } catch (err) {
       res.status(500).json({ message: "지갑 잔액을 불러올 수 없습니다" });
+    }
+  });
+
+  /** 5월 신규가입 이벤트 — 공개 메타(비로그인) */
+  app.get("/api/events/may-2026/public", (_req, res) => {
+    res.json({
+      signupWindowStart: may2026SignupWindowStartUtc().toISOString(),
+      signupWindowEndExclusive: may2026SignupWindowEndExclusiveUtc().toISOString(),
+      promoGrantWon: MAY_2026_EVENT_PROMO_GRANT_WON,
+      promoWalletExpiresAt: may2026PromoWalletExpiresAtUtc().toISOString(),
+    });
+  });
+
+  /** 이벤트 신청 상태·프로모 잔액(로그인) */
+  app.get("/api/events/may-2026/me", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      await voidExpiredPromoAiCreditsForUser(userId, new Date());
+      const [u] = await db.select().from(users).where(eq(users.id, userId));
+      if (!u) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+      const appRow = await getMay2026EventApplicationForUser(userId);
+      res.json({
+        eligibleSignup: isUserCreatedInMay2026CampaignWindow(u.createdAt ?? null),
+        application: appRow
+          ? {
+              id: appRow.id,
+              status: appRow.status,
+              applicantMessage: appRow.applicantMessage,
+              adminNote: appRow.adminNote,
+              createdAt: appRow.createdAt instanceof Date ? appRow.createdAt.toISOString() : appRow.createdAt,
+              reviewedAt: appRow.reviewedAt
+                ? appRow.reviewedAt instanceof Date
+                  ? appRow.reviewedAt.toISOString()
+                  : appRow.reviewedAt
+                : null,
+            }
+          : null,
+        promoAiCreditsWon: u.promoAiCreditsWon ?? 0,
+        promoAiCreditsExpiresAt: u.promoAiCreditsExpiresAt
+          ? u.promoAiCreditsExpiresAt instanceof Date
+            ? u.promoAiCreditsExpiresAt.toISOString()
+            : String(u.promoAiCreditsExpiresAt)
+          : null,
+      });
+    } catch (e) {
+      console.error("[events/may-2026/me]", e);
+      res.status(500).json({ message: "불러오기에 실패했습니다." });
+    }
+  });
+
+  /** 5월 이벤트 가입 신청 */
+  app.post("/api/events/may-2026/apply", isAuthenticated, async (req, res) => {
+    try {
+      // @ts-ignore
+      const userId = req.user.claims.sub as string;
+      const [u] = await db.select().from(users).where(eq(users.id, userId));
+      if (!u) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+      if (!isUserCreatedInMay2026CampaignWindow(u.createdAt ?? null)) {
+        return res.status(403).json({ message: "이벤트 대상이 아닙니다. (2026년 5월 중 가입한 회원만 신청할 수 있습니다.)" });
+      }
+      const msgRaw = (req.body as { message?: unknown })?.message;
+      const applicantMessage = typeof msgRaw === "string" ? msgRaw.trim().slice(0, 2000) : "";
+      const existing = await getMay2026EventApplicationForUser(userId);
+      if (existing?.status === "pending") {
+        return res.status(409).json({ message: "이미 검토 대기 중인 신청이 있습니다." });
+      }
+      if (existing?.status === "approved") {
+        return res.status(409).json({ message: "이미 승인된 이벤트 회원입니다." });
+      }
+      await db.insert(may2026EventApplications).values({
+        userId,
+        status: "pending",
+        applicantMessage: applicantMessage || null,
+      });
+      res.status(201).json({ ok: true });
+    } catch (e) {
+      console.error("[events/may-2026/apply]", e);
+      res.status(500).json({ message: "신청 처리에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/admin/may-2026-event/applications", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const statusRaw = typeof req.query?.status === "string" ? req.query.status.trim() : "pending";
+      const status = statusRaw === "all" ? "all" : statusRaw === "approved" || statusRaw === "rejected" ? statusRaw : "pending";
+      const rows =
+        status === "all"
+          ? await db.select().from(may2026EventApplications).orderBy(asc(may2026EventApplications.createdAt))
+          : await db
+              .select()
+              .from(may2026EventApplications)
+              .where(eq(may2026EventApplications.status, status))
+              .orderBy(asc(may2026EventApplications.createdAt));
+      const out = [];
+      for (const r of rows) {
+        const [u] = await db
+          .select({
+            email: users.email,
+            username: users.username,
+            firstName: users.firstName,
+            createdAt: users.createdAt,
+          })
+          .from(users)
+          .where(eq(users.id, r.userId))
+          .limit(1);
+        out.push({
+          ...r,
+          userEmail: u?.email ?? null,
+          userUsername: u?.username ?? null,
+          userFirstName: u?.firstName ?? null,
+          userCreatedAt: u?.createdAt ? (u.createdAt instanceof Date ? u.createdAt.toISOString() : u.createdAt) : null,
+        });
+      }
+      res.json(out);
+    } catch (e) {
+      console.error("[admin/may-2026-event/applications]", e);
+      res.status(500).json({ message: "목록을 불러올 수 없습니다." });
+    }
+  });
+
+  app.post("/api/admin/may-2026-event/applications/:id/approve", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id < 1) return res.status(400).json({ message: "잘못된 신청 번호입니다." });
+      // @ts-ignore
+      const adminId = req.user.claims.sub as string;
+      const [appRow] = await db.select().from(may2026EventApplications).where(eq(may2026EventApplications.id, id)).limit(1);
+      if (!appRow) return res.status(404).json({ message: "신청을 찾을 수 없습니다." });
+      if (appRow.status !== "pending") {
+        return res.status(409).json({ message: "대기 중인 신청만 승인할 수 있습니다." });
+      }
+      const targetUserId = appRow.userId;
+      const expiresAt = may2026PromoWalletExpiresAtUtc();
+      await db.transaction(async (tx) => {
+        const [u] = await tx.select().from(users).where(eq(users.id, targetUserId)).limit(1);
+        if (!u) throw new Error("USER_NOT_FOUND");
+        const cur = Math.max(0, Number(u.promoAiCreditsWon ?? 0));
+        await tx
+          .update(users)
+          .set({
+            promoAiCreditsWon: cur + MAY_2026_EVENT_PROMO_GRANT_WON,
+            promoAiCreditsExpiresAt: expiresAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, targetUserId));
+        const adminNoteApprove =
+          typeof (req.body as { note?: unknown } | undefined)?.note === "string"
+            ? String((req.body as { note: string }).note).trim().slice(0, 500) || null
+            : null;
+        await tx
+          .update(may2026EventApplications)
+          .set({
+            status: "approved",
+            reviewedAt: new Date(),
+            reviewedByUserId: adminId,
+            adminNote: adminNoteApprove,
+          })
+          .where(eq(may2026EventApplications.id, id));
+      });
+      await storage.createNotification({
+        userId: targetUserId,
+        type: "system",
+        message: `5월 이벤트 전용 AI 생성 잔액 ${MAY_2026_EVENT_PROMO_GRANT_WON.toLocaleString("ko-KR")}원이 충전되었습니다. (출금 불가, 5월 말까지 사용)`,
+        payload: { kind: "may2026_event_promo", amount: MAY_2026_EVENT_PROMO_GRANT_WON },
+        url: "/events/may-2026",
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[admin/may-2026-event/approve]", e);
+      res.status(500).json({ message: (e as Error)?.message || "승인 처리에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/admin/may-2026-event/applications/:id/reject", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id < 1) return res.status(400).json({ message: "잘못된 신청 번호입니다." });
+      // @ts-ignore
+      const adminId = req.user.claims.sub as string;
+      const note = typeof (req.body as { note?: unknown })?.note === "string" ? (req.body as { note: string }).note.trim().slice(0, 500) : "";
+      const [appRow] = await db.select().from(may2026EventApplications).where(eq(may2026EventApplications.id, id)).limit(1);
+      if (!appRow) return res.status(404).json({ message: "신청을 찾을 수 없습니다." });
+      if (appRow.status !== "pending") {
+        return res.status(409).json({ message: "대기 중인 신청만 반려할 수 있습니다." });
+      }
+      await db
+        .update(may2026EventApplications)
+        .set({
+          status: "rejected",
+          reviewedAt: new Date(),
+          reviewedByUserId: adminId,
+          adminNote: note || null,
+        })
+        .where(eq(may2026EventApplications.id, id));
+      await storage.createNotification({
+        userId: appRow.userId,
+        type: "system",
+        message: "5월 이벤트 가입 신청이 반려되었습니다. 자세한 사항은 고객센터로 문의해 주세요.",
+        payload: { kind: "may2026_event_rejected" },
+        url: "/events/may-2026",
+      });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error("[admin/may-2026-event/reject]", e);
+      res.status(500).json({ message: "반려 처리에 실패했습니다." });
     }
   });
 
@@ -9292,13 +9618,16 @@ export async function registerRoutes(
       if (!musicItem) {
         return res.status(404).json({ message: "음원을 찾을 수 없습니다" });
       }
-      if (musicItem.freeAiSiteRestrictions) {
+      const isOwnerDownload = String(musicItem.userId) === String(userId);
+      if (musicItem.freeAiSiteRestrictions && !isOwnerDownload) {
         return res.status(403).json({ message: "이 음원은 다운로드가 제공되지 않습니다." });
       }
 
-      const purchased = await storage.hasPurchased(userId, musicId);
-      if (!purchased) {
-        return res.status(403).json({ message: "구매한 음원만 다운로드할 수 있습니다" });
+      if (!isOwnerDownload) {
+        const purchased = await storage.hasPurchased(userId, musicId);
+        if (!purchased) {
+          return res.status(403).json({ message: "구매한 음원만 다운로드할 수 있습니다" });
+        }
       }
 
       const fn = musicItem.filename || "";

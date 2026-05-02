@@ -499,6 +499,35 @@ export default function Home() {
           </div>
         </div>
       )}
+      {(() => {
+        const now = Date.now();
+        const start = Date.parse("2026-04-30T15:00:00.000Z");
+        const end = Date.parse("2026-05-31T15:00:00.000Z");
+        if (now < start || now >= end) return null;
+        return (
+          <div
+            className="border-b border-violet-500/35 bg-gradient-to-r from-violet-950/95 via-fuchsia-950/90 to-violet-950/95 text-violet-50"
+            data-testid="home-may-2026-event-banner"
+          >
+            <div className="container flex flex-wrap items-center justify-between gap-3 py-2.5 px-4">
+              <p className="text-sm font-medium leading-snug min-w-0">
+                2026년 5월 신규가입 이벤트 — AI 음악 생성 지원금·사이트 공개 안내
+              </p>
+              <Link href="/events/may-2026">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0 rounded-full bg-white/95 text-violet-950 hover:bg-white"
+                  data-testid="link-may-2026-event-detail"
+                >
+                  자세히 알아보기
+                </Button>
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
       <section
         ref={heroSectionRef}
         className="relative flex min-h-[min(88vh,820px)] flex-col justify-start overflow-x-hidden overflow-y-hidden border-t border-white/10 pt-16 pb-8 md:min-h-[min(90vh,880px)] md:pt-20 md:pb-10"

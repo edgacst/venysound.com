@@ -56,6 +56,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "subscription-ai-wallet.sql", name: "users subscription_ai_wallet 이월 지갑" },
   { file: "subscription-ai-budget-exhaustion-notice.sql", name: "users subscription_ai_budget_exhaustion_notice_key" },
   { file: "music-free-ai-site-restrictions.sql", name: "music.free_ai_site_restrictions" },
+  { file: "may-2026-event.sql", name: "may_2026_event + users.promo_ai_credits_*" },
 ];
 
 async function main() {

@@ -324,9 +324,9 @@ export default function MusicDetail() {
   const freeAiLocked = musicData?.freeAiSiteRestrictions === true;
   const canDownload =
     !!musicData &&
-    !freeAiLocked &&
     (isOwner ||
-      (!!musicData.isDownloadable &&
+      (!freeAiLocked &&
+        !!musicData.isDownloadable &&
         (Number(musicData.price || 0) === 0 || hasPurchased)));
 
   async function handleDownload(asRingtone: boolean) {
@@ -626,7 +626,7 @@ export default function MusicDetail() {
                   <Share2 size={18} />
                 </Button>
 
-                {user && canDownload && hasPurchased && (
+                {user && canDownload && (isOwner || hasPurchased) && (
                   <Button
                     variant="outline"
                     size="sm"

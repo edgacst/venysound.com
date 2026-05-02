@@ -219,6 +219,8 @@ export default function Admin() {
   const [aiMusicUsageEditPeriod, setAiMusicUsageEditPeriod] = useState("");
   const [aiMusicUsageEditUsed, setAiMusicUsageEditUsed] = useState("");
   const [adminMainTab, setAdminMainTab] = useState("stats");
+  const [may2026AppsFilter, setMay2026AppsFilter] = useState<"pending" | "all" | "approved" | "rejected">("pending");
+  const [may2026AdminNotes, setMay2026AdminNotes] = useState<Record<number, string>>({});
   const [revenuePeriod, setRevenuePeriod] = useState<"all" | "month" | "days">("all");
   const [revenueDays, setRevenueDays] = useState(30);
   const [revenuePaymentsKind, setRevenuePaymentsKind] = useState<"all" | "subscription" | "credit">("all");
@@ -710,6 +712,73 @@ export default function Admin() {
     },
     enabled: adminCheck?.isAdmin === true,
     retry: false,
+  });
+
+  type May2026AppRow = {
+    id: number;
+    userId: string;
+    status: string;
+    applicantMessage: string | null;
+    adminNote: string | null;
+    createdAt: string;
+    reviewedAt: string | null;
+    reviewedByUserId: string | null;
+    userEmail: string | null;
+    userUsername: string | null;
+    userFirstName: string | null;
+    userCreatedAt: string | null;
+  };
+  const {
+    data: may2026Apps = [],
+    isLoading: loadingMay2026Apps,
+    refetch: refetchMay2026Apps,
+  } = useQuery<May2026AppRow[]>({
+    queryKey: ["/api/admin/may-2026-event/applications", may2026AppsFilter],
+    staleTime: 0,
+    queryFn: async () => {
+      const q = may2026AppsFilter === "pending" ? "" : `?status=${encodeURIComponent(may2026AppsFilter)}`;
+      const res = await fetch(`/api/admin/may-2026-event/applications${q}`, { credentials: "include" });
+      if (!res.ok) throw new Error("may2026");
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: adminCheck?.isAdmin === true,
+  });
+
+  const approveMay2026Mutation = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note: string }) => {
+      const res = await fetch(`/api/admin/may-2026-event/applications/${id}/approve`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "승인 실패");
+    },
+    onSuccess: () => {
+      toast({ title: "승인·충전 처리되었습니다." });
+      void refetchMay2026Apps();
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const rejectMay2026Mutation = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note: string }) => {
+      const res = await fetch(`/api/admin/may-2026-event/applications/${id}/reject`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "반려 실패");
+    },
+    onSuccess: () => {
+      toast({ title: "반려 처리되었습니다." });
+      void refetchMay2026Apps();
+    },
+    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
   });
 
   const { data: curatedPlaylistsList, refetch: refetchCurated } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename?: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
@@ -1920,6 +1989,13 @@ export default function Admin() {
                 <Sparkles size={14} className="shrink-0" />
                 {t('admin.aiMusicGenLogs', 'AI 음악 생성 로그')}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{aiMusicGenLogs?.length ?? 0}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="may-2026-event" className="gap-1.5">
+                <Sparkles size={14} className="shrink-0 text-fuchsia-500" />
+                5월 이벤트
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">
+                  {may2026AppsFilter === "pending" ? may2026Apps?.length ?? 0 : "—"}
+                </Badge>
               </TabsTrigger>
               <TabsTrigger value="backup">{t('admin.databaseBackup', '백업')}</TabsTrigger>
             </TabsList>
@@ -4912,7 +4988,9 @@ export default function Admin() {
                           ? t('admin.aiBillingCredits', '유료·크레딧')
                           : row.billingKind === "admin"
                             ? t('admin.aiBillingAdmin', '관리자')
-                            : row.billingKind;
+                            : row.billingKind === "promo"
+                              ? "5월 이벤트 전용"
+                              : row.billingKind;
                     const chargeSt = (row.chargeStatus ?? "charged").toLowerCase();
                     const chargeOutcomeLabel =
                       chargeSt === "pending"
@@ -4988,6 +5066,111 @@ export default function Admin() {
             </div>
           ) : null}
         </Card>
+            </TabsContent>
+            <TabsContent className="min-w-0 max-w-full" value="may-2026-event">
+              <Card className="p-4 sm:p-6">
+                <h2 className="text-xl font-bold mb-2">5월 신규가입 이벤트 신청</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  승인 시 회원에게 AI 생성 전용 3,000원이 충전되며, 알림이 발송됩니다. (출금 불가·5월 말 만료)
+                </p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {(["pending", "all", "approved", "rejected"] as const).map((f) => (
+                    <Button
+                      key={f}
+                      type="button"
+                      size="sm"
+                      variant={may2026AppsFilter === f ? "default" : "outline"}
+                      onClick={() => setMay2026AppsFilter(f)}
+                    >
+                      {f === "pending" ? "대기" : f === "all" ? "전체" : f === "approved" ? "승인" : "반려"}
+                    </Button>
+                  ))}
+                </div>
+                {loadingMay2026Apps ? (
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                ) : may2026Apps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">목록이 비었습니다.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>회원</TableHead>
+                          <TableHead>상태</TableHead>
+                          <TableHead>신청 메모</TableHead>
+                          <TableHead>처리</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {may2026Apps.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="tabular-nums">{r.id}</TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">{r.userEmail ?? r.userId}</div>
+                              <div className="text-[10px] text-muted-foreground break-all">{r.userId}</div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{r.status}</Badge>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] text-xs text-muted-foreground whitespace-pre-wrap">
+                              {r.applicantMessage ?? "—"}
+                            </TableCell>
+                            <TableCell className="min-w-[220px]">
+                              {r.status === "pending" ? (
+                                <div className="flex flex-col gap-2">
+                                  <Input
+                                    placeholder="관리자 메모(선택)"
+                                    value={may2026AdminNotes[r.id] ?? ""}
+                                    onChange={(e) =>
+                                      setMay2026AdminNotes((prev) => ({ ...prev, [r.id]: e.target.value }))
+                                    }
+                                  />
+                                  <div className="flex flex-wrap gap-1">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="bg-violet-600 hover:bg-violet-700"
+                                      disabled={approveMay2026Mutation.isPending || rejectMay2026Mutation.isPending}
+                                      onClick={() =>
+                                        approveMay2026Mutation.mutate({
+                                          id: r.id,
+                                          note: may2026AdminNotes[r.id] ?? "",
+                                        })
+                                      }
+                                    >
+                                      승인 + 3천원
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={approveMay2026Mutation.isPending || rejectMay2026Mutation.isPending}
+                                      onClick={() =>
+                                        rejectMay2026Mutation.mutate({
+                                          id: r.id,
+                                          note: may2026AdminNotes[r.id] ?? "",
+                                        })
+                                      }
+                                    >
+                                      반려
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">
+                                  {r.reviewedAt ? new Date(r.reviewedAt).toLocaleString("ko-KR") : "—"}
+                                  {r.adminNote ? ` · ${r.adminNote}` : ""}
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </Card>
             </TabsContent>
             <TabsContent className="min-w-0 max-w-full" value="backup">
         <Card className="p-4 sm:p-6" data-testid="card-database-backup">

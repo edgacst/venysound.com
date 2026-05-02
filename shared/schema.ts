@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, primaryKey, jsonb, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -6,6 +6,20 @@ import { users } from "./models/auth";
 
 // Export users table for use in other parts of the app
 export { users } from "./models/auth";
+
+/** 2026년 5월 신규가입 이벤트 — 가입 신청 후 관리자 승인 시 프로모 AI 잔액 지급 */
+export const may2026EventApplications = pgTable("may_2026_event_applications", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 128 })
+    .references(() => users.id, { onDelete: "cascade" })
+    .notNull(),
+  status: varchar("status", { length: 24 }).notNull().default("pending"),
+  applicantMessage: text("applicant_message"),
+  adminNote: text("admin_note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedByUserId: varchar("reviewed_by_user_id", { length: 128 }),
+});
 
 // === TABLE DEFINITIONS ===
 

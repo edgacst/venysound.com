@@ -425,6 +425,7 @@ import RadioChannel from "@/pages/RadioChannel";
 import RadioStudio from "@/pages/RadioStudio";
 import RadioChannels from "@/pages/RadioChannels";
 import GlobalDistributionGuide from "@/pages/GlobalDistributionGuide";
+import May2026Event from "@/pages/May2026Event";
 
 function Routes() {
   return (
@@ -480,6 +481,7 @@ function Routes() {
       <Route path="/messages/:userId" component={Messages} />
       <Route path="/suno-guide" component={SunoGuide} />
       <Route path="/global-distribution-guide" component={GlobalDistributionGuide} />
+      <Route path="/events/may-2026" component={May2026Event} />
       <Route path="/create-music" component={CreateMusic} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
