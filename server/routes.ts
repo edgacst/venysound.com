@@ -1398,9 +1398,10 @@ export async function registerRoutes(
     return "V4_5ALL";
   }
 
-  /** https://docs.sunoapi.org/suno-api/generate-music — 모델별 title 최대 길이 */
+  /** Suno/sunoapi 업스트림: V4 계열 곡 제목은 80자 초과 시 "The length of music title cannot exceed 80 characters" 거부 */
   function sunoTitleMaxLenForModel(model: string): number {
-    if (model === "V4" || model === "V4_5ALL") return 80;
+    const m = (model || "").trim();
+    if (m === "V4" || m.startsWith("V4_")) return 80;
     return 100;
   }
 
@@ -2776,7 +2777,7 @@ export async function registerRoutes(
         const descPart = (body.gpt_description_prompt ?? body.prompt ?? "").trim();
         payload.gpt_description_prompt = stylePart ? `[스타일] ${stylePart}${descPart ? "\n\n" + descPart : ""}` : descPart;
       }
-      if (body.title) payload.title = body.title;
+      if (body.title) payload.title = String(body.title).trim().slice(0, 80);
       if (body.tags) payload.tags = body.tags;
       if (body.vocal_gender) payload.vocal_gender = body.vocal_gender;
       if (makeInstrumental) payload.make_instrumental = true;
