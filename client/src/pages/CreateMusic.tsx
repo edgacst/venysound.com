@@ -1060,6 +1060,9 @@ export default function CreateMusic() {
     /** 구독 지갑 경로: 플랜 월 공급가(원) — basic 단일이면 9000 */
     subscriptionAiPlanGrantWon?: number;
     subscriptionAiWalletRemainingWon?: number;
+    /** 5월 이벤트 등 — 일반 지갑과 별도, 생성 시 우선 차감 */
+    promoAiCreditsWon?: number;
+    promoAiCreditsExpiresAt?: string | null;
   }>({
     queryKey: ["/api/ai-music/usage"],
     enabled: !!user,
@@ -1898,6 +1901,13 @@ export default function CreateMusic() {
                             );
                           }
                           if (q.kind === "songs") {
+                            const perWonSong = aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150;
+                            const promoWonSong = Math.max(0, Number(aiUsage.promoAiCreditsWon ?? 0));
+                            const promoExpIso = aiUsage.promoAiCreditsExpiresAt ?? null;
+                            const promoExpMs = promoExpIso ? new Date(promoExpIso).getTime() : NaN;
+                            const promoNotExpiredSong =
+                              !promoExpIso || Number.isNaN(promoExpMs) ? true : promoExpMs > Date.now();
+                            const promoUsableSong = promoNotExpiredSong && promoWonSong >= perWonSong;
                             return (
                               <>
                                 <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
@@ -1913,6 +1923,29 @@ export default function CreateMusic() {
                                     limit: Math.max(0, q.limit),
                                   })}
                                 </strong>
+                                {promoUsableSong ? (
+                                  <div className="mt-2 w-full border-t border-violet-400/35 pt-2 space-y-0.5">
+                                    <div className="text-[11px] font-medium text-violet-900/85 leading-tight">
+                                      {t("createMusic.promoAiEventQuotaLabel", "이벤트 전용 AI 잔액")}
+                                    </div>
+                                    <strong className="text-lg tabular-nums text-slate-900 block">
+                                      {t("createMusic.promoAiEventQuotaWonLine", "{{won}}원 · 생성 1회당 {{per}}원 차감", {
+                                        won: promoWonSong.toLocaleString("ko-KR"),
+                                        per: perWonSong.toLocaleString("ko-KR"),
+                                      })}
+                                    </strong>
+                                    <span className="text-[10px] text-slate-600 leading-snug block">
+                                      {t(
+                                        "createMusic.promoAiEventQuotaSub",
+                                        "월 무료 한도와 별도로 먼저 사용됩니다. 출금·환불 대상이 아닙니다.",
+                                      )}
+                                    </span>
+                                  </div>
+                                ) : promoWonSong > 0 && !promoNotExpiredSong ? (
+                                  <span className="text-[10px] text-amber-800/90 mt-1 block leading-snug">
+                                    {t("createMusic.promoAiEventExpiredNote", "이벤트 전용 잔액은 만료되어 월 한도·지갑 순으로 적용됩니다.")}
+                                  </span>
+                                ) : null}
                               </>
                             );
                           }

@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type May2026Public = {
   signupWindowStart: string;
@@ -67,6 +67,16 @@ export default function May2026Event() {
     },
     enabled: !!user,
   });
+
+  /** 승인·전용 잔액 반영 후 AI 만들기 페이지 한도 카드가 바로 갱신되도록 */
+  useEffect(() => {
+    if (!user || !me) return;
+    const approved = me.application?.status === "approved";
+    const hasPromo = (me.promoAiCreditsWon ?? 0) > 0;
+    if (approved || hasPromo) {
+      void qc.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+    }
+  }, [user, me, qc]);
 
   const applyMutation = useMutation({
     mutationFn: async (message: string) => {
