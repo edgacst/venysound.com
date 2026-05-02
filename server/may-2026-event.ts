@@ -2,7 +2,16 @@ import { eq, and, desc, sql, lte, or, isNull, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { users, may2026EventApplications } from "../shared/schema";
 
-/** 관리자 승인 시 지급하는 이벤트 AI 전용 금액(원) */
+/**
+ * 관리자 승인 시 `users.promo_ai_credits_won`에 더하는 값.
+ * (컬럼명은 legacy) 의미: **남은 무료 AI 출력 트랙 수**(1회 생성이 보통 2곡이면 2씩 차감).
+ */
+export const MAY_2026_EVENT_PROMO_GRANT_TRACKS = 40;
+
+/** 한 번 생성(task) 성공 시 이벤트 전용 잔액에서 깎는 트랙 수 상한(일반 2클립) */
+export const MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION = 2;
+
+/** @deprecated MAY_2026_EVENT_PROMO_GRANT_TRACKS 사용 */
 export const MAY_2026_EVENT_PROMO_GRANT_WON = 3000;
 
 /** 관리자 승인(회원) 상한 — `status = approved` 기준, 동일 회원 중복 행은 distinct user 로 1명만 산정 */
@@ -40,7 +49,7 @@ export async function voidExpiredPromoAiCreditsForUser(userId: string, now = new
         sql`COALESCE(${users.promoAiCreditsWon}, 0) > 0`,
         or(
           and(isNotNull(users.promoAiCreditsExpiresAt), lte(users.promoAiCreditsExpiresAt, now)),
-          and(isNull(users.promoAiCreditsExpiresAt), lte(campaignEnd, now)),
+          sql`(${users.promoAiCreditsExpiresAt} IS NULL AND ${campaignEnd} <= ${now})`,
         ),
       ),
     );

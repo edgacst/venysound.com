@@ -107,7 +107,8 @@ import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-ht
 import {
   voidExpiredPromoAiCreditsForUser,
   isUserCreatedInMay2026CampaignWindow,
-  MAY_2026_EVENT_PROMO_GRANT_WON,
+  MAY_2026_EVENT_PROMO_GRANT_TRACKS,
+  MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION,
   MAY_2026_EVENT_APPROVED_MEMBER_CAP,
   may2026PromoWalletExpiresAtUtc,
   may2026SignupWindowEndExclusiveUtc,
@@ -1909,12 +1910,18 @@ export async function registerRoutes(
       prompt?: string;
       gpt_description_prompt?: string;
     };
+    /** 5월 이벤트 전용 잔액(promo)으로 생성 시, 성공 과금에 필요한 최소 무료 트랙 슬롯(보통 2, instrumental 1) */
+    promoMinTracksForBilling?: number;
     /** 기본 charged(기존 행). 생성 직후만 pending. */
     chargeStatus?: "pending" | "charged" | "failed";
     failureMessage?: string | null;
   }): Promise<void> {
     try {
       const { userId, taskId, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
+      const promoMin =
+        typeof params.promoMinTracksForBilling === "number" && Number.isFinite(params.promoMinTracksForBilling)
+          ? Math.max(1, Math.floor(params.promoMinTracksForBilling))
+          : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
       const nowLog = new Date();
       await voidExpiredPromoAiCreditsForUser(userId, nowLog);
       const [userDb] = await db.select().from(users).where(eq(users.id, userId));
@@ -1930,7 +1937,7 @@ export async function registerRoutes(
       const promoWon = Math.max(0, Number(user?.promoAiCreditsWon ?? 0));
       const promoExp = user?.promoAiCreditsExpiresAt ?? null;
       const promoNotExpired = !promoExp || new Date(promoExp).getTime() > nowLog.getTime();
-      const canBillPromo = user?.role !== "admin" && promoNotExpired && promoWon >= AI_MUSIC_WON_PER_TRACK;
+      const canBillPromo = user?.role !== "admin" && promoNotExpired && promoWon >= promoMin;
       const billingKind = user?.role === "admin"
         ? "admin"
         : subscriptionActive && tier !== "free"
@@ -1981,15 +1988,34 @@ export async function registerRoutes(
     }
   }
 
+  async function notifyMay2026PromoTracksDeducted(userIdForNotify: string, tracksDeducted: number) {
+    if (tracksDeducted <= 0) return;
+    try {
+      await storage.createNotification({
+        userId: userIdForNotify,
+        type: "system",
+        message: `5월 이벤트 무료 AI 곡 ${tracksDeducted.toLocaleString("ko-KR")}곡분이 차감되었습니다. (1회 생성 완료 기준)`,
+        payload: { kind: "may2026_event_promo_tracks", tracksDeducted },
+        url: "/events/may-2026",
+      });
+    } catch (e) {
+      console.error("[ai-music promo tracks notify]", e);
+    }
+  }
+
   /** 생성 성공(업스트림 완료) 확정 시 1회 과금. 무료 플랜 월 한도는 taskId 발급 시점에 반영됨 → 여기서는 0만 반환(이벤트 전용 잔액 `promo`는 예외). */
-  async function performAiMusicBillingForUser(userIdForBill: string, now: Date): Promise<number> {
+  async function performAiMusicBillingForUser(
+    userIdForBill: string,
+    now: Date,
+    promoDeductTracks?: number,
+  ): Promise<{ walletWonCharged: number; promoTracksDeducted: number }> {
     const [user0] = await db.select().from(users).where(eq(users.id, userIdForBill));
     if (!user0) throw new Error("USER_NOT_FOUND");
     await maybePersistSubscriptionRow(userIdForBill, user0);
     await voidExpiredPromoAiCreditsForUser(userIdForBill, now);
     const [row] = await db.select().from(users).where(eq(users.id, userIdForBill));
     const r = row!;
-    if (r.role === "admin") return 0;
+    if (r.role === "admin") return { walletWonCharged: 0, promoTracksDeducted: 0 };
     const usagePeriodKey = getAiMusicUsagePeriodKey(r, r.role ?? null, now);
     const displayed = computeDisplayedSubscriptionFromEntitlements(
       r.subscriptionEntitlements,
@@ -2007,40 +2033,47 @@ export async function registerRoutes(
       } catch (e) {
         console.error("[ai-music billing] budget exhaustion after deduct", e);
       }
-      return 0;
+      return { walletWonCharged: 0, promoTracksDeducted: 0 };
     }
 
     const promoWon = Math.max(0, Number(r.promoAiCreditsWon ?? 0));
     const promoExp = r.promoAiCreditsExpiresAt ?? null;
     const promoNotExpired = !promoExp || new Date(promoExp).getTime() > now.getTime();
-    if (promoNotExpired && promoWon >= AI_MUSIC_WON_PER_TRACK) {
+    const deductTracks = Math.max(
+      1,
+      Math.min(
+        MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION,
+        Math.floor(Number(promoDeductTracks ?? MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION)),
+      ),
+    );
+    if (promoNotExpired && promoWon >= deductTracks) {
       await db.transaction(async (tx) => {
         const [u] = await tx.select().from(users).where(eq(users.id, userIdForBill));
         const pw = Math.max(0, Number(u?.promoAiCreditsWon ?? 0));
-        if (pw < AI_MUSIC_WON_PER_TRACK) throw new Error("INSUFFICIENT_CREDITS");
+        if (pw < deductTracks) throw new Error("INSUFFICIENT_CREDITS");
         await tx
           .update(users)
-          .set({ promoAiCreditsWon: pw - AI_MUSIC_WON_PER_TRACK, updatedAt: new Date() })
+          .set({ promoAiCreditsWon: pw - deductTracks, updatedAt: new Date() })
           .where(eq(users.id, userIdForBill));
         await tx.insert(creditTransactions).values({
           userId: userIdForBill,
           type: "promo_ai_music",
-          amount: -AI_MUSIC_WON_PER_TRACK,
-          description: "AI 음악 생성 (5월 이벤트 전용 잔액)",
+          amount: -deductTracks,
+          description: `AI 음악 생성 (5월 이벤트 무료 곡 ${deductTracks}곡)`,
         });
         if (tier !== "free") {
           await tx.execute(sql`
             INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
-            VALUES (${userIdForBill}, ${usagePeriodKey}, ${AI_MUSIC_WON_PER_TRACK}, NOW())
-            ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
+            VALUES (${userIdForBill}, ${usagePeriodKey}, ${deductTracks}, NOW())
+            ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${deductTracks}, updated_at = NOW()
           `);
         }
       });
-      return AI_MUSIC_WON_PER_TRACK;
+      return { walletWonCharged: 0, promoTracksDeducted: deductTracks };
     }
 
     if ((tier ?? "free") === "free") {
-      return 0;
+      return { walletWonCharged: 0, promoTracksDeducted: 0 };
     }
 
     await db.transaction(async (tx) => {
@@ -2065,7 +2098,7 @@ export async function registerRoutes(
         ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + ${AI_MUSIC_WON_PER_TRACK}, updated_at = NOW()
       `);
     });
-    return AI_MUSIC_WON_PER_TRACK;
+    return { walletWonCharged: AI_MUSIC_WON_PER_TRACK, promoTracksDeducted: 0 };
   }
 
   async function markAiMusicGenerationFailedOnUpstream(userIdMark: string, taskIdMark: string, message: string): Promise<void> {
@@ -2107,7 +2140,8 @@ export async function registerRoutes(
   async function tryFinalizeAiMusicSuccessBilling(
     userIdFin: string,
     taskIdFin: string,
-  ): Promise<{ applied: boolean; wonCharged: number; balanceWon: number }> {
+    opts?: { promoOutputTracks?: number },
+  ): Promise<{ applied: boolean; wonCharged: number; promoTracksDeducted: number; balanceWon: number }> {
     const now = new Date();
     const claimed = await db
       .update(aiMusicGenerationLogs)
@@ -2123,17 +2157,29 @@ export async function registerRoutes(
     const [uEarly] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
     const balanceEarly = uEarly?.credits ?? 0;
     if (claimed.length === 0) {
-      return { applied: false, wonCharged: 0, balanceWon: balanceEarly };
+      return { applied: false, wonCharged: 0, promoTracksDeducted: 0, balanceWon: balanceEarly };
     }
     const logId = claimed[0].id;
-    let wonCharged = 0;
+    const promoOut =
+      typeof opts?.promoOutputTracks === "number" && Number.isFinite(opts.promoOutputTracks)
+        ? Math.max(1, Math.floor(opts.promoOutputTracks))
+        : undefined;
+    let walletWonCharged = 0;
+    let promoTracksDeducted = 0;
     try {
-      wonCharged = await performAiMusicBillingForUser(userIdFin, now);
+      const billingResult = await performAiMusicBillingForUser(userIdFin, now, promoOut);
+      walletWonCharged = billingResult.walletWonCharged;
+      promoTracksDeducted = billingResult.promoTracksDeducted;
+      const creditsStored = walletWonCharged > 0 ? walletWonCharged : promoTracksDeducted;
       await db
         .update(aiMusicGenerationLogs)
-        .set({ chargeStatus: "charged", creditsCharged: wonCharged })
+        .set({ chargeStatus: "charged", creditsCharged: creditsStored })
         .where(eq(aiMusicGenerationLogs.id, logId));
-      await notifyAiMusicCreateCreditsIfNeeded(userIdFin, wonCharged);
+      if (promoTracksDeducted > 0) {
+        await notifyMay2026PromoTracksDeducted(userIdFin, promoTracksDeducted);
+      } else {
+        await notifyAiMusicCreateCreditsIfNeeded(userIdFin, walletWonCharged);
+      }
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       await db
@@ -2145,10 +2191,10 @@ export async function registerRoutes(
         .where(eq(aiMusicGenerationLogs.id, logId));
       console.error("[ai-music tryFinalize billing]", e);
       const [uErr] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
-      return { applied: false, wonCharged: 0, balanceWon: uErr?.credits ?? 0 };
+      return { applied: false, wonCharged: 0, promoTracksDeducted: 0, balanceWon: uErr?.credits ?? 0 };
     }
     const [uAfter] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userIdFin));
-    return { applied: true, wonCharged, balanceWon: uAfter?.credits ?? 0 };
+    return { applied: true, wonCharged: walletWonCharged, promoTracksDeducted, balanceWon: uAfter?.credits ?? 0 };
   }
 
   type LibraryRowForLogBackfill = {
@@ -2543,6 +2589,19 @@ export async function registerRoutes(
     if (!row) {
       return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
     }
+    const body = req.body as {
+      custom_mode?: boolean;
+      prompt?: string;
+      gpt_description_prompt?: string;
+      title?: string;
+      tags?: string;
+      mv?: string;
+      vocal_gender?: "f" | "m";
+      make_instrumental?: boolean;
+    };
+    const customMode = body.custom_mode ?? false;
+    const makeInstrumental = body.make_instrumental === true;
+    const promoMinForCreate = makeInstrumental ? 1 : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
     const now = new Date();
     const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
     const isSubWallet = row.role !== "admin" && isUserPaidSubscriptionActive(row, now);
@@ -2550,7 +2609,7 @@ export async function registerRoutes(
     const promoWonCreate = Math.max(0, Number(row.promoAiCreditsWon ?? 0));
     const promoExpCreate = row.promoAiCreditsExpiresAt ?? null;
     const promoNotExpiredCreate = !promoExpCreate || new Date(promoExpCreate).getTime() > now.getTime();
-    const canUsePromoWallet = row.role !== "admin" && promoNotExpiredCreate && promoWonCreate >= AI_MUSIC_WON_PER_TRACK;
+    const canUsePromoWallet = row.role !== "admin" && promoNotExpiredCreate && promoWonCreate >= promoMinForCreate;
 
     let used = 0;
     let limit = 0;
@@ -2609,19 +2668,6 @@ export async function registerRoutes(
         usedThisMonth: used,
       });
     }
-
-    const body = req.body as {
-      custom_mode?: boolean;
-      prompt?: string;
-      gpt_description_prompt?: string;
-      title?: string;
-      tags?: string;
-      mv?: string;
-      vocal_gender?: "f" | "m";
-      make_instrumental?: boolean;
-    };
-    const customMode = body.custom_mode ?? false;
-    const makeInstrumental = body.make_instrumental === true;
 
     if (SUNOAPI_KEY) {
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
@@ -2693,6 +2739,7 @@ export async function registerRoutes(
           walletCreditsCharged: 0,
           chargeStatus: "pending",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
+          promoMinTracksForBilling: promoMinForCreate,
         });
         const [uAfterSuno] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
         return res.json({
@@ -2771,6 +2818,7 @@ export async function registerRoutes(
         walletCreditsCharged: 0,
         chargeStatus: "pending",
         body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
+        promoMinTracksForBilling: MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION,
       });
       const [uAfterAimusic] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
       res.json({
@@ -2809,13 +2857,15 @@ export async function registerRoutes(
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
           if (cached.state === "succeeded" && pollUserId) {
-            const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
+            const clipN = Array.isArray(cached.data) ? cached.data.length : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
+            const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: clipN });
             sunoCallbackResults.delete(taskId);
             return res.json({
               ...cached,
               billing: {
                 applied: billing.applied,
                 won_charged: billing.wonCharged,
+                promo_tracks_deducted: billing.promoTracksDeducted,
                 credits_balance: billing.balanceWon,
               },
             });
@@ -2885,10 +2935,15 @@ export async function registerRoutes(
             return res.json({ state: "running", data: null });
           }
           const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
-          let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+          let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
           if (pollUserId) {
-            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
-            billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: list.length });
+            billing = {
+              applied: b.applied,
+              won_charged: b.wonCharged,
+              promo_tracks_deducted: b.promoTracksDeducted,
+              credits_balance: b.balanceWon,
+            };
           }
           return res.json({ state: "succeeded", data: list, billing });
         }
@@ -2908,10 +2963,15 @@ export async function registerRoutes(
               (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
             );
           if (ok) {
-            let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+            let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
             if (pollUserId) {
-              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
-              billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: listEarly.length });
+              billing = {
+                applied: b.applied,
+                won_charged: b.wonCharged,
+                promo_tracks_deducted: b.promoTracksDeducted,
+                credits_balance: b.balanceWon,
+              };
             }
             return res.json({ state: "succeeded", data: listEarly, billing });
           }
@@ -2982,10 +3042,15 @@ export async function registerRoutes(
             duration: dur,
           };
         });
-        let billing = { applied: false, won_charged: 0, credits_balance: 0 };
+        let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
         if (pollUserId) {
-          const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId);
-          billing = { applied: b.applied, won_charged: b.wonCharged, credits_balance: b.balanceWon };
+          const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: rawList.length });
+          billing = {
+            applied: b.applied,
+            won_charged: b.wonCharged,
+            promo_tracks_deducted: b.promoTracksDeducted,
+            credits_balance: b.balanceWon,
+          };
         }
         return res.json({ state: "succeeded", data: list, billing });
       }
@@ -7977,7 +8042,7 @@ export async function registerRoutes(
       res.json({
         signupWindowStart: may2026SignupWindowStartUtc().toISOString(),
         signupWindowEndExclusive: may2026SignupWindowEndExclusiveUtc().toISOString(),
-        promoGrantWon: MAY_2026_EVENT_PROMO_GRANT_WON,
+        promoGrantTracks: MAY_2026_EVENT_PROMO_GRANT_TRACKS,
         promoWalletExpiresAt: may2026PromoWalletExpiresAtUtc().toISOString(),
         approvedMemberCap: MAY_2026_EVENT_APPROVED_MEMBER_CAP,
         approvedMemberCount,
@@ -8130,7 +8195,7 @@ export async function registerRoutes(
         await tx
           .update(users)
           .set({
-            promoAiCreditsWon: cur + MAY_2026_EVENT_PROMO_GRANT_WON,
+            promoAiCreditsWon: cur + MAY_2026_EVENT_PROMO_GRANT_TRACKS,
             promoAiCreditsExpiresAt: expiresAt,
             updatedAt: new Date(),
           })
@@ -8152,8 +8217,8 @@ export async function registerRoutes(
       await storage.createNotification({
         userId: targetUserId,
         type: "system",
-        message: `5월 이벤트 전용 AI 생성 잔액 ${MAY_2026_EVENT_PROMO_GRANT_WON.toLocaleString("ko-KR")}원이 충전되었습니다. (출금 불가, 5월 말까지 사용)`,
-        payload: { kind: "may2026_event_promo", amount: MAY_2026_EVENT_PROMO_GRANT_WON },
+        message: `5월 이벤트 무료 AI 곡 ${MAY_2026_EVENT_PROMO_GRANT_TRACKS.toLocaleString("ko-KR")}곡분이 충전되었습니다. (1회 생성이 보통 2곡이면 2곡씩 차감, 5월 말까지)`,
+        payload: { kind: "may2026_event_promo", tracksGranted: MAY_2026_EVENT_PROMO_GRANT_TRACKS },
         url: "/events/may-2026",
       });
       res.json({ ok: true });

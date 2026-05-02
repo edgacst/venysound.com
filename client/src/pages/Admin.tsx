@@ -5071,7 +5071,7 @@ export default function Admin() {
               <Card className="p-4 sm:p-6">
                 <h2 className="text-xl font-bold mb-2">5월 신규가입 이벤트 신청</h2>
                 <p className="text-sm text-muted-foreground mb-4">
-                  승인 시 회원에게 AI 생성 전용 3,000원이 충전되며, 알림이 발송됩니다. (출금 불가·5월 말 만료)
+                  승인 시 회원에게 무료 AI 음원 출력 40곡분이 충전되며(1회 생성 완료 시 보통 2곡 차감), 알림이 발송됩니다. (출금 불가·5월 말 만료)
                 </p>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {(["pending", "all", "approved", "rejected"] as const).map((f) => (

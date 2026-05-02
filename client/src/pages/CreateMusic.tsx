@@ -832,6 +832,15 @@ type SavedTrack = GeneratedTrack & {
   generationProvider?: string;
 };
 
+/** 무료: 동일 생성 task로 묶인 클립이 2개 이상이면 모두 사이트 공개 후에만 라이브러리 파일 다운로드 */
+function isFreeAiLibraryDownloadAllowed(track: SavedTrack, allTracks: SavedTrack[]): boolean {
+  const tid = (track.generationTaskId ?? "").trim();
+  if (!tid) return Boolean(track.publishedToSite);
+  const group = allTracks.filter((x) => (x.generationTaskId ?? "").trim() === tid && Boolean((x.audio_url ?? "").trim()));
+  if (group.length <= 1) return Boolean(track.publishedToSite);
+  return group.every((x) => x.publishedToSite);
+}
+
 /** Suno FIRST_SUCCESS 미리듣기 — 보관함에 넣지 않고 글로벌 플레이어만 (완료 시 정식 클립으로 교체) */
 function generatedPreviewToSavedTrack(tr: GeneratedTrack, taskKey: string, index: number): SavedTrack {
   const t = tr as Record<string, unknown>;
@@ -1171,6 +1180,10 @@ export default function CreateMusic() {
   const [previewTracks, setPreviewTracks] = useState<GeneratedTrack[]>([]);
   const [resultTracks, setResultTracks] = useState<GeneratedTrack[]>([]);
   const [savedTracks, setSavedTracks] = useState<SavedTrack[]>([]);
+  const savedTracksRef = useRef<SavedTrack[]>([]);
+  useEffect(() => {
+    savedTracksRef.current = savedTracks;
+  }, [savedTracks]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [taskProvider, setTaskProvider] = useState<string | null>(null);
   const [savedTracksSearch, setSavedTracksSearch] = useState("");
@@ -1381,51 +1394,85 @@ export default function CreateMusic() {
     publishThenDownload: boolean;
   } | null>(null);
 
-  const handlePublishTrack = useCallback(async (track: SavedTrack): Promise<boolean> => {
-    if (!track.audio_url) return false;
-    setPublishingId(track.id);
-    try {
-      const res = await fetch("/api/ai-music/publish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          audioUrl: track.audio_url,
-          imageUrl: track.image_url,
-          title: track.title,
-          tags: track.tags,
-          prompt: track.original_prompt ?? track.prompt,
-          taskId: track.generationTaskId,
-          clipId: typeof track.clip_id === "string" ? track.clip_id : track.clip_id != null ? String(track.clip_id) : undefined,
-          generationProvider: track.generationProvider,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast({
-          title: "공개 실패",
-          description: data.message || "오류가 발생했습니다.",
-          variant: "destructive",
+  const handlePublishTrack = useCallback(
+    async (track: SavedTrack, opts?: { chainSiblings?: boolean }): Promise<boolean> => {
+      if (!track.audio_url) return false;
+      setPublishingId(track.id);
+      const publishBody = (t: SavedTrack) =>
+        JSON.stringify({
+          audioUrl: t.audio_url,
+          imageUrl: t.image_url,
+          title: t.title,
+          tags: t.tags,
+          prompt: t.original_prompt ?? t.prompt,
+          taskId: t.generationTaskId,
+          clipId: typeof t.clip_id === "string" ? t.clip_id : t.clip_id != null ? String(t.clip_id) : undefined,
+          generationProvider: t.generationProvider,
         });
-        return false;
-      }
-      setSavedTracks((prev) => {
-        const next = prev.map((row) => (row.id === track.id ? { ...row, publishedToSite: true } : row));
+      const publishOne = async (t: SavedTrack, nextRows: SavedTrack[]): Promise<boolean> => {
+        const res = await fetch("/api/ai-music/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: publishBody(t),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast({
+            title: "공개 실패",
+            description: data.message || "오류가 발생했습니다.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        const idx = nextRows.findIndex((row) => row.id === t.id);
+        if (idx >= 0) nextRows[idx] = { ...nextRows[idx], publishedToSite: true };
+        return true;
+      };
+      try {
+        let next = [...savedTracksRef.current];
+        if (!(await publishOne(track, next))) return false;
+        let publishedCount = 1;
+        if (opts?.chainSiblings) {
+          const tid = (track.generationTaskId ?? "").trim();
+          if (tid) {
+            const peers = next.filter(
+              (x) =>
+                x.id !== track.id &&
+                (x.generationTaskId ?? "").trim() === tid &&
+                !x.publishedToSite &&
+                Boolean((x.audio_url ?? "").trim()),
+            );
+            for (const p of peers) {
+              if (!(await publishOne(p, next))) return false;
+              publishedCount += 1;
+            }
+          }
+        }
+        if (opts?.chainSiblings && publishedCount > 1) {
+          toast({
+            title: "신곡으로 공개되었습니다!",
+            description: `같은 생성분 ${publishedCount}곡이 모두 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
+          });
+        } else {
+          toast({
+            title: "신곡으로 공개되었습니다!",
+            description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
+          });
+        }
+        savedTracksRef.current = next;
+        setSavedTracks(next);
         persistTracks(next, { immediate: true });
-        return next;
-      });
-      toast({
-        title: "신곡으로 공개되었습니다!",
-        description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
-      });
-      return true;
-    } catch {
-      toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
-      return false;
-    } finally {
-      setPublishingId(null);
-    }
-  }, [toast, persistTracks]);
+        return true;
+      } catch {
+        toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
+        return false;
+      } finally {
+        setPublishingId(null);
+      }
+    },
+    [toast, persistTracks],
+  );
 
   const playTrackInGlobalPlayer = useCallback((track: SavedTrack) => {
     if (!track.audio_url) return;
@@ -1439,7 +1486,9 @@ export default function CreateMusic() {
 
   const handleDownloadTrack = useCallback(
     async (track: SavedTrack) => {
-    const paidOrPublished = Boolean(aiUsage?.isPaidTier || track.publishedToSite);
+    const paidOrPublished = Boolean(
+      aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(track, savedTracksRef.current),
+    );
     if (!paidOrPublished) {
       toast({
         title: t("createMusic.libraryDownloadBlockedTitle", "다운로드 전에 공개해 주세요"),
@@ -1632,7 +1681,9 @@ export default function CreateMusic() {
           customMode,
           submittedLyrics: submittedLyricsRef.current,
         });
-        const billing = (data as { billing?: { applied?: boolean; won_charged?: number; credits_balance?: number } }).billing;
+        const billing = (data as {
+          billing?: { applied?: boolean; won_charged?: number; promo_tracks_deducted?: number; credits_balance?: number };
+        }).billing;
         if (billing?.applied) {
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
           queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -1647,8 +1698,16 @@ export default function CreateMusic() {
                 : prev,
             );
           }
+          const promoTracks = Number(billing.promo_tracks_deducted) || 0;
           const won = Number(billing.won_charged) || 0;
-          if (won > 0) {
+          if (promoTracks > 0) {
+            toast({
+              title: t("createMusic.toastPromoTracksTitle", "무료 곡 차감"),
+              description: t("createMusic.toastPromoTracksBody", "이번 생성 완료로 이벤트 무료 AI 곡 {{n}}곡분이 차감되었습니다.", {
+                n: promoTracks.toLocaleString(),
+              }),
+            });
+          } else if (won > 0) {
             toast({
               title: t("createMusic.toastWonDeductTitle", "차감 안내"),
               description:
@@ -1927,13 +1986,13 @@ export default function CreateMusic() {
                             );
                           }
                           if (q.kind === "songs") {
-                            const perWonSong = aiUsage.wonPerMusicCreate ?? aiUsage.creditsPerMusicCreate ?? 150;
-                            const promoWonSong = Math.max(0, Number(aiUsage.promoAiCreditsWon ?? 0));
+                            const promoTracksRemaining = Math.max(0, Number(aiUsage.promoAiCreditsWon ?? 0));
+                            const promoTracksPerJob = 2;
                             const promoExpIso = aiUsage.promoAiCreditsExpiresAt ?? null;
                             const promoExpMs = promoExpIso ? new Date(promoExpIso).getTime() : NaN;
                             const promoNotExpiredSong =
                               !promoExpIso || Number.isNaN(promoExpMs) ? true : promoExpMs > Date.now();
-                            const promoUsableSong = promoNotExpiredSong && promoWonSong >= perWonSong;
+                            const promoUsableSong = promoNotExpiredSong && promoTracksRemaining >= promoTracksPerJob;
                             return (
                               <>
                                 <div className="flex items-center gap-2 text-xs font-medium text-violet-900/90">
@@ -1955,9 +2014,9 @@ export default function CreateMusic() {
                                       {t("createMusic.promoAiEventQuotaLabel", "이벤트 전용 AI 잔액")}
                                     </div>
                                     <strong className="text-lg tabular-nums text-slate-900 block">
-                                      {t("createMusic.promoAiEventQuotaWonLine", "{{won}}원 · 생성 1회당 {{per}}원 차감", {
-                                        won: promoWonSong.toLocaleString("ko-KR"),
-                                        per: perWonSong.toLocaleString("ko-KR"),
+                                      {t("createMusic.promoAiEventQuotaTracksLine", "남은 무료 AI 곡 {{tracks}}곡 · 생성 1회 완료 시 보통 {{per}}곡 차감", {
+                                        tracks: promoTracksRemaining.toLocaleString("ko-KR"),
+                                        per: promoTracksPerJob.toLocaleString("ko-KR"),
                                       })}
                                     </strong>
                                     <span className="text-[10px] text-slate-600 leading-snug block">
@@ -1967,7 +2026,24 @@ export default function CreateMusic() {
                                       )}
                                     </span>
                                   </div>
-                                ) : promoWonSong > 0 && !promoNotExpiredSong ? (
+                                ) : promoTracksRemaining > 0 && promoNotExpiredSong ? (
+                                  <div className="mt-2 w-full border-t border-violet-400/35 pt-2 space-y-0.5">
+                                    <div className="text-[11px] font-medium text-violet-900/85 leading-tight">
+                                      {t("createMusic.promoAiEventQuotaLabel", "이벤트 전용 AI 잔액")}
+                                    </div>
+                                    <strong className="text-lg tabular-nums text-slate-900 block">
+                                      {t("createMusic.promoAiEventQuotaTracksShort", "남은 무료 AI 곡 {{tracks}}곡", {
+                                        tracks: promoTracksRemaining.toLocaleString("ko-KR"),
+                                      })}
+                                    </strong>
+                                    <span className="text-[10px] text-slate-600 leading-snug block">
+                                      {t(
+                                        "createMusic.promoAiEventQuotaTracksInsufficient",
+                                        "다음 생성은 보통 2곡이 묶여 나오며, 잔여가 부족하면 월 무료 한도·지갑 순으로 적용됩니다.",
+                                      )}
+                                    </span>
+                                  </div>
+                                ) : promoTracksRemaining > 0 && !promoNotExpiredSong ? (
                                   <span className="text-[10px] text-amber-800/90 mt-1 block leading-snug">
                                     {t("createMusic.promoAiEventExpiredNote", "이벤트 전용 잔액은 만료되어 월 한도·지갑 순으로 적용됩니다.")}
                                   </span>
@@ -2548,7 +2624,9 @@ export default function CreateMusic() {
                                   order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
                                   onRemove={() => removeSavedTrack(track.id)}
                                   onDownload={() => handleDownloadTrack(track)}
-                                  libraryDownloadAllowed={Boolean(aiUsage?.isPaidTier || track.publishedToSite)}
+                                  libraryDownloadAllowed={Boolean(
+                                    aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(track, savedTracks),
+                                  )}
                                   onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
                                   scoreExportLoading={scorePdfTrackId === track.id}
                                   scorePdfEnabled={scorePdfEnabled}
@@ -2647,6 +2725,12 @@ export default function CreateMusic() {
                   </p>
                   <ul className="list-disc list-inside space-y-1 text-amber-700 dark:text-amber-500">
                     <li>{t("createMusic.publishDialogBulletAiBadge", "AI 생성 배지가 자동으로 표시됩니다")}</li>
+                    <li>
+                      {t(
+                        "createMusic.publishDialogBulletSameTaskDownloads",
+                        "같은 생성으로 나온 여러 곡이 있으면, 모두 사이트에 공개된 뒤에 각각 라이브러리 다운로드가 열립니다.",
+                      )}
+                    </li>
                     <li>{t("createMusic.publishDialogBulletFreeLimit", "무료 플랜은 AI 공개곡 수에 제한이 있을 수 있습니다")}</li>
                     <li>{t("createMusic.publishDialogBulletMonetization", "수익화(유료 다운로드)는 플랜에 따라 제한될 수 있습니다")}</li>
                     <li>{t("createMusic.publishDialogBulletTerms", "이용약관 및 저작권법을 준수해야 합니다")}</li>
@@ -2676,9 +2760,16 @@ export default function CreateMusic() {
                   const payload = publishConfirm;
                   if (!payload) return;
                   const { track, publishThenDownload } = payload;
-                  const ok = await handlePublishTrack(track);
+                  const ok = await handlePublishTrack(track, { chainSiblings: publishThenDownload });
                   if (ok && publishThenDownload) {
-                    await handleDownloadTrack({ ...track, publishedToSite: true });
+                    const tid = (track.generationTaskId ?? "").trim();
+                    const snap = savedTracksRef.current;
+                    const toDownload = tid
+                      ? snap.filter((x) => (x.generationTaskId ?? "").trim() === tid && Boolean((x.audio_url ?? "").trim()))
+                      : [track];
+                    for (const dt of toDownload) {
+                      await handleDownloadTrack(dt);
+                    }
                   }
                   if (ok) setPublishConfirm(null);
                 })();
