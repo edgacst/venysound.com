@@ -24,6 +24,7 @@ import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanva
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
 import { HomeLearnMoreSheet, type HomeLearnMoreSheetMode } from "@/components/HomeLearnMoreSheet";
 import { SiteHelpChatFab } from "@/components/SiteHelpChatFab";
+import { MayFamilyEventPopup } from "@/components/MayFamilyEventPopup";
 import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
@@ -459,6 +460,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-background flex flex-col pb-24">
       <Navigation />
+      <MayFamilyEventPopup />
       {showAnnouncement && activeAnnouncement && (
         <div
           role="region"
