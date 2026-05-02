@@ -540,6 +540,7 @@ function TrackCard({
   onRequestPublish,
   isPublishing,
   isPublished,
+  may2026EventFreeUi,
   t,
 }: {
   track: SavedTrack;
@@ -556,6 +557,8 @@ function TrackCard({
   onRequestPublish: (opts?: { publishThenDownload?: boolean }) => void;
   isPublishing: boolean;
   isPublished: boolean;
+  /** 5월 이벤트 승인+무료: '신곡으로 공개' 대신 다운로드 한 줄로 공개+저장, 옆 다운로드 링크 숨김 */
+  may2026EventFreeUi?: boolean;
   t: TTranslate;
 }) {
   const [showLyrics, setShowLyrics] = useState(false);
@@ -573,6 +576,8 @@ function TrackCard({
     "inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-emerald-500/15 text-emerald-800 text-[9px] font-bold tabular-nums leading-none";
   /** 무료·미사이트공개: 파일 받기는 이 버튼 한 번(확인 후 공개+다운로드)으로만 — 왼쪽 다운로드는 숨김 */
   const combinePublishAndDownload = !libraryDownloadAllowed && !isPublished;
+  /** 이벤트 무료 회원: 재생 줄의 별도 '다운로드' 링크 숨기고, 공개/다운로드는 오른쪽 한 줄로만 */
+  const showInlineDownloadLink = !combinePublishAndDownload && !may2026EventFreeUi;
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-3 flex gap-3 items-start w-full">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-medium text-slate-700">
@@ -650,7 +655,7 @@ function TrackCard({
                     <Play className="w-3 h-3" />
                     {t("createMusic.play", "재생")}
                   </button>
-                  {!combinePublishAndDownload ? (
+                  {showInlineDownloadLink ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -728,36 +733,70 @@ function TrackCard({
                     </span>
                   )}
                   {isPublished ? (
-                    <span className={`inline-flex items-center gap-1 ${doneActionClass}`}>
-                      <Globe className="w-3 h-3 flex-shrink-0" />
-                      {t("createMusic.published", "공개됨")}
-                      <span className={countBadgeClass} title={t("createMusic.published", "공개됨")}>
-                        1
+                    may2026EventFreeUi ? (
+                      libraryDownloadAllowed ? (
+                        <button
+                          type="button"
+                          onClick={() => onDownload()}
+                          title={t("createMusic.download", "다운로드")}
+                          className={`inline-flex items-center gap-0.5 hover:underline ${hasDownloaded ? doneActionClass : actionLinkClass}`}
+                        >
+                          <Download className="w-3 h-3 flex-shrink-0" />
+                          {t("createMusic.download", "다운로드")}
+                          {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
+                            <span className={countBadgeClass}>{track.downloadCount}</span>
+                          )}
+                        </button>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-slate-500 text-[11px]"
+                          title={t(
+                            "createMusic.may2026WaitingSiblingDownloadTitle",
+                            "같은 생성으로 나온 다른 곡도 사이트에 공개하면 파일을 받을 수 있습니다.",
+                          )}
+                        >
+                          <Globe className="w-3 h-3 flex-shrink-0" />
+                          {t("createMusic.may2026WaitingSiblingDownload", "형제 곡 공개 대기")}
+                        </span>
+                      )
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 ${doneActionClass}`}>
+                        <Globe className="w-3 h-3 flex-shrink-0" />
+                        {t("createMusic.published", "공개됨")}
+                        <span className={countBadgeClass} title={t("createMusic.published", "공개됨")}>
+                          1
+                        </span>
                       </span>
-                    </span>
+                    )
                   ) : (
                     <button
                       type="button"
-                      onClick={() => onRequestPublish({ publishThenDownload: combinePublishAndDownload })}
+                      onClick={() =>
+                        onRequestPublish({
+                          publishThenDownload: may2026EventFreeUi ? true : combinePublishAndDownload,
+                        })
+                      }
                       disabled={isPublishing}
                       title={
-                        combinePublishAndDownload
+                        may2026EventFreeUi || combinePublishAndDownload
                           ? t(
                               "createMusic.downloadPublishCombinedHint",
                               "사이트에 공개한 뒤 같은 파일을 바로 저장합니다.",
                             )
                           : undefined
                       }
-                      className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${publishLinkClass}`}
+                      className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${
+                        may2026EventFreeUi || combinePublishAndDownload ? actionLinkClass : publishLinkClass
+                      }`}
                     >
                       {isPublishing ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : combinePublishAndDownload ? (
+                      ) : may2026EventFreeUi || combinePublishAndDownload ? (
                         <Download className="w-3 h-3 flex-shrink-0" />
                       ) : (
                         <Globe className="w-3 h-3" />
                       )}
-                      {combinePublishAndDownload
+                      {may2026EventFreeUi || combinePublishAndDownload
                         ? t("createMusic.download", "다운로드")
                         : t("createMusic.publishToSite", "신곡으로 공개")}
                     </button>
@@ -1100,6 +1139,25 @@ export default function CreateMusic() {
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
   });
+
+  const { data: may2026Me } = useQuery<{ application?: { status: string } | null } | null>({
+    queryKey: ["/api/events/may-2026/me"],
+    queryFn: async () => {
+      const res = await fetch("/api/events/may-2026/me", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user,
+    staleTime: 60_000,
+  });
+
+  /** 5월 이벤트 승인 + 무료 플랜: 보관함에서 '다운로드'가 공개+파일 저장 한 줄 UI */
+  const may2026EventFreeUi = Boolean(
+    user &&
+      user.role !== "admin" &&
+      (user.subscriptionTier ?? "free") === "free" &&
+      may2026Me?.application?.status === "approved",
+  );
 
   /** 페이업 PG 취소·환불이 웹훅/조회로 반영된 뒤 한도 캐시 갱신 */
   useEffect(() => {
@@ -2639,6 +2697,7 @@ export default function CreateMusic() {
                                   }
                                   isPublishing={publishingId === track.id}
                                   isPublished={!!track.publishedToSite}
+                                  may2026EventFreeUi={may2026EventFreeUi}
                                   t={t as TTranslate}
                                 />
                               ))}
@@ -2708,7 +2767,9 @@ export default function CreateMusic() {
                 <Globe className="w-5 h-5 text-violet-500" />
               )}
               {publishConfirm?.publishThenDownload
-                ? t("createMusic.publishDialogTitleDownload", "다운로드 및 사이트 공개")
+                ? may2026EventFreeUi
+                  ? t("createMusic.publishDialogTitleMay2026Download", "다운로드 (사이트에 동시 공개)")
+                  : t("createMusic.publishDialogTitleDownload", "다운로드 및 사이트 공개")
                 : t("createMusic.publishDialogTitlePublish", "신곡으로 사이트에 공개")}
             </DialogTitle>
             <DialogDescription asChild>
@@ -2716,7 +2777,12 @@ export default function CreateMusic() {
                 <p>
                   <span className="font-semibold text-foreground">"{publishConfirm?.track.title || "AI 생성 음악"}"</span>
                   {publishConfirm?.publishThenDownload
-                    ? t("createMusic.publishDialogLeadCombined", "을(를) 베니사운드에 공개한 뒤, 같은 음원 파일을 기기에 저장합니다.")
+                    ? may2026EventFreeUi
+                      ? t(
+                          "createMusic.publishDialogLeadMay2026",
+                          "을(를) 파일로 저장하면서 베니사운드 신곡 목록에 공개합니다. (같은 생성분이 있으면 함께 공개될 수 있습니다)",
+                        )
+                      : t("createMusic.publishDialogLeadCombined", "을(를) 베니사운드에 공개한 뒤, 같은 음원 파일을 기기에 저장합니다.")
                     : t("createMusic.publishDialogLeadPublish", "을(를) 베니사운드 신곡 목록에 공개합니다.")}
                 </p>
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs space-y-1.5">
