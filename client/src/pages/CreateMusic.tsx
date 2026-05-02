@@ -1544,6 +1544,26 @@ export default function CreateMusic() {
 
   const handleDownloadTrack = useCallback(
     async (track: SavedTrack) => {
+    /** 5월 이벤트 승인·무료: 다운로드만 눌러도 반드시 사이트 배포(같은 생성분 형제까지) 선행 */
+    if (may2026EventFreeUi && track.audio_url) {
+      const tid = (track.generationTaskId ?? "").trim();
+      const snap0 = savedTracksRef.current;
+      if (tid) {
+        const lead = snap0.find(
+          (x) =>
+            (x.generationTaskId ?? "").trim() === tid &&
+            Boolean((x.audio_url ?? "").trim()) &&
+            !x.publishedToSite,
+        );
+        if (lead) {
+          const ok = await handlePublishTrack(lead, { chainSiblings: true });
+          if (!ok) return;
+        }
+      } else if (!track.publishedToSite) {
+        const ok = await handlePublishTrack(track, { chainSiblings: true });
+        if (!ok) return;
+      }
+    }
     const paidOrPublished = Boolean(
       aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(track, savedTracksRef.current),
     );
@@ -1610,7 +1630,7 @@ export default function CreateMusic() {
       });
     }
   },
-    [persistTracks, aiUsage?.isPaidTier, toast, t],
+    [persistTracks, aiUsage?.isPaidTier, toast, t, may2026EventFreeUi, handlePublishTrack],
   );
 
   const [scorePdfEnabled, setScorePdfEnabled] = useState(false);
