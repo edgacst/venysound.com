@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 
 /** `client/public/may-family-event-popup.png` — 가정의 달·이벤트 배너 */
@@ -24,12 +25,13 @@ function kstCalendarDateYmd(): string {
 
 /**
  * 홈 진입 시 5월 이벤트 기간에만 이미지 팝업.
- * - 닫기 / 바깥 클릭: 이번 브라우저 세션 동안만 숨김
- * - 오늘 하루 안 보기: 한국일 기준 당일 재노출 안 함
+ * - 닫기 시「오늘 하루 안 보기」체크: 한국일(KST) 기준 당일은 모든 탭에서 재노출 안 함
+ * - 체크 없이 닫기: 이 탭 세션 동안만 숨김(sessionStorage) — 새 탭이면 다시 표시될 수 있음
  */
 export function MayFamilyEventPopup() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [hideTodayChecked, setHideTodayChecked] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -43,30 +45,27 @@ export function MayFamilyEventPopup() {
     setOpen(true);
   }, []);
 
-  const dismissThisSession = useCallback(() => {
-    setOpen(false);
-    try {
-      sessionStorage.setItem(SESSION_DISMISS_KEY, "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  useEffect(() => {
+    if (open) setHideTodayChecked(false);
+  }, [open]);
 
-  const hideForRestOfKstDay = useCallback(() => {
+  const dismissPopup = useCallback(() => {
     setOpen(false);
     try {
       sessionStorage.setItem(SESSION_DISMISS_KEY, "1");
-      localStorage.setItem(HIDE_UNTIL_KST_DAY_KEY, kstCalendarDateYmd());
+      if (hideTodayChecked) {
+        localStorage.setItem(HIDE_UNTIL_KST_DAY_KEY, kstCalendarDateYmd());
+      }
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [hideTodayChecked]);
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) dismissThisSession();
+        if (!next) dismissPopup();
       }}
     >
       <DialogContent
@@ -85,7 +84,7 @@ export function MayFamilyEventPopup() {
           <Link
             href="/events/may-2026"
             className="block outline-none focus-visible:ring-2 focus-visible:ring-violet-500/60 rounded-t-xl"
-            onClick={() => dismissThisSession()}
+            onClick={() => dismissPopup()}
           >
             <img
               src={POPUP_IMAGE_SRC}
@@ -97,13 +96,24 @@ export function MayFamilyEventPopup() {
               decoding="async"
             />
           </Link>
-          <div className="flex flex-wrap items-center justify-center gap-2 border-t border-slate-200 bg-white px-3 py-2.5">
-            <Button type="button" variant="outline" size="sm" onClick={() => dismissThisSession()}>
-              {t("home.mayFamilyEventPopupClose", "닫기")}
-            </Button>
-            <Button type="button" variant="secondary" size="sm" onClick={hideForRestOfKstDay}>
-              {t("home.mayFamilyEventPopupHideToday", "오늘 하루 안 보기")}
-            </Button>
+          <div className="flex flex-col gap-2.5 border-t border-slate-200 bg-white px-3 py-2.5">
+            <label
+              htmlFor="may-family-event-popup-hide-today"
+              className="flex cursor-pointer items-center gap-2.5 text-left text-xs text-slate-700 leading-snug select-none"
+            >
+              <Checkbox
+                id="may-family-event-popup-hide-today"
+                checked={hideTodayChecked}
+                onCheckedChange={(v) => setHideTodayChecked(v === true)}
+                className="border-slate-400 data-[state=checked]:bg-violet-600 data-[state=checked]:border-violet-600"
+              />
+              <span>{t("home.mayFamilyEventPopupHideToday", "오늘 하루 안 보기")}</span>
+            </label>
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" className="min-w-[5.5rem]" onClick={() => dismissPopup()}>
+                {t("home.mayFamilyEventPopupClose", "닫기")}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
