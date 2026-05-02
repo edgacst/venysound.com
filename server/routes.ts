@@ -3166,9 +3166,9 @@ export async function registerRoutes(
 
       // 3) 장르/태그 결정
       // Suno description 모드에서 tags 필드에 이미지 프롬프트 텍스트가 담길 수 있음
-      // 짧고 album cover/cinematic 등 이미지 관련 단어 없으면 음악 스타일 태그로 사용
+      // 길이만으로 비우면 장르+스타일(60자 초과)이 전부 버려져 장르가 항상 "팝뮤직" 기본값으로 떨어짐 → 이미지성 키워드일 때만 비움
       const rawTags = (tags || "").trim();
-      const isImagePrompt = rawTags.length > 60 || /album\s*cover|cinematic|photo|image|visual|artwork/i.test(rawTags);
+      const isImagePrompt = /album\s*cover|cinematic|photo|image|visual|artwork/i.test(rawTags);
       const cleanedTags = isImagePrompt ? "" : rawTags;
       // CreateMusic `buildTagsForApi`는 장르 입력란만 태그로 보냅니다(스타일 칩·스타일 입력란 미포함). `·` 구분은 과거 클라이언트 호환용으로만 유지.
       const genreSegmentForLookup = (() => {
