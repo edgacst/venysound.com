@@ -537,7 +537,7 @@ function TrackCard({
   scoreExportLoading,
   scorePdfEnabled,
   onPlay,
-  onPublish,
+  onRequestPublish,
   isPublishing,
   isPublished,
   t,
@@ -552,7 +552,8 @@ function TrackCard({
   scoreExportLoading: boolean;
   scorePdfEnabled: boolean;
   onPlay: () => void;
-  onPublish: () => void;
+  /** 공개만, 또는 무료·미공개 시 공개+파일 다운로드(확인 후) */
+  onRequestPublish: (opts?: { publishThenDownload?: boolean }) => void;
   isPublishing: boolean;
   isPublished: boolean;
   t: TTranslate;
@@ -570,6 +571,8 @@ function TrackCard({
   const publishLinkClass = "text-amber-700 hover:text-amber-800 transition-colors";
   const countBadgeClass =
     "inline-flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-emerald-500/15 text-emerald-800 text-[9px] font-bold tabular-nums leading-none";
+  /** 무료·미사이트공개: 파일 받기는 이 버튼 한 번(확인 후 공개+다운로드)으로만 — 왼쪽 다운로드는 숨김 */
+  const combinePublishAndDownload = !libraryDownloadAllowed && !isPublished;
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-3 flex gap-3 items-start w-full">
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-medium text-slate-700">
@@ -647,31 +650,33 @@ function TrackCard({
                     <Play className="w-3 h-3" />
                     {t("createMusic.play", "재생")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!libraryDownloadAllowed) return;
-                      onDownload();
-                    }}
-                    disabled={!libraryDownloadAllowed}
-                    title={
-                      libraryDownloadAllowed
-                        ? t("createMusic.download", "다운로드")
-                        : t(
-                            "createMusic.libraryDownloadAfterPublishTitle",
-                            "무료 플랜: 사이트에 신곡 공개 후 다운로드할 수 있습니다.",
-                          )
-                    }
-                    className={`inline-flex items-center gap-1 hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline ${
-                      hasDownloaded ? doneActionClass : actionLinkClass
-                    }`}
-                  >
-                    <Download className="w-3 h-3 flex-shrink-0" />
-                    {t("createMusic.download", "다운로드")}
-                    {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
-                      <span className={countBadgeClass}>{track.downloadCount}</span>
-                    )}
-                  </button>
+                  {!combinePublishAndDownload ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!libraryDownloadAllowed) return;
+                        onDownload();
+                      }}
+                      disabled={!libraryDownloadAllowed}
+                      title={
+                        libraryDownloadAllowed
+                          ? t("createMusic.download", "다운로드")
+                          : t(
+                              "createMusic.libraryDownloadAfterPublishTitle",
+                              "무료 플랜: 사이트에 신곡 공개 후 다운로드할 수 있습니다.",
+                            )
+                      }
+                      className={`inline-flex items-center gap-1 hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline ${
+                        hasDownloaded ? doneActionClass : actionLinkClass
+                      }`}
+                    >
+                      <Download className="w-3 h-3 flex-shrink-0" />
+                      {t("createMusic.download", "다운로드")}
+                      {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
+                        <span className={countBadgeClass}>{track.downloadCount}</span>
+                      )}
+                    </button>
+                  ) : null}
                   {scorePdfEnabled && (
                     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                       <span className="inline-flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 shrink-0" aria-hidden>
@@ -733,12 +738,28 @@ function TrackCard({
                   ) : (
                     <button
                       type="button"
-                      onClick={onPublish}
+                      onClick={() => onRequestPublish({ publishThenDownload: combinePublishAndDownload })}
                       disabled={isPublishing}
+                      title={
+                        combinePublishAndDownload
+                          ? t(
+                              "createMusic.downloadPublishCombinedHint",
+                              "사이트에 공개한 뒤 같은 파일을 바로 저장합니다.",
+                            )
+                          : undefined
+                      }
                       className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-50 ${publishLinkClass}`}
                     >
-                      {isPublishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
-                      {t("createMusic.publishToSite", "신곡으로 공개")}
+                      {isPublishing ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : combinePublishAndDownload ? (
+                        <Download className="w-3 h-3 flex-shrink-0" />
+                      ) : (
+                        <Globe className="w-3 h-3" />
+                      )}
+                      {combinePublishAndDownload
+                        ? t("createMusic.download", "다운로드")
+                        : t("createMusic.publishToSite", "신곡으로 공개")}
                     </button>
                   )}
                 </>
@@ -1355,10 +1376,13 @@ export default function CreateMusic() {
 
   // ── 신곡 공개 ──
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [publishConfirmTrack, setPublishConfirmTrack] = useState<SavedTrack | null>(null);
+  const [publishConfirm, setPublishConfirm] = useState<{
+    track: SavedTrack;
+    publishThenDownload: boolean;
+  } | null>(null);
 
-  const handlePublishTrack = useCallback(async (track: SavedTrack) => {
-    if (!track.audio_url) return;
+  const handlePublishTrack = useCallback(async (track: SavedTrack): Promise<boolean> => {
+    if (!track.audio_url) return false;
     setPublishingId(track.id);
     try {
       const res = await fetch("/api/ai-music/publish", {
@@ -1383,7 +1407,7 @@ export default function CreateMusic() {
           description: data.message || "오류가 발생했습니다.",
           variant: "destructive",
         });
-        return;
+        return false;
       }
       setSavedTracks((prev) => {
         const next = prev.map((row) => (row.id === track.id ? { ...row, publishedToSite: true } : row));
@@ -1394,8 +1418,10 @@ export default function CreateMusic() {
         title: "신곡으로 공개되었습니다!",
         description: `"${track.title || "AI 생성 음악"}"이(가) 사이트에 공개되었습니다. AI 생성 배지가 표시됩니다.`,
       });
+      return true;
     } catch {
       toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });
+      return false;
     } finally {
       setPublishingId(null);
     }
@@ -2527,7 +2553,12 @@ export default function CreateMusic() {
                                   scoreExportLoading={scorePdfTrackId === track.id}
                                   scorePdfEnabled={scorePdfEnabled}
                                   onPlay={() => playTrackInGlobalPlayer(track)}
-                                  onPublish={() => setPublishConfirmTrack(track)}
+                                  onRequestPublish={(opts) =>
+                                    setPublishConfirm({
+                                      track,
+                                      publishThenDownload: Boolean(opts?.publishThenDownload),
+                                    })
+                                  }
                                   isPublishing={publishingId === track.id}
                                   isPublished={!!track.publishedToSite}
                                   t={t as TTranslate}
@@ -2588,54 +2619,88 @@ export default function CreateMusic() {
         <Footer />
       </div>
 
-      {/* 신곡 공개 동의 다이얼로그 */}
-      <Dialog open={!!publishConfirmTrack} onOpenChange={(open) => { if (!open) setPublishConfirmTrack(null); }}>
+      {/* 신곡 공개 동의 다이얼로그 (무료·미공개: 동의 후 공개 + 파일 다운로드) */}
+      <Dialog open={!!publishConfirm} onOpenChange={(open) => { if (!open) setPublishConfirm(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Globe className="w-5 h-5 text-violet-500" />
-              신곡으로 사이트에 공개
+              {publishConfirm?.publishThenDownload ? (
+                <Download className="w-5 h-5 text-violet-500" />
+              ) : (
+                <Globe className="w-5 h-5 text-violet-500" />
+              )}
+              {publishConfirm?.publishThenDownload
+                ? t("createMusic.publishDialogTitleDownload", "다운로드 및 사이트 공개")
+                : t("createMusic.publishDialogTitlePublish", "신곡으로 사이트에 공개")}
             </DialogTitle>
             <DialogDescription asChild>
               <div className="space-y-3 text-sm text-muted-foreground">
                 <p>
-                  <span className="font-semibold text-foreground">"{publishConfirmTrack?.title || "AI 생성 음악"}"</span>을(를)
-                  베니사운드 신곡 목록에 공개합니다.
+                  <span className="font-semibold text-foreground">"{publishConfirm?.track.title || "AI 생성 음악"}"</span>
+                  {publishConfirm?.publishThenDownload
+                    ? t("createMusic.publishDialogLeadCombined", "을(를) 베니사운드에 공개한 뒤, 같은 음원 파일을 기기에 저장합니다.")
+                    : t("createMusic.publishDialogLeadPublish", "을(를) 베니사운드 신곡 목록에 공개합니다.")}
                 </p>
                 <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-xs space-y-1.5">
-                  <p className="font-semibold text-amber-700 dark:text-amber-400">공개 전 확인해주세요</p>
+                  <p className="font-semibold text-amber-700 dark:text-amber-400">
+                    {t("createMusic.publishDialogCheckHeading", "공개 전 확인해주세요")}
+                  </p>
                   <ul className="list-disc list-inside space-y-1 text-amber-700 dark:text-amber-500">
-                    <li>AI 생성 배지가 자동으로 표시됩니다</li>
-                    <li>무료 플랜은 AI 공개곡 1곡으로 제한됩니다</li>
-                    <li>수익화(유료 다운로드)는 Pro 플랜에서만 허용됩니다</li>
-                    <li>Venysound 이용약관 및 저작권법을 준수해야 합니다</li>
-                    <li>부적절한 내용은 관리자에 의해 삭제될 수 있습니다</li>
+                    <li>{t("createMusic.publishDialogBulletAiBadge", "AI 생성 배지가 자동으로 표시됩니다")}</li>
+                    <li>{t("createMusic.publishDialogBulletFreeLimit", "무료 플랜은 AI 공개곡 수에 제한이 있을 수 있습니다")}</li>
+                    <li>{t("createMusic.publishDialogBulletMonetization", "수익화(유료 다운로드)는 플랜에 따라 제한될 수 있습니다")}</li>
+                    <li>{t("createMusic.publishDialogBulletTerms", "이용약관 및 저작권법을 준수해야 합니다")}</li>
+                    <li>{t("createMusic.publishDialogBulletModeration", "부적절한 내용은 관리자에 의해 삭제될 수 있습니다")}</li>
                   </ul>
                 </div>
                 <p className="text-xs">
-                  위 내용에 동의하고 신곡으로 공개하시겠습니까?
+                  {publishConfirm?.publishThenDownload
+                    ? t(
+                        "createMusic.publishDialogConsentCombined",
+                        "위 내용에 동의하면 사이트 공개 후 파일 다운로드가 이어서 진행됩니다.",
+                      )
+                    : t("createMusic.publishDialogConsentPublish", "위 내용에 동의하고 신곡으로 공개하시겠습니까?")}
                 </p>
               </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setPublishConfirmTrack(null)}>
-              취소
+            <Button variant="outline" onClick={() => setPublishConfirm(null)}>
+              {t("common.cancel", "취소")}
             </Button>
             <Button
               className="bg-violet-600 hover:bg-violet-700 text-white"
-              disabled={publishingId === publishConfirmTrack?.id}
+              disabled={publishingId === publishConfirm?.track.id}
               onClick={() => {
-                if (publishConfirmTrack) {
-                  handlePublishTrack(publishConfirmTrack);
-                  setPublishConfirmTrack(null);
-                }
+                void (async () => {
+                  const payload = publishConfirm;
+                  if (!payload) return;
+                  const { track, publishThenDownload } = payload;
+                  const ok = await handlePublishTrack(track);
+                  if (ok && publishThenDownload) {
+                    await handleDownloadTrack({ ...track, publishedToSite: true });
+                  }
+                  if (ok) setPublishConfirm(null);
+                })();
               }}
             >
-              {publishingId === publishConfirmTrack?.id ? (
-                <><Loader2 className="w-4 h-4 animate-spin mr-1" />공개 중...</>
+              {publishingId === publishConfirm?.track.id ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                  {publishConfirm?.publishThenDownload
+                    ? t("createMusic.publishDialogWorkingCombined", "처리 중…")
+                    : t("createMusic.publishDialogWorkingPublish", "공개 중…")}
+                </>
+              ) : publishConfirm?.publishThenDownload ? (
+                <>
+                  <Download className="w-4 h-4 mr-1" />
+                  {t("createMusic.publishDialogConfirmCombined", "동의하고 다운로드")}
+                </>
               ) : (
-                <><Globe className="w-4 h-4 mr-1" />동의하고 공개</>
+                <>
+                  <Globe className="w-4 h-4 mr-1" />
+                  {t("createMusic.publishDialogConfirmPublish", "동의하고 공개")}
+                </>
               )}
             </Button>
           </DialogFooter>
