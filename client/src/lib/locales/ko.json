@@ -1950,7 +1950,7 @@
     "lyricsHint": "입력한 가사는 그대로 전달됩니다. [Verse], [Chorus] 등 구조를 쓰면 반영이 좋습니다.",
     "submit": "음악 생성하기",
     "generating": "생성 중... (약 1~2분 소요)",
-    "generatingElapsed": "생성 중... (경과 %s)",
+    "generatingElapsed": "생성 중... (경과 {{elapsed}})",
     "generatingSlowHint": "많은 경우 2분 전후에 끝나지만, 외부 AI 서버 대기열·모델에 따라 5분 이상 걸릴 수 있습니다. 이 페이지를 닫지 마세요.",
     "failed": "생성 실패",
     "resultsTitle": "생성된 곡",

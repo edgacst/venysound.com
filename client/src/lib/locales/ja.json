@@ -1668,7 +1668,7 @@
     "lyricsHint": "入力した歌詞はそのまま伝えられます。[Verse]、[Chorus]などの構造を使うと効果的です。",
     "submit": "音楽を生成",
     "generating": "生成中...（約1〜2分）",
-    "generatingElapsed": "生成中...（経過 %s）",
+    "generatingElapsed": "生成中...（経過 {{elapsed}}）",
     "generatingSlowHint": "多くの場合2分前後で終わりますが、外部AIの待ち行列やモデルにより5分以上かかることがあります。このページは閉じないでください。",
     "failed": "生成に失敗しました",
     "resultsTitle": "生成された曲",

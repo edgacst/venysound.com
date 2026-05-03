@@ -2683,7 +2683,10 @@ export default function CreateMusic() {
                               const m = Math.floor(elapsedSec / 60);
                               const s = elapsedSec % 60;
                               const elapsed = m > 0 ? `${m}분 ${s}초` : `${s}초`;
-                              return t("createMusic.generatingElapsed", "생성 중... (경과 %s)", elapsed)?.replace("%s", elapsed) || `생성 중... (경과 ${elapsed})`;
+                              return t("createMusic.generatingElapsed", {
+                                defaultValue: "생성 중... (경과 {{elapsed}})",
+                                elapsed,
+                              });
                             })()
                           : t("createMusic.submit", "음악 생성하기")}
                       </Button>

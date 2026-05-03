@@ -1892,7 +1892,7 @@
     "lyricsHint": "Lyrics are passed as-is. Using [Verse], [Chorus] etc. improves results.",
     "submit": "Generate music",
     "generating": "Generating... (about 1–2 min)",
-    "generatingElapsed": "Generating... (elapsed %s)",
+    "generatingElapsed": "Generating... (elapsed {{elapsed}})",
     "generatingSlowHint": "Often ~2 minutes, but the external AI queue or model can push it past 5 minutes. Please keep this page open.",
     "failed": "Generation failed",
     "resultsTitle": "Generated tracks",

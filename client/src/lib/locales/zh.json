@@ -1666,7 +1666,7 @@
     "lyricsHint": "歌词将原样传递。使用[Verse]、[Chorus]等结构效果更好。",
     "submit": "生成音乐",
     "generating": "生成中…（约1～2分钟）",
-    "generatingElapsed": "生成中…（已用时 %s）",
+    "generatingElapsed": "生成中…（已用时 {{elapsed}}）",
     "generatingSlowHint": "多数情况下约2分钟完成，但外部AI排队或模型可能导致超过5分钟。请勿关闭本页面。",
     "failed": "生成失败",
     "resultsTitle": "生成的曲目",
