@@ -866,6 +866,8 @@ type SavedTrack = GeneratedTrack & {
   downloadCount?: number;
   /** 사이트에 신곡 공개 완료 여부 (localStorage 유지) */
   publishedToSite?: boolean;
+  /** `/api/ai-music/publish` 성공 시 발급된 사이트 음원 ID — 공개 후 다운로드는 로컬 업로드 파일로 받는 게 안전 */
+  siteMusicId?: number;
   /** 생성 요청 task_id — 공개 시 관리자 로그와 연결 */
   generationTaskId?: string;
   generationProvider?: string;
@@ -919,6 +921,13 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       typeof t.createdAt === "number" ? t.createdAt : typeof t.created_at === "number" ? t.created_at : Date.now();
     const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
     const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
+    const siteMusicIdRaw = t.siteMusicId ?? t.site_music_id;
+    const siteMusicId =
+      typeof siteMusicIdRaw === "number" && Number.isFinite(siteMusicIdRaw)
+        ? siteMusicIdRaw
+        : typeof siteMusicIdRaw === "string" && /^\d+$/.test(siteMusicIdRaw.trim())
+          ? Number(siteMusicIdRaw.trim())
+          : undefined;
     const durRaw = t.duration ?? t.duration_seconds;
     let duration: number | undefined;
     if (typeof durRaw === "number" && Number.isFinite(durRaw) && durRaw > 0) duration = durRaw;
@@ -954,6 +963,7 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       original_prompt: (t.original_prompt ?? t.prompt) as string | undefined,
       custom_mode: Boolean(t.custom_mode),
       publishedToSite: Boolean(t.publishedToSite ?? t.published_to_site),
+      ...(typeof siteMusicId === "number" && Number.isFinite(siteMusicId) ? { siteMusicId } : {}),
     } as SavedTrack;
   });
 }
@@ -1490,7 +1500,20 @@ export default function CreateMusic() {
           return false;
         }
         const idx = nextRows.findIndex((row) => row.id === t.id);
-        if (idx >= 0) nextRows[idx] = { ...nextRows[idx], publishedToSite: true };
+        const midRaw = (data as { music?: { id?: unknown } }).music?.id;
+        const siteMusicId =
+          typeof midRaw === "number" && Number.isFinite(midRaw)
+            ? midRaw
+            : typeof midRaw === "string" && /^\d+$/.test(midRaw.trim())
+              ? Number(midRaw.trim())
+              : undefined;
+        if (idx >= 0) {
+          nextRows[idx] = {
+            ...nextRows[idx],
+            publishedToSite: true,
+            ...(typeof siteMusicId === "number" && Number.isFinite(siteMusicId) ? { siteMusicId } : {}),
+          };
+        }
         return true;
       };
       try {
@@ -1572,8 +1595,9 @@ export default function CreateMusic() {
         if (!ok) return;
       }
     }
+    const effective = savedTracksRef.current.find((x) => x.id === track.id) ?? track;
     const paidOrPublished = Boolean(
-      aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(track, savedTracksRef.current),
+      aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(effective, savedTracksRef.current),
     );
     if (!paidOrPublished) {
       toast({
@@ -1586,42 +1610,90 @@ export default function CreateMusic() {
       });
       return;
     }
-    if (!track.audio_url) return;
-    const baseName = sanitizeFilename(track.title || "제목 없음");
+    if (!effective.audio_url) return;
+    const baseName = sanitizeFilename(effective.title || "제목 없음");
     try {
-      const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(track.audio_url)}&purpose=file`;
-      const res = await fetch(proxyUrl, { credentials: "include" });
-      if (!res.ok) {
-        const statusLine = `${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
-        const raw = await res.text().catch(() => "");
-        let msg = "";
-        const trimmed = raw.trim();
-        if (trimmed) {
-          try {
-            const j = JSON.parse(trimmed) as { message?: string; error?: string; msg?: string };
-            msg = String(j.message || j.error || j.msg || "").trim();
-          } catch {
-            msg = trimmed.replace(/\s+/g, " ").slice(0, 280);
+      /** 공개 후에는 원격 생성 URL이 만료될 수 있어, 가능하면 사이트 음원(로컬 업로드) 기준으로 내려받습니다. */
+      const siteMusicId =
+        typeof effective.siteMusicId === "number" && Number.isFinite(effective.siteMusicId)
+          ? effective.siteMusicId
+          : undefined;
+      if (siteMusicId != null) {
+        const res = await fetch(`/api/music/${siteMusicId}/download`, { credentials: "include" });
+        if (!res.ok) {
+          const statusLine = `${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
+          const raw = await res.text().catch(() => "");
+          let msg = "";
+          const trimmed = raw.trim();
+          if (trimmed) {
+            try {
+              const j = JSON.parse(trimmed) as { message?: string; error?: string; msg?: string };
+              msg = String(j.message || j.error || j.msg || "").trim();
+            } catch {
+              msg = trimmed.replace(/\s+/g, " ").slice(0, 280);
+            }
           }
+          if (!msg) msg = `서버 응답 오류 (${statusLine}). 잠시 후 다시 시도해 주세요.`;
+          toast({ title: "다운로드 실패", description: msg, variant: "destructive" });
+          return;
         }
-        if (!msg) {
-          msg = `서버 응답 오류 (${statusLine}). 잠시 후 다시 시도해 주세요.`;
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        const m = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i.exec(cd);
+        const headerName = decodeURIComponent((m?.[1] || m?.[2] || "").trim());
+        const fallbackExt = blob.type.includes("ogg") ? ".ogg" : blob.type.includes("wav") ? ".wav" : ".mp3";
+        const extFromHeader = (() => {
+          const n = headerName.toLowerCase();
+          if (n.endsWith(".ogg")) return ".ogg";
+          if (n.endsWith(".wav")) return ".wav";
+          if (n.endsWith(".mp3")) return ".mp3";
+          return "";
+        })();
+        const fileName =
+          headerName && extFromHeader
+            ? headerName
+            : `${baseName}${extFromHeader || fallbackExt}`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const proxyUrl = `/api/ai-music/audio-proxy?url=${encodeURIComponent(effective.audio_url)}&purpose=file`;
+        const res = await fetch(proxyUrl, { credentials: "include" });
+        if (!res.ok) {
+          const statusLine = `${res.status}${res.statusText ? ` ${res.statusText}` : ""}`;
+          const raw = await res.text().catch(() => "");
+          let msg = "";
+          const trimmed = raw.trim();
+          if (trimmed) {
+            try {
+              const j = JSON.parse(trimmed) as { message?: string; error?: string; msg?: string };
+              msg = String(j.message || j.error || j.msg || "").trim();
+            } catch {
+              msg = trimmed.replace(/\s+/g, " ").slice(0, 280);
+            }
+          }
+          if (!msg) {
+            msg = `서버 응답 오류 (${statusLine}). 잠시 후 다시 시도해 주세요.`;
+          }
+          toast({ title: "다운로드 실패", description: msg, variant: "destructive" });
+          return;
         }
-        toast({ title: "다운로드 실패", description: msg, variant: "destructive" });
-        return;
+        const blob = await res.blob();
+        const type = blob.type || "audio/mpeg";
+        const ext = type.includes("ogg") ? ".ogg" : type.includes("wav") ? ".wav" : ".mp3";
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${baseName}${ext}`;
+        a.click();
+        URL.revokeObjectURL(url);
       }
-      const blob = await res.blob();
-      const type = blob.type || "audio/mpeg";
-      const ext = type.includes("ogg") ? ".ogg" : type.includes("wav") ? ".wav" : ".mp3";
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${baseName}${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
       setSavedTracks((prev) => {
         const next = prev.map((t) =>
-          t.id === track.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t,
+          t.id === effective.id ? { ...t, downloadCount: (t.downloadCount ?? 0) + 1 } : t,
         );
         persistTracks(next, { immediate: true });
         return next;
