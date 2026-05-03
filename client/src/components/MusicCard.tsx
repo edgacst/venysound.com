@@ -904,7 +904,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
           
           <div className="mt-2 pt-2 border-t border-white/5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
             <div className="flex min-w-0 items-center justify-between gap-1.5">
-              <span className="min-w-0 flex-1 truncate text-xs bg-secondary px-2 py-0.5 rounded-full text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {music.genre || t('music.other')}
               </span>
               <div className="flex shrink-0 items-center gap-0.5">
