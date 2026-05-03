@@ -1397,9 +1397,12 @@ export default function CreateMusic() {
   }, [user?.id, libraryFetched, libraryRemote, queryClient]);
 
   const persistTracks = useCallback(
-    (tracks: SavedTrack[], opts?: { immediate?: boolean; removedClientIds?: string[] }) => {
+    (
+      tracks: SavedTrack[],
+      opts?: { immediate?: boolean; removedClientIds?: string[] },
+    ): Promise<void> | undefined => {
       const uid = user?.id;
-      if (!uid) return;
+      if (!uid) return undefined;
       const payload = tracksToWirePayload(tracks);
       const removedClientIds = opts?.removedClientIds?.length ? [...opts.removedClientIds] : undefined;
       libraryPendingSyncRef.current = { userId: uid, payload, removedClientIds };
@@ -1408,28 +1411,31 @@ export default function CreateMusic() {
       } catch {}
       queryClient.setQueryData(aiMusicLibraryQueryKey(uid), { tracks: payload });
       if (librarySyncTimerRef.current) clearTimeout(librarySyncTimerRef.current);
-      const send = () => {
+      const send = (): Promise<void> => {
         librarySyncTimerRef.current = null;
-        if (uid !== sessionUserIdRef.current) return;
+        if (uid !== sessionUserIdRef.current) return Promise.resolve();
         const body: Record<string, unknown> = { tracks: payload };
         if (removedClientIds?.length) body.removedClientIds = removedClientIds;
-        void fetch("/api/ai-music/library", {
+        return fetch("/api/ai-music/library", {
           method: "PUT",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         })
-          .then(() => queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] }))
+          .then((res) => {
+            if (!res.ok) throw new Error(`library PUT ${res.status}`);
+            return queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
+          })
           .catch(() => {
             setErrorMessage("서버 동기화에 실패했습니다. 네트워크 상태를 확인해 주세요.");
             queryClient.invalidateQueries({ queryKey: ["/api/ai-music/library"] });
           });
       };
       if (opts?.immediate) {
-        send();
-        return;
+        return send();
       }
-      librarySyncTimerRef.current = setTimeout(send, 850);
+      librarySyncTimerRef.current = setTimeout(() => void send(), 850);
+      return undefined;
     },
     [user?.id, queryClient],
   );
@@ -1520,7 +1526,9 @@ export default function CreateMusic() {
         }
         savedTracksRef.current = next;
         setSavedTracks(next);
-        persistTracks(next, { immediate: true });
+        /** 무료·이벤트: audio-proxy가 DB 라이브러리 published 플래그를 보므로, 공개 직후 다운로드 전에 PUT 완료를 기다림 */
+        const syncLib = persistTracks(next, { immediate: true });
+        if (syncLib) await syncLib;
         return true;
       } catch {
         toast({ title: "공개 실패", description: "네트워크 오류가 발생했습니다.", variant: "destructive" });

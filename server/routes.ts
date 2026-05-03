@@ -1918,7 +1918,8 @@ export async function registerRoutes(
     failureMessage?: string | null;
   }): Promise<void> {
     try {
-      const { userId, taskId, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
+      const { userId, taskId: taskIdRaw, provider, body, walletCreditsCharged, chargeStatus, failureMessage } = params;
+      const taskId = String(taskIdRaw ?? "").trim().slice(0, 128);
       const promoMin =
         typeof params.promoMinTracksForBilling === "number" && Number.isFinite(params.promoMinTracksForBilling)
           ? Math.max(1, Math.floor(params.promoMinTracksForBilling))
@@ -1961,7 +1962,7 @@ export async function registerRoutes(
         billingKind,
         subscriptionTierAt: tier,
         provider,
-        taskId,
+        taskId: taskId || null,
         requestTitle: body.title?.trim().slice(0, 500) || null,
         requestSummary,
         creditsCharged,
@@ -1970,7 +1971,8 @@ export async function registerRoutes(
         publishments: [],
       });
     } catch (e) {
-      console.error("[ai-music generation log insert]", e);
+      const err = e instanceof Error ? e.message : String(e);
+      console.error("[ai-music generation log insert]", err, e);
     }
   }
 
