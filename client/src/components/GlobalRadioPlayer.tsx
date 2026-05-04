@@ -15,6 +15,8 @@ import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-fore
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 const REFETCH_INTERVAL_MS = 8000;
+/** 폴링에서 status !== live 가 연속으로 나올 때만 clear (일시 응답·레이스로 라디오가 죽는 것 방지) */
+const POLL_NOT_LIVE_CLEAR_AFTER = 2;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -76,6 +78,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [needsTap, setNeedsTap] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
+  const pollNotLiveStreakRef = useRef(0);
 
   const {
     slug,
@@ -96,20 +99,29 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
   useEffect(() => {
     if (!slug) return;
+    pollNotLiveStreakRef.current = 0;
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
-        if (data?.status !== "live") { clear(); return; }
+        if (data?.status !== "live") {
+          pollNotLiveStreakRef.current += 1;
+          if (pollNotLiveStreakRef.current >= POLL_NOT_LIVE_CLEAR_AFTER) {
+            clear();
+          }
+          return;
+        }
+        pollNotLiveStreakRef.current = 0;
         const nowPlayingId = data?.nowPlayingMusicId ?? null;
         const nowPlayingObjectPath = data?.nowPlayingObjectPath ?? null;
-        if (nowPlayingId == null && !nowPlayingObjectPath) { clear(); return; }
+        // 곡 전환 직후 등으로 nowPlaying 이 잠깐 비는 동안 clear 하면 다른 탭으로 이동 시 재생이 끊김 → 폴링에서는 유지
+        if (nowPlayingId == null && !nowPlayingObjectPath) return;
         const newStreamUrl =
           nowPlayingObjectPath != null ? nowPlayingObjectPath
           : nowPlayingId != null ? `/api/music/${nowPlayingId}/stream`
           : null;
-        if (!newStreamUrl) { clear(); return; }
+        if (!newStreamUrl) return;
         const currentUrl = useRadioPlayerStore.getState().streamUrl;
         if (newStreamUrl !== currentUrl) {
           // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
