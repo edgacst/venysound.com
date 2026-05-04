@@ -227,6 +227,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
+    // 곡 종료 직후 client-advance fetch 중: pause()가 suspend를 일으키면 복구 루틴이 돌며 requestPlay()가
+    // 아직 ended인 활성 버퍼에 play()를 걸어 같은 곡이 처음부터 다시 돌거나 다음 곡 핸드오프와 경합함(모바일 연속 재생 깨짐).
+    if (trackEndLockRef.current) return;
 
     restoreAudibleOutput();
     requestPlay();
@@ -318,6 +321,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
+    if (trackEndLockRef.current) return;
     if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = window.setTimeout(() => {
       radioRecoverTimerRef.current = null;
@@ -330,6 +334,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.slug || !s.streamUrl) return;
+    if (trackEndLockRef.current) return;
     restoreAudibleOutput();
     requestPlay();
     scheduleRadioRecoveryAfterSystemPause();
@@ -358,6 +363,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const schedule = scheduleRadioRecoveryAfterSystemPause;
     const onMediaStall = () => {
       if (document.visibilityState !== "visible") return;
+      if (trackEndLockRef.current) return;
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl) return;
       schedule();
@@ -588,6 +594,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     const el = getActiveAudio();
     if (!el) return;
+    if (trackEndLockRef.current) return;
     if (playTrigger > 0 && !userStopped) el.play().catch(() => {});
   }, [playTrigger, userStopped, getActiveAudio]);
 
