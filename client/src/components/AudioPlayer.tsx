@@ -713,18 +713,64 @@ export function GlobalAudioPlayer() {
     setShowLyricsPanel(false);
   }, [activeMusicId, activeExternalTrack]);
 
+  // 모바일 자동재생: load() 직후 play()는 자주 거절됨 → canplay + 음소거 폴백 (docs/송출_상태동기화_검토.md)
   useEffect(() => {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !audioUrl || !hasTrack) return;
+    let cancelled = false;
+
+    const tryPlay = () => {
+      if (cancelled || usePlayerStore.getState().pauseRequested) return;
+      audio.muted = false;
+      audio.volume = volume;
+      void audio
+        .play()
+        .then(() => {
+          if (!cancelled) audio.muted = false;
+        })
+        .catch(() => {
+          if (cancelled) return;
+          audio.muted = true;
+          void audio
+            .play()
+            .then(() => {
+              if (!cancelled) {
+                audio.muted = false;
+                setIsMuted(false);
+              }
+            })
+            .catch(() => {});
+        });
+    };
+
+    const onReadyOnce = () => {
+      if (cancelled) return;
+      tryPlay();
+    };
 
     audio.src = audioUrl;
     audio.load();
-    const playPromise = audio.play();
-    if (playPromise) {
-      playPromise.catch(() => {});
+
+    if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      tryPlay();
+    } else {
+      audio.addEventListener("canplaythrough", onReadyOnce, { once: true });
+      audio.addEventListener("canplay", onReadyOnce, { once: true });
     }
-  }, [audioUrl, activeMusicId, activeExternalTrack]);
+
+    const retryTimer = window.setTimeout(() => {
+      if (cancelled || usePlayerStore.getState().pauseRequested) return;
+      if (audio.paused) tryPlay();
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retryTimer);
+      audio.removeEventListener("canplaythrough", onReadyOnce);
+      audio.removeEventListener("canplay", onReadyOnce);
+    };
+  }, [audioUrl, activeMusicId, activeExternalTrack, volume]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -733,12 +779,29 @@ export function GlobalAudioPlayer() {
     if (pauseRequested) {
       audio.pause();
       setIsPlaying(false);
-    } else {
-      const p = audio.play();
-      if (p) p.catch(() => {});
-      setIsPlaying(true);
+      return;
     }
-  }, [pauseRequested, activeMusicId, activeExternalTrack]);
+    if (audio.src && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      audio.muted = false;
+      audio.volume = volume;
+      void audio
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+        })
+        .catch(() => {
+          audio.muted = true;
+          void audio
+            .play()
+            .then(() => {
+              audio.muted = false;
+              setIsPlaying(true);
+              setIsMuted(false);
+            })
+            .catch(() => {});
+        });
+    }
+  }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
 
   useEffect(() => {
     const audio = audioRef.current;

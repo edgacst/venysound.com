@@ -79,6 +79,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
+  /** 곡 종료→client-advance 처리 중: requestPlay/playNowRef가 ended 버퍼에 play()를 걸지 않도록 (채널 페이지·복구 루틴과 경합 방지) */
+  const trackEndLockRef = useRef(false);
 
   const {
     slug,
@@ -384,7 +386,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    playNowRef.current = () => { getActiveAudio()?.play().catch(() => {}); };
+    playNowRef.current = () => {
+      if (trackEndLockRef.current) return;
+      const el = getActiveAudio();
+      if (!el || el.ended) return;
+      void el.play().catch(() => {});
+    };
     setPlayNowRef(playNowRef);
     return () => setPlayNowRef(null);
   }, [getActiveAudio, setPlayNowRef]);
@@ -478,7 +485,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [setUserStopped, getActiveAudio]);
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
-  const trackEndLockRef = useRef(false);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
