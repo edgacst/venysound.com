@@ -680,19 +680,20 @@ export default function Admin() {
     userEmail: string | null;
     userFirstName: string | null;
   };
+  type AiMusicGenLogsPayload = { rows: AiMusicGenLogRow[]; total: number };
   const {
-    data: aiMusicGenLogs = [],
+    data: aiMusicGenLogsPayload = { rows: [], total: 0 },
     isLoading: loadingAiMusicGenLogs,
     isError: aiMusicGenLogsError,
     error: aiMusicGenLogsErr,
     refetch: refetchAiMusicGenLogs,
-  } = useQuery<AiMusicGenLogRow[]>({
+  } = useQuery<AiMusicGenLogsPayload>({
     queryKey: ["/api/admin/ai-music-generation-logs"],
     /** 전역 staleTime: Infinity — DB·수동 INSERT 반영이 안 보이는 문제 방지 */
     staleTime: 0,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const res = await fetch("/api/admin/ai-music-generation-logs?limit=300", { credentials: "include" });
+      const res = await fetch("/api/admin/ai-music-generation-logs?limit=500", { credentials: "include" });
       if (!res.ok) {
         let detail = "";
         try {
@@ -707,12 +708,24 @@ export default function Admin() {
         }
         throw new Error(detail || `HTTP ${res.status}`);
       }
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      const data = (await res.json()) as unknown;
+      if (Array.isArray(data)) {
+        return { rows: data as AiMusicGenLogRow[], total: data.length };
+      }
+      if (data && typeof data === "object" && Array.isArray((data as AiMusicGenLogsPayload).rows)) {
+        const p = data as AiMusicGenLogsPayload;
+        return {
+          rows: p.rows,
+          total: typeof p.total === "number" ? p.total : p.rows.length,
+        };
+      }
+      return { rows: [], total: 0 };
     },
     enabled: adminCheck?.isAdmin === true,
     retry: false,
   });
+  const aiMusicGenLogs = aiMusicGenLogsPayload.rows;
+  const aiMusicGenLogsTotal = aiMusicGenLogsPayload.total;
 
   type May2026AppRow = {
     id: number;
@@ -1988,7 +2001,7 @@ export default function Admin() {
               <TabsTrigger value="ai-music-logs" className="gap-1.5">
                 <Sparkles size={14} className="shrink-0" />
                 {t('admin.aiMusicGenLogs', 'AI 음악 생성 로그')}
-                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{aiMusicGenLogs?.length ?? 0}</Badge>
+                <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5">{aiMusicGenLogsTotal}</Badge>
               </TabsTrigger>
               <TabsTrigger value="may-2026-event" className="gap-1.5">
                 <Sparkles size={14} className="shrink-0 text-fuchsia-500" />
@@ -4926,6 +4939,15 @@ export default function Admin() {
               '요청 단위로 무료/유료(크레딧) 여부·프로바이더·요약·사이트 공개(배포) 이력을 확인할 수 있습니다. 공개는 클라이언트에서 taskId를 넘긴 경우에만 로그에 연결됩니다.',
             )}
           </p>
+          {aiMusicGenLogsTotal > aiMusicGenLogs.length ? (
+            <p className="text-xs text-muted-foreground mb-4">
+              {t(
+                "admin.aiMusicGenLogsTruncated",
+                "전체 {{total}}건 중 최근 {{shown}}건만 표시됩니다. (성능상 목록 상한)",
+                { total: aiMusicGenLogsTotal, shown: aiMusicGenLogs.length },
+              )}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground/90 mb-4 border border-border/60 rounded-md px-3 py-2 bg-muted/30">
             {t(
               'admin.aiMusicGenLogsRetroNote',

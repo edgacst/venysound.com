@@ -6102,29 +6102,33 @@ export async function registerRoutes(
   app.get("/api/admin/ai-music-generation-logs", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit || "200"), 10)));
-      const rows = await db
-        .select({
-          id: aiMusicGenerationLogs.id,
-          userId: aiMusicGenerationLogs.userId,
-          createdAt: aiMusicGenerationLogs.createdAt,
-          billingKind: aiMusicGenerationLogs.billingKind,
-          subscriptionTierAt: aiMusicGenerationLogs.subscriptionTierAt,
-          provider: aiMusicGenerationLogs.provider,
-          taskId: aiMusicGenerationLogs.taskId,
-          requestTitle: aiMusicGenerationLogs.requestTitle,
-          requestSummary: aiMusicGenerationLogs.requestSummary,
-          creditsCharged: aiMusicGenerationLogs.creditsCharged,
-          chargeStatus: aiMusicGenerationLogs.chargeStatus,
-          failureMessage: aiMusicGenerationLogs.failureMessage,
-          publishments: aiMusicGenerationLogs.publishments,
-          userEmail: users.email,
-          userFirstName: users.firstName,
-        })
-        .from(aiMusicGenerationLogs)
-        .leftJoin(users, eq(aiMusicGenerationLogs.userId, users.id))
-        .orderBy(desc(aiMusicGenerationLogs.createdAt))
-        .limit(limit);
-      res.json(rows);
+      const [[countRow], rows] = await Promise.all([
+        db.select({ total: sql<number>`count(*)::int` }).from(aiMusicGenerationLogs),
+        db
+          .select({
+            id: aiMusicGenerationLogs.id,
+            userId: aiMusicGenerationLogs.userId,
+            createdAt: aiMusicGenerationLogs.createdAt,
+            billingKind: aiMusicGenerationLogs.billingKind,
+            subscriptionTierAt: aiMusicGenerationLogs.subscriptionTierAt,
+            provider: aiMusicGenerationLogs.provider,
+            taskId: aiMusicGenerationLogs.taskId,
+            requestTitle: aiMusicGenerationLogs.requestTitle,
+            requestSummary: aiMusicGenerationLogs.requestSummary,
+            creditsCharged: aiMusicGenerationLogs.creditsCharged,
+            chargeStatus: aiMusicGenerationLogs.chargeStatus,
+            failureMessage: aiMusicGenerationLogs.failureMessage,
+            publishments: aiMusicGenerationLogs.publishments,
+            userEmail: users.email,
+            userFirstName: users.firstName,
+          })
+          .from(aiMusicGenerationLogs)
+          .leftJoin(users, eq(aiMusicGenerationLogs.userId, users.id))
+          .orderBy(desc(aiMusicGenerationLogs.createdAt))
+          .limit(limit),
+      ]);
+      const total = Number(countRow?.total ?? 0);
+      res.json({ total, rows });
     } catch (e) {
       console.error("[admin ai-music-generation-logs]", e);
       res.status(500).json({ message: "AI 음악 생성 로그를 불러올 수 없습니다." });
