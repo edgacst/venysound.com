@@ -179,21 +179,16 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       other.volume = 1;
     }
     setIsMuted(false);
-    if (primary.paused) {
-      void primary
-        .play()
-        .then(() => {
-          setNeedsTap(false);
-        })
-        .catch(() => {
-          setNeedsTap(true);
-        });
-    }
+    // paused만이 아니라, 모바일에서 라우트 전환 직후 "paused는 false인데 무음"인 경우도 있어 항상 play 재시도
+    void primary
+      .play()
+      .then(() => {
+        setNeedsTap(false);
+      })
+      .catch(() => {
+        setNeedsTap(true);
+      });
   }, [getActiveAudio, setNeedsTap]);
-
-  useEffect(() => {
-    restoreAudibleOutput();
-  }, [locationPath, restoreAudibleOutput]);
 
   useEffect(() => {
     const onVis = () => {
@@ -329,6 +324,16 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       void runRadioRecoveryAfterSystemPause();
     }, 180);
   }, [runRadioRecoveryAfterSystemPause]);
+
+  // SPA에서 다른 페이지로 이동해도 document.visibilityState는 "visible"인 경우가 많음(iOS Safari 등).
+  // 그때는 복구 스케줄이 안 돌아가 무음으로 남을 수 있어, 라우트 변경마다 복구 루프를 태운다.
+  useEffect(() => {
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.slug || !s.streamUrl) return;
+    restoreAudibleOutput();
+    requestPlay();
+    scheduleRadioRecoveryAfterSystemPause();
+  }, [locationPath, restoreAudibleOutput, requestPlay, scheduleRadioRecoveryAfterSystemPause]);
 
   useEffect(() => {
     const onVis = () => {
