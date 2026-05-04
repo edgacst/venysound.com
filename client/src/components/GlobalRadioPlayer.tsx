@@ -501,21 +501,32 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
       };
       const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
+      const releaseTrackEndLock = () => {
+        trackEndLockRef.current = false;
+      };
       const tryPlay = (el: HTMLAudioElement) => {
         el.volume = 1;
         el.muted = false;
-        el.play().then(() => {
-          setNeedsTap(false);
-          setIsMuted(false);
-        }).catch(() => {
-          el.muted = true;
-          el.play().then(() => {
-            setIsMuted(true);
+        el.play()
+          .then(() => {
+            releaseTrackEndLock();
             setNeedsTap(false);
-          }).catch(() => {
-            setNeedsTap(true);
+            setIsMuted(false);
+          })
+          .catch(() => {
+            el.muted = true;
+            el.play()
+              .then(() => {
+                releaseTrackEndLock();
+                setIsMuted(true);
+                setNeedsTap(false);
+              })
+              .catch(() => {
+                // 모바일에서 play()가 연속 거절되면 onAudioPlay가 안 와서 trackEndLock이 영구 true가 됨 → 다음 곡 ended/advance 전부 정지
+                setNeedsTap(true);
+                releaseTrackEndLock();
+              });
           });
-        });
       };
       /** 비활성 버퍼에 이미 올바른 src가 있을 때(이전 effect 취소 등)에도 반드시 핸드오프·재생 */
       const handoffToInactive = (inactiveEl: HTMLAudioElement) => {
