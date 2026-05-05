@@ -15,7 +15,7 @@ import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-fore
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 const REFETCH_INTERVAL_MS = 8000;
-/** 폴링에서 status !== live 가 연속으로 나올 때만 clear (모바일·느린 구간에서 2회면 과도하게 끊기는 경우 완화) */
+/** 모바일/네트워크 흔들림에서 status가 잠깐 non-live로 오는 경우가 있어 즉시 clear하지 않음 */
 const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
@@ -23,6 +23,17 @@ function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number |
   if (!url) return null;
   const m = String(url).match(/\/api\/music\/(\d+)\/stream/);
   return m ? Number.parseInt(m[1], 10) : null;
+}
+
+function isCoarseOrTouchDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.matchMedia("(pointer: coarse)").matches) return true;
+    if (navigator.maxTouchPoints > 0 && window.matchMedia("(hover: none)").matches) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 /**
@@ -62,18 +73,6 @@ function radioAudioPathMatchesStream(el: HTMLAudioElement | null, wanted: string
   }
 }
 
-/** PC는 그대로 두고, 터치/모바일에서만 보강(다른 메뉴로 가도 visibility가 그대로인 경우가 많음) */
-function isCoarseOrTouchDevice(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    if (window.matchMedia("(pointer: coarse)").matches) return true;
-    if (navigator.maxTouchPoints > 0 && window.matchMedia("(hover: none)").matches) return true;
-  } catch {
-    /* ignore */
-  }
-  return false;
-}
-
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -91,8 +90,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
-  /** 곡 종료→client-advance 처리 중: requestPlay/playNowRef가 ended 버퍼에 play()를 걸지 않도록 (채널 페이지·복구 루틴과 경합 방지) */
-  const trackEndLockRef = useRef(false);
 
   const {
     slug,
@@ -119,20 +116,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
-        // status 필드가 없는 비정상 JSON은 streak에 넣지 않음(단, 채널 200이면 보통 항상 status 있음)
         if (data?.status !== "live") {
           if (data?.status != null) {
             pollNotLiveStreakRef.current += 1;
-            if (pollNotLiveStreakRef.current >= POLL_NOT_LIVE_CLEAR_AFTER) {
-              clear();
-            }
+            if (pollNotLiveStreakRef.current >= POLL_NOT_LIVE_CLEAR_AFTER) clear();
           }
           return;
         }
         pollNotLiveStreakRef.current = 0;
         const nowPlayingId = data?.nowPlayingMusicId ?? null;
         const nowPlayingObjectPath = data?.nowPlayingObjectPath ?? null;
-        // 곡 전환 직후 등으로 nowPlaying 이 잠깐 비는 동안 clear 하면 다른 탭으로 이동 시 재생이 끊김 → 폴링에서는 유지
+        // 곡 전환 직후 nowPlaying 이 잠깐 비는 동안 clear 하면 페이지 이동 시 재생이 끊김 → 폴링에서는 유지
         if (nowPlayingId == null && !nowPlayingObjectPath) return;
         const newStreamUrl =
           nowPlayingObjectPath != null ? nowPlayingObjectPath
@@ -196,7 +190,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       other.volume = 1;
     }
     setIsMuted(false);
-    // paused만이 아니라, 모바일에서 라우트 전환 직후 "paused는 false인데 무음"인 경우도 있어 항상 play 재시도
+    const shouldAttemptPlay = primary.paused || isCoarseOrTouchDevice();
+    if (!shouldAttemptPlay) return;
     void primary
       .play()
       .then(() => {
@@ -206,6 +201,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         setNeedsTap(true);
       });
   }, [getActiveAudio, setNeedsTap]);
+
+  useEffect(() => {
+    // 모바일: SPA 라우트만 바뀌면 visibility/focus 이벤트가 안 오는 경우가 있어 schedule까지 함께 호출
+    restoreAudibleOutput();
+    scheduleRadioRecoveryAfterSystemPause();
+  }, [locationPath, restoreAudibleOutput, scheduleRadioRecoveryAfterSystemPause]);
 
   useEffect(() => {
     const onVis = () => {
@@ -241,14 +242,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
   const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  /** trackEndLock 동안 schedule이 즉시 return → 라우트 전환·suspend 시 복구가 영구 스킵되는 것 방지 (재시도 상한) */
-  const recoveryLockDeferCountRef = useRef(0);
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
-    // 곡 종료 직후 client-advance fetch 중: pause()가 suspend를 일으키면 복구 루틴이 돌며 requestPlay()가
-    // 아직 ended인 활성 버퍼에 play()를 걸어 같은 곡이 처음부터 다시 돌거나 다음 곡 핸드오프와 경합함(모바일 연속 재생 깨짐).
-    if (trackEndLockRef.current) return;
 
     restoreAudibleOutput();
     requestPlay();
@@ -340,50 +336,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
-    if (trackEndLockRef.current) {
-      // 곡 종료→client-advance 직후에는 락이 잠깐 true. 이때 schedule을 막으면 SPA 라우트만 바뀐 경우(visibility는 visible) 복구가 영구 스킵됨.
-      if (recoveryLockDeferCountRef.current >= 12) return;
-      recoveryLockDeferCountRef.current += 1;
-      if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
-      radioRecoverTimerRef.current = window.setTimeout(() => {
-        radioRecoverTimerRef.current = null;
-        scheduleRadioRecoveryAfterSystemPause();
-      }, 420);
-      return;
-    }
-    recoveryLockDeferCountRef.current = 0;
     if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = window.setTimeout(() => {
       radioRecoverTimerRef.current = null;
       void runRadioRecoveryAfterSystemPause();
     }, 180);
   }, [runRadioRecoveryAfterSystemPause]);
-
-  // SPA에서 다른 페이지로 이동해도 document.visibilityState는 "visible"인 경우가 많음(iOS Safari 등).
-  // 그때는 복구 스케줄이 안 돌아가 무음으로 남을 수 있어, 라우트 변경마다 복구 루프를 태운다.
-  // trackEndLock이면 여기서 return하지 않음 — 곡 전환 직후 다른 메뉴로 가도 schedule이 지연 재시도되도록 함.
-  useEffect(() => {
-    const s = useRadioPlayerStore.getState();
-    if (s.userStopped || !s.slug || !s.streamUrl) return;
-    restoreAudibleOutput();
-    requestPlay();
-    scheduleRadioRecoveryAfterSystemPause();
-    // 모바일: 라우트만 바뀌면 visibility/focus가 안 와 복구가 안 되는 경우가 있음 — 지연 play 재시도(PC 경로는 변경 없음)
-    if (isCoarseOrTouchDevice()) {
-      const delaysMs = [70, 200, 450, 950];
-      delaysMs.forEach((ms) => {
-        window.setTimeout(() => {
-          const st = useRadioPlayerStore.getState();
-          if (st.userStopped || !st.streamUrl || !st.slug) return;
-          const el = getActiveAudio();
-          if (!el || el.ended || trackEndLockRef.current) return;
-          el.muted = false;
-          el.volume = 1;
-          void el.play().catch(() => {});
-        }, ms);
-      });
-    }
-  }, [locationPath, restoreAudibleOutput, requestPlay, scheduleRadioRecoveryAfterSystemPause, getActiveAudio]);
 
   useEffect(() => {
     const onVis = () => {
@@ -428,12 +386,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    playNowRef.current = () => {
-      if (trackEndLockRef.current) return;
-      const el = getActiveAudio();
-      if (!el || el.ended) return;
-      void el.play().catch(() => {});
-    };
+    playNowRef.current = () => { getActiveAudio()?.play().catch(() => {}); };
     setPlayNowRef(playNowRef);
     return () => setPlayNowRef(null);
   }, [getActiveAudio, setPlayNowRef]);
@@ -527,6 +480,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [setUserStopped, getActiveAudio]);
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
+  const trackEndLockRef = useRef(false);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
@@ -543,10 +497,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
       };
       const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
-      const releaseTrackEndLock = () => {
-        trackEndLockRef.current = false;
-      };
       const tryPlay = (el: HTMLAudioElement) => {
+        const releaseTrackEndLock = () => {
+          // 모바일에서 play()가 거절되면 onAudioPlay가 안 와서 ended 처리 락이 풀리지 않고 연속 재생이 멈출 수 있음
+          trackEndLockRef.current = false;
+        };
         el.volume = 1;
         el.muted = false;
         el.play()
@@ -564,7 +519,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
                 setNeedsTap(false);
               })
               .catch(() => {
-                // 모바일에서 play()가 연속 거절되면 onAudioPlay가 안 와서 trackEndLock이 영구 true가 됨 → 다음 곡 ended/advance 전부 정지
                 setNeedsTap(true);
                 releaseTrackEndLock();
               });
@@ -653,7 +607,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     const el = getActiveAudio();
     if (!el) return;
-    if (trackEndLockRef.current) return;
     if (playTrigger > 0 && !userStopped) el.play().catch(() => {});
   }, [playTrigger, userStopped, getActiveAudio]);
 
