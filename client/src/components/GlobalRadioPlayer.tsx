@@ -62,6 +62,18 @@ function radioAudioPathMatchesStream(el: HTMLAudioElement | null, wanted: string
   }
 }
 
+/** PC는 그대로 두고, 터치/모바일에서만 보강(다른 메뉴로 가도 visibility가 그대로인 경우가 많음) */
+function isCoarseOrTouchDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.matchMedia("(pointer: coarse)").matches) return true;
+    if (navigator.maxTouchPoints > 0 && window.matchMedia("(hover: none)").matches) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -353,7 +365,22 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     restoreAudibleOutput();
     requestPlay();
     scheduleRadioRecoveryAfterSystemPause();
-  }, [locationPath, restoreAudibleOutput, requestPlay, scheduleRadioRecoveryAfterSystemPause]);
+    // 모바일: 라우트만 바뀌면 visibility/focus가 안 와 복구가 안 되는 경우가 있음 — 지연 play 재시도(PC 경로는 변경 없음)
+    if (isCoarseOrTouchDevice()) {
+      const delaysMs = [70, 200, 450, 950];
+      delaysMs.forEach((ms) => {
+        window.setTimeout(() => {
+          const st = useRadioPlayerStore.getState();
+          if (st.userStopped || !st.streamUrl || !st.slug) return;
+          const el = getActiveAudio();
+          if (!el || el.ended || trackEndLockRef.current) return;
+          el.muted = false;
+          el.volume = 1;
+          void el.play().catch(() => {});
+        }, ms);
+      });
+    }
+  }, [locationPath, restoreAudibleOutput, requestPlay, scheduleRadioRecoveryAfterSystemPause, getActiveAudio]);
 
   useEffect(() => {
     const onVis = () => {
