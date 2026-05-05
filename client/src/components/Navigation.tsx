@@ -387,9 +387,10 @@ export function Navigation() {
                   </DropdownMenu>
                   <div
                     onClick={openLoginModal}
-                    className="flex items-center gap-2 px-4 py-2 text-primary cursor-pointer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-full text-foreground font-medium hover:bg-secondary cursor-pointer transition-colors"
+                    data-testid="button-login-mobile"
                   >
-                    <User size={18} />
+                    <User size={18} className="shrink-0" aria-hidden />
                     <span>{t('nav.login')}</span>
                   </div>
                 </>
