@@ -5983,8 +5983,14 @@ export async function registerRoutes(
           : detail.user.subscriptionExpiresAt
             ? String(detail.user.subscriptionExpiresAt)
             : null;
+      const promoAiCreditsExpiresAt =
+        detail.user.promoAiCreditsExpiresAt instanceof Date
+          ? detail.user.promoAiCreditsExpiresAt.toISOString()
+          : detail.user.promoAiCreditsExpiresAt
+            ? String(detail.user.promoAiCreditsExpiresAt)
+            : null;
       res.json({
-        user: { ...detail.user, subscriptionExpiresAt },
+        user: { ...detail.user, subscriptionExpiresAt, promoAiCreditsExpiresAt },
         creditSummary: detail.creditSummary,
         aiMusicMonthly: detail.aiMusicMonthly,
         creditTransactions: {

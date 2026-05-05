@@ -9,6 +9,7 @@ import {
   radioChannels, radioChatMessages, radioSongRequests, radioChannelStaff,
   conversations, directMessages, musicStories, storyComments, userBlocks, userReports,
   pushSubscriptions,
+  may2026EventApplications,
   type InsertMusic, type UserType, type Music, type CreateReviewRequest, type CreatePlaylistRequest,
   type CreatePostRequest, type CreatePostCommentRequest, type NotificationResponse, type CopyrightReport, type CreateCopyrightReportRequest,
   type Tip, type Purchase, type Conversation, type DirectMessage,
@@ -471,6 +472,8 @@ export interface IStorage {
       subscriptionExpiresAt: Date | null;
       subscriptionPlan: string | null;
       subscriptionEntitlements: unknown;
+      promoAiCreditsWon: number | null;
+      promoAiCreditsExpiresAt: Date | null;
     };
     creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
     creditTransactions: { total: number; rows: any[] };
@@ -3017,7 +3020,7 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(users.createdAt))
         .limit(safeLimit)
         .offset(safeOffset);
-      return { rows, total };
+      return { rows: await this.attachMay2026EventStatusToAdminUserRows(rows), total };
     }
 
     const [cnt] = await db.select({ c: sql<number>`count(*)::int` }).from(users);
@@ -3028,7 +3031,32 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(users.createdAt))
       .limit(safeLimit)
       .offset(safeOffset);
-    return { rows, total };
+    return { rows: await this.attachMay2026EventStatusToAdminUserRows(rows), total };
+  }
+
+  /** 회원별 최신 5월 이벤트 신청 상태(관리자 목록 표시용). 구독 티어와 별개. */
+  private async attachMay2026EventStatusToAdminUserRows(rows: any[]): Promise<any[]> {
+    if (!rows.length) return rows;
+    const ids = rows.map((r) => r.id).filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (!ids.length) return rows;
+    const apps = await db
+      .select({
+        userId: may2026EventApplications.userId,
+        status: may2026EventApplications.status,
+        createdAt: may2026EventApplications.createdAt,
+      })
+      .from(may2026EventApplications)
+      .where(inArray(may2026EventApplications.userId, ids))
+      .orderBy(desc(may2026EventApplications.createdAt));
+    const latestByUser = new Map<string, string>();
+    for (const a of apps) {
+      const uid = a.userId;
+      if (!latestByUser.has(uid)) latestByUser.set(uid, a.status);
+    }
+    return rows.map((row) => ({
+      ...row,
+      may2026EventApplicationStatus: latestByUser.get(row.id) ?? null,
+    }));
   }
 
   async findUserForAdminLookup(params: { email?: string; userId?: string }): Promise<any | null> {
@@ -3396,6 +3424,8 @@ export class DatabaseStorage implements IStorage {
       subscriptionExpiresAt: Date | null;
       subscriptionPlan: string | null;
       subscriptionEntitlements: unknown;
+      promoAiCreditsWon: number | null;
+      promoAiCreditsExpiresAt: Date | null;
     };
     creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
     creditTransactions: { total: number; rows: any[] };
@@ -3427,6 +3457,8 @@ export class DatabaseStorage implements IStorage {
         subscriptionExpiresAt: users.subscriptionExpiresAt,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionEntitlements: users.subscriptionEntitlements,
+        promoAiCreditsWon: users.promoAiCreditsWon,
+        promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
       })
       .from(users)
       .where(eq(users.id, userId))

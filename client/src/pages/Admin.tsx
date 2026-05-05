@@ -96,6 +96,9 @@ type AdminUserWalletResponse = {
     subscriptionExpiresAt: string | null;
     subscriptionPlan: string | null;
     subscriptionEntitlements: unknown;
+    /** 5월 이벤트 등 AI 생성 전용 트랙 잔액 — 구독·월 무료 한도와 별도 */
+    promoAiCreditsWon?: number | null;
+    promoAiCreditsExpiresAt?: string | null;
   };
   creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
   aiMusicMonthly?: {
@@ -3618,6 +3621,9 @@ export default function Admin() {
                   <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.registerSource', '가입 경로')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-16">{t('admin.role', '권한')}</th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-20">{t('admin.subscription', '구독')}</th>
+                  <th className="text-left p-3 font-medium whitespace-nowrap min-w-[7rem]" title={t("admin.may2026EventColHint", "구독 등급과 별개 — 신청·승인 상태")}>
+                    {t("admin.may2026EventCol", "5월 이벤트")}
+                  </th>
                   <th className="text-left p-3 font-medium whitespace-nowrap w-24 tabular-nums">
                     {t("admin.userCreditsBalance", "충전 크레딧")}
                   </th>
@@ -3627,13 +3633,13 @@ export default function Admin() {
               <tbody>
                 {loadingUsers ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8">
+                    <td colSpan={9} className="text-center p-8">
                       <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
                     </td>
                   </tr>
                 ) : adminUsersError ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-destructive text-sm">
+                    <td colSpan={9} className="text-center p-8 text-destructive text-sm">
                       {(adminUsersErr as Error)?.message || t("admin.usersLoadError", "회원 목록을 불러오지 못했습니다. 새로고침 해 주세요.")}
                     </td>
                   </tr>
@@ -3693,6 +3699,43 @@ export default function Admin() {
                               {t("admin.subscriptionFree", "Free")}
                             </Badge>
                           )}
+                        </td>
+                        <td className="p-3 align-middle text-xs whitespace-nowrap" data-testid={`cell-may2026-event-${u.id}`}>
+                          {(() => {
+                            const st = u.may2026EventApplicationStatus as string | null | undefined;
+                            if (!st) {
+                              return <span className="text-muted-foreground">—</span>;
+                            }
+                            if (st === "approved") {
+                              const tracks = Math.max(0, Number(u.promoAiCreditsWon ?? 0));
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge variant="outline" className="w-fit border-emerald-500/50 text-emerald-700 dark:text-emerald-400">
+                                    {t("admin.may2026EventApproved", "승인")}
+                                  </Badge>
+                                  <span className="text-muted-foreground tabular-nums">
+                                    {t("admin.may2026EventPromoTracksShort", "이벤트 잔여")} {tracks.toLocaleString("ko-KR")}
+                                    {t("admin.may2026EventTracksUnit", "곡")}
+                                  </span>
+                                </div>
+                              );
+                            }
+                            if (st === "pending") {
+                              return (
+                                <Badge variant="outline" className="w-fit border-amber-500/50 text-amber-800 dark:text-amber-300">
+                                  {t("admin.may2026EventPending", "검토 중")}
+                                </Badge>
+                              );
+                            }
+                            if (st === "rejected") {
+                              return (
+                                <Badge variant="outline" className="w-fit text-muted-foreground">
+                                  {t("admin.may2026EventRejected", "반려")}
+                                </Badge>
+                              );
+                            }
+                            return <span className="text-muted-foreground">{st}</span>;
+                          })()}
                         </td>
                         <td className="p-3 align-middle tabular-nums text-sm">
                           <button
@@ -3811,7 +3854,7 @@ export default function Admin() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={8} className="text-center p-8 text-muted-foreground">{t('admin.noUsers', '회원이 없습니다')}</td>
+                    <td colSpan={9} className="text-center p-8 text-muted-foreground">{t('admin.noUsers', '회원이 없습니다')}</td>
                   </tr>
                 )}
               </tbody>
@@ -5423,6 +5466,37 @@ export default function Admin() {
                   </div>
                 </div>
               </div>
+              {(() => {
+                const promoTracks = Math.max(0, Number(walletData.user.promoAiCreditsWon ?? 0));
+                const promoExp = walletData.user.promoAiCreditsExpiresAt;
+                const hasPromoLine = promoTracks > 0 || (typeof promoExp === "string" && promoExp.length > 0);
+                if (!hasPromoLine) return null;
+                return (
+                  <div className="rounded-lg border border-violet-300/60 bg-violet-100/90 dark:bg-violet-950/50 dark:border-violet-700/50 px-4 py-3 space-y-1 text-center sm:text-left">
+                    <div className="text-xs font-medium text-violet-700 dark:text-violet-300">
+                      {t("admin.walletEventPromoTitle", "이벤트 전용 AI 잔액")}
+                    </div>
+                    <div className="text-base font-semibold text-violet-950 dark:text-violet-50 tabular-nums">
+                      {t("admin.walletEventPromoMain", "남은 무료 AI 곡 {{tracks}}곡 · 생성 1회 완료 시 보통 2곡 차감", {
+                        tracks: promoTracks.toLocaleString("ko-KR"),
+                      })}
+                    </div>
+                    <p className="text-[11px] text-violet-900/80 dark:text-violet-200/80 leading-snug">
+                      {t(
+                        "admin.walletEventPromoHint",
+                        "월 무료 한도(AI 생성 한도 위쪽)와 별도로 먼저 사용됩니다. 출금·환불 대상이 아닙니다.",
+                      )}
+                    </p>
+                    {promoExp ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        {t("admin.walletEventPromoExpires", "전용 잔액 만료(UTC 기준 표시): {{iso}}", {
+                          iso: formatDateTime(promoExp),
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })()}
               <div className="rounded-lg border border-border p-3 space-y-1">
                 <div className="font-medium">{t("admin.walletSubscriptionBlock", "구독 상태")}</div>
                 <div className="text-muted-foreground space-y-0.5">
@@ -5478,6 +5552,14 @@ export default function Admin() {
                           </span>
                         )}
                       </div>
+                      {walletData.aiMusicMonthly.unit === "songs" ? (
+                        <p className="text-[11px] text-muted-foreground leading-snug">
+                          {t(
+                            "admin.walletAiSongsSeparateFromEvent",
+                            "Free 플랜 월간 생성 한도(ai_music_usage)입니다. 5월 이벤트 전용 AI 잔액(users.promo_ai_credits_won)과는 별도이며, 이벤트가 있으면 상단 보라색 블록에 표시됩니다.",
+                          )}
+                        </p>
+                      ) : null}
                       {walletData.aiMusicMonthly.unit === "won" &&
                       typeof walletData.aiMusicMonthly.planGrantWon === "number" &&
                       typeof walletData.aiMusicMonthly.walletRemainingWon === "number" ? (
