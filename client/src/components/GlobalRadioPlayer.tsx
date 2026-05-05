@@ -226,6 +226,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
   const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  /** trackEndLock 동안 schedule이 즉시 return → 라우트 전환·suspend 시 복구가 영구 스킵되는 것 방지 (재시도 상한) */
+  const recoveryLockDeferCountRef = useRef(0);
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
@@ -323,7 +325,18 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
-    if (trackEndLockRef.current) return;
+    if (trackEndLockRef.current) {
+      // 곡 종료→client-advance 직후에는 락이 잠깐 true. 이때 schedule을 막으면 SPA 라우트만 바뀐 경우(visibility는 visible) 복구가 영구 스킵됨.
+      if (recoveryLockDeferCountRef.current >= 12) return;
+      recoveryLockDeferCountRef.current += 1;
+      if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
+      radioRecoverTimerRef.current = window.setTimeout(() => {
+        radioRecoverTimerRef.current = null;
+        scheduleRadioRecoveryAfterSystemPause();
+      }, 420);
+      return;
+    }
+    recoveryLockDeferCountRef.current = 0;
     if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = window.setTimeout(() => {
       radioRecoverTimerRef.current = null;
@@ -333,10 +346,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   // SPA에서 다른 페이지로 이동해도 document.visibilityState는 "visible"인 경우가 많음(iOS Safari 등).
   // 그때는 복구 스케줄이 안 돌아가 무음으로 남을 수 있어, 라우트 변경마다 복구 루프를 태운다.
+  // trackEndLock이면 여기서 return하지 않음 — 곡 전환 직후 다른 메뉴로 가도 schedule이 지연 재시도되도록 함.
   useEffect(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.slug || !s.streamUrl) return;
-    if (trackEndLockRef.current) return;
     restoreAudibleOutput();
     requestPlay();
     scheduleRadioRecoveryAfterSystemPause();
@@ -365,7 +378,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const schedule = scheduleRadioRecoveryAfterSystemPause;
     const onMediaStall = () => {
       if (document.visibilityState !== "visible") return;
-      if (trackEndLockRef.current) return;
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl) return;
       schedule();
