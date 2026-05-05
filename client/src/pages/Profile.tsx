@@ -35,11 +35,12 @@ function StatItem({ label, value, onClick }: { label: string; value: number; onC
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg transition-colors ${onClick ? 'hover-elevate cursor-pointer' : ''}`}
+      type="button"
+      className={`inline-flex flex-row items-center gap-1.5 px-3 py-2 rounded-lg transition-colors ${onClick ? "hover-elevate cursor-pointer" : ""}`}
       data-testid={`stat-${label}`}
     >
-      <span className="text-2xl font-bold text-foreground">{value}</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-lg sm:text-xl font-bold text-foreground tabular-nums">{value}</span>
+      <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap">{label}</span>
     </button>
   );
 }
@@ -1258,13 +1259,13 @@ export default function Profile() {
                 <UploadIcon size={14} />
                 {t('profile.myMusic', '내 음악')} ({uploadedMusic?.length || 0})
               </TabsTrigger>
-              <TabsTrigger value="liked" className="px-4 gap-2" data-testid="tab-liked">
-                <Heart size={14} />
-                {t('profile.likes', '좋아요')} ({likedMusic?.length || 0})
-              </TabsTrigger>
               <TabsTrigger value="playlists" className="px-4 gap-2" data-testid="tab-playlists">
                 <ListMusic size={14} />
                 {t('profile.playlists', '플레이리스트')} ({userPlaylists?.length || 0})
+              </TabsTrigger>
+              <TabsTrigger value="liked" className="px-4 gap-2" data-testid="tab-liked">
+                <Heart size={14} />
+                {t('profile.likes', '좋아요')} ({likedMusic?.length || 0})
               </TabsTrigger>
               <TabsTrigger value="posts" className="px-4 gap-2" data-testid="tab-posts">
                 <MessageSquare size={14} />
@@ -1326,6 +1327,10 @@ export default function Profile() {
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="playlists">
+              <PlaylistSection profilePlaylists={userPlaylists || []} isOwnProfile={isOwnProfile} userId={userId || ""} />
+            </TabsContent>
             
             <TabsContent value="liked">
               <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
@@ -1344,10 +1349,6 @@ export default function Profile() {
                   </div>
                 </div>
               )}
-            </TabsContent>
-
-            <TabsContent value="playlists">
-              <PlaylistSection profilePlaylists={userPlaylists || []} isOwnProfile={isOwnProfile} userId={userId || ""} />
             </TabsContent>
 
             <TabsContent value="posts">
