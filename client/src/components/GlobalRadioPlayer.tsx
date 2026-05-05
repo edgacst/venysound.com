@@ -203,10 +203,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [getActiveAudio, setNeedsTap]);
 
   useEffect(() => {
-    // 모바일: SPA 라우트만 바뀌면 visibility/focus 이벤트가 안 오는 경우가 있어 schedule까지 함께 호출
     restoreAudibleOutput();
-    scheduleRadioRecoveryAfterSystemPause();
-  }, [locationPath, restoreAudibleOutput, scheduleRadioRecoveryAfterSystemPause]);
+  }, [locationPath, restoreAudibleOutput]);
 
   useEffect(() => {
     const onVis = () => {
@@ -342,6 +340,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       void runRadioRecoveryAfterSystemPause();
     }, 180);
   }, [runRadioRecoveryAfterSystemPause]);
+
+  // 모바일: SPA 라우트만 바뀌면 visibility/focus 이벤트가 안 오는 경우가 있어 schedule까지 함께 호출
+  useEffect(() => {
+    if (!isCoarseOrTouchDevice()) return;
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.slug || !s.streamUrl) return;
+    scheduleRadioRecoveryAfterSystemPause();
+  }, [locationPath, scheduleRadioRecoveryAfterSystemPause]);
 
   useEffect(() => {
     const onVis = () => {
