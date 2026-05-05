@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { redirectToLogin } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { usePlaylists, useAddToPlaylist } from "@/hooks/use-playlists";
+import { usePlaylists, useAddToPlaylist, useCreatePlaylist } from "@/hooks/use-playlists";
 import { motion } from "framer-motion";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
@@ -272,11 +272,18 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const [tipMessage, setTipMessage] = useState("");
   const [buyOpen, setBuyOpen] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
+  const [newPlaylistNameInline, setNewPlaylistNameInline] = useState("");
   const [ringtoneDialogOpen, setRingtoneDialogOpen] = useState(false);
   const [isRingtoneDownloading, setIsRingtoneDownloading] = useState(false);
 
-  const { data: playlists, refetch: refetchPlaylists } = usePlaylists();
+  const {
+    data: playlists,
+    refetch: refetchPlaylists,
+    isLoading: playlistsLoading,
+    isError: playlistsError,
+  } = usePlaylists();
   const { mutate: addToPlaylist, isPending: isAddingToPlaylist } = useAddToPlaylist();
+  const { mutate: createPlaylist, isPending: isCreatingPlaylist } = useCreatePlaylist();
 
   const handleOpenPlaylistDialog = () => {
     refetchPlaylists();
@@ -1453,7 +1460,13 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
         </DialogContent>
       </Dialog>
 
-      <Dialog open={playlistOpen} onOpenChange={setPlaylistOpen}>
+      <Dialog
+        open={playlistOpen}
+        onOpenChange={(open) => {
+          setPlaylistOpen(open);
+          if (!open) setNewPlaylistNameInline("");
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1464,13 +1477,24 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {playlists && playlists.length > 0 ? (
+            {playlistsLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : playlistsError ? (
+              <div className="space-y-3 py-2 text-center">
+                <p className="text-sm text-destructive">{t("music.playlistsLoadError", "플레이리스트를 불러오지 못했습니다.")}</p>
+                <Button type="button" size="sm" variant="outline" onClick={() => void refetchPlaylists()}>
+                  {t("common.retry", "다시 시도")}
+                </Button>
+              </div>
+            ) : playlists && playlists.length > 0 ? (
               playlists.map((pl: any) => (
                 <Button
                   key={pl.id}
                   variant="outline"
                   className="w-full justify-start gap-2"
-                  disabled={isAddingToPlaylist}
+                  disabled={isAddingToPlaylist || isCreatingPlaylist}
                   onClick={() => {
                     addToPlaylist({ playlistId: pl.id, musicId: music.id }, {
                       onSuccess: () => setPlaylistOpen(false),
@@ -1483,9 +1507,73 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 </Button>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                {t('music.noPlaylist')}
-              </p>
+              <div className="space-y-3 py-1">
+                <p className="text-sm text-muted-foreground text-center">
+                  {t("music.noPlaylistHint", "아직 만든 플레이리스트가 없습니다. 이름을 정해 새로 만든 뒤 이 곡을 바로 넣을 수 있습니다.")}
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="inline-new-playlist-name" className="text-xs text-muted-foreground">
+                    {t("music.newPlaylistName", "새 플레이리스트 이름")}
+                  </Label>
+                  <Input
+                    id="inline-new-playlist-name"
+                    value={newPlaylistNameInline}
+                    onChange={(e) => setNewPlaylistNameInline(e.target.value)}
+                    placeholder={t("music.newPlaylistPlaceholder", "예: 좋아하는 찬양")}
+                    maxLength={120}
+                    disabled={isCreatingPlaylist || isAddingToPlaylist}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const n = newPlaylistNameInline.trim();
+                        if (!n || isCreatingPlaylist || isAddingToPlaylist) return;
+                        createPlaylist(
+                          { name: n },
+                          {
+                            onSuccess: (created) => {
+                              setNewPlaylistNameInline("");
+                              addToPlaylist(
+                                { playlistId: created.id, musicId: music.id },
+                                { onSuccess: () => setPlaylistOpen(false) },
+                              );
+                            },
+                          },
+                        );
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    className="w-full"
+                    disabled={!newPlaylistNameInline.trim() || isCreatingPlaylist || isAddingToPlaylist}
+                    onClick={() => {
+                      const n = newPlaylistNameInline.trim();
+                      if (!n) return;
+                      createPlaylist(
+                        { name: n },
+                        {
+                          onSuccess: (created) => {
+                            setNewPlaylistNameInline("");
+                            addToPlaylist(
+                              { playlistId: created.id, musicId: music.id },
+                              { onSuccess: () => setPlaylistOpen(false) },
+                            );
+                          },
+                        },
+                      );
+                    }}
+                  >
+                    {isCreatingPlaylist || isAddingToPlaylist ? (
+                      <>
+                        <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />
+                        {t("common.working", "처리 중…")}
+                      </>
+                    ) : (
+                      t("music.createPlaylistAndAdd", "플레이리스트 만들고 이 곡 추가")
+                    )}
+                  </Button>
+                </div>
+              </div>
             )}
           </div>
           <DialogFooter>
