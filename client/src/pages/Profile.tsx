@@ -1191,105 +1191,107 @@ export default function Profile() {
             </Dialog>
           )}
 
-          <div className="flex items-center gap-2 mb-8 flex-wrap">
-            <StatItem label={t('profile.uploads', '업로드')} value={uploadedMusic?.length || 0} />
-            <StatItem label={t('profile.likes', '좋아요')} value={likedMusic?.length || 0} />
-            <StatItem label={t('profile.followers', '팔로워')} value={followerCount || 0} onClick={() => setFollowersOpen(true)} />
-            <StatItem label={t('profile.followingLabel', '팔로잉')} value={followingCount || 0} onClick={() => setFollowingOpen(true)} />
-            <StatItem label={t('profile.posts', '게시글')} value={userPosts?.length || 0} />
-          </div>
-
-          {(uploadedMusic?.length || 0) > 0 && (
-            <div className="mb-8">
-              <Card className="p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center shrink-0">
-                    <Clock className="text-primary" size={16} />
-                  </div>
-                  <h3 className="font-semibold text-sm">{t('profile.streamingStatus', '내 음원 스트리밍 현황')}</h3>
-                </div>
-                {(streamingStats?.tracks || []).length > 0 && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
-                    {streamingStats!.tracks.map((track) => (
-                      <div key={track.musicId} className="flex items-center gap-3 p-2 rounded-md bg-secondary/30" data-testid={`streaming-track-${track.musicId}`}>
-                        <img
-                          src={track.image || `https://picsum.photos/seed/${track.musicId}/40/40`}
-                          alt={track.title}
-                          className="w-9 h-9 rounded object-cover shrink-0"
-                          data-testid={`img-track-${track.musicId}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate" data-testid={`text-track-title-${track.musicId}`}>{track.title}</p>
-                          <p className="text-xs text-muted-foreground truncate" data-testid={`text-track-artist-${track.musicId}`}>{track.artist}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-mono font-medium" data-testid={`text-track-time-${track.musicId}`}>
-                            {formatStreamingTime(track.totalSeconds)}
-                          </p>
-                          <p className="text-xs text-muted-foreground">{track.playCount}{t('profile.playsUnit', '회 재생')}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center justify-between pt-3 border-t border-border">
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t('profile.totalStreamingTime', '총 스트리밍 시간')}</p>
-                    <p className="text-lg font-bold font-mono" data-testid="text-streaming-time">
-                      {formatStreamingTime(streamingStats?.totalSeconds || 0)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">{t('profile.totalPlayCount', '총 재생 횟수')}</p>
-                    <p className="text-lg font-bold" data-testid="text-streaming-plays">
-                      {(streamingStats?.totalPlays || 0).toLocaleString()}{t('profile.timesUnit', '회')}
-                    </p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-
           <FollowListDialog title={t('profile.followers', '팔로워')} users={followers || []} open={followersOpen} onOpenChange={setFollowersOpen} />
           <FollowListDialog title={t('profile.followingLabel', '팔로잉')} users={following || []} open={followingOpen} onOpenChange={setFollowingOpen} />
 
           <Tabs defaultValue="uploaded" className="w-full">
-            <TabsList className="bg-secondary/50 p-1 mb-8 flex-wrap h-auto gap-1">
-              <TabsTrigger value="uploaded" className="px-4 gap-2" data-testid="tab-uploaded">
-                <UploadIcon size={14} />
-                {t('profile.myMusic', '내 음악')} ({uploadedMusic?.length || 0})
-              </TabsTrigger>
-              <TabsTrigger value="playlists" className="px-4 gap-2" data-testid="tab-playlists">
-                <ListMusic size={14} />
-                {t('profile.playlists', '플레이리스트')} ({userPlaylists?.length || 0})
-              </TabsTrigger>
-              <TabsTrigger value="liked" className="px-4 gap-2" data-testid="tab-liked">
-                <Heart size={14} />
-                {t('profile.likes', '좋아요')} ({likedMusic?.length || 0})
-              </TabsTrigger>
-              <TabsTrigger value="posts" className="px-4 gap-2" data-testid="tab-posts">
-                <MessageSquare size={14} />
-                {t('profile.posts', '게시글')} ({userPosts?.length || 0})
-              </TabsTrigger>
-              {isOwnProfile && (
-                <TabsTrigger value="notifications" className="px-4 gap-2" data-testid="tab-notifications">
-                  <Bell size={14} />
-                  {t('profile.notifications', '알림')}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mb-6 w-full">
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-1 shrink-0">
+                <StatItem label={t('profile.uploads', '업로드')} value={uploadedMusic?.length || 0} />
+                <StatItem label={t('profile.likes', '좋아요')} value={likedMusic?.length || 0} />
+                <StatItem label={t('profile.followers', '팔로워')} value={followerCount || 0} onClick={() => setFollowersOpen(true)} />
+                <StatItem label={t('profile.followingLabel', '팔로잉')} value={followingCount || 0} onClick={() => setFollowingOpen(true)} />
+                <StatItem label={t('profile.posts', '게시글')} value={userPosts?.length || 0} />
+              </div>
+              <span className="hidden sm:inline-block h-6 w-px shrink-0 bg-border" aria-hidden />
+              <TabsList className="bg-secondary/50 p-1 flex-wrap h-auto gap-1 flex-1 min-w-0 justify-start w-full sm:w-auto">
+                <TabsTrigger value="uploaded" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-uploaded">
+                  <UploadIcon size={14} />
+                  {t('profile.myMusic', '내 음악')} ({uploadedMusic?.length || 0})
                 </TabsTrigger>
-              )}
-              {isOwnProfile && (
-                <TabsTrigger value="earnings" className="px-4 gap-2" data-testid="tab-earnings">
-                  <Wallet size={14} />
-                  {t('profile.earnings', '수익')}
+                <TabsTrigger value="playlists" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-playlists">
+                  <ListMusic size={14} />
+                  {t('profile.playlists', '플레이리스트')} ({userPlaylists?.length || 0})
                 </TabsTrigger>
-              )}
-              {isOwnProfile && (
-                <TabsTrigger value="reports" className="px-4 gap-2" data-testid="tab-reports">
-                  <Flag size={14} />
-                  {t('profile.myReports', '내 신고')}
+                <TabsTrigger value="liked" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-liked">
+                  <Heart size={14} />
+                  {t('profile.likes', '좋아요')} ({likedMusic?.length || 0})
                 </TabsTrigger>
-              )}
-            </TabsList>
+                <TabsTrigger value="posts" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-posts">
+                  <MessageSquare size={14} />
+                  {t('profile.posts', '게시글')} ({userPosts?.length || 0})
+                </TabsTrigger>
+                {isOwnProfile && (
+                  <TabsTrigger value="notifications" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-notifications">
+                    <Bell size={14} />
+                    {t('profile.notifications', '알림')}
+                  </TabsTrigger>
+                )}
+                {isOwnProfile && (
+                  <TabsTrigger value="earnings" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-earnings">
+                    <Wallet size={14} />
+                    {t('profile.earnings', '수익')}
+                  </TabsTrigger>
+                )}
+                {isOwnProfile && (
+                  <TabsTrigger value="reports" className="px-3 sm:px-4 gap-2 text-xs sm:text-sm" data-testid="tab-reports">
+                    <Flag size={14} />
+                    {t('profile.myReports', '내 신고')}
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
+
+            {(uploadedMusic?.length || 0) > 0 && (
+              <div className="mb-8">
+                <Card className="p-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center shrink-0">
+                      <Clock className="text-primary" size={16} />
+                    </div>
+                    <h3 className="font-semibold text-sm">{t('profile.streamingStatus', '내 음원 스트리밍 현황')}</h3>
+                  </div>
+                  {(streamingStats?.tracks || []).length > 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+                      {streamingStats!.tracks.map((track) => (
+                        <div key={track.musicId} className="flex items-center gap-3 p-2 rounded-md bg-secondary/30" data-testid={`streaming-track-${track.musicId}`}>
+                          <img
+                            src={track.image || `https://picsum.photos/seed/${track.musicId}/40/40`}
+                            alt={track.title}
+                            className="w-9 h-9 rounded object-cover shrink-0"
+                            data-testid={`img-track-${track.musicId}`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate" data-testid={`text-track-title-${track.musicId}`}>{track.title}</p>
+                            <p className="text-xs text-muted-foreground truncate" data-testid={`text-track-artist-${track.musicId}`}>{track.artist}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-mono font-medium" data-testid={`text-track-time-${track.musicId}`}>
+                              {formatStreamingTime(track.totalSeconds)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{track.playCount}{t('profile.playsUnit', '회 재생')}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-3 border-t border-border">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{t('profile.totalStreamingTime', '총 스트리밍 시간')}</p>
+                      <p className="text-lg font-bold font-mono" data-testid="text-streaming-time">
+                        {formatStreamingTime(streamingStats?.totalSeconds || 0)}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">{t('profile.totalPlayCount', '총 재생 횟수')}</p>
+                      <p className="text-lg font-bold" data-testid="text-streaming-plays">
+                        {(streamingStats?.totalPlays || 0).toLocaleString()}{t('profile.timesUnit', '회')}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
             
             <TabsContent value="uploaded">
               {(uploadedMusic?.length ?? 0) > 0 && (
