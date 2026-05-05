@@ -53,6 +53,7 @@ export function useCreatePlaylist() {
 }
 
 export function useAddToPlaylist() {
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   return useMutation({
     mutationFn: async ({ playlistId, musicId }: { playlistId: number; musicId: number }) => {
@@ -63,14 +64,20 @@ export function useAddToPlaylist() {
         body: JSON.stringify({ musicId }),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to add to playlist");
-      return api.playlists.addMusic.responses[200].parse(await res.json());
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof (body as { message?: unknown }).message === "string" ? (body as { message: string }).message : null;
+        throw new Error(msg || "플레이리스트에 추가하지 못했습니다");
+      }
+      return api.playlists.addMusic.responses[200].parse(body);
     },
-    onSuccess: () => {
+    onSuccess: (_data, { playlistId }) => {
+      void queryClient.invalidateQueries({ queryKey: [api.playlists.list.path] });
+      void queryClient.invalidateQueries({ queryKey: [api.playlists.get.path, playlistId] });
       toast({ title: "추가 완료", description: "곡이 플레이리스트에 추가되었습니다" });
     },
-    onError: (error) => {
-      toast({ title: "오류", description: "플레이리스트에 추가하지 못했습니다", variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ title: "오류", description: error.message || "플레이리스트에 추가하지 못했습니다", variant: "destructive" });
     },
   });
 }

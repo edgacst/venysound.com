@@ -4452,15 +4452,29 @@ export async function registerRoutes(
 
   app.post(api.playlists.addMusic.path, isAuthenticated, async (req, res) => {
     const playlistId = Number(req.params.id);
-    const { musicId } = req.body;
-    
+    if (!Number.isFinite(playlistId) || playlistId < 1) {
+      return res.status(400).json({ message: "플레이리스트 ID가 올바르지 않습니다." });
+    }
+    const rawMid = (req.body as { musicId?: unknown })?.musicId;
+    const musicIdNum = typeof rawMid === "string" ? Number(rawMid) : typeof rawMid === "number" ? rawMid : NaN;
+    const parsed = api.playlists.addMusic.input.safeParse({ musicId: musicIdNum });
+    if (!parsed.success) {
+      return res.status(400).json({ message: "음원 ID(musicId)가 올바르지 않습니다." });
+    }
+    const { musicId } = parsed.data;
+
     const playlist = await storage.getPlaylistById(playlistId);
     // @ts-ignore
     if (!playlist || playlist.userId !== req.user.claims.sub) {
-      return res.status(404).json({ message: "Playlist not found or access denied" });
+      return res.status(404).json({ message: "플레이리스트를 찾을 수 없거나 권한이 없습니다." });
     }
 
-    await storage.addMusicToPlaylist(playlistId, musicId);
+    try {
+      await storage.addMusicToPlaylist(playlistId, musicId);
+    } catch (e) {
+      console.error("[playlists addMusic]", e);
+      return res.status(500).json({ message: "플레이리스트에 곡을 추가하지 못했습니다." });
+    }
     res.json({ success: true });
   });
 
