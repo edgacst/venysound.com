@@ -15,8 +15,8 @@ import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-fore
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 
 const REFETCH_INTERVAL_MS = 8000;
-/** 폴링에서 status !== live 가 연속으로 나올 때만 clear (일시 응답·레이스로 라디오가 죽는 것 방지) */
-const POLL_NOT_LIVE_CLEAR_AFTER = 2;
+/** 폴링에서 status !== live 가 연속으로 나올 때만 clear (모바일·느린 구간에서 2회면 과도하게 끊기는 경우 완화) */
+const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -119,10 +119,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const res = await fetch(`/api/radio/channels/${slug.trim().toLowerCase()}`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
+        // status 필드가 없는 비정상 JSON은 streak에 넣지 않음(단, 채널 200이면 보통 항상 status 있음)
         if (data?.status !== "live") {
-          pollNotLiveStreakRef.current += 1;
-          if (pollNotLiveStreakRef.current >= POLL_NOT_LIVE_CLEAR_AFTER) {
-            clear();
+          if (data?.status != null) {
+            pollNotLiveStreakRef.current += 1;
+            if (pollNotLiveStreakRef.current >= POLL_NOT_LIVE_CLEAR_AFTER) {
+              clear();
+            }
           }
           return;
         }
@@ -756,10 +759,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
       const state = useRadioPlayerStore.getState();
       const currentSlug = state.slug;
-      const match = endedSrc?.match(/\/api\/music\/(\d+)\/stream/);
-      const musicId = match ? parseInt(match[1], 10) : NaN;
+      const midFromSrc =
+        musicIdFromSiteMusicStreamUrl(endedSrc) ?? musicIdFromSiteMusicStreamUrl(state.streamUrl ?? null);
       const advanceBody =
-        match && Number.isFinite(musicId) ? JSON.stringify({ currentMusicId: musicId }) : JSON.stringify({});
+        midFromSrc != null && Number.isFinite(midFromSrc)
+          ? JSON.stringify({ currentMusicId: midFromSrc })
+          : JSON.stringify({});
 
       /** 비로그인·스트림 없음: 즉시 끊기(기존과 동일) */
       if (!currentSlug || !shouldAutoAdvance) {
