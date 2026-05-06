@@ -121,14 +121,7 @@ export default function May2026Event() {
         <p className="text-xs font-medium text-violet-300 mb-2">이벤트</p>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 text-foreground">2026년 5월 신규가입 이벤트</h1>
         <p className="text-sm text-zinc-300 mb-3">{rangeLabel}</p>
-        <p
-          className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-medium tabular-nums mb-8 ${
-            capFull ? "border-amber-500/50 bg-amber-950/40 text-amber-100" : "border-violet-500/40 bg-violet-950/40 text-violet-100"
-          }`}
-          data-testid="may-2026-cap-badge"
-        >
-          {t("may2026Page.capBadge", "승인 {{current}} / {{max}}명 (100명 한정)", { current: approvedCount, max: cap })}
-        </p>
+        <div className="mb-8" />
 
         {/* 앱은 :root가 어두운 테마인데 html에 .dark 클래스가 없어 dark: 미적용 → prose-slate만 쓰면 본문이 어두운 색으로 남음. prose-invert로 본문 대비 확보 */}
         <div className="prose prose-invert prose-sm max-w-none space-y-8 text-sm leading-relaxed text-zinc-100 prose-headings:text-foreground prose-p:text-zinc-200 prose-strong:text-white prose-li:text-zinc-200 prose-a:text-violet-300">
