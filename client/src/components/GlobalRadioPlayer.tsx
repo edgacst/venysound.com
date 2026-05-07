@@ -684,20 +684,18 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           useRadioPlayerStore.setState({ initialSeekSeconds: null });
         }
         const oldActive = getActiveAudio();
-        activeIndexRef.current = 1 - activeIndexRef.current;
-        setActiveIndex(activeIndexRef.current);
-        if (oldActive) {
+        inactiveEl.volume = 1;
+        // 다음 곡 준비(inactiveEl load)는 즉시 하되, "activeIndex 스왑 + 재생 시작"은 항상 동일한 타이밍(1초 후)에 한 번만 수행.
+        // 텀 동안 active가 바뀌면 복구 루틴/재생 시도가 엇갈려 짧은 잡음(툭/다른음)이 섞일 수 있다.
+        setTimeout(() => {
+          if (userStoppedNow()) return;
           try {
-            oldActive.pause();
+            oldActive?.pause();
           } catch {
             /* ignore */
           }
-        }
-        inactiveEl.volume = 1;
-        // ended 직후 곧바로 play()를 호출하면 디코더/오디오 포커스 상황에 따라 클릭/무음이 섞이는 경우가 있어
-        // UX적으로 일관된 텀을 두고 다음 곡을 시작한다.
-        setTimeout(() => {
-          if (userStoppedNow()) return;
+          activeIndexRef.current = 1 - activeIndexRef.current;
+          setActiveIndex(activeIndexRef.current);
           tryPlay(inactiveEl);
         }, NEXT_TRACK_START_DELAY_MS);
       };
