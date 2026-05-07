@@ -20,6 +20,8 @@ const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 /** TWA에서 play()가 잠깐 거절되는 경우가 많아, 즉시 "탭해서 듣기"를 띄우지 않고 이 시간까지 자동 복구를 재시도 */
 const NEEDS_TAP_DEFER_TOTAL_MS = 5200;
 const NEEDS_TAP_RETRY_AT_MS = [0, 550, 1500, 3200, NEEDS_TAP_DEFER_TOTAL_MS] as const;
+/** 곡 종료 직후 즉시 재생 전환 시 모바일/TWA에서 간헐적으로 "툭" 소리/짧은 무음이 섞이는 경우가 있어, 항상 일정 텀을 두고 다음 곡을 시작 */
+const NEXT_TRACK_START_DELAY_MS = 1000;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -102,11 +104,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   /** 즉시 needsTap 대신: 자동 복구 여러 번 시도 후에만 CTA 표시 (restoreAudibleOutput보다 아래에서 채움) */
   const scheduleNeedsTapAfterRecoveryRef = useRef<() => void>(() => {});
   const needsTapDeferSeqRef = useRef(0);
-  const needsTapDeferTimersRef = useRef<number[]>([]);
+  const needsTapDeferTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const invalidateDeferredNeedsTap = useCallback(() => {
     needsTapDeferSeqRef.current += 1;
-    needsTapDeferTimersRef.current.forEach((id) => window.clearTimeout(id));
+    needsTapDeferTimersRef.current.forEach((id) => clearTimeout(id));
     needsTapDeferTimersRef.current = [];
   }, []);
 
@@ -261,7 +263,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [isAuthenticated]);
 
   /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
-  const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const radioRecoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
@@ -360,15 +362,15 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
-    if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
-    radioRecoverTimerRef.current = window.setTimeout(() => {
+    if (radioRecoverTimerRef.current != null) clearTimeout(radioRecoverTimerRef.current);
+    radioRecoverTimerRef.current = setTimeout(() => {
       radioRecoverTimerRef.current = null;
       void runRadioRecoveryAfterSystemPause();
     }, 180);
   }, [runRadioRecoveryAfterSystemPause]);
 
   const scheduleNeedsTapAfterRecovery = useCallback(() => {
-    needsTapDeferTimersRef.current.forEach((id) => window.clearTimeout(id));
+    needsTapDeferTimersRef.current.forEach((id) => clearTimeout(id));
     needsTapDeferTimersRef.current = [];
     const mySeq = ++needsTapDeferSeqRef.current;
 
@@ -391,7 +393,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     };
 
     NEEDS_TAP_RETRY_AT_MS.forEach((ms, idx) => {
-      const id = window.setTimeout(() => {
+      const id = setTimeout(() => {
         if (mySeq !== needsTapDeferSeqRef.current) return;
         tryRecoverBurst();
         if (idx === NEEDS_TAP_RETRY_AT_MS.length - 1) {
@@ -441,7 +443,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     document.addEventListener("visibilitychange", onVis);
     return () => {
       if (radioRecoverTimerRef.current != null) {
-        window.clearTimeout(radioRecoverTimerRef.current);
+        clearTimeout(radioRecoverTimerRef.current);
         radioRecoverTimerRef.current = null;
       }
       window.removeEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
@@ -471,7 +473,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
       if (el.paused) {
         restoreAudibleOutput();
-        window.setTimeout(() => {
+        setTimeout(() => {
           const stillPaused = !!getActiveAudio()?.paused;
           const st2 = useRadioPlayerStore.getState();
           if (!st2.userStopped && st2.streamUrl && stillPaused) scheduleNeedsTapAfterRecoveryRef.current();
@@ -626,7 +628,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (!streamUrl) return;
     setPlayError(false);
     let cancelled = false;
-    const tId = window.setTimeout(() => {
+    const tId = setTimeout(() => {
       if (cancelled) return;
       // 곡 종료 직후 client-advance 경합으로 streamUrl 문자열이 같아도 setStream이 다시 오는 경우가 있음(streamHandoffSeq).
       // 이전 ended 락이 남으면 timeupdate/연속 재생이 영구 정지할 수 있어 핸드오프 시작 시 락을 해제한다.
@@ -687,13 +689,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (oldActive) {
           try {
             oldActive.pause();
-            oldActive.currentTime = 0;
           } catch {
             /* ignore */
           }
         }
         inactiveEl.volume = 1;
-        tryPlay(inactiveEl);
+        // ended 직후 곧바로 play()를 호출하면 디코더/오디오 포커스 상황에 따라 클릭/무음이 섞이는 경우가 있어
+        // UX적으로 일관된 텀을 두고 다음 곡을 시작한다.
+        setTimeout(() => {
+          if (userStoppedNow()) return;
+          tryPlay(inactiveEl);
+        }, NEXT_TRACK_START_DELAY_MS);
       };
 
       if (matchSrc(active)) {
