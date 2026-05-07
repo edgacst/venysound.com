@@ -684,19 +684,22 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           useRadioPlayerStore.setState({ initialSeekSeconds: null });
         }
         const oldActive = getActiveAudio();
+        // 연속 재생 안정성이 최우선: activeIndex는 즉시 스왑해 requestPlay/복구 루틴이 "다음 곡 버퍼"를 보도록 만든다.
+        // 대신 실제로 들리는 출력은 1초 동안 silent로 유지(=muted 재생)해서 클릭/짧은 잡음을 없앤다.
+        activeIndexRef.current = 1 - activeIndexRef.current;
+        setActiveIndex(activeIndexRef.current);
+        try {
+          oldActive?.pause();
+        } catch {
+          /* ignore */
+        }
         inactiveEl.volume = 1;
-        // 다음 곡 준비(inactiveEl load)는 즉시 하되, "activeIndex 스왑 + 재생 시작"은 항상 동일한 타이밍(1초 후)에 한 번만 수행.
-        // 텀 동안 active가 바뀌면 복구 루틴/재생 시도가 엇갈려 짧은 잡음(툭/다른음)이 섞일 수 있다.
+        inactiveEl.muted = true;
+        tryPlay(inactiveEl);
         setTimeout(() => {
           if (userStoppedNow()) return;
-          try {
-            oldActive?.pause();
-          } catch {
-            /* ignore */
-          }
-          activeIndexRef.current = 1 - activeIndexRef.current;
-          setActiveIndex(activeIndexRef.current);
-          tryPlay(inactiveEl);
+          // 1초 후 출력만 복원 (isMuted UI 플래그는 건드리지 않음)
+          inactiveEl.muted = false;
         }, NEXT_TRACK_START_DELAY_MS);
       };
 
