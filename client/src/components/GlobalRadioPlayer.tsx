@@ -621,6 +621,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
   const trackEndLockRef = useRef(false);
+  /** client-advance 직전 pause ~ 다음 곡 tryPlay까지: pause 이벤트를 OS 인터럽트로 오인하지 않음(trackEndLock만으로는 stream effect 초기에 락이 풀려 부족) */
+  const radioAutoAdvanceRef = useRef(false);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
@@ -630,9 +632,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     let cancelled = false;
     const tId = setTimeout(() => {
       if (cancelled) return;
-      // 곡 종료 직후 client-advance 경합으로 streamUrl 문자열이 같아도 setStream이 다시 오는 경우가 있음(streamHandoffSeq).
-      // 이전 ended 락이 남으면 timeupdate/연속 재생이 영구 정지할 수 있어 핸드오프 시작 시 락을 해제한다.
-      trackEndLockRef.current = false;
+      const releaseAdvanceGate = () => {
+        radioAutoAdvanceRef.current = false;
+        trackEndLockRef.current = false;
+      };
       const active = getActiveAudio();
       const inactive = getInactiveAudio();
       const matchSrc = (el: HTMLAudioElement | null) => {
@@ -644,6 +647,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const releaseTrackEndLock = () => {
           // 모바일에서 play()가 거절되면 onAudioPlay가 안 와서 ended 처리 락이 풀리지 않고 연속 재생이 멈출 수 있음
           trackEndLockRef.current = false;
+          radioAutoAdvanceRef.current = false;
         };
         const holdMs = playOpts?.holdMutedOutputMs ?? 0;
         const scheduleUnmuteAfterHandoff = () => {
@@ -700,7 +704,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       };
       /** 비활성 버퍼에 이미 올바른 src가 있을 때(이전 effect 취소 등)에도 반드시 핸드오프·재생 */
       const handoffToInactive = (inactiveEl: HTMLAudioElement) => {
-        if (userStoppedNow()) return;
+        if (userStoppedNow()) {
+          releaseAdvanceGate();
+          return;
+        }
         const seek = pendingSeekRef.current ?? useRadioPlayerStore.getState().initialSeekSeconds ?? null;
         if (seek != null && seek > 0) {
           try {
@@ -733,7 +740,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       };
 
       if (matchSrc(active)) {
-        if (userStoppedNow()) return;
+        if (userStoppedNow()) {
+          releaseAdvanceGate();
+          return;
+        }
         if (active && !active.paused && !active.ended) {
           active.volume = 1;
           active.muted = false;
@@ -748,6 +758,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           setIsMuted(false);
           invalidateDeferredNeedsTap();
           setNeedsTap(false);
+          setPlaying(true);
+          releaseAdvanceGate();
           return;
         }
         if (active) tryPlay(active);
@@ -758,7 +770,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         return;
       }
 
-      if (!inactive || typeof inactive.pause !== "function") return;
+      if (!inactive || typeof inactive.pause !== "function") {
+        releaseAdvanceGate();
+        return;
+      }
       inactive.pause();
       inactive.currentTime = 0;
       inactive.removeAttribute("src");
@@ -788,8 +803,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         clearTimeout(handoffUnmuteTimerRef.current);
         handoffUnmuteTimerRef.current = null;
       }
+      radioAutoAdvanceRef.current = false;
+      trackEndLockRef.current = false;
     };
-  }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, invalidateDeferredNeedsTap]);
+  }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, invalidateDeferredNeedsTap, setPlaying]);
 
   useEffect(() => {
     if (playTrigger <= 0 || userStopped) return;
@@ -819,6 +836,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     invalidateDeferredNeedsTap();
     setNeedsTap(false);
     setIsMuted(false);
+    trackEndLockRef.current = false;
+    radioAutoAdvanceRef.current = false;
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
     });
@@ -877,6 +896,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const el = e.target as HTMLAudioElement;
       if (el.volume < 0.05) el.volume = 1;
       trackEndLockRef.current = false;
+      radioAutoAdvanceRef.current = false;
       systemInterruptedRef.current = false;
       invalidateDeferredNeedsTap();
       setNeedsTap(false);
@@ -886,8 +906,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const onAudioPause = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target !== getActiveAudio()) return;
-    // 곡 종료 → client-advance 구간에서 넣는 pause는 OS 인터럽트가 아님(trackEndLock은 tryPlay 성공 시까지 유지)
-    if (trackEndLockRef.current) return;
+    // 곡 종료 → client-advance·핸드오프 구간의 pause는 OS 인터럽트가 아님(stream effect 초반에 trackEndLock만 풀리는 경우 대비)
+    if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
     setPlaying(false);
     const s = useRadioPlayerStore.getState();
     // 사용자가 직접 멈춘 게 아닌데 시스템/브라우저가 pause를 걸면(통화/오디오포커스 등)
@@ -925,6 +945,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           /* ignore */
         }
         trackEndLockRef.current = false;
+        radioAutoAdvanceRef.current = false;
       };
 
       const state = useRadioPlayerStore.getState();
@@ -959,6 +980,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
 
       // 로그인 청취: client-advance 응답 전까지 src 유지 → 네트워크 지연 동안 덜컹 무음 방지
+      radioAutoAdvanceRef.current = true;
       try {
         el.pause();
       } catch {
