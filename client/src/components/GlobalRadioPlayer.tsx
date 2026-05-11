@@ -109,6 +109,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const needsTapDeferTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   /** A/B 핸드오프 직후 뮤트 해제 타이머 — effect 재실행·채널 전환 시 이전 타이머가 엉뚱한 엘리먼트를 unmute 하지 않게 정리 */
   const handoffUnmuteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 곡 종료 후 client-advance 직전 pause 등 — 브라우저 pause를 통화/OS 인터럽트로 오인하면 복구·연속 재생이 막힘 */
+  const ignoreNextActivePauseAsSystemInterruptRef = useRef(false);
 
   const invalidateDeferredNeedsTap = useCallback(() => {
     needsTapDeferSeqRef.current += 1;
@@ -181,6 +183,19 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const getActiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioARef.current : audioBRef.current), []);
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
+
+  const pauseActiveForRadioPipeline = useCallback((node: HTMLAudioElement | null | undefined) => {
+    if (!node) return;
+    ignoreNextActivePauseAsSystemInterruptRef.current = true;
+    try {
+      node.pause();
+    } catch {
+      ignoreNextActivePauseAsSystemInterruptRef.current = false;
+    }
+    queueMicrotask(() => {
+      ignoreNextActivePauseAsSystemInterruptRef.current = false;
+    });
+  }, []);
 
   const [locationPath] = useLocation();
 
@@ -655,7 +670,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           handoffUnmuteTimerRef.current = window.setTimeout(() => {
             handoffUnmuteTimerRef.current = null;
             if (userStoppedNow()) return;
-            if (systemInterruptedRef.current) return;
             el.muted = false;
             setIsMuted(false);
           }, holdMs);
@@ -887,6 +901,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const onAudioPause = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target !== getActiveAudio()) return;
+    if (ignoreNextActivePauseAsSystemInterruptRef.current) {
+      ignoreNextActivePauseAsSystemInterruptRef.current = false;
+      return;
+    }
     setPlaying(false);
     const s = useRadioPlayerStore.getState();
     // 사용자가 직접 멈춘 게 아닌데 시스템/브라우저가 pause를 걸면(통화/오디오포커스 등)
@@ -917,7 +935,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
       const releaseEndLockAndClearAudio = () => {
         try {
-          el.pause();
+          pauseActiveForRadioPipeline(el);
           el.removeAttribute("src");
           el.load();
         } catch {
@@ -958,11 +976,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
 
       // 로그인 청취: client-advance 응답 전까지 src 유지 → 네트워크 지연 동안 덜컹 무음 방지
-      try {
-        el.pause();
-      } catch {
-        /* ignore */
-      }
+      pauseActiveForRadioPipeline(el);
 
       const def = i18n.t("radio.defaultChannelName");
       const chName = (state.channelName ?? def).trim() || def;
@@ -1056,6 +1070,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       i18n,
       handleStop,
       scheduleRadioRecoveryAfterSystemPause,
+      pauseActiveForRadioPipeline,
     ],
   );
 
