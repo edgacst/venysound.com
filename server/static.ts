@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { injectSpaCanonicalPlaceholders } from "./spa-canonical";
+import { injectAdSenseReviewContent } from "./spa-adsense";
 
 /** index.ts 와 동일 — tsx(ESM) 에서는 __dirname 이 없을 수 있음 */
 function projectRoot(): string {
@@ -42,7 +43,8 @@ export function serveStatic(app: Express) {
   });
 
   const sendSpaIndex = (req: Request, res: Response) => {
-    const body = injectSpaCanonicalPlaceholders(indexTemplate, req);
+    let body = injectSpaCanonicalPlaceholders(indexTemplate, req);
+    body = injectAdSenseReviewContent(body, req);
     res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.send(body);
