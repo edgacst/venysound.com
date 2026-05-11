@@ -22,6 +22,8 @@ const NEEDS_TAP_DEFER_TOTAL_MS = 5200;
 const NEEDS_TAP_RETRY_AT_MS = [0, 550, 1500, 3200, NEEDS_TAP_DEFER_TOTAL_MS] as const;
 /** A/B 핸드오프 직후 다음 트랙을 잠깐 뮤트로 재생한 뒤 출력을 연 시간(ms). tryPlay `holdMutedOutputMs`와 함께 사용. */
 const NEXT_TRACK_HANDOFF_UNMUTE_MS = 240;
+/** 리스너: 곡이 끝난 뒤(ended) 이 시간만큼 지난 다음 client-advance·다음 스트림 연결(조기 timeupdate 진행과 구분) */
+const LISTENER_ADVANCE_AFTER_TRACK_END_MS = 1000;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -623,6 +625,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const trackEndLockRef = useRef(false);
   /** client-advance 직전 pause ~ 다음 곡 tryPlay까지: pause 이벤트를 OS 인터럽트로 오인하지 않음(trackEndLock만으로는 stream effect 초기에 락이 풀려 부족) */
   const radioAutoAdvanceRef = useRef(false);
+  const listenerAdvanceDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
@@ -803,6 +806,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         clearTimeout(handoffUnmuteTimerRef.current);
         handoffUnmuteTimerRef.current = null;
       }
+      if (listenerAdvanceDelayTimerRef.current != null) {
+        clearTimeout(listenerAdvanceDelayTimerRef.current);
+        listenerAdvanceDelayTimerRef.current = null;
+      }
       radioAutoAdvanceRef.current = false;
       trackEndLockRef.current = false;
     };
@@ -838,6 +845,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setIsMuted(false);
     trackEndLockRef.current = false;
     radioAutoAdvanceRef.current = false;
+    if (listenerAdvanceDelayTimerRef.current != null) {
+      clearTimeout(listenerAdvanceDelayTimerRef.current);
+      listenerAdvanceDelayTimerRef.current = null;
+    }
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
     });
@@ -922,6 +933,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     (el: HTMLAudioElement) => {
       if (trackEndLockRef.current) return;
       if (el !== getActiveAudio()) return;
+      if (!el.ended) return;
+
+      if (listenerAdvanceDelayTimerRef.current != null) {
+        clearTimeout(listenerAdvanceDelayTimerRef.current);
+        listenerAdvanceDelayTimerRef.current = null;
+      }
+
       trackEndLockRef.current = true;
 
       const endedSrc = el.src;
@@ -937,6 +955,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
 
       const releaseEndLockAndClearAudio = () => {
+        if (listenerAdvanceDelayTimerRef.current != null) {
+          clearTimeout(listenerAdvanceDelayTimerRef.current);
+          listenerAdvanceDelayTimerRef.current = null;
+        }
         try {
           el.pause();
           el.removeAttribute("src");
@@ -979,14 +1001,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         return;
       }
 
-      // 로그인 청취: client-advance 응답 전까지 src 유지 → 네트워크 지연 동안 덜컹 무음 방지
-      radioAutoAdvanceRef.current = true;
-      try {
-        el.pause();
-      } catch {
-        /* ignore */
-      }
-
+      // 로그인 청취: 곡이 완전히 끝난(ended) 뒤 LISTENER_ADVANCE_AFTER_TRACK_END_MS 대기 후 client-advance — 조기 timeupdate 진행 제거
       const def = i18n.t("radio.defaultChannelName");
       const chName = (state.channelName ?? def).trim() || def;
 
@@ -999,72 +1014,94 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         scheduleRadioRecoveryAfterSystemPause();
       };
 
-      fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        keepalive: true,
-        body: advanceBody,
-      })
-        .then(async (r) => (r.ok ? r.json() : null))
-        .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
-          let didSetNext = false;
-          const applyChannelPayload = (channelData: Record<string, unknown>) => {
-            if (channelData?.status !== "live") return;
-            const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
-            const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
-            if (nowPlayingId == null && !nowPlayingObjectPath) return;
-            const newStreamUrl =
-              nowPlayingObjectPath != null
-                ? String(nowPlayingObjectPath)
-                : nowPlayingId != null
-                  ? `/api/music/${Number(nowPlayingId)}/stream`
-                  : null;
-            if (!newStreamUrl) return;
-            const s = useRadioPlayerStore.getState();
-            if (s.userStopped || s.slug !== currentSlug) return;
-            const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
-            const elapsed =
-              typeof channelData?.nowPlayingElapsedSeconds === "number"
-                ? (channelData.nowPlayingElapsedSeconds as number)
-                : null;
-            s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
-            // 재생은 streamUrl effect의 tryPlay/handoff에 맡김(setStream 직후 requestPlay는 스왑 전 구 버퍼에 play()가 걸림)
-            didSetNext = true;
-          };
+      listenerAdvanceDelayTimerRef.current = window.setTimeout(() => {
+        listenerAdvanceDelayTimerRef.current = null;
+        const sNow = useRadioPlayerStore.getState();
+        if (sNow.userStopped || sNow.slug !== currentSlug) {
+          trackEndLockRef.current = false;
+          radioAutoAdvanceRef.current = false;
+          return;
+        }
+        if (getActiveAudio() !== el) {
+          trackEndLockRef.current = false;
+          radioAutoAdvanceRef.current = false;
+          return;
+        }
 
-          if (data?.ok && data.nextMusicId != null) {
-            const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
-            const s = useRadioPlayerStore.getState();
-            if (!s.userStopped && s.slug === currentSlug) {
-              s.setStream(currentSlug, chName, nextUrl);
+        radioAutoAdvanceRef.current = true;
+        try {
+          el.pause();
+        } catch {
+          /* ignore */
+        }
+
+        fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          keepalive: true,
+          body: advanceBody,
+        })
+          .then(async (r) => (r.ok ? r.json() : null))
+          .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+            let didSetNext = false;
+            const applyChannelPayload = (channelData: Record<string, unknown>) => {
+              if (channelData?.status !== "live") return;
+              const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+              const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+              if (nowPlayingId == null && !nowPlayingObjectPath) return;
+              const newStreamUrl =
+                nowPlayingObjectPath != null
+                  ? String(nowPlayingObjectPath)
+                  : nowPlayingId != null
+                    ? `/api/music/${Number(nowPlayingId)}/stream`
+                    : null;
+              if (!newStreamUrl) return;
+              const s = useRadioPlayerStore.getState();
+              if (s.userStopped || s.slug !== currentSlug) return;
+              const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
+              const elapsed =
+                typeof channelData?.nowPlayingElapsedSeconds === "number"
+                  ? (channelData.nowPlayingElapsedSeconds as number)
+                  : null;
+              s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
+              // 재생은 streamUrl effect의 tryPlay/handoff에 맡김(setStream 직후 requestPlay는 스왑 전 구 버퍼에 play()가 걸림)
               didSetNext = true;
+            };
+
+            if (data?.ok && data.nextMusicId != null) {
+              const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
+              const s = useRadioPlayerStore.getState();
+              if (!s.userStopped && s.slug === currentSlug) {
+                s.setStream(currentSlug, chName, nextUrl);
+                didSetNext = true;
+              }
+              if (!didSetNext) failAdvance();
+              return;
             }
-            if (!didSetNext) failAdvance();
-            return;
-          }
-          if (data?.reason === "not_live") {
-            failAdvance();
-            return;
-          }
-          try {
-            const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
-            if (!r2.ok) {
+            if (data?.reason === "not_live") {
               failAdvance();
               return;
             }
-            const channelData = await r2.json();
-            applyChannelPayload(channelData);
-            if (!didSetNext) failAdvance();
-          } catch {
+            try {
+              const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+              if (!r2.ok) {
+                failAdvance();
+                return;
+              }
+              const channelData = await r2.json();
+              applyChannelPayload(channelData);
+              if (!didSetNext) failAdvance();
+            } catch {
+              failAdvance();
+            }
+          })
+          .catch(() => {
             failAdvance();
-          }
-        })
-        .catch(() => {
-          failAdvance();
-        });
+          });
 
-      if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+        if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+      }, LISTENER_ADVANCE_AFTER_TRACK_END_MS);
     },
     [
       getActiveAudio,
@@ -1088,21 +1125,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el !== getActiveAudio()) return;
       useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
       if (trackEndLockRef.current) return;
-      const d = el.duration;
-      if (!Number.isFinite(d) || d < 2) return;
-      if (el.ended) return;
-      // ended 미발화 보조용: 과도한 조기 진행 방지 — (1) reported duration 끝 근처 (2) 버퍼도 거의 소진
-      // duration이 실제보다 짧게 잡힌 경우, 버퍼 끝이 아직 metadata 끝보다 짧으면 조기 종료하지 않음
-      try {
-        if (el.buffered?.length) {
-          const bufEnd = el.buffered.end(el.buffered.length - 1);
-          if (bufEnd - el.currentTime > 0.55) return;
-          if (Number.isFinite(d) && bufEnd < d - 0.75 && d - el.currentTime > 0.9) return;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (el.currentTime < d - 0.18) return;
+      // ended 이벤트가 백그라운드에서 누락될 때만 보조 — duration 근처 추측으로는 client-advance 호출하지 않음(조기 넘김 방지)
+      if (!el.ended) return;
       processActiveTrackEnded(el);
     },
     [getActiveAudio, processActiveTrackEnded],
