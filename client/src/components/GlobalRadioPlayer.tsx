@@ -20,8 +20,8 @@ const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 /** TWA에서 play()가 잠깐 거절되는 경우가 많아, 즉시 "탭해서 듣기"를 띄우지 않고 이 시간까지 자동 복구를 재시도 */
 const NEEDS_TAP_DEFER_TOTAL_MS = 5200;
 const NEEDS_TAP_RETRY_AT_MS = [0, 550, 1500, 3200, NEEDS_TAP_DEFER_TOTAL_MS] as const;
-/** 곡 종료 직후 즉시 재생 전환 시 모바일/TWA에서 간헐적으로 "툭" 소리/짧은 무음이 섞이는 경우가 있어, 항상 일정 텀을 두고 다음 곡을 시작 */
-const NEXT_TRACK_START_DELAY_MS = 1000;
+/** A/B 핸드오프 직후 다음 트랙을 잠깐 뮤트로 재생한 뒤 출력을 연 시간(ms). tryPlay `holdMutedOutputMs`와 함께 사용. */
+const NEXT_TRACK_HANDOFF_UNMUTE_MS = 240;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -101,10 +101,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
+  /** 통화/알림 등 시스템 인터럽트로 pause 된 경우: 자동 복구(play 재시도)로 맞서지 않는다. */
+  const systemInterruptedRef = useRef(false);
   /** 즉시 needsTap 대신: 자동 복구 여러 번 시도 후에만 CTA 표시 (restoreAudibleOutput보다 아래에서 채움) */
   const scheduleNeedsTapAfterRecoveryRef = useRef<() => void>(() => {});
   const needsTapDeferSeqRef = useRef(0);
   const needsTapDeferTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /** A/B 핸드오프 직후 뮤트 해제 타이머 — effect 재실행·채널 전환 시 이전 타이머가 엉뚱한 엘리먼트를 unmute 하지 않게 정리 */
+  const handoffUnmuteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const invalidateDeferredNeedsTap = useCallback(() => {
     needsTapDeferSeqRef.current += 1;
@@ -124,7 +128,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setStream,
     setPlaying,
     setUserStopped,
-    setPlayNowRef,
     clear,
     requestPlay,
   } = useRadioPlayerStore();
@@ -185,6 +188,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const restoreAudibleOutput = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl) return;
+    if (systemInterruptedRef.current) return;
     const wanted = s.streamUrl;
     const a = audioARef.current;
     const b = audioBRef.current;
@@ -267,6 +271,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
+    if (systemInterruptedRef.current) return;
 
     restoreAudibleOutput();
     requestPlay();
@@ -343,7 +348,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         newStreamUrl,
         radioSeekSecondsForHandoff(s2.streamUrl, newStreamUrl, data?.nowPlayingElapsedSeconds as number | null | undefined),
       );
-      requestPlay();
+      // setStream → streamUrl effect에서 tryPlay/handoff — 여기서 requestPlay 하면 스왑 전 이전 버퍼에 play()가 걸려 곡 처음이 재생될 수 있음
     } catch {
       /* ignore */
     }
@@ -362,6 +367,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
+    if (systemInterruptedRef.current) return;
     if (radioRecoverTimerRef.current != null) clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = setTimeout(() => {
       radioRecoverTimerRef.current = null;
@@ -370,6 +376,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [runRadioRecoveryAfterSystemPause]);
 
   const scheduleNeedsTapAfterRecovery = useCallback(() => {
+    if (systemInterruptedRef.current) {
+      setPlaying(false);
+      setNeedsTap(true);
+      return;
+    }
     needsTapDeferTimersRef.current.forEach((id) => clearTimeout(id));
     needsTapDeferTimersRef.current = [];
     const mySeq = ++needsTapDeferSeqRef.current;
@@ -377,6 +388,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const tryRecoverBurst = () => {
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl || !s.slug) return;
+      if (systemInterruptedRef.current) return;
       restoreAudibleOutput();
       requestPlay();
       scheduleRadioRecoveryAfterSystemPause();
@@ -464,6 +476,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const s = useRadioPlayerStore.getState();
       if (!s.slug || !s.streamUrl || s.userStopped) return;
       if (document.visibilityState !== "visible") return;
+      if (systemInterruptedRef.current) return;
 
       const el = getActiveAudio();
       if (!el) return;
@@ -506,20 +519,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       b?.removeEventListener("suspend", onMediaStall);
     };
   }, [slug, scheduleRadioRecoveryAfterSystemPause]);
-
-  const playNowRef = useRef<(() => void) | null>(null);
-  useEffect(() => {
-    playNowRef.current = () => {
-      const el = getActiveAudio();
-      if (!el) return;
-      void el.play().catch(() => {
-        setPlaying(false);
-        scheduleNeedsTapAfterRecoveryRef.current();
-      });
-    };
-    setPlayNowRef(playNowRef);
-    return () => setPlayNowRef(null);
-  }, [getActiveAudio, setPlayNowRef, setPlaying]);
 
   // WebSocket: 곡 변경 + 청취자 수 수신
   useEffect(() => {
@@ -602,6 +601,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setNeedsTap(false);
     setIsMuted(false);
     setUserStopped(false);
+    systemInterruptedRef.current = false;
     const el = getActiveAudio();
     if (el) {
       el.muted = false;
@@ -640,19 +640,42 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         try { return new URL(el.src, location.origin).pathname === new URL(streamUrl, location.origin).pathname; } catch { return el.src === streamUrl; }
       };
       const userStoppedNow = () => useRadioPlayerStore.getState().userStopped;
-      const tryPlay = (el: HTMLAudioElement) => {
+      const tryPlay = (el: HTMLAudioElement, playOpts?: { holdMutedOutputMs?: number }) => {
         const releaseTrackEndLock = () => {
           // 모바일에서 play()가 거절되면 onAudioPlay가 안 와서 ended 처리 락이 풀리지 않고 연속 재생이 멈출 수 있음
           trackEndLockRef.current = false;
         };
+        const holdMs = playOpts?.holdMutedOutputMs ?? 0;
+        const scheduleUnmuteAfterHandoff = () => {
+          if (holdMs <= 0) return;
+          if (handoffUnmuteTimerRef.current != null) {
+            clearTimeout(handoffUnmuteTimerRef.current);
+            handoffUnmuteTimerRef.current = null;
+          }
+          handoffUnmuteTimerRef.current = window.setTimeout(() => {
+            handoffUnmuteTimerRef.current = null;
+            if (userStoppedNow()) return;
+            if (systemInterruptedRef.current) return;
+            el.muted = false;
+            setIsMuted(false);
+          }, holdMs);
+        };
         el.volume = 1;
-        el.muted = false;
+        if (holdMs > 0) {
+          el.muted = true;
+        } else {
+          el.muted = false;
+        }
         el.play()
           .then(() => {
             releaseTrackEndLock();
             invalidateDeferredNeedsTap();
             setNeedsTap(false);
-            setIsMuted(false);
+            if (holdMs > 0) {
+              scheduleUnmuteAfterHandoff();
+            } else {
+              setIsMuted(false);
+            }
             setPlaying(true);
           })
           .catch(() => {
@@ -661,9 +684,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
               .then(() => {
                 releaseTrackEndLock();
                 invalidateDeferredNeedsTap();
-                setIsMuted(true);
                 setNeedsTap(false);
                 setPlaying(true);
+                if (holdMs > 0) {
+                  scheduleUnmuteAfterHandoff();
+                } else {
+                  setIsMuted(true);
+                }
               })
               .catch(() => {
                 setPlaying(false);
@@ -685,22 +712,25 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         }
         const oldActive = getActiveAudio();
         // 연속 재생 안정성이 최우선: activeIndex는 즉시 스왑해 requestPlay/복구 루틴이 "다음 곡 버퍼"를 보도록 만든다.
-        // 대신 실제로 들리는 출력은 1초 동안 silent로 유지(=muted 재생)해서 클릭/짧은 잡음을 없앤다.
+        // 다음 트랙은 짧게 뮤트로 재생한 뒤 출력(tryPlay holdMutedOutputMs) — 이전 tryPlay가 즉시 unmute 하던 문제 보완.
         activeIndexRef.current = 1 - activeIndexRef.current;
         setActiveIndex(activeIndexRef.current);
+        // 이전 곡 버퍼: pause만(형제 src 강제 제거는 경합 시 중간 끊김·재버퍼링을 키울 수 있음). 겹침 방지는 pause로 유지.
+        [audioARef.current, audioBRef.current].forEach((el) => {
+          if (!el || el === inactiveEl) return;
+          try {
+            el.pause();
+          } catch {
+            /* ignore */
+          }
+        });
         try {
           oldActive?.pause();
         } catch {
           /* ignore */
         }
         inactiveEl.volume = 1;
-        inactiveEl.muted = true;
-        tryPlay(inactiveEl);
-        setTimeout(() => {
-          if (userStoppedNow()) return;
-          // 1초 후 출력만 복원 (isMuted UI 플래그는 건드리지 않음)
-          inactiveEl.muted = false;
-        }, NEXT_TRACK_START_DELAY_MS);
+        tryPlay(inactiveEl, { holdMutedOutputMs: NEXT_TRACK_HANDOFF_UNMUTE_MS });
       };
 
       if (matchSrc(active)) {
@@ -755,18 +785,28 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     return () => {
       cancelled = true;
       clearTimeout(tId);
+      if (handoffUnmuteTimerRef.current != null) {
+        clearTimeout(handoffUnmuteTimerRef.current);
+        handoffUnmuteTimerRef.current = null;
+      }
     };
   }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, invalidateDeferredNeedsTap]);
 
   useEffect(() => {
-    const el = getActiveAudio();
-    if (!el) return;
-    if (playTrigger > 0 && !userStopped) {
+    if (playTrigger <= 0 || userStopped) return;
+    const id = window.setTimeout(() => {
+      const s = useRadioPlayerStore.getState();
+      if (s.userStopped) return;
+      const wanted = s.streamUrl;
+      const el = getActiveAudio();
+      if (!el) return;
+      if (wanted && !radioAudioPathMatchesStream(el, wanted)) return;
       void el.play().catch(() => {
         setPlaying(false);
         scheduleNeedsTapAfterRecoveryRef.current();
       });
-    }
+    }, 0);
+    return () => clearTimeout(id);
   }, [playTrigger, userStopped, getActiveAudio, setPlaying]);
 
   useEffect(() => {
@@ -838,6 +878,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const el = e.target as HTMLAudioElement;
       if (el.volume < 0.05) el.volume = 1;
       trackEndLockRef.current = false;
+      systemInterruptedRef.current = false;
       invalidateDeferredNeedsTap();
       setNeedsTap(false);
       setPlaying(true);
@@ -848,8 +889,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (e.target !== getActiveAudio()) return;
     setPlaying(false);
     const s = useRadioPlayerStore.getState();
-    // 사용자가 직접 멈춘 게 아닌데 시스템/브라우저가 pause를 걸면 복구 CTA를 띄운다.
-    if (!s.userStopped && s.streamUrl && s.slug) scheduleNeedsTapAfterRecoveryRef.current();
+    // 사용자가 직접 멈춘 게 아닌데 시스템/브라우저가 pause를 걸면(통화/오디오포커스 등)
+    // 자동 play 재시도로 맞서지 말고, 사용자 탭으로만 재개하게 한다.
+    if (!s.userStopped && s.streamUrl && s.slug) {
+      systemInterruptedRef.current = true;
+      setNeedsTap(true);
+    }
   }, [getActiveAudio, setPlaying]);
 
   const processActiveTrackEnded = useCallback(
@@ -961,8 +1006,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
                 ? (channelData.nowPlayingElapsedSeconds as number)
                 : null;
             s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
-            // TWA/모바일에서는 트랙 전환 직후 자동 play 트리거가 누락될 수 있어 강제 요청
-            s.requestPlay();
+            // 재생은 streamUrl effect의 tryPlay/handoff에 맡김(setStream 직후 requestPlay는 스왑 전 구 버퍼에 play()가 걸림)
             didSetNext = true;
           };
 
@@ -971,7 +1015,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             const s = useRadioPlayerStore.getState();
             if (!s.userStopped && s.slug === currentSlug) {
               s.setStream(currentSlug, chName, nextUrl);
-              s.requestPlay();
               didSetNext = true;
             }
             if (!didSetNext) failAdvance();

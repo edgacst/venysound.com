@@ -245,10 +245,7 @@ export default function RadioChannel() {
       typeof channel?.nowPlayingElapsedSeconds === "number" ? channel.nowPlayingElapsedSeconds : null,
     );
     setRadioStream(slug, channel.name, listenerAudioSrc, seek);
-    // 스트림이 설정되자마자 재생 요청 (사용자 제스처 컨텍스트가 유효할 때 빠르게 시도)
-    if (!isOwner) {
-      radioRequestPlay();
-    }
+    // 재생은 GlobalRadioPlayer의 streamUrl effect(tryPlay/handoff)에 맡김 — 직후 requestPlay는 A/B 스왑 전 버퍼에 play()가 걸려 끊김·곡 처음 재생을 유발할 수 있음
   }, [slug, channel?.name, listenerAudioSrc, user?.id, authLoading]);
 
   // 곡 제목을 전역 store에 동기화 (글로벌 플레이바에 표시)

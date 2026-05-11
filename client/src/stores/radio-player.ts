@@ -43,13 +43,11 @@ type RadioPlayerState = {
   initialSeekSeconds: number | null;
   playTrigger: number;
   pauseTrigger: number;
-  playNowRef: { current: (() => void) | null } | null;
   currentTimeRef: { current: number };
   setStream: (slug: string, channelName: string, streamUrl: string, initialSeekSeconds?: number) => void;
   setTrackTitle: (title: string | null) => void;
   setPlaying: (playing: boolean) => void;
   setUserStopped: (stopped: boolean) => void;
-  setPlayNowRef: (ref: { current: (() => void) | null } | null) => void;
   requestPlay: () => void;
   requestPause: () => void;
   clear: () => void;
@@ -66,7 +64,6 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   initialSeekSeconds: null,
   playTrigger: 0,
   pauseTrigger: 0,
-  playNowRef: null,
   currentTimeRef: _currentTimeRef,
   setStream: (slug, channelName, streamUrl, initialSeekSeconds) =>
     set((s) => ({
@@ -80,10 +77,8 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   setTrackTitle: (trackTitle) => set({ trackTitle }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setUserStopped: (userStopped) => set({ userStopped }),
-  setPlayNowRef: (playNowRef) => set({ playNowRef }),
   requestPlay: () => {
     set((s) => ({ playTrigger: s.playTrigger + 1, userStopped: false }));
-    useRadioPlayerStore.getState().playNowRef?.current?.();
   },
   requestPause: () => set((s) => ({ pauseTrigger: s.pauseTrigger + 1, userStopped: true })),
   clear: () =>
@@ -96,6 +91,5 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       isPlaying: false,
       userStopped: false,
       initialSeekSeconds: null,
-      playNowRef: null,
     }),
 }));
