@@ -230,12 +230,17 @@ interface MusicCardProps {
   chartRank?: number;
   /** 홈 «좋아요한 곡»: 한 줄·낮은 높이 행 (기본은 정사각 커버 카드) */
   variant?: "card" | "homeLikedRow";
+  /**
+   * 카드에서 재생을 누를 때 "연속 재생"의 기준이 되는 재생 목록 컨텍스트.
+   * 예: /music 페이지의 현재 페이지 목록 ids.
+   */
+  playlistIds?: number[];
 }
 
-export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps) {
+export function MusicCard({ music, chartRank, variant = "card", playlistIds }: MusicCardProps) {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
-  const { playMusic, activeMusicId } = usePlayerStore();
+  const { playMusic, setPlaylist, activeMusicId } = usePlayerStore();
   const { mutate: likeMusic } = useLikeMusic();
   const { mutate: updateMusic, isPending: isUpdating } = useUpdateMusic();
   const { mutate: deleteMusic, isPending: isDeleting } = useDeleteMusic();
@@ -423,6 +428,12 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
   const imageUrl = music.imageFilename 
     ? resolveStorageUrl(music.imageFilename)
     : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop";
+
+  const startPlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (playlistIds && playlistIds.length > 0) setPlaylist(playlistIds);
+    playMusic(music.id);
+  };
 
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -657,10 +668,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
               size="icon"
               variant="secondary"
               className="h-8 w-8 shrink-0 rounded-full"
-              onClick={(e) => {
-                e.stopPropagation();
-                playMusic(music.id);
-              }}
+              onClick={startPlay}
               data-testid={`button-play-inline-${music.id}`}
               aria-label={t("music.play", { defaultValue: "재생" })}
             >
@@ -671,43 +679,54 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
                 <ExternalLink className="h-4 w-4" />
               </Button>
             </Link>
-            {freeAiLocked ? (
-              <span className="inline-flex h-8 w-8 shrink-0" aria-hidden />
-            ) : (
-              <span className="inline-flex items-center gap-0.5">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 shrink-0"
-                  title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRingtoneDialogOpen(true);
-                  }}
-                  data-testid={`button-ringtone-card-${music.id}`}
-                  aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                >
-                  <Bell className="h-4 w-4 text-amber-400" />
-                </Button>
-                {uploaderIsPremium && !isOwner && (
+            {/* 벨·선물 유무로 행 너비가 바뀌지 않도록 2칸(각 h-8 w-8) 고정 */}
+            <div
+              className="flex h-8 w-[4.25rem] shrink-0 items-center justify-end gap-0.5 sm:w-[4.375rem]"
+              aria-hidden={freeAiLocked ? true : undefined}
+            >
+              {freeAiLocked ? (
+                <>
+                  <span className="h-8 w-8 shrink-0 rounded-md" aria-hidden />
+                  <span className="h-8 w-8 shrink-0 rounded-md" aria-hidden />
+                </>
+              ) : (
+                <>
                   <Button
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 shrink-0"
-                    title={t("music.tipTitle")}
+                    title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!user) return redirectToLogin();
-                      setTipOpen(true);
+                      setRingtoneDialogOpen(true);
                     }}
-                    data-testid={`button-tip-${music.id}`}
-                    aria-label={t("music.tipTitle")}
+                    data-testid={`button-ringtone-card-${music.id}`}
+                    aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                   >
-                    <Gift className="h-4 w-4 text-yellow-500" />
+                    <Bell className="h-4 w-4 text-amber-400" />
                   </Button>
-                )}
-              </span>
-            )}
+                  {uploaderIsPremium && !isOwner ? (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0"
+                      title={t("music.tipTitle")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!user) return redirectToLogin();
+                        setTipOpen(true);
+                      }}
+                      data-testid={`button-tip-${music.id}`}
+                      aria-label={t("music.tipTitle")}
+                    >
+                      <Gift className="h-4 w-4 text-yellow-500" />
+                    </Button>
+                  ) : (
+                    <span className="h-8 w-8 shrink-0 rounded-md" aria-hidden />
+                  )}
+                </>
+              )}
+            </div>
             {showMenu && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -813,7 +832,7 @@ export function MusicCard({ music, chartRank, variant = "card" }: MusicCardProps
             <Button 
               size="icon" 
               className="h-9 w-9 rounded-full bg-primary shadow-lg scale-90 group-hover:scale-100 transition-all duration-300 sm:h-10 sm:w-10"
-              onClick={(e) => { e.stopPropagation(); playMusic(music.id); }}
+              onClick={startPlay}
               data-testid={`button-play-${music.id}`}
             >
               <Play fill="white" className="ml-0.5 h-4 w-4 sm:ml-1 sm:h-5 sm:w-5" />
