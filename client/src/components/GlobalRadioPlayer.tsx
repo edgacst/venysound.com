@@ -629,6 +629,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const trackEndLockRef = useRef(false);
   /** client-advance 직전 pause ~ 다음 곡 tryPlay까지: pause 이벤트를 OS 인터럽트로 오인하지 않음(trackEndLock만으로는 stream effect 초기에 락이 풀려 부족) */
   const radioAutoAdvanceRef = useRef(false);
+  /**
+   * 곡 종료 → client-advance POST까지의 지연 타이머 전용.
+   * streamUrl effect cleanup과 ref를 공유하면 안 됨: 폴링/WS가 먼저 setStream하면 effect cleanup이
+   * 이 타이머를 지워 "한 곡 끝나고 멈춤"이 발생할 수 있음.
+   */
   const listenerAdvanceDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
@@ -810,12 +815,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         clearTimeout(handoffUnmuteTimerRef.current);
         handoffUnmuteTimerRef.current = null;
       }
-      if (listenerAdvanceDelayTimerRef.current != null) {
-        clearTimeout(listenerAdvanceDelayTimerRef.current);
-        listenerAdvanceDelayTimerRef.current = null;
-      }
-      radioAutoAdvanceRef.current = false;
-      trackEndLockRef.current = false;
+      // 곡 종료 락·client-advance 진행 플래그는 여기서 건드리지 않음(타이머·WS·핸드오프와 레이스 시 이중 advance/조기 unlock 방지).
     };
   }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, invalidateDeferredNeedsTap, setPlaying]);
 
