@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { logRadioPlayFail } from "@/lib/radio-play-log";
 
 /**
  * 통화·다른 앱 전환 등으로 OS가 오디오를 멈춘 뒤, 다시 앱/탭이 앞으로 오면 재생을 이어갑니다.
@@ -24,12 +23,10 @@ export function useResumeAudioWhenForeground(
       return true;
     };
 
-    const attemptPlay = (el: HTMLAudioElement, label: string) => {
+    const attemptPlay = (el: HTMLAudioElement) => {
       el.muted = false;
       el.volume = Math.max(el.volume, 1);
-      void el.play().catch((err) => {
-        logRadioPlayFail(label, err, el);
-      });
+      void el.play().catch(() => {});
     };
 
     const tryResume = () => {
@@ -38,12 +35,12 @@ export function useResumeAudioWhenForeground(
         const a = getEl();
         if (!a || a.ended || !hasPlayableSrc(a)) return;
         // 통화 직후 일부 단말은 paused가 아닌데도 무음이거나, paused인데 focus가 늦게 오는 경우가 있어 항상 play() 시도
-        attemptPlay(a, "resumeForeground:first");
+        attemptPlay(a);
         window.setTimeout(() => {
           if (!shouldRef.current()) return;
           const a2 = getEl();
           if (!a2 || a2.ended || !hasPlayableSrc(a2)) return;
-          if (a2.paused) attemptPlay(a2, "resumeForeground:retry");
+          if (a2.paused) attemptPlay(a2);
         }, 320);
       };
       requestAnimationFrame(run);

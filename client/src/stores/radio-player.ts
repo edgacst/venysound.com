@@ -36,18 +36,18 @@ type RadioPlayerState = {
   channelName: string | null;
   trackTitle: string | null;
   streamUrl: string | null;
-  /** setStream 호출마다 증가 — URL이 동일해도 다음 곡 핸드오프 effect가 반드시 다시 돌게 함 (TWA/경합 시 필수) */
-  streamHandoffSeq: number;
   isPlaying: boolean;
   userStopped: boolean;
   initialSeekSeconds: number | null;
   playTrigger: number;
   pauseTrigger: number;
+  playNowRef: { current: (() => void) | null } | null;
   currentTimeRef: { current: number };
   setStream: (slug: string, channelName: string, streamUrl: string, initialSeekSeconds?: number) => void;
   setTrackTitle: (title: string | null) => void;
   setPlaying: (playing: boolean) => void;
   setUserStopped: (stopped: boolean) => void;
+  setPlayNowRef: (ref: { current: (() => void) | null } | null) => void;
   requestPlay: () => void;
   requestPause: () => void;
   clear: () => void;
@@ -58,27 +58,28 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   channelName: null,
   trackTitle: null,
   streamUrl: null,
-  streamHandoffSeq: 0,
   isPlaying: false,
   userStopped: false,
   initialSeekSeconds: null,
   playTrigger: 0,
   pauseTrigger: 0,
+  playNowRef: null,
   currentTimeRef: _currentTimeRef,
   setStream: (slug, channelName, streamUrl, initialSeekSeconds) =>
-    set((s) => ({
+    set({
       slug,
       channelName,
       streamUrl,
       initialSeekSeconds: initialSeekSeconds ?? null,
       userStopped: false, // 새 채널 진입 시 정지 상태 초기화
-      streamHandoffSeq: s.streamHandoffSeq + 1,
-    })),
+    }),
   setTrackTitle: (trackTitle) => set({ trackTitle }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setUserStopped: (userStopped) => set({ userStopped }),
+  setPlayNowRef: (playNowRef) => set({ playNowRef }),
   requestPlay: () => {
     set((s) => ({ playTrigger: s.playTrigger + 1, userStopped: false }));
+    useRadioPlayerStore.getState().playNowRef?.current?.();
   },
   requestPause: () => set((s) => ({ pauseTrigger: s.pauseTrigger + 1, userStopped: true })),
   clear: () =>
@@ -87,9 +88,9 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       channelName: null,
       trackTitle: null,
       streamUrl: null,
-      streamHandoffSeq: 0,
       isPlaying: false,
       userStopped: false,
       initialSeekSeconds: null,
+      playNowRef: null,
     }),
 }));
