@@ -13,7 +13,16 @@ import { ToastAction } from "@/components/ui/toast";
 import { Link, useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
-import { logRadioDiag, logRadioPlayFail } from "@/lib/radio-play-log";
+import {
+  RADIO_DEBUG_STORAGE_KEY,
+  logRadioDiag,
+  logRadioPlayFail,
+  primeRadioDebugFromSearch,
+  subscribeRadioScreenDebug,
+  getRadioScreenDebugLines,
+  isRadioScreenDebugEnabled,
+  clearRadioScreenDebug,
+} from "@/lib/radio-play-log";
 
 const REFETCH_INTERVAL_MS = 8000;
 /** 모바일/네트워크 흔들림에서 status가 잠깐 non-live로 오는 경우가 있어 즉시 clear하지 않음 */
@@ -196,6 +205,33 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const getInactiveAudio = useCallback(() => (activeIndexRef.current === 0 ? audioBRef.current : audioARef.current), []);
 
   const [locationPath] = useLocation();
+  const [radioScreenDebugOn, setRadioScreenDebugOn] = useState(false);
+  const [radioScreenLines, setRadioScreenLines] = useState<string[]>([]);
+
+  useEffect(() => {
+    const sync = () => {
+      primeRadioDebugFromSearch();
+      setRadioScreenDebugOn(isRadioScreenDebugEnabled());
+    };
+    sync();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === RADIO_DEBUG_STORAGE_KEY || e.key == null) sync();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("veny-radio-debug-changed", sync);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("veny-radio-debug-changed", sync);
+    };
+  }, [locationPath]);
+
+  useEffect(() => {
+    if (!radioScreenDebugOn) return;
+    setRadioScreenLines([...getRadioScreenDebugLines()]);
+    return subscribeRadioScreenDebug(() => {
+      setRadioScreenLines([...getRadioScreenDebugLines()]);
+    });
+  }, [radioScreenDebugOn]);
 
   /** PC 크로스페이드 rAF가 effect cleanup으로 끊기면 활성 트랙 볼륨이 0에 가깝게 남거나 비활성 audio가 같이 재생될 수 있음 */
   const restoreAudibleOutput = useCallback(() => {
@@ -1238,12 +1274,66 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     [getActiveAudio, processActiveTrackEnded],
   );
 
+  const copyRadioDebugLines = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(radioScreenLines.join("\n"));
+    } catch {
+      /* ignore */
+    }
+  }, [radioScreenLines]);
+
+  const disableRadioScreenDebug = useCallback(() => {
+    try {
+      window.localStorage.removeItem(RADIO_DEBUG_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    clearRadioScreenDebug();
+    setRadioScreenDebugOn(false);
+    window.dispatchEvent(new CustomEvent("veny-radio-debug-changed"));
+  }, []);
+
   const listenerText =
     slug && listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
   const resolvedChannelName = (channelName ?? "").trim() || t("radio.defaultChannelName");
 
   return (
     <>
+      {radioScreenDebugOn ? (
+        <div className="fixed top-2 left-2 right-2 z-[100] max-h-36 overflow-y-auto rounded-md border border-amber-500/60 bg-neutral-950/95 p-2 text-[10px] leading-tight text-lime-300 shadow-xl">
+          <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-amber-200">
+            <span className="font-semibold">Radio debug</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] text-white"
+                onClick={() => void copyRadioDebugLines()}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                className="rounded bg-red-900/80 px-2 py-0.5 text-[10px] text-white"
+                onClick={disableRadioScreenDebug}
+              >
+                Off
+              </button>
+            </div>
+          </div>
+          {radioScreenLines.length === 0 ? (
+            <div className="text-neutral-400">대기 중… 재생 실패 시 여기에 FAIL 줄이 쌓입니다.</div>
+          ) : (
+            <ul className="space-y-0.5 break-all">
+              {radioScreenLines.map((ln, i) => (
+                <li key={i}>{ln}</li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-1 text-[9px] text-neutral-500">
+            켜기: 주소에 ?venyRadioDebug=1 붙여 접속하면 자동 저장됩니다.
+          </div>
+        </div>
+      ) : null}
       {slug ? (
         <>
           {/* 음소거 안내 */}
