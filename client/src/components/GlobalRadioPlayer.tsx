@@ -17,7 +17,7 @@ import {
   RADIO_DEBUG_STORAGE_KEY,
   logRadioDiag,
   logRadioPlayFail,
-  primeRadioDebugFromSearch,
+  primeRadioDebugFromUrl,
   subscribeRadioScreenDebug,
   getRadioScreenDebugLines,
   isRadioScreenDebugEnabled,
@@ -210,18 +210,21 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   useEffect(() => {
     const sync = () => {
-      primeRadioDebugFromSearch();
+      primeRadioDebugFromUrl();
       setRadioScreenDebugOn(isRadioScreenDebugEnabled());
     };
     sync();
     const onStorage = (e: StorageEvent) => {
       if (e.key === RADIO_DEBUG_STORAGE_KEY || e.key == null) sync();
     };
+    const onHash = () => sync();
     window.addEventListener("storage", onStorage);
     window.addEventListener("veny-radio-debug-changed", sync);
+    window.addEventListener("hashchange", onHash);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("veny-radio-debug-changed", sync);
+      window.removeEventListener("hashchange", onHash);
     };
   }, [locationPath]);
 
@@ -1282,6 +1285,20 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     }
   }, [radioScreenLines]);
 
+  const shareRadioDebugLines = useCallback(async () => {
+    const text = radioScreenLines.join("\n").trim();
+    if (!text) return;
+    try {
+      if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+        await navigator.share({ title: "VenySound radio debug", text });
+      } else {
+        await copyRadioDebugLines();
+      }
+    } catch {
+      /* 사용자 취소 또는 미지원 */
+    }
+  }, [radioScreenLines, copyRadioDebugLines]);
+
   const disableRadioScreenDebug = useCallback(() => {
     try {
       window.localStorage.removeItem(RADIO_DEBUG_STORAGE_KEY);
@@ -1303,7 +1320,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         <div className="fixed top-2 left-2 right-2 z-[100] max-h-36 overflow-y-auto rounded-md border border-amber-500/60 bg-neutral-950/95 p-2 text-[10px] leading-tight text-lime-300 shadow-xl">
           <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-amber-200">
             <span className="font-semibold">Radio debug</span>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
+              <button
+                type="button"
+                className="rounded bg-sky-800 px-2 py-0.5 text-[10px] text-white"
+                onClick={() => void shareRadioDebugLines()}
+              >
+                공유
+              </button>
               <button
                 type="button"
                 className="rounded bg-neutral-800 px-2 py-0.5 text-[10px] text-white"
@@ -1330,7 +1354,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             </ul>
           )}
           <div className="mt-1 text-[9px] text-neutral-500">
-            켜기: 주소에 ?venyRadioDebug=1 붙여 접속하면 자동 저장됩니다.
+            켜기: 주소 끝에 <span className="text-lime-200">#venyRadioDebug=1</span> 붙이기(추천) 또는{" "}
+            <span className="text-lime-200">?venyRadioDebug=1</span>
           </div>
         </div>
       ) : null}

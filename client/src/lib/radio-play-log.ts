@@ -2,8 +2,11 @@
  * 라디오(GlobalRadioPlayer) play() 실패·진단 로그.
  * 단말(TWA/S24 등)에서 NotAllowedError / AbortError 원인 추적용.
  *
- * 모바일 콘솔이 없을 때: 주소에 `?venyRadioDebug=1` 을 붙여 한 번 접속하거나
- * `localStorage.setItem('venyRadioDebug','1')` 후 새로고침 → 화면 상단에 최근 줄이 쌓임.
+ * 모바일 콘솔이 없을 때:
+ * - 쿼리: `?venyRadioDebug=1` 한 번 접속
+ * - 해시(검색과 헷갈리지 않음): `#venyRadioDebug=1` — 북마크에 넣기 좋음
+ * - 또는 `localStorage.setItem('venyRadioDebug','1')` 후 새로고침
+ * → 화면 상단에 최근 줄이 쌓임.
  */
 export const RADIO_DEBUG_STORAGE_KEY = "venyRadioDebug";
 const RADIO_DEBUG_QUERY_KEY = "venyRadioDebug";
@@ -34,6 +37,34 @@ export function primeRadioDebugFromSearch(): void {
   } catch {
     /* ignore */
   }
+}
+
+/** 해시 `#venyRadioDebug=1` 등 — 주소창에 URL로 넣을 때 검색으로 안 빠지는 편. 적용 후 해시는 지움. */
+export function primeRadioDebugFromHash(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.location.hash.replace(/^#/, "").trim();
+    if (!raw) return;
+    const enable =
+      raw === "venyRadioDebug=1" ||
+      raw === "venyRadioDebug" ||
+      raw === "radioDebug=1" ||
+      /^venyRadioDebug=1(&|$)/.test(raw) ||
+      /^radioDebug=1(&|$)/.test(raw);
+    if (!enable) return;
+    window.localStorage.setItem(RADIO_DEBUG_STORAGE_KEY, "1");
+    window.dispatchEvent(new CustomEvent("veny-radio-debug-changed"));
+    const u = new URL(window.location.href);
+    u.hash = "";
+    window.history.replaceState(null, "", `${u.pathname}${u.search}`);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function primeRadioDebugFromUrl(): void {
+  primeRadioDebugFromSearch();
+  primeRadioDebugFromHash();
 }
 
 export function isRadioScreenDebugEnabled(): boolean {
