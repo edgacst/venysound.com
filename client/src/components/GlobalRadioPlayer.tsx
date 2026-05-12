@@ -1181,91 +1181,91 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     [getActiveAudio, processActiveTrackEnded],
   );
 
-  if (!slug) return null;
-
   const listenerText =
-    listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
+    slug && listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
   const resolvedChannelName = (channelName ?? "").trim() || t("radio.defaultChannelName");
 
   return (
     <>
-      {/* 음소거 안내 */}
-      {isMuted && isPlaying && (
-        <div className="fixed bottom-[68px] left-2 right-2 z-50">
-          <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg shadow-lg"
-            onClick={handleUnmute}
-          >
-            {t("radio.unmuteButton")}
-          </button>
-        </div>
-      )}
-      {needsTap && !isPlaying && (
-        <div className="fixed bottom-[68px] left-2 right-2 z-50">
-          <button
-            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg shadow-lg"
-            onClick={handlePlay}
-          >
-            {t("radio.tapToListenRadio")}
-          </button>
-        </div>
-      )}
+      {slug ? (
+        <>
+          {/* 음소거 안내 */}
+          {isMuted && isPlaying && (
+            <div className="fixed bottom-[68px] left-2 right-2 z-50">
+              <button
+                className="w-full flex items-center justify-center gap-2 py-1.5 bg-amber-500 text-white text-xs font-semibold rounded-lg shadow-lg"
+                onClick={handleUnmute}
+              >
+                {t("radio.unmuteButton")}
+              </button>
+            </div>
+          )}
+          {needsTap && !isPlaying && (
+            <div className="fixed bottom-[68px] left-2 right-2 z-50">
+              <button
+                className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg shadow-lg"
+                onClick={handlePlay}
+              >
+                {t("radio.tapToListenRadio")}
+              </button>
+            </div>
+          )}
 
-      {/* 플레이 바 - 한 줄 floating */}
-      <div className="fixed bottom-2 left-2 right-2 z-50 bg-card border border-border rounded-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
-        <div className="px-3 py-2 flex items-center gap-2">
-          {/* 라이브 인디케이터 */}
-          <Radio className={`h-4 w-4 shrink-0 ${isPlaying ? "text-red-500" : "text-muted-foreground"}`} />
+          {/* 플레이 바 - 한 줄 floating */}
+          <div className="fixed bottom-2 left-2 right-2 z-50 bg-card border border-border rounded-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
+            <div className="px-3 py-2 flex items-center gap-2">
+              {/* 라이브 인디케이터 */}
+              <Radio className={`h-4 w-4 shrink-0 ${isPlaying ? "text-red-500" : "text-muted-foreground"}`} />
 
-          {/* 방송 정보 텍스트 */}
-          <span className="flex-1 min-w-0 text-sm truncate">
-            {playError ? (
-              <span className="text-destructive">{t("radio.globalPlaybackError")}</span>
-            ) : (
-              <>
-                <span className="font-medium">
-                  {t("radio.globalListeningTo", { name: resolvedChannelName })}
-                </span>
-                {listenerText && (
-                  <span className="text-muted-foreground text-xs">{listenerText}</span>
+              {/* 방송 정보 텍스트 */}
+              <span className="flex-1 min-w-0 text-sm truncate">
+                {playError ? (
+                  <span className="text-destructive">{t("radio.globalPlaybackError")}</span>
+                ) : (
+                  <>
+                    <span className="font-medium">
+                      {t("radio.globalListeningTo", { name: resolvedChannelName })}
+                    </span>
+                    {listenerText && (
+                      <span className="text-muted-foreground text-xs">{listenerText}</span>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </span>
+              </span>
 
-          {slug ? (
-            <Button variant="outline" size="sm" className="h-8 shrink-0 px-2 text-xs" asChild>
-              <Link href={`/radio/${encodeURIComponent(slug.trim().toLowerCase())}`}>
-                {t("radio.goToChannel", "채널 가기")}
-              </Link>
-            </Button>
-          ) : null}
+              <Button variant="outline" size="sm" className="h-8 shrink-0 px-2 text-xs" asChild>
+                <Link href={`/radio/${encodeURIComponent(slug.trim().toLowerCase())}`}>
+                  {t("radio.goToChannel", "채널 가기")}
+                </Link>
+              </Button>
 
-          {/* 재생/일시정지 토글 */}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={isPlaying ? handlePause : handlePlay}
-            aria-label={isPlaying ? t("radio.playerAriaPause") : t("radio.playerAriaPlay")}
-          >
-            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </Button>
+              {/* 재생/일시정지 토글 */}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={isPlaying ? handlePause : handlePlay}
+                aria-label={isPlaying ? t("radio.playerAriaPause") : t("radio.playerAriaPlay")}
+              >
+                {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </Button>
 
-          {/* X 종료 버튼 */}
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0"
-            onClick={handleStop}
-            aria-label={t("radio.stopBroadcastAria")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+              {/* X 종료 버튼 */}
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0"
+                onClick={handleStop}
+                aria-label={t("radio.stopBroadcastAria")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : null}
 
-      {/* 숨겨진 오디오 엘리먼트 — streamUrl이 곡 사이에 null이어도 마운트 유지(리스너 페이지 밖에서 ref 끊김 방지) */}
+      {/* 숨겨진 오디오: slug·streamUrl이 잠깐 비거나 clear 직후에도 언마운트하지 않음(ref·핸드오프 안정). 플로팅 UI는 slug 있을 때만 표시 */}
       <>
         <audio
           ref={audioARef}
