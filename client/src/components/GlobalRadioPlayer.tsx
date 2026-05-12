@@ -934,10 +934,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [getActiveAudio, setPlaying]);
 
   const processActiveTrackEnded = useCallback(
-    (el: HTMLAudioElement, opts?: { fromTrustedEndedEvent?: boolean }) => {
+    (el: HTMLAudioElement, opts?: { fromTrustedEndedEvent?: boolean; fromHiddenTabNearEnd?: boolean }) => {
       if (trackEndLockRef.current) return;
       if (el !== getActiveAudio()) return;
-      if (!opts?.fromTrustedEndedEvent && !el.ended) return;
+      if (!opts?.fromTrustedEndedEvent && !opts?.fromHiddenTabNearEnd && !el.ended) return;
 
       if (listenerAdvanceDelayTimerRef.current != null) {
         clearTimeout(listenerAdvanceDelayTimerRef.current);
@@ -1005,9 +1005,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         return;
       }
 
-      // 로그인 청취: 곡이 완전히 끝난(ended) 뒤 LISTENER_ADVANCE_AFTER_TRACK_END_MS 대기 후 client-advance — 조기 timeupdate 진행 제거
+      // 로그인 청취: 탭이 백그라운드(다른 사이트)일 때는 setTimeout(1s)이 크게 밀려 다음 곡이 안 넘어갈 수 있어 지연 0.
+      // 포그라운드에서는 곡 끝난 뒤 LISTENER_ADVANCE_AFTER_TRACK_END_MS 대기 후 client-advance.
       const def = i18n.t("radio.defaultChannelName");
       const chName = (state.channelName ?? def).trim() || def;
+      const advanceDelayMs =
+        typeof document !== "undefined" && document.visibilityState === "hidden"
+          ? 0
+          : LISTENER_ADVANCE_AFTER_TRACK_END_MS;
 
       const failAdvance = () => {
         // TWA/모바일에서 keepalive fetch가 간헐적으로 실패하면 여기서 streamUrl을 null로 만들어
@@ -1106,7 +1111,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           });
 
         if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
-      }, LISTENER_ADVANCE_AFTER_TRACK_END_MS);
+      }, advanceDelayMs);
     },
     [
       getActiveAudio,
@@ -1130,9 +1135,24 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el !== getActiveAudio()) return;
       useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
       if (trackEndLockRef.current) return;
-      // ended 이벤트가 백그라운드에서 누락될 때만 보조 — duration 근처 추측으로는 client-advance 호출하지 않음(조기 넘김 방지)
-      if (!el.ended) return;
-      processActiveTrackEnded(el);
+      if (el.ended) {
+        processActiveTrackEnded(el, { fromTrustedEndedEvent: true });
+        return;
+      }
+      // 포그라운드에서는 ended만 신뢰(조기 넘김 방지). 백그라운드 탭에서 ended 이벤트 누락 시에만 말미·버퍼 소진으로 보조.
+      if (typeof document !== "undefined" && document.visibilityState === "visible") return;
+      const d = el.duration;
+      if (!Number.isFinite(d) || d < 2) return;
+      try {
+        if (el.buffered?.length) {
+          const bufEnd = el.buffered.end(el.buffered.length - 1);
+          if (bufEnd - el.currentTime > 0.22) return;
+        }
+      } catch {
+        /* ignore */
+      }
+      if (el.currentTime < d - 0.07) return;
+      processActiveTrackEnded(el, { fromHiddenTabNearEnd: true });
     },
     [getActiveAudio, processActiveTrackEnded],
   );
