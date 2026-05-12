@@ -80,6 +80,14 @@ function radioAudioPathMatchesStream(el: HTMLAudioElement | null, wanted: string
   }
 }
 
+function streamPathname(url: string): string {
+  try {
+    return new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost").pathname;
+  } catch {
+    return url;
+  }
+}
+
 export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { waveformBufferRef?: RefObject<Uint8Array | null> }) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
@@ -926,10 +934,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [getActiveAudio, setPlaying]);
 
   const processActiveTrackEnded = useCallback(
-    (el: HTMLAudioElement) => {
+    (el: HTMLAudioElement, opts?: { fromTrustedEndedEvent?: boolean }) => {
       if (trackEndLockRef.current) return;
       if (el !== getActiveAudio()) return;
-      if (!el.ended) return;
+      if (!opts?.fromTrustedEndedEvent && !el.ended) return;
 
       if (listenerAdvanceDelayTimerRef.current != null) {
         clearTimeout(listenerAdvanceDelayTimerRef.current);
@@ -1018,7 +1026,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           radioAutoAdvanceRef.current = false;
           return;
         }
-        if (getActiveAudio() !== el) {
+        // WS/폴링이 이미 다음 곡으로 store를 바꾼 경우: 중복 client-advance 방지(활성 버퍼만 바뀐 채 el 참조가 달라져 취소되던 모바일 이슈)
+        if (sNow.streamUrl && streamPathname(sNow.streamUrl) !== streamPathname(endedSrc)) {
           trackEndLockRef.current = false;
           radioAutoAdvanceRef.current = false;
           return;
@@ -1147,7 +1156,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     (e: React.SyntheticEvent<HTMLAudioElement>) => {
       const el = e.target as HTMLAudioElement;
       if (el !== getActiveAudio()) return;
-      processActiveTrackEnded(el);
+      processActiveTrackEnded(el, { fromTrustedEndedEvent: true });
     },
     [getActiveAudio, processActiveTrackEnded],
   );
