@@ -440,13 +440,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     scheduleNeedsTapAfterRecoveryRef.current = scheduleNeedsTapAfterRecovery;
   }, [scheduleNeedsTapAfterRecovery]);
 
-  // 모바일: SPA 라우트만 바뀌면 visibility/focus 이벤트가 안 오는 경우가 있어 schedule까지 함께 호출
-  useEffect(() => {
-    if (!isCoarseOrTouchDevice()) return;
-    const s = useRadioPlayerStore.getState();
-    if (s.userStopped || !s.slug || !s.streamUrl) return;
-    scheduleRadioRecoveryAfterSystemPause();
-  }, [locationPath, scheduleRadioRecoveryAfterSystemPause]);
+  // 라우트 변경 시에는 위 restoreAudibleOutput(locationPath)만으로 충분.
+  // 모바일에서 매 navigation마다 scheduleRadioRecoveryAfterSystemPause를 걸면
+  // 짧은 pause 구간에 looksPlaying이 false로 판정되어 src 재부착·재생 중단이 날 수 있음.
 
   useEffect(() => {
     const onVis = () => {
