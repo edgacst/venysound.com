@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 const POPUP_IMAGE_SRC = "/may-family-event-popup.png";
 
 const SESSION_DISMISS_KEY = "venysound_may_family_popup_sess_v1";
-const HIDE_UNTIL_KST_DAY_KEY = "venysound_may_family_popup_hide_kst_v1";
+const NEVER_SHOW_KEY = "venysound_may_family_popup_never_v1";
 
 /** 홈 5월 배너와 동일: 한국시간 2026-05-01 ~ 2026-05-31 */
 function isMay2026EventPopupWindow(nowMs: number): boolean {
@@ -19,26 +19,22 @@ function isMay2026EventPopupWindow(nowMs: number): boolean {
   return nowMs >= start && nowMs < end;
 }
 
-function kstCalendarDateYmd(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-}
-
 /**
  * 홈 진입 시 5월 이벤트 기간에만 이미지 팝업.
- * - 닫기 시「오늘 하루 안 보기」체크: 한국일(KST) 기준 당일은 모든 탭에서 재노출 안 함
+ * - 닫기 시「다시 안 보기」체크: 이 브라우저에서는 재노출 안 함
  * - 체크 없이 닫기: 이 탭 세션 동안만 숨김(sessionStorage) — 새 탭이면 다시 표시될 수 있음
  */
 export function MayFamilyEventPopup() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [hideTodayChecked, setHideTodayChecked] = useState(false);
+  const [neverShowChecked, setNeverShowChecked] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isMay2026EventPopupWindow(Date.now())) return;
     try {
       if (sessionStorage.getItem(SESSION_DISMISS_KEY) === "1") return;
-      if (localStorage.getItem(HIDE_UNTIL_KST_DAY_KEY) === kstCalendarDateYmd()) return;
+      if (localStorage.getItem(NEVER_SHOW_KEY) === "1") return;
     } catch {
       /* private mode 등 */
     }
@@ -46,20 +42,20 @@ export function MayFamilyEventPopup() {
   }, []);
 
   useEffect(() => {
-    if (open) setHideTodayChecked(false);
+    if (open) setNeverShowChecked(false);
   }, [open]);
 
   const dismissPopup = useCallback(() => {
     setOpen(false);
     try {
       sessionStorage.setItem(SESSION_DISMISS_KEY, "1");
-      if (hideTodayChecked) {
-        localStorage.setItem(HIDE_UNTIL_KST_DAY_KEY, kstCalendarDateYmd());
+      if (neverShowChecked) {
+        localStorage.setItem(NEVER_SHOW_KEY, "1");
       }
     } catch {
       /* ignore */
     }
-  }, [hideTodayChecked]);
+  }, [neverShowChecked]);
 
   return (
     <Dialog
@@ -98,16 +94,16 @@ export function MayFamilyEventPopup() {
           </Link>
           <div className="flex flex-col gap-2.5 border-t border-slate-200 bg-white px-3 py-2.5">
             <label
-              htmlFor="may-family-event-popup-hide-today"
+              htmlFor="may-family-event-popup-never-show"
               className="flex cursor-pointer items-center gap-2.5 text-left text-xs text-slate-700 leading-snug select-none"
             >
               <Checkbox
-                id="may-family-event-popup-hide-today"
-                checked={hideTodayChecked}
-                onCheckedChange={(v) => setHideTodayChecked(v === true)}
+                id="may-family-event-popup-never-show"
+                checked={neverShowChecked}
+                onCheckedChange={(v) => setNeverShowChecked(v === true)}
                 className="border-slate-400 data-[state=checked]:bg-violet-600 data-[state=checked]:border-violet-600"
               />
-              <span>{t("home.mayFamilyEventPopupHideToday", "오늘 하루 안 보기")}</span>
+              <span>{t("home.mayFamilyEventPopupNeverShow", "다시 안 보기")}</span>
             </label>
             <div className="flex justify-center">
               <Button type="button" variant="outline" size="sm" className="min-w-[5.5rem]" onClick={() => dismissPopup()}>
