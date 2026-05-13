@@ -803,6 +803,11 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
             alt={music.title} 
             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[13] bg-gradient-to-t from-black/85 via-black/45 to-transparent px-3 pb-3 pt-12">
+            <h3 className="truncate text-base font-bold text-white drop-shadow md:text-lg" data-testid={`text-title-${music.id}`}>
+              {music.title}
+            </h3>
+          </div>
 
           {isPlaying && (
             <div className="absolute bottom-2 left-2 z-10">
@@ -918,9 +923,6 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
         </div>
 
         <div className="p-2 md:p-3.5 lg:p-4">
-          <Link href={`/music/${music.id}`}>
-            <h3 className="truncate text-sm font-semibold group-hover:text-primary transition-colors cursor-pointer hover:underline md:text-lg" data-testid={`text-title-${music.id}`}>{music.title}</h3>
-          </Link>
           <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground md:text-xs lg:text-sm" data-testid={`text-artist-${music.id}`}>
             <span className="truncate" title={music.artist}>{music.artist}</span>
             {showDonationBadgeByArtist && uploaderDonationBadge ? (
