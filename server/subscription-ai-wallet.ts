@@ -1,6 +1,7 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { users, aiMusicUsage } from "@shared/models/auth";
+import { may2026EventApplications } from "@shared/schema";
 import {
   isUserPaidSubscriptionActive,
   sumActivePaidAiMusicMonthlyWonBudget,
@@ -15,6 +16,11 @@ import {
   sumAiWallet,
   type AiWalletChunk,
 } from "@shared/subscription-ai-wallet";
+import {
+  isUserCreatedInMay2026CampaignWindow,
+  MAY_2026_EVENT_PROMO_GRANT_WON,
+  may2026PromoWalletExpiresAtUtc,
+} from "./may-2026-event";
 
 export type PaidAiWalletState = {
   walletSum: number;
@@ -27,6 +33,36 @@ export type PaidAiWalletState = {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+async function getMay2026SubscriptionAiBonusWon(
+  tx: Tx,
+  u: typeof users.$inferSelect,
+  userId: string,
+  now: Date,
+): Promise<number> {
+  if (!isUserCreatedInMay2026CampaignWindow(u.createdAt ?? null)) return 0;
+  if (now >= may2026PromoWalletExpiresAtUtc()) return 0;
+  const [app] = await tx
+    .select({ status: may2026EventApplications.status })
+    .from(may2026EventApplications)
+    .where(eq(may2026EventApplications.userId, userId))
+    .orderBy(desc(may2026EventApplications.createdAt))
+    .limit(1);
+  return app?.status === "approved" ? MAY_2026_EVENT_PROMO_GRANT_WON : 0;
+}
+
+function normalizeEventSignupWalletToBudget(
+  wallet: AiWalletChunk[],
+  consumed: number,
+  targetBudgetWon: number,
+  eventBonusWon: number,
+  now: Date,
+): AiWalletChunk[] {
+  if (eventBonusWon <= 0) return wallet;
+  if (sumAiWallet(wallet) + consumed === targetBudgetWon) return wallet;
+  const remaining = Math.max(0, targetBudgetWon - consumed);
+  return remaining > 0 ? [{ won: remaining, creditedAt: now.toISOString() }] : [];
+}
+
 async function performSubscriptionAiWalletSync(
   tx: Tx,
   u: typeof users.$inferSelect,
@@ -36,13 +72,15 @@ async function performSubscriptionAiWalletSync(
   if (!isUserPaidSubscriptionActive(u, now)) return null;
 
   const desiredKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
-  const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now);
+  const eventBonusWon = await getMay2026SubscriptionAiBonusWon(tx, u, userId, now);
+  const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now) + eventBonusWon;
   let wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
   const sumBeforeSync = sumAiWallet(wallet);
   let consumed = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
   const curKey = u.subscriptionAiPeriodKey ?? null;
 
   if (curKey === desiredKey) {
+    wallet = normalizeEventSignupWalletToBudget(wallet, consumed, monthlyGrant, eventBonusWon, now);
     if (JSON.stringify(wallet) !== JSON.stringify(parseAiWallet(u.subscriptionAiWallet))) {
       await tx
         .update(users)
@@ -114,8 +152,10 @@ async function performSubscriptionAiWalletSync(
       wallet = appendAiWalletGrant(wallet, grantWon, now);
     }
 
-    if (calendarMonthRolled || subPeriodRenewedForward) {
+    if (calendarMonthRolled || (subPeriodRenewedForward && eventBonusWon <= 0)) {
       consumed = carried;
+    } else if (subPeriodRenewedForward && eventBonusWon > 0) {
+      consumed = Math.max(carried, preserved);
     } else if (isCalKey(curKey) && desiredKey.startsWith("sub:")) {
       consumed = Math.max(carried, preserved);
     } else if (curKey?.startsWith("sub:") && isCalKey(desiredKey)) {
@@ -133,6 +173,8 @@ async function performSubscriptionAiWalletSync(
       consumed = Math.max(carried, preserved);
     }
   }
+
+  wallet = normalizeEventSignupWalletToBudget(wallet, consumed, monthlyGrant, eventBonusWon, now);
 
   const sumAfterSync = sumAiWallet(wallet);
   await tx
@@ -221,7 +263,9 @@ export async function adminRebuildSubscriptionAiWalletToPlanOnly(userId: string,
     if (!u || !isUserPaidSubscriptionActive(u, now)) return null;
 
     const desiredKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
-    const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now);
+    const monthlyGrant =
+      sumActivePaidAiMusicMonthlyWonBudget(u, now) +
+      (await getMay2026SubscriptionAiBonusWon(tx, u, userId, now));
     if (monthlyGrant <= 0) return null;
 
     let consumed = Math.max(0, Math.floor(Number(u.subscriptionAiPeriodConsumedWon ?? 0)));
