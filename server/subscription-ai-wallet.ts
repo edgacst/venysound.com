@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { users, aiMusicUsage } from "@shared/models/auth";
 import { may2026EventApplications } from "@shared/schema";
@@ -44,10 +44,9 @@ async function getMay2026SubscriptionAiBonusWon(
   const [app] = await tx
     .select({ status: may2026EventApplications.status })
     .from(may2026EventApplications)
-    .where(eq(may2026EventApplications.userId, userId))
-    .orderBy(desc(may2026EventApplications.createdAt))
+    .where(and(eq(may2026EventApplications.userId, userId), eq(may2026EventApplications.status, "approved")))
     .limit(1);
-  return app?.status === "approved" ? MAY_2026_EVENT_PROMO_GRANT_WON : 0;
+  return app ? MAY_2026_EVENT_PROMO_GRANT_WON : 0;
 }
 
 function normalizeEventSignupWalletToBudget(
