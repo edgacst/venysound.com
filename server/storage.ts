@@ -19,7 +19,7 @@ import {
 import { eq, desc, asc, and, or, inArray, notInArray, sql, count, lte, gte, lt, ne, isNotNull, type SQL } from "drizzle-orm";
 import type { MusicWithUploaderTier } from "@shared/schema";
 import { users, payments, aiMusicUsage } from "@shared/models/auth";
-import { PAID_SUBSCRIPTION_TIER_IDS, apiUploaderSubscriptionTierForClient } from "@shared/subscription-plan-pricing";
+import { PAID_SUBSCRIPTION_TIER_IDS, apiUploaderSubscriptionTierForClient, isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   getAiMusicMonthlyUsageLimit,
