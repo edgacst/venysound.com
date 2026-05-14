@@ -75,7 +75,7 @@ function mapMusicRowWithUploaderFields(
 ): MusicWithUploaderTier {
   const { _uploaderTier, _uploaderExpiresAt, _uploaderRole, _uploaderDonationBadge, _uploaderTipReceivedWon, ...rest } = r;
   const subscriptionPremium =
-    (_uploaderTier === "pro" || _uploaderTier === "premium") &&
+    isPaidSubscriptionTierId(_uploaderTier) &&
     (_uploaderExpiresAt == null || new Date(_uploaderExpiresAt) > now);
   const isPremium = _uploaderRole === "admin" || subscriptionPremium;
   const receivedNum =
@@ -930,7 +930,7 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return rows.map((r) => {
       const subscriptionPremium =
-        (r.uploader_subscription_tier === "pro" || r.uploader_subscription_tier === "premium") &&
+        isPaidSubscriptionTierId(r.uploader_subscription_tier) &&
         (r.uploader_subscription_expires_at == null || new Date(r.uploader_subscription_expires_at) > now);
       const isPremium = r.uploader_role === "admin" || subscriptionPremium;
       const base: MusicWithUploaderTier = {
