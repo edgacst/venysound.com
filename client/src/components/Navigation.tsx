@@ -41,8 +41,16 @@ import { Badge } from "@/components/ui/badge";
 import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 import { useNotifications } from "@/hooks/use-user-profile";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+
+const SITE_NOTICE_SEEN_KEY = "venysound_site_notice_seen_latest_v1";
+const SITE_NOTICE_SEEN_EVENT = "venysound:site-notice-seen";
+
+type SiteAnnouncementSummary = {
+  id: number;
+  createdAt: string;
+};
 
 export function Navigation() {
   const { t, i18n } = useTranslation();
@@ -50,6 +58,11 @@ export function Navigation() {
   const { toast } = useToast();
   const [location] = useLocation();
   const { data: notifications } = useNotifications();
+  const noticeLang = (i18n.language || "ko").split("-")[0].toLowerCase();
+  const [seenSiteNoticeId, setSeenSiteNoticeId] = useState(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(localStorage.getItem(SITE_NOTICE_SEEN_KEY) || "0") || 0;
+  });
 
   const handleLogout = () => {
     toast({ title: t("nav.logoutSuccess", "로그아웃되었습니다") });
@@ -65,6 +78,40 @@ export function Navigation() {
     queryKey: ["/api/credits"],
     enabled: !!user,
   });
+
+  const { data: siteNotices = [] } = useQuery<SiteAnnouncementSummary[]>({
+    queryKey: ["/api/announcements/site", "nav", noticeLang],
+    queryFn: async () => {
+      const res = await fetch(`/api/announcements/site?lang=${encodeURIComponent(noticeLang)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const latestSiteNoticeId = siteNotices[0]?.id ?? 0;
+  const hasNewSiteNotice = latestSiteNoticeId > 0 && latestSiteNoticeId !== seenSiteNoticeId;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncSeen = () => {
+      setSeenSiteNoticeId(Number(localStorage.getItem(SITE_NOTICE_SEEN_KEY) || "0") || 0);
+    };
+    window.addEventListener("storage", syncSeen);
+    window.addEventListener(SITE_NOTICE_SEEN_EVENT, syncSeen);
+    return () => {
+      window.removeEventListener("storage", syncSeen);
+      window.removeEventListener(SITE_NOTICE_SEEN_EVENT, syncSeen);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (location !== "/notices" || latestSiteNoticeId <= 0) return;
+    localStorage.setItem(SITE_NOTICE_SEEN_KEY, String(latestSiteNoticeId));
+    setSeenSiteNoticeId(latestSiteNoticeId);
+    window.dispatchEvent(new Event(SITE_NOTICE_SEEN_EVENT));
+  }, [latestSiteNoticeId, location]);
 
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
 
@@ -118,7 +165,16 @@ export function Navigation() {
             <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
             <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
             <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
-            <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
+            <NavLink href="/notices" icon={Megaphone}>
+              <span className="inline-flex items-center gap-1">
+                {t('nav.notices', '공지사항')}
+                {hasNewSiteNotice && (
+                  <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white" data-testid="badge-nav-notices-new">
+                    N
+                  </span>
+                )}
+              </span>
+            </NavLink>
             <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
           </div>
         </div>
@@ -302,7 +358,16 @@ export function Navigation() {
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
-              <NavLink href="/notices" icon={Megaphone}>{t('nav.notices', '공지사항')}</NavLink>
+              <NavLink href="/notices" icon={Megaphone}>
+                <span className="inline-flex items-center gap-1">
+                  {t('nav.notices', '공지사항')}
+                  {hasNewSiteNotice && (
+                    <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white" data-testid="badge-mobile-nav-notices-new">
+                      N
+                    </span>
+                  )}
+                </span>
+              </NavLink>
               <NavLink href="/create-music" icon={Wand2}>{t('nav.createMusic', '음악 생성')}</NavLink>
               {user && (
                 <>
