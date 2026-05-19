@@ -280,6 +280,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
   const [newPlaylistNameInline, setNewPlaylistNameInline] = useState("");
   const [ringtoneDialogOpen, setRingtoneDialogOpen] = useState(false);
   const [isRingtoneDownloading, setIsRingtoneDownloading] = useState(false);
+  const [isOwnerDownloading, setIsOwnerDownloading] = useState(false);
 
   const {
     data: playlists,
@@ -607,6 +608,48 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
     }
   };
 
+  const handleOwnerDownload = async () => {
+    if (!user || !isOwner) return;
+    setIsOwnerDownloading(true);
+    try {
+      const res = await fetch(`/api/music/${music.id}/download`, { credentials: "include" });
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { message?: string };
+        throw new Error(errBody.message || t("myLibrary.downloadFailed", "다운로드 실패"));
+      }
+      const cd = res.headers.get("Content-Disposition");
+      let filename = music.title || "music";
+      const match = cd?.match(/filename\*?=(?:UTF-8'')?([^;]+)/);
+      if (match) {
+        try {
+          filename = decodeURIComponent(match[1].replace(/^["']|["']$/g, ""));
+        } catch {
+          // keep default
+        }
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename.includes(".mp3") ? filename : `${filename}.mp3`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({
+        title: t("myLibrary.downloadComplete", "다운로드 완료"),
+        description: t("myLibrary.downloadCompleteDesc", "{{title}} 파일이 다운로드되었습니다.", { title: music.title }),
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t("myLibrary.downloadFailed", "다운로드 실패");
+      toast({
+        title: t("myLibrary.downloadFailed", "다운로드 실패"),
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsOwnerDownloading(false);
+    }
+  };
+
   const isHomeLikedRow = variant === "homeLikedRow";
 
   return (
@@ -741,6 +784,19 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                       {t("music.edit")}
                     </DropdownMenuItem>
                   )}
+                  {isOwner && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleOwnerDownload();
+                      }}
+                      disabled={isOwnerDownloading}
+                      data-testid={`button-download-music-${music.id}`}
+                    >
+                      <Download size={14} className="mr-2" />
+                      {isOwnerDownloading ? t("music.ringtoneCardDownloading", "받는 중...") : t("myLibrary.download", "다운로드")}
+                    </DropdownMenuItem>
+                  )}
                   {isAdminSpotifyOnly && (
                     <DropdownMenuItem onClick={handleEdit} data-testid={`button-admin-spotify-music-${music.id}`}>
                       <Pencil size={14} className="mr-2" />
@@ -755,7 +811,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                   )}
                   {user && (
                     <>
-                      {(canEdit || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
+                      {(canEdit || isOwner || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
                       <DropdownMenuItem onClick={handleOpenPlaylistDialog} data-testid={`button-add-to-playlist-${music.id}`}>
                         <ListPlus size={14} className="mr-2" />
                         {t("music.addToPlaylist")}
@@ -879,6 +935,19 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                       {t('music.edit')}
                     </DropdownMenuItem>
                   )}
+                  {isOwner && (
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleOwnerDownload();
+                      }}
+                      disabled={isOwnerDownloading}
+                      data-testid={`button-download-music-${music.id}`}
+                    >
+                      <Download size={14} className="mr-2" />
+                      {isOwnerDownloading ? t("music.ringtoneCardDownloading", "받는 중...") : t("myLibrary.download", "다운로드")}
+                    </DropdownMenuItem>
+                  )}
                   {isAdminSpotifyOnly && (
                     <DropdownMenuItem onClick={handleEdit} data-testid={`button-admin-spotify-music-${music.id}`}>
                       <Pencil size={14} className="mr-2" />
@@ -893,7 +962,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                   )}
                   {user && (
                     <>
-                      {(canEdit || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
+                      {(canEdit || isOwner || isAdminSpotifyOnly || canDelete) && <DropdownMenuSeparator />}
                       <DropdownMenuItem onClick={handleOpenPlaylistDialog} data-testid={`button-add-to-playlist-${music.id}`}>
                         <ListPlus size={14} className="mr-2" />
                         {t('music.addToPlaylist')}
