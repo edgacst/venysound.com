@@ -13,6 +13,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { Link, useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
+import { usePlayerStore } from "@/components/AudioPlayer";
 
 const REFETCH_INTERVAL_MS = 8000;
 /** 모바일/네트워크 흔들림에서 status가 잠깐 non-live로 오는 경우가 있어 즉시 clear하지 않음 */
@@ -91,6 +92,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
 
+  const activeMusicId = usePlayerStore((s) => s.activeMusicId);
+  const activeExternalTrack = usePlayerStore((s) => s.activeExternalTrack);
+  const onDemandActive = activeMusicId != null || activeExternalTrack != null;
+
   const {
     slug,
     channelName,
@@ -106,6 +111,19 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     clear,
     requestPlay,
   } = useRadioPlayerStore();
+
+  /** 음악 글로벌 플레이어가 켜지면 라디오 플레이바·오디오를 즉시 내림 (홈 자동 라디오와 중복 방지) */
+  useEffect(() => {
+    if (!onDemandActive || !slug) return;
+    [audioARef.current, audioBRef.current].forEach((el) => {
+      if (el) {
+        el.pause();
+        el.removeAttribute("src");
+        el.load();
+      }
+    });
+    clear();
+  }, [onDemandActive, slug, clear]);
 
   // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
   useEffect(() => {
@@ -893,7 +911,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     [getActiveAudio, processActiveTrackEnded],
   );
 
-  if (!slug) return null;
+  if (!slug || onDemandActive) return null;
 
   const listenerText =
     listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
