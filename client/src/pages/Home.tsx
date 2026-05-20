@@ -513,19 +513,37 @@ export default function Home() {
           >
             <div className="container flex flex-wrap items-center justify-between gap-3 py-2.5 px-4">
               <p className="text-sm font-medium leading-snug min-w-0">
-                2026년 5월 신규가입 이벤트 — AI 음악 생성 지원금·사이트 공개 안내
+                {t("home.may2026BannerSignup", "5월 신규 가입 이벤트 — 가입 후 무료 AI 곡분 신청 (선착순)")}
               </p>
-              <Link href="/events/may-2026">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0 rounded-full bg-white/95 text-violet-950 hover:bg-white"
-                  data-testid="link-may-2026-event-detail"
-                >
-                  자세히 알아보기
-                </Button>
-              </Link>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {!user ? (
+                  <Link href={REGISTER_PATH}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="rounded-full bg-white text-violet-950 shadow-sm hover:bg-violet-50"
+                      data-testid="link-may-2026-banner-signup"
+                    >
+                      {t("home.may2026BannerCtaSignup", "무료 가입")}
+                    </Button>
+                  </Link>
+                ) : null}
+                <Link href="/events/may-2026">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={user ? "secondary" : "outline"}
+                    className={
+                      user
+                        ? "shrink-0 rounded-full bg-white/95 text-violet-950 hover:bg-white"
+                        : "shrink-0 rounded-full border-violet-200/50 bg-transparent text-violet-50 hover:bg-white/10"
+                    }
+                    data-testid="link-may-2026-event-detail"
+                  >
+                    {t("home.may2026BannerCtaEvent", "이벤트 안내")}
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
         );
@@ -569,6 +587,17 @@ export default function Home() {
                 />
               </div>
             </div>
+            {!user && !isAuthLoading ? (
+              <p
+                className="mt-3 text-center text-sm font-medium leading-relaxed text-amber-200/95 sm:text-base md:mt-4"
+                data-testid="home-signup-bridge"
+              >
+                {t(
+                  "home.heroSignupBridge",
+                  "무료 가입 → AI로 첫 곡 만들기 → 베니사운드에 공개 · 5월 신규 가입 이벤트 신청 가능",
+                )}
+              </p>
+            ) : null}
           </motion.div>
           <div className="grid min-w-0 max-w-full items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
             <motion.div
@@ -785,58 +814,83 @@ export default function Home() {
                         {homeGreeting}
                       </p>
                     )}
-                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:flex-row lg:flex-nowrap lg:items-center lg:justify-start lg:gap-2 xl:gap-3">
-                      <Link href="/music" className="block w-full min-w-0 shrink-0 lg:w-auto lg:shrink-0">
-                        <Button
-                          size="lg"
-                          className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
-                          data-testid="button-start-listening"
-                        >
-                          {t("home.listenMusic")}
-                        </Button>
-                      </Link>
-                      <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
-                        {!user ? (
-                          <Link href={REGISTER_PATH} className="min-w-0 lg:w-auto lg:shrink-0">
+                    <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:items-stretch lg:justify-start">
+                      {!user ? (
+                        <>
+                          <Link href={REGISTER_PATH} className="block w-full min-w-0 shrink-0">
                             <Button
                               size="lg"
-                              variant="outline"
-                              className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-3 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-4 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-5 xl:px-8"
+                              className="h-12 w-full rounded-full bg-primary px-6 text-base font-semibold text-white shadow-lg shadow-primary/35 sm:h-[3.25rem] sm:px-10"
                               data-testid="button-hero-signup"
                             >
-                              {t("home.heroSignUpCta", "무료 가입")}
+                              {t("home.heroSignUpCtaPrimary", "무료 가입하고 시작하기")}
                             </Button>
                           </Link>
-                        ) : (
-                          <Link href="/suno-guide" className="min-w-0 lg:w-auto lg:shrink-0">
+                          <div className="grid min-w-0 grid-cols-2 gap-2.5">
+                            <Link href="/music" className="min-w-0">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm"
+                                data-testid="button-start-listening"
+                              >
+                                {t("home.heroListenFirstCta", "먼저 음악 듣기")}
+                              </Button>
+                            </Link>
                             <Button
+                              type="button"
                               size="lg"
                               variant="outline"
-                              className="flex h-auto min-h-11 w-full items-center justify-center gap-1.5 whitespace-normal rounded-full border border-white/35 bg-[#161018] px-2 py-2.5 text-center text-[11px] font-semibold leading-snug text-white hover:bg-[#1f1a24] hover:text-white sm:min-h-12 sm:gap-2 sm:px-3 sm:text-xs md:px-8 md:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-3 lg:text-xs xl:px-6 xl:text-sm"
-                              data-testid="button-hero-music-making-guide"
+                              className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm"
+                              data-testid="button-hero-learn-more"
+                              onClick={() => {
+                                setLearnMoreMode("creator");
+                                setLearnMoreOpen(true);
+                              }}
                             >
-                              <span className="relative flex shrink-0 items-center">
-                                <Wand2 className="h-4 w-4 -rotate-45 sm:h-5 sm:w-5" aria-hidden />
-                                <Sparkles className="absolute -right-1 -top-0.5 h-3 w-3 text-white/95 sm:-right-1.5 sm:-top-1 sm:h-3.5 sm:w-3.5" aria-hidden />
-                              </span>
-                              <span className="text-center">{t("home.musicMakingGuide", "음악 만들기 가이드")}</span>
+                              {t("home.heroCtaLearnMore", "자세히 알아보기")}
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex w-full min-w-0 flex-col gap-2.5 lg:flex-row lg:flex-nowrap lg:items-center lg:gap-2 xl:gap-3">
+                          <Link href="/create-music" className="block w-full min-w-0 shrink-0 lg:w-auto lg:shrink-0">
+                            <Button
+                              size="lg"
+                              className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
+                              data-testid="button-hero-create-music"
+                            >
+                              {t("home.makeMusicBtn", "음악 만들러 가기")}
                             </Button>
                           </Link>
-                        )}
-                        <Button
-                          type="button"
-                          size="lg"
-                          variant="outline"
-                          className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-4 xl:px-8"
-                          data-testid="button-hero-learn-more"
-                          onClick={() => {
-                            setLearnMoreMode("creator");
-                            setLearnMoreOpen(true);
-                          }}
-                        >
-                          {t("home.heroCtaLearnMore", "자세히 알아보기")}
-                        </Button>
-                      </div>
+                          <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
+                            <Link href="/music" className="min-w-0 lg:w-auto lg:shrink-0">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-3 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-4 sm:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-5 xl:px-8"
+                                data-testid="button-start-listening"
+                              >
+                                {t("home.listenMusic")}
+                              </Button>
+                            </Link>
+                            <Link href="/suno-guide" className="min-w-0 lg:w-auto lg:shrink-0">
+                              <Button
+                                size="lg"
+                                variant="outline"
+                                className="flex h-auto min-h-11 w-full items-center justify-center gap-1.5 whitespace-normal rounded-full border border-white/35 bg-[#161018] px-2 py-2.5 text-center text-[11px] font-semibold leading-snug text-white hover:bg-[#1f1a24] hover:text-white sm:min-h-12 sm:gap-2 sm:px-3 sm:text-xs md:px-8 md:text-sm lg:w-auto lg:shrink-0 lg:whitespace-nowrap lg:px-3 lg:text-xs xl:px-6 xl:text-sm"
+                                data-testid="button-hero-music-making-guide"
+                              >
+                                <span className="relative flex shrink-0 items-center">
+                                  <Wand2 className="h-4 w-4 -rotate-45 sm:h-5 sm:w-5" aria-hidden />
+                                  <Sparkles className="absolute -right-1 -top-0.5 h-3 w-3 text-white/95 sm:-right-1.5 sm:-top-1 sm:h-3.5 sm:w-3.5" aria-hidden />
+                                </span>
+                                <span className="text-center">{t("home.musicMakingGuide", "음악 만들기 가이드")}</span>
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ) : (
