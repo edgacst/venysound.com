@@ -32,13 +32,27 @@ import {
   openaiOptimizeStudioLyrics,
 } from "./aiMusicStudioLyrics";
 import { kieUploadAudioBuffer } from "./kieFileUpload";
+import {
+  kieVoiceGenerate,
+  kieVoiceRecordInfo,
+  kieVoiceValidateInfo,
+  kieVoiceValidateSource,
+  sunoModelSupportsVoicePersona,
+} from "./kieSunoVoice";
 import multer from "multer";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { getClientIpForGeo } from "./client-ip";
 import { encodeRingtoneClipMp3, RINGTONE_FEE_WON } from "./ringtoneClip";
 import { sendPushNotification } from "./push";
 import { WebSocketServer, WebSocket } from "ws";
-import { subscriptionPlans, payments, aiMusicUsage, aiMusicGenerationLogs, aiMusicSavedTracks } from "../shared/models/auth";
+import {
+  subscriptionPlans,
+  payments,
+  aiMusicUsage,
+  aiMusicGenerationLogs,
+  aiMusicSavedTracks,
+  aiMusicUserVoices,
+} from "../shared/models/auth";
 import { db } from "./db";
 import {
   users,
@@ -2763,9 +2777,11 @@ export async function registerRoutes(
       mv?: string;
       vocal_gender?: "f" | "m";
       make_instrumental?: boolean;
+      use_my_voice?: boolean;
     };
-    const customMode = body.custom_mode ?? false;
+    let customMode = body.custom_mode ?? false;
     const makeInstrumental = body.make_instrumental === true;
+    const useMyVoice = body.use_my_voice === true;
     const promoMinForCreate = makeInstrumental ? 1 : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
     const now = new Date();
     const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
@@ -2839,13 +2855,38 @@ export async function registerRoutes(
       const createProvider = AI_MUSIC_PROVIDER;
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
-      const model = resolveSunoGenerateModel(body.mv);
+      let model = resolveSunoGenerateModel(body.mv);
+      let personaVoiceId: string | null = null;
+      if (useMyVoice) {
+        if (makeInstrumental) {
+          return res.status(400).json({
+            message: "내 보이스로 생성은 연주만(보컬 없음) 모드와 함께 사용할 수 없습니다.",
+          });
+        }
+        const [voiceRow] = await db.select().from(aiMusicUserVoices).where(eq(aiMusicUserVoices.userId, userId));
+        const vid = voiceRow?.voiceId?.trim();
+        if (!vid || voiceRow?.status !== "ready") {
+          return res.status(400).json({
+            message: "등록된 내 보이스가 없습니다. 먼저 「내 보이스 등록」을 완료해 주세요.",
+            code: "CUSTOM_VOICE_NOT_READY",
+          });
+        }
+        personaVoiceId = vid;
+        customMode = true;
+        if (!sunoModelSupportsVoicePersona(model)) {
+          model = "V5_5";
+        }
+      }
       const payload: Record<string, unknown> = {
         customMode,
         instrumental: makeInstrumental,
         model,
         callBackUrl,
       };
+      if (personaVoiceId) {
+        payload.personaId = personaVoiceId;
+        payload.personaModel = "voice_persona";
+      }
       if (customMode) {
         payload.style = (body.tags ?? "").trim() || "pop";
         payload.title = resolveSunoCustomModeTitle({
@@ -3006,6 +3047,263 @@ export async function registerRoutes(
       };
       if (process.env.NODE_ENV === "development") payload.detail = errMsg.slice(0, 500);
       res.status(500).json(payload);
+    }
+  });
+
+  /** KIE Suno 커스텀 보이스 — 회원당 voiceId 등록·조회 (Generate Voice 플로우) */
+  function kieVoiceUpstreamOnly(): { base: string; key: string } | null {
+    if (AI_MUSIC_PROVIDER !== "kie" && AI_MUSIC_PROVIDER !== "suno") return null;
+    return sunoStyleUpstream(AI_MUSIC_PROVIDER);
+  }
+
+  app.get("/api/ai-music/custom-voice", isAuthenticated, async (req, res) => {
+    // @ts-ignore
+    const userId = req.user?.claims?.sub as string;
+    if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+    try {
+      const [row] = await db.select().from(aiMusicUserVoices).where(eq(aiMusicUserVoices.userId, userId));
+      if (!row?.voiceId?.trim() || row.status !== "ready") {
+        return res.json({ ready: false, profile: null });
+      }
+      return res.json({
+        ready: true,
+        profile: {
+          voiceId: row.voiceId,
+          voiceName: row.voiceName ?? "",
+          style: row.style ?? "",
+          description: row.description ?? "",
+          singerSkillLevel: row.singerSkillLevel ?? "beginner",
+          updatedAt: row.updatedAt,
+        },
+      });
+    } catch (e) {
+      console.error("[ai-music custom-voice GET]", e);
+      return res.status(500).json({ message: "보이스 정보를 불러오지 못했습니다." });
+    }
+  });
+
+  app.delete("/api/ai-music/custom-voice", isAuthenticated, async (req, res) => {
+    // @ts-ignore
+    const userId = req.user?.claims?.sub as string;
+    if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+    try {
+      await db.delete(aiMusicUserVoices).where(eq(aiMusicUserVoices.userId, userId));
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("[ai-music custom-voice DELETE]", e);
+      return res.status(500).json({ message: "보이스 삭제에 실패했습니다." });
+    }
+  });
+
+  app.post(
+    "/api/ai-music/custom-voice/validate-source",
+    isAuthenticated,
+    aiVoiceRecordUpload.single("audio"),
+    async (req, res) => {
+      const upstream = kieVoiceUpstreamOnly();
+      if (!upstream) {
+        return res.status(503).json({
+          message: "내 보이스 등록은 KIE_API_KEY(또는 SUNOAPI)가 설정된 환경에서만 사용할 수 있습니다.",
+        });
+      }
+      const file = req.file;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({ message: "원본 보이스 녹음이 없습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as { vocal_start_s?: string; vocal_end_s?: string; language?: string };
+      let vocalStartS = Math.max(0, Math.floor(Number(body.vocal_start_s ?? 0)));
+      let vocalEndS = Math.max(vocalStartS + 10, Math.floor(Number(body.vocal_end_s ?? 15)));
+      if (vocalEndS - vocalStartS > 30) vocalEndS = vocalStartS + 30;
+      if (vocalEndS - vocalStartS < 10) vocalEndS = vocalStartS + 10;
+
+      try {
+        const ext = file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") ? ".mp3" : ".webm";
+        const voiceUrl = await kieUploadAudioBuffer({
+          base: upstream.base,
+          apiKey: upstream.key,
+          buffer: file.buffer,
+          fileName: `voice-source-${crypto.randomUUID()}${ext}`,
+          mimeType: file.mimetype || "audio/webm",
+          uploadPath: "venysound/voice-source",
+        });
+        const { taskId } = await kieVoiceValidateSource({
+          upstream,
+          voiceUrl,
+          vocalStartS,
+          vocalEndS,
+          language: body.language,
+        });
+        await db
+          .insert(aiMusicUserVoices)
+          .values({
+            userId,
+            validateTaskId: taskId,
+            status: "validating",
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: aiMusicUserVoices.userId,
+            set: {
+              validateTaskId: taskId,
+              voiceId: null,
+              status: "validating",
+              updatedAt: new Date(),
+            },
+          });
+        return res.json({ validate_task_id: taskId });
+      } catch (e) {
+        console.error("[ai-music custom-voice validate-source]", e);
+        const msg = e instanceof Error ? e.message : "검증 문구 생성에 실패했습니다.";
+        return res.status(502).json({ message: msg });
+      }
+    },
+  );
+
+  app.get("/api/ai-music/custom-voice/validate-info", isAuthenticated, async (req, res) => {
+    const upstream = kieVoiceUpstreamOnly();
+    if (!upstream) {
+      return res.status(503).json({ message: "KIE API가 설정되지 않았습니다." });
+    }
+    const taskId = String(req.query.taskId ?? "").trim();
+    if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
+    try {
+      const info = await kieVoiceValidateInfo(upstream, taskId);
+      return res.json(info);
+    } catch (e) {
+      console.error("[ai-music custom-voice validate-info]", e);
+      const msg = e instanceof Error ? e.message : "검증 문구 조회에 실패했습니다.";
+      return res.status(502).json({ message: msg });
+    }
+  });
+
+  app.post(
+    "/api/ai-music/custom-voice/register",
+    isAuthenticated,
+    aiVoiceRecordUpload.single("audio"),
+    async (req, res) => {
+      const upstream = kieVoiceUpstreamOnly();
+      if (!upstream) {
+        return res.status(503).json({
+          message: "내 보이스 등록은 KIE_API_KEY(또는 SUNOAPI)가 설정된 환경에서만 사용할 수 있습니다.",
+        });
+      }
+      const file = req.file;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({ message: "검증용 녹음이 없습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as {
+        validate_task_id?: string;
+        voice_name?: string;
+        style?: string;
+        description?: string;
+        singer_skill_level?: string;
+      };
+      const validateTaskId = String(body.validate_task_id ?? "").trim();
+      if (!validateTaskId) {
+        return res.status(400).json({ message: "validate_task_id가 필요합니다." });
+      }
+
+      try {
+        const ext = file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") ? ".mp3" : ".webm";
+        const verifyUrl = await kieUploadAudioBuffer({
+          base: upstream.base,
+          apiKey: upstream.key,
+          buffer: file.buffer,
+          fileName: `voice-verify-${crypto.randomUUID()}${ext}`,
+          mimeType: file.mimetype || "audio/webm",
+          uploadPath: "venysound/voice-verify",
+        });
+        const { taskId: generateTaskId } = await kieVoiceGenerate({
+          upstream,
+          taskId: validateTaskId,
+          verifyUrl,
+          voiceName: body.voice_name,
+          style: body.style,
+          description: body.description,
+          singerSkillLevel: body.singer_skill_level,
+        });
+        await db
+          .insert(aiMusicUserVoices)
+          .values({
+            userId,
+            validateTaskId,
+            status: "generating",
+            voiceName: body.voice_name?.trim().slice(0, 120) ?? null,
+            style: body.style?.trim().slice(0, 500) ?? null,
+            description: body.description?.trim().slice(0, 500) ?? null,
+            singerSkillLevel: body.singer_skill_level?.trim() || "beginner",
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: aiMusicUserVoices.userId,
+            set: {
+              validateTaskId,
+              status: "generating",
+              voiceName: body.voice_name?.trim().slice(0, 120) ?? null,
+              style: body.style?.trim().slice(0, 500) ?? null,
+              description: body.description?.trim().slice(0, 500) ?? null,
+              singerSkillLevel: body.singer_skill_level?.trim() || "beginner",
+              updatedAt: new Date(),
+            },
+          });
+        return res.json({ generate_task_id: generateTaskId });
+      } catch (e) {
+        console.error("[ai-music custom-voice register]", e);
+        const msg = e instanceof Error ? e.message : "보이스 등록에 실패했습니다.";
+        return res.status(502).json({ message: msg });
+      }
+    },
+  );
+
+  app.get("/api/ai-music/custom-voice/record-info", isAuthenticated, async (req, res) => {
+    const upstream = kieVoiceUpstreamOnly();
+    if (!upstream) {
+      return res.status(503).json({ message: "KIE API가 설정되지 않았습니다." });
+    }
+    const taskId = String(req.query.taskId ?? "").trim();
+    if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
+    // @ts-ignore
+    const userId = req.user?.claims?.sub as string;
+    if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+    try {
+      const info = await kieVoiceRecordInfo(upstream, taskId);
+      if (info.status === "success" && info.voiceId) {
+        const [pending] = await db.select().from(aiMusicUserVoices).where(eq(aiMusicUserVoices.userId, userId));
+        await db
+          .insert(aiMusicUserVoices)
+          .values({
+            userId,
+            voiceId: info.voiceId,
+            validateTaskId: pending?.validateTaskId ?? null,
+            voiceName: pending?.voiceName ?? null,
+            style: pending?.style ?? null,
+            description: pending?.description ?? null,
+            singerSkillLevel: pending?.singerSkillLevel ?? "beginner",
+            status: "ready",
+            updatedAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: aiMusicUserVoices.userId,
+            set: {
+              voiceId: info.voiceId,
+              status: "ready",
+              updatedAt: new Date(),
+            },
+          });
+      }
+      return res.json(info);
+    } catch (e) {
+      console.error("[ai-music custom-voice record-info]", e);
+      const msg = e instanceof Error ? e.message : "보이스 상태 조회에 실패했습니다.";
+      return res.status(502).json({ message: msg });
     }
   });
 

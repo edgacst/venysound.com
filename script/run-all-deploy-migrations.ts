@@ -40,6 +40,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "create-ai-music-generation-logs.sql", name: "ai_music_generation_logs" },
   { file: "ai-music-generation-logs-charge-outcome.sql", name: "ai_music_generation_logs.charge_status" },
   { file: "ai-music-saved-library.sql", name: "ai_music_saved_tracks" },
+  { file: "ai-music-user-voice.sql", name: "ai_music_user_voices" },
   { file: "music-ai-provider-column.sql", name: "music ai_provider 컬럼" },
   { file: "music-spotify-album-id.sql", name: "music spotify_album_id 컬럼" },
   { file: "notify-activity-email.sql", name: "users notify_activity_email 컬럼" },

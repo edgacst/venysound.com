@@ -128,6 +128,19 @@ export const aiMusicGenerationLogs = pgTable(
 );
 
 /** AI 음악 생성 페이지「내 라이브러리」(기기 간 동기화 — 기존 localStorage 보완) */
+/** KIE Suno Generate Voice — 회원당 등록 보이스 1개(voiceId) */
+export const aiMusicUserVoices = pgTable("ai_music_user_voices", {
+  userId: varchar("user_id", { length: 128 }).primaryKey(),
+  voiceId: varchar("voice_id", { length: 128 }),
+  voiceName: varchar("voice_name", { length: 120 }),
+  style: text("style"),
+  description: text("description"),
+  singerSkillLevel: varchar("singer_skill_level", { length: 32 }).default("beginner"),
+  validateTaskId: varchar("validate_task_id", { length: 128 }),
+  status: varchar("status", { length: 32 }).default("none").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const aiMusicSavedTracks = pgTable(
   "ai_music_saved_tracks",
   {

@@ -43,6 +43,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { useKieCustomVoiceRegister } from "@/hooks/useKieCustomVoice";
 import { Textarea } from "@/components/ui/textarea";
 
 /** 생성된 곡 목록 페이지당 개수 */
@@ -1305,6 +1306,54 @@ export default function CreateMusic() {
   const [voiceRecordPreviewUrl, setVoiceRecordPreviewUrl] = useState<string | null>(null);
   const [voiceRecordSubmitting, setVoiceRecordSubmitting] = useState(false);
   const { state: voiceRecState, startRecording, stopRecording, resetRecording } = useVoiceRecorder();
+  const [customVoiceOpen, setCustomVoiceOpen] = useState(false);
+  const [useMyVoice, setUseMyVoice] = useState(false);
+  const [cvSourceBlob, setCvSourceBlob] = useState<Blob | null>(null);
+  const [cvSourcePreviewUrl, setCvSourcePreviewUrl] = useState<string | null>(null);
+  const [cvVerifyBlob, setCvVerifyBlob] = useState<Blob | null>(null);
+  const [cvVerifyPreviewUrl, setCvVerifyPreviewUrl] = useState<string | null>(null);
+  const cv = useKieCustomVoiceRegister();
+  const {
+    state: cvRecState,
+    startRecording: cvStartRecording,
+    stopRecording: cvStopRecording,
+    resetRecording: cvResetRecording,
+  } = useVoiceRecorder();
+
+  const { data: customVoiceData } = useQuery({
+    queryKey: ["/api/ai-music/custom-voice"],
+    queryFn: async () => {
+      const res = await fetch("/api/ai-music/custom-voice", { credentials: "include" });
+      const data = (await res.json().catch(() => ({}))) as {
+        ready?: boolean;
+        profile?: { voiceId: string; voiceName: string; style: string } | null;
+      };
+      if (!res.ok) return { ready: false, profile: null };
+      return { ready: Boolean(data.ready), profile: data.profile ?? null };
+    },
+    enabled: !!user,
+    staleTime: 30_000,
+  });
+  const myVoiceReady = customVoiceData?.ready === true;
+  const myVoiceProfile = customVoiceData?.profile ?? null;
+
+  const didAutoMyVoice = useRef(false);
+  useEffect(() => {
+    if (myVoiceReady && !didAutoMyVoice.current) {
+      didAutoMyVoice.current = true;
+      setUseMyVoice(true);
+    }
+  }, [myVoiceReady]);
+
+  useEffect(() => {
+    if (useMyVoice && creationModelVersion !== "sonic-v5-5") {
+      setCreationModelVersion("sonic-v5-5");
+    }
+    if (useMyVoice && myVoiceReady) {
+      setMode("custom");
+      setInstrumentalOnly(false);
+    }
+  }, [useMyVoice, creationModelVersion, myVoiceReady]);
   const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
   const submittedLyricsRef = useRef<string>("");
@@ -1314,8 +1363,10 @@ export default function CreateMusic() {
   useEffect(() => {
     return () => {
       if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
+      if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
+      if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
     };
-  }, [voiceRecordPreviewUrl]);
+  }, [voiceRecordPreviewUrl, cvSourcePreviewUrl, cvVerifyPreviewUrl]);
 
   const totalDownloads = useMemo(
     () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
@@ -1989,6 +2040,38 @@ export default function CreateMusic() {
   );
 
 
+  const resetCvDrafts = useCallback(() => {
+    if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
+    if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
+    setCvSourceBlob(null);
+    setCvSourcePreviewUrl(null);
+    setCvVerifyBlob(null);
+    setCvVerifyPreviewUrl(null);
+    cvResetRecording();
+    cv.reset();
+  }, [cv, cvResetRecording, cvSourcePreviewUrl, cvVerifyPreviewUrl]);
+
+  const handleCvRecordStop = useCallback(async () => {
+    try {
+      const blob = await cvStopRecording();
+      if (!blob.size) {
+        toast({ title: t("createMusic.voiceRecordEmpty", "녹음이 비어 있습니다."), variant: "destructive" });
+        return;
+      }
+      if (cv.step === "source") {
+        if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
+        setCvSourceBlob(blob);
+        setCvSourcePreviewUrl(URL.createObjectURL(blob));
+      } else if (cv.step === "verify") {
+        if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
+        setCvVerifyBlob(blob);
+        setCvVerifyPreviewUrl(URL.createObjectURL(blob));
+      }
+    } catch {
+      toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" });
+    }
+  }, [cv.step, cvStopRecording, cvSourcePreviewUrl, cvVerifyPreviewUrl, toast, t]);
+
   const resetVoiceRecordDraft = useCallback(() => {
     if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
     setVoiceRecordPreviewUrl(null);
@@ -2290,6 +2373,11 @@ export default function CreateMusic() {
       if (vocalGender === "f" || vocalGender === "m") body.vocal_gender = vocalGender;
       if (customMode) body.prompt = boostedPrompt;
       else body.gpt_description_prompt = boostedPrompt;
+      if (useMyVoice && myVoiceReady && !instrumentalOnly) {
+        body.use_my_voice = true;
+        body.custom_mode = true;
+        body.mv = "sonic-v5-5";
+      }
 
       const res = await fetch("/api/ai-music/create", {
         method: "POST",
@@ -2659,7 +2747,30 @@ export default function CreateMusic() {
                           </label>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={isSubmitting || voiceRecordSubmitting || cv.busy}
+                          onClick={() => {
+                            resetCvDrafts();
+                            setCustomVoiceOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-violet-400 bg-violet-100 px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-200 disabled:opacity-50"
+                          title={t(
+                            "createMusic.customVoiceChipHint",
+                            "내 목소리를 등록한 뒤, 이후 생성 곡에 내 보이스를 적용합니다 (KIE Generate Voice)",
+                          )}
+                        >
+                          <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          {myVoiceReady
+                            ? t("createMusic.customVoiceChipRegistered", "내 보이스 다시 등록")
+                            : t("createMusic.customVoiceChip", "내 보이스 등록")}
+                        </button>
+                        {myVoiceReady ? (
+                          <span className="text-xs text-violet-800/90">
+                            {t("createMusic.customVoiceReadyBadge", "등록됨")}: {myVoiceProfile?.voiceName || "My Voice"}
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           disabled={instrumentalOnly || isSubmitting || voiceRecordSubmitting}
@@ -2669,14 +2780,13 @@ export default function CreateMusic() {
                             setMode("custom");
                             setVoiceRecordOpen(true);
                           }}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-slate-300 disabled:opacity-50"
                           title={t(
                             "createMusic.voiceRecordChipHint",
-                            "멜로디·허밍을 녹음한 뒤 가사란 내용으로 AI 보컬 곡 생성 (KIE)",
+                            "멜로디 녹음 위에 이번 가사만 입히기 (add-vocals)",
                           )}
                         >
-                          <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                          {t("createMusic.voiceRecordChip", "보이스 녹음 생성")}
+                          {t("createMusic.voiceRecordChipShort", "녹음으로 바로 생성")}
                         </button>
                       </div>
 
@@ -3003,6 +3113,27 @@ export default function CreateMusic() {
                           </div>
                         )}
                       </div>
+                      {myVoiceReady && !instrumentalOnly ? (
+                        <div className="flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50/80 px-4 py-3">
+                          <Checkbox
+                            id="create-music-use-my-voice"
+                            checked={useMyVoice}
+                            onCheckedChange={(v) => setUseMyVoice(v === true)}
+                            className="mt-0.5"
+                          />
+                          <div className="min-w-0 space-y-1">
+                            <label htmlFor="create-music-use-my-voice" className="text-sm font-medium leading-snug cursor-pointer block">
+                              {t("createMusic.useMyVoiceLabel", "등록한 내 보이스로 노래 생성")}
+                            </label>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {t(
+                                "createMusic.useMyVoiceHint",
+                                "켜면 AI가 등록한 목소리 프로필(voiceId)로 보컬을 부릅니다. v5.5 모델·가사 직접 입력 모드가 적용됩니다.",
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="space-y-1.5">
                         <label className="block text-sm font-medium">
                           {t("createMusic.modelVersionLabel", "생성 모델 버전")}
@@ -3010,6 +3141,7 @@ export default function CreateMusic() {
                         <Select
                           value={creationModelVersion}
                           onValueChange={(v) => setCreationModelVersion(v as "sonic-v4-5" | "sonic-v5-5")}
+                          disabled={useMyVoice && myVoiceReady}
                         >
                           <SelectTrigger className="w-full max-w-md bg-white border-slate-200">
                             <SelectValue />
@@ -3231,6 +3363,133 @@ export default function CreateMusic() {
 
         <Footer />
       </div>
+
+      <Dialog
+        open={customVoiceOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCustomVoiceOpen(false);
+            resetCvDrafts();
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t("createMusic.customVoiceDialogTitle", "내 보이스 등록")}</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  {t(
+                    "createMusic.customVoiceDialogLead",
+                    "① 노래·허밍 샘플 업로드 → ② 안내 문구를 노래처럼 녹음 → 등록 후 「내 보이스로 노래 생성」으로 곡을 만듭니다.",
+                  )}
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          {cv.error ? <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2">{cv.error}</p> : null}
+          {cv.step === "source" && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">{t("createMusic.customVoiceStepSource", "① 내 목소리 샘플 (약 10~15초)")}</p>
+              <div className="flex flex-wrap gap-2">
+                {cvRecState !== "recording" ? (
+                  <Button type="button" variant="outline" className="gap-2" onClick={() => void cvStartRecording().catch(() => toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" }))}>
+                    <Mic className="h-4 w-4" /> {t("createMusic.voiceRecordStart", "녹음 시작")}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleCvRecordStop()}>
+                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> {t("createMusic.voiceRecordStop", "녹음 중지")}
+                  </Button>
+                )}
+              </div>
+              {cvSourcePreviewUrl ? <audio src={cvSourcePreviewUrl} controls className="w-full rounded-lg" /> : null}
+            </div>
+          )}
+          {cv.step === "phrase" && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin text-violet-600" />
+              {t("createMusic.customVoiceStepPhraseWait", "검증 문구 생성 중…")}
+            </div>
+          )}
+          {cv.step === "verify" && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">{t("createMusic.customVoiceStepVerify", "② 아래 문구를 노래처럼 읽어 녹음")}</p>
+              {cv.validatePhrase ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed">{cv.validatePhrase}</p>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                {cvRecState !== "recording" ? (
+                  <Button type="button" variant="outline" className="gap-2" onClick={() => void cvStartRecording().catch(() => toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" }))}>
+                    <Mic className="h-4 w-4" /> {t("createMusic.voiceRecordStart", "녹음 시작")}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleCvRecordStop()}>
+                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> {t("createMusic.voiceRecordStop", "녹음 중지")}
+                  </Button>
+                )}
+              </div>
+              {cvVerifyPreviewUrl ? <audio src={cvVerifyPreviewUrl} controls className="w-full rounded-lg" /> : null}
+              <Button type="button" variant="secondary" disabled={!cvVerifyBlob} onClick={() => cv.setStep("meta")}>
+                {t("createMusic.customVoiceNextMeta", "다음: 이름·스타일")}
+              </Button>
+            </div>
+          )}
+          {cv.step === "meta" && (
+            <div className="space-y-3">
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder={t("createMusic.customVoiceNamePh", "보이스 이름")} value={cv.voiceName} onChange={(e) => cv.setVoiceName(e.target.value)} />
+              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder={t("createMusic.customVoiceStylePh", "Pop, Korean vocal")} value={cv.style} onChange={(e) => cv.setStyle(e.target.value)} />
+              <Select value={cv.singerSkillLevel} onValueChange={cv.setSingerSkillLevel}>
+                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="beginner">{t("createMusic.skillBeginner", "초급")}</SelectItem>
+                  <SelectItem value="intermediate">{t("createMusic.skillIntermediate", "중급")}</SelectItem>
+                  <SelectItem value="advanced">{t("createMusic.skillAdvanced", "고급")}</SelectItem>
+                  <SelectItem value="professional">{t("createMusic.skillPro", "프로")}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Textarea className="min-h-[72px] rounded-lg border-slate-200" value={cv.description} onChange={(e) => cv.setDescription(e.target.value)} />
+            </div>
+          )}
+          {cv.step === "done" && (
+            <p className="text-sm font-medium text-green-700">{t("createMusic.customVoiceDone", "등록 완료. 다이얼로그를 닫고 「등록한 내 보이스로 노래 생성」으로 곡을 만드세요.")}</p>
+          )}
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => setCustomVoiceOpen(false)}>{t("common.cancel", "취소")}</Button>
+            {cv.step === "source" && (
+              <Button
+                type="button"
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+                disabled={!cvSourceBlob || cv.busy}
+                onClick={() =>
+                  void cv.submitSource(cvSourceBlob!).then(() => toast({ title: t("createMusic.customVoicePhraseReady", "검증 문구 준비됨") })).catch(() => {})
+                }
+              >
+                {cv.busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {t("createMusic.customVoiceSubmitSource", "샘플 업로드")}
+              </Button>
+            )}
+            {cv.step === "meta" && (
+              <Button
+                type="button"
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+                disabled={!cvVerifyBlob || cv.busy}
+                onClick={() =>
+                  void cv.submitVerifyAndRegister(cvVerifyBlob!).then((vid) => {
+                    queryClient.invalidateQueries({ queryKey: ["/api/ai-music/custom-voice"] });
+                    setUseMyVoice(true);
+                    setCustomVoiceOpen(false);
+                    resetCvDrafts();
+                    toast({ title: t("createMusic.customVoiceRegisterDone", "내 보이스 등록 완료") });
+                  }).catch(() => {})
+                }
+              >
+                {cv.busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                {t("createMusic.customVoiceSubmitRegister", "등록 완료")}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={voiceRecordOpen}
