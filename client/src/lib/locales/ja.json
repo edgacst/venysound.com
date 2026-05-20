@@ -1498,6 +1498,7 @@
     "previewHint": "最初の音源やカバーが用意されると、ここで再生できます。最終版が完成すると、下のライブラリに自動で追加されます。",
     "previewAudioSoon": "音源準備中",
     "sectionLibraryScoreNotice": "※ 楽譜は自動抽出の参考用ドラフトです。実際の音源・演奏と一致しないことがあり、そのまま練習・演奏には向かない場合があります。",
+    "sectionLibraryUnpublishedDownloadNotice": "※ 音源は生成から14日以内にダウンロードしてください。期限を過ぎるとダウンロードできません。サイトに公開した曲は、マイページからいつでもダウンロードできます。",
     "modeLabel": "生成方式",
     "modeDescription": "説明で生成",
     "modeCustom": "歌詞を直接入力",

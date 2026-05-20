@@ -1722,6 +1722,7 @@
     "previewHint": "When the first audio or cover is ready, you can play it here. When the final render finishes, tracks are added to your library below.",
     "previewAudioSoon": "Audio preparing",
     "sectionLibraryScoreNotice": "※ Sheet exports are auto-generated drafts for reference only. They may not match the recording and are usually not ready for practice or performance as-is.",
+    "sectionLibraryUnpublishedDownloadNotice": "※ Download your track within 14 days of generation. After that, downloads are no longer available. If you published it on the site, you can download it anytime from My Page.",
     "modeLabel": "Generation mode",
     "modeDescription": "Generate from description",
     "modeCustom": "Enter lyrics",

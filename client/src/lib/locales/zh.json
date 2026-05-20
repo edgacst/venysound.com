@@ -1496,6 +1496,7 @@
     "previewHint": "当首个音频或封面就绪后，可在此试听。最终文件完成后会自动加入下方曲库。",
     "previewAudioSoon": "音频准备中",
     "sectionLibraryScoreNotice": "※ 乐谱为自动生成的参考草稿，可能与录音或实际演奏不一致，通常不宜直接用于练习或演出。",
+    "sectionLibraryUnpublishedDownloadNotice": "※ 请在生成后 14 天内下载音源，逾期将无法下载。已发布到网站的歌曲可随时在个人主页下载。",
     "modeLabel": "生成方式",
     "modeDescription": "按描述生成",
     "modeCustom": "直接输入歌词",

@@ -2741,6 +2741,12 @@ export default function CreateMusic() {
                           )}
                         </p>
                       ) : null}
+                      <p className="w-full min-w-0 text-[10px] sm:text-[11px] text-amber-900/90 dark:text-amber-200/90 leading-relaxed break-words rounded-lg border border-amber-200/90 bg-amber-50/95 dark:bg-amber-950/30 dark:border-amber-800/50 px-3 py-2 mt-1">
+                        {t(
+                          "createMusic.sectionLibraryUnpublishedDownloadNotice",
+                          "※ 음원은 생성 후 14일 안에 다운로드하세요. 이후 다운로드가 불가합니다. 사이트에 배포(신곡 공개)한 경우는 언제든지 마이페이지에서 다운로드할 수 있습니다.",
+                        )}
+                      </p>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-6 flex-1 flex flex-col min-h-0">
