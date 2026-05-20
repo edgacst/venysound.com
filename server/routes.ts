@@ -24,6 +24,15 @@ import {
   type ActivityEmailKind,
 } from "./email";
 import { registerAiMusicScorePdfRoutes } from "./ai-music-score-pdf";
+import {
+  buildKieLyricsPrompt,
+  kieGenerateLyrics,
+  mapOpenAiError,
+  openaiGenerateStudioLyrics,
+  openaiOptimizeStudioLyrics,
+} from "./aiMusicStudioLyrics";
+import { kieUploadAudioBuffer } from "./kieFileUpload";
+import multer from "multer";
 import { verifyCreditRefundProof } from "./sensitiveActionProof";
 import { getClientIpForGeo } from "./client-ip";
 import { encodeRingtoneClipMp3, RINGTONE_FEE_WON } from "./ringtoneClip";
@@ -1306,19 +1315,36 @@ export async function registerRoutes(
   app.get("/sitemap.xml", sendSitemapXml);
   app.get("/api/sitemap.xml", sendSitemapXml);
 
-  // === AI Music: Suno API (sunoapi.org) 또는 AIMusicAPI 프록시 ===
+  // === AI Music: KIE (api.kie.ai) → Suno API (sunoapi.org) → AIMusicAPI 프록시 ===
+  function normalizeAiMusicApiKey(raw: string | undefined): string | undefined {
+    const t = (raw ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
+    return t || undefined;
+  }
+
+  const KIE_API_BASE = (process.env.KIE_API_BASE ?? "https://api.kie.ai").replace(/\/$/, "");
+  const KIE_API_KEY = normalizeAiMusicApiKey(process.env.KIE_API_KEY);
+
   const SUNOAPI_BASE = "https://api.sunoapi.org";
-  const rawSunoKey = (process.env.SUNOAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
-  const SUNOAPI_KEY = rawSunoKey || undefined;
+  const SUNOAPI_KEY = normalizeAiMusicApiKey(process.env.SUNOAPI_API_KEY);
 
   const AIMUSICAPI_BASE = "https://api.aimusicapi.ai";
-  const rawKey = process.env.AIMUSICAPI_API_KEY ?? "";
-  const AIMUSICAPI_KEY = rawKey
-    .replace(/^\uFEFF/, "")
-    .replace(/\r\n?|\n/g, "")
-    .trim() || undefined;
+  const AIMUSICAPI_KEY = normalizeAiMusicApiKey(process.env.AIMUSICAPI_API_KEY);
 
-  const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
+  const AI_MUSIC_PROVIDER = KIE_API_KEY ? "kie" : SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
+
+  const aiVoiceRecordUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 8 * 1024 * 1024 },
+  });
+
+  /** Suno-compatible upstream (KIE · sunoapi.org) — provider별 base/key. 옛 suno task는 provider=suno로만 조회. */
+  function sunoStyleUpstream(provider: string): { base: string; key: string } | null {
+    const p = provider.trim().toLowerCase();
+    if (p === "kie" && KIE_API_KEY) return { base: KIE_API_BASE, key: KIE_API_KEY };
+    if (p === "suno" && SUNOAPI_KEY) return { base: SUNOAPI_BASE, key: SUNOAPI_KEY };
+    return null;
+  }
+
   /** Suno/AIMusic 조회 — 업스트림이 응답 없이 걸리면 클라이언트 폴링 한 번이 수 분 단위로 멈춤 */
   const AI_MUSIC_UPSTREAM_FETCH_MS = 28_000;
 
@@ -1509,6 +1535,10 @@ export async function registerRoutes(
         sunoCallbackResults.set(taskId, { state: "succeeded", data: tracks });
       }
     } catch (_) {}
+  });
+
+  app.post("/api/ai-music/lyrics-callback", (_req, res) => {
+    res.status(200).json({ received: true });
   });
 
   // AI 음악 생성 커버/오디오 프록시: 자기 자신 URL이 넘어오면 내부 url 쿼리만 꺼내서 사용 (재귀 호출 시 쿠키 없어 401 나는 것 방지)
@@ -1777,13 +1807,16 @@ export async function registerRoutes(
         return res.json({ wav_url: wavUrl });
       }
 
-      if (provider === "suno" && SUNOAPI_KEY) {
+      const wavUpstream = provider === "kie" || provider === "suno" ? sunoStyleUpstream(provider) : null;
+      if (wavUpstream) {
         if (!genTaskId) {
-          return res.status(400).json({ message: "Suno WAV 변환에는 생성 작업 ID(generation_task_id)가 필요합니다." });
+          return res.status(400).json({
+            message: "WAV 변환에는 생성 작업 ID(generation_task_id)가 필요합니다.",
+          });
         }
-        const genRes = await fetch(`${SUNOAPI_BASE}/api/v1/wav/generate`, {
+        const genRes = await fetch(`${wavUpstream.base}/api/v1/wav/generate`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${SUNOAPI_KEY}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${wavUpstream.key}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             taskId: genTaskId,
             audioId: clipId,
@@ -1808,8 +1841,8 @@ export async function registerRoutes(
           if (i > 0) {
             await new Promise((r) => setTimeout(r, WAV_POLL_INTERVAL_MS));
           }
-          const infoRes = await fetch(`${SUNOAPI_BASE}/api/v1/wav/record-info?taskId=${encodeURIComponent(wavTaskId)}`, {
-            headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+          const infoRes = await fetch(`${wavUpstream.base}/api/v1/wav/record-info?taskId=${encodeURIComponent(wavTaskId)}`, {
+            headers: { Authorization: `Bearer ${wavUpstream.key}` },
           });
           const infoData = await infoRes.json().catch(() => ({}));
           if ((infoData as { code?: number }).code !== 200) continue;
@@ -1832,31 +1865,47 @@ export async function registerRoutes(
     }
   });
 
-  // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI 우선, 없으면 AIMusicAPI.
+  // 로그인 없이 API 키 유효성만 확인 (디버깅용). KIE → SUNOAPI → AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
-    if (SUNOAPI_KEY) {
+    const checkSunoStyleCredits = async (label: "kie" | "suno", base: string, key: string) => {
       try {
-        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, {
-          headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+        const apiRes = await fetch(`${base}/api/v1/generate/credit`, {
+          headers: { Authorization: `Bearer ${key}` },
         });
         const data = await apiRes.json().catch(() => ({}));
         if (apiRes.ok && (data as { code?: number }).code === 200) {
-          return res.json({ ok: true, provider: "suno", credits: (data as { data?: number }).data, keyLength: SUNOAPI_KEY.length });
+          return res.json({ ok: true, provider: label, credits: (data as { data?: number }).data, keyLength: key.length });
+        }
+        /** KIE(api.kie.ai)는 sunoapi식 `/generate/credit`가 없음(404). 키가 있으면 생성 API는 정상인 경우가 많음 */
+        if (label === "kie" && apiRes.status === 404) {
+          return res.json({
+            ok: true,
+            provider: label,
+            credits: null,
+            keyLength: key.length,
+            note: "KIE 잔액 조회 경로 없음 — 가사·음악 생성은 별도 API로 동작합니다.",
+          });
         }
         return res.status(200).json({
           ok: false,
-          provider: "suno",
+          provider: label,
           status: apiRes.status,
           message: (data as { msg?: string }).msg ?? "API 오류",
-          keyLength: SUNOAPI_KEY.length,
+          keyLength: key.length,
         });
       } catch (e) {
-        console.error("[ai-music check-key suno]", e);
-        return res.status(500).json({ ok: false, provider: "suno", message: "연결 실패" });
+        console.error(`[ai-music check-key ${label}]`, e);
+        return res.status(500).json({ ok: false, provider: label, message: "연결 실패" });
       }
-    }
+    };
+    if (KIE_API_KEY) return checkSunoStyleCredits("kie", KIE_API_BASE, KIE_API_KEY);
+    if (SUNOAPI_KEY) return checkSunoStyleCredits("suno", SUNOAPI_BASE, SUNOAPI_KEY);
     if (!AIMUSICAPI_KEY) {
-      return res.status(503).json({ ok: false, message: "SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.", keyLength: 0 });
+      return res.status(503).json({
+        ok: false,
+        message: "KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
+        keyLength: 0,
+      });
     }
     try {
       const apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/get-credits`, {
@@ -1902,7 +1951,7 @@ export async function registerRoutes(
     userId: string;
     user: (typeof users.$inferSelect) | undefined;
     taskId: string;
-    provider: "suno" | "aimusicapi";
+    provider: "kie" | "suno" | "aimusicapi";
     /** 실제 users.credits 에서 차감된 양만 기록(구독 월 한도만 쓴 경우 0) */
     walletCreditsCharged: number;
     body: {
@@ -2244,7 +2293,8 @@ export async function registerRoutes(
           .limit(1);
         if (existing) continue;
         const provRaw = row.generationProvider?.trim().toLowerCase();
-        const provider: "suno" | "aimusicapi" = provRaw === "aimusicapi" ? "aimusicapi" : "suno";
+        const provider: "kie" | "suno" | "aimusicapi" =
+          provRaw === "kie" ? "kie" : provRaw === "aimusicapi" ? "aimusicapi" : "suno";
         const title = row.title?.trim().slice(0, 500) || null;
         const promptText = row.prompt?.trim() ?? "";
         const requestSummary = promptText
@@ -2547,18 +2597,24 @@ export async function registerRoutes(
 
   app.get("/api/ai-music/check", isAuthenticated, async (_req, res) => {
     if (!AI_MUSIC_PROVIDER) {
-      return res.status(503).json({ ok: false, message: "SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다." });
+      return res.status(503).json({
+        ok: false,
+        message: "KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
+      });
     }
-    if (SUNOAPI_KEY) {
+    const activeSunoStyle = sunoStyleUpstream(AI_MUSIC_PROVIDER);
+    if (activeSunoStyle) {
       try {
-        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/credit`, { headers: { Authorization: `Bearer ${SUNOAPI_KEY}` } });
+        const apiRes = await fetch(`${activeSunoStyle.base}/api/v1/generate/credit`, {
+          headers: { Authorization: `Bearer ${activeSunoStyle.key}` },
+        });
         const data = await apiRes.json().catch(() => ({}));
         if (apiRes.ok && (data as { code?: number }).code === 200) {
-          return res.json({ ok: true, provider: "suno", credits: (data as { data?: number }).data });
+          return res.json({ ok: true, provider: AI_MUSIC_PROVIDER, credits: (data as { data?: number }).data });
         }
         return res.status(200).json({ ok: false, status: apiRes.status, message: (data as { msg?: string }).msg ?? "API 오류" });
       } catch (e) {
-        console.error("[ai-music check suno]", e);
+        console.error(`[ai-music check ${AI_MUSIC_PROVIDER}]`, e);
         return res.status(500).json({ ok: false, message: "연결 실패" });
       }
     }
@@ -2573,9 +2629,115 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/ai-music/lyrics/generate", isAuthenticated, async (req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({
+        message:
+          "AI 음악 생성 API가 설정되지 않았습니다. .env에 KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
+      });
+    }
+    const body = req.body as { prompt?: string; tags?: string; language?: string };
+    const theme = String(body.prompt ?? "").trim();
+    const styleTags = String(body.tags ?? "").trim();
+    if (!theme && !styleTags) {
+      return res.status(400).json({ message: "가사 주제·설명 또는 장르·스타일을 입력해 주세요." });
+    }
+    const upstream = sunoStyleUpstream(AI_MUSIC_PROVIDER);
+    try {
+      if (upstream) {
+        const kiePrompt = buildKieLyricsPrompt({ theme, styleTags });
+        const variations = await kieGenerateLyrics({
+          base: upstream.base,
+          key: upstream.key,
+          prompt: kiePrompt,
+          callBackUrl: `${siteBase}/api/ai-music/lyrics-callback`,
+        });
+        const first = variations[0]!;
+        return res.json({
+          lyrics: first.text,
+          title: first.title,
+          variations: variations.map((v) => ({ text: v.text, title: v.title })),
+          provider: AI_MUSIC_PROVIDER,
+        });
+      }
+      const one = await openaiGenerateStudioLyrics({
+        theme: theme || styleTags,
+        styleTags,
+        language: body.language,
+      });
+      return res.json({
+        lyrics: one.text,
+        title: one.title,
+        variations: [{ text: one.text, title: one.title }],
+        provider: "openai",
+      });
+    } catch (e) {
+      console.error("[ai-music lyrics/generate]", e);
+      const mapped = mapOpenAiError(e);
+      if (mapped.status === 503 || mapped.status === 429) {
+        return res.status(mapped.status).json({ message: mapped.message });
+      }
+      const msg = e instanceof Error ? e.message : "가사 생성에 실패했습니다.";
+      return res.status(502).json({ message: msg });
+    }
+  });
+
+  app.post("/api/ai-music/lyrics/optimize", isAuthenticated, async (req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ message: "AI 음악 API가 설정되지 않았습니다." });
+    }
+    const body = req.body as { lyrics?: string; tags?: string; language?: string };
+    const lyrics = String(body.lyrics ?? "").trim();
+    const styleTags = String(body.tags ?? "").trim();
+    if (!lyrics) {
+      return res.status(400).json({ message: "최적화할 가사를 입력해 주세요." });
+    }
+    const upstream = sunoStyleUpstream(AI_MUSIC_PROVIDER);
+    if (upstream) {
+      try {
+        const kiePrompt = buildKieLyricsPrompt({
+          theme: `Polish and structure these song lyrics with clear [Verse]/[Chorus] markers: ${lyrics.replace(/\s+/g, " ").slice(0, 120)}`,
+          styleTags,
+          existingLyrics: lyrics,
+        });
+        const variations = await kieGenerateLyrics({
+          base: upstream.base,
+          key: upstream.key,
+          prompt: kiePrompt,
+          callBackUrl: `${siteBase}/api/ai-music/lyrics-callback`,
+        });
+        const first = variations[0]!;
+        return res.json({
+          lyrics: first.text,
+          title: first.title,
+          provider: AI_MUSIC_PROVIDER,
+        });
+      } catch (kieErr) {
+        console.error("[ai-music lyrics/optimize kie]", kieErr);
+        const msg = kieErr instanceof Error ? kieErr.message : "가사 최적화에 실패했습니다.";
+        return res.status(502).json({ message: msg });
+      }
+    }
+    try {
+      const one = await openaiOptimizeStudioLyrics({
+        lyrics,
+        styleTags,
+        language: body.language,
+      });
+      return res.json({ lyrics: one.text, title: one.title, provider: "openai" });
+    } catch (e) {
+      console.error("[ai-music lyrics/optimize]", e);
+      const mapped = mapOpenAiError(e);
+      return res.status(mapped.status).json({ message: mapped.message });
+    }
+  });
+
   app.post("/api/ai-music/create", isAuthenticated, async (req, res) => {
     if (!AI_MUSIC_PROVIDER) {
-      return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다. .env에 SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요." });
+      return res.status(503).json({
+        message:
+          "AI 음악 생성 API가 설정되지 않았습니다. .env에 KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
+      });
     }
     // @ts-ignore
     const userId = req.user?.claims?.sub as string;
@@ -2672,7 +2834,9 @@ export async function registerRoutes(
       });
     }
 
-    if (SUNOAPI_KEY) {
+    const createSunoStyle = AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno" ? sunoStyleUpstream(AI_MUSIC_PROVIDER) : null;
+    if (createSunoStyle && (AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno")) {
+      const createProvider = AI_MUSIC_PROVIDER;
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
       const model = resolveSunoGenerateModel(body.mv);
@@ -2701,9 +2865,9 @@ export async function registerRoutes(
       }
       if (body.vocal_gender) payload.vocalGender = body.vocal_gender;
       try {
-        const apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate`, {
+        const apiRes = await fetch(`${createSunoStyle.base}/api/v1/generate`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${SUNOAPI_KEY}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${createSunoStyle.key}`, "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const data = await apiRes.json().catch(() => ({}));
@@ -2713,7 +2877,7 @@ export async function registerRoutes(
         }
         const sunoBizCode = (data as { code?: number }).code;
         if (typeof sunoBizCode === "number" && sunoBizCode !== 200) {
-          const msg = (data as { msg?: string }).msg ?? "Suno API 오류";
+          const msg = (data as { msg?: string }).msg ?? "음악 생성 API 오류";
           return res.status(502).json({ message: String(msg) });
         }
         const d = data as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string };
@@ -2724,7 +2888,7 @@ export async function registerRoutes(
           (typeof d?.task_id === "string" && d.task_id) ||
           "";
         if (!taskId) {
-          console.warn("[ai-music create suno] 응답 구조:", JSON.stringify(data).slice(0, 300));
+          console.warn(`[ai-music create ${createProvider}] 응답 구조:`, JSON.stringify(data).slice(0, 300));
           return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
         }
         if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin" && !canUsePromoWallet) {
@@ -2738,7 +2902,7 @@ export async function registerRoutes(
           userId,
           user: row,
           taskId,
-          provider: "suno",
+          provider: createProvider,
           walletCreditsCharged: 0,
           chargeStatus: "pending",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
@@ -2747,7 +2911,7 @@ export async function registerRoutes(
         const [uAfterSuno] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
         return res.json({
           task_id: taskId,
-          provider: "suno",
+          provider: createProvider,
           won_charged: 0,
           billing_deferred: true,
           balance_won: uAfterSuno?.credits ?? 0,
@@ -2755,7 +2919,7 @@ export async function registerRoutes(
           credits_balance: uAfterSuno?.credits ?? 0,
         });
       } catch (e) {
-        console.error("[ai-music create suno]", e);
+        console.error(`[ai-music create ${createProvider}]`, e);
         const errMsg = e instanceof Error ? e.message : String(e);
         const payload: { message: string; code: string; detail?: string } = {
           message: "음악 생성 요청 중 오류가 발생했습니다.",
@@ -2845,6 +3009,199 @@ export async function registerRoutes(
     }
   });
 
+  /** 마이크 녹음 → KIE 파일 업로드 → add-vocals (Suno 호환). 일반 텍스트 생성과 동일 한도·과금. */
+  app.post(
+    "/api/ai-music/create-from-voice-record",
+    isAuthenticated,
+    aiVoiceRecordUpload.single("audio"),
+    async (req, res) => {
+      const voiceUpstream =
+        AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno" ? sunoStyleUpstream(AI_MUSIC_PROVIDER) : null;
+      if (!voiceUpstream) {
+        return res.status(503).json({
+          message:
+            "보이스 녹음 생성은 KIE_API_KEY 또는 SUNOAPI_API_KEY가 설정된 환경에서만 사용할 수 있습니다.",
+        });
+      }
+      const file = req.file;
+      if (!file?.buffer?.length) {
+        return res.status(400).json({ message: "녹음 파일이 없습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string;
+      if (!userId || typeof userId !== "string") {
+        return res.status(401).json({ message: "로그인이 필요합니다." });
+      }
+      const [user0] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user0) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+      await maybePersistSubscriptionRow(userId, user0);
+      await voidExpiredPromoAiCreditsForUser(userId, new Date());
+      const [row] = await db.select().from(users).where(eq(users.id, userId));
+      if (!row) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+
+      const body = req.body as {
+        prompt?: string;
+        title?: string;
+        tags?: string;
+        mv?: string;
+        vocal_gender?: "f" | "m";
+        negative_tags?: string;
+      };
+      const lyricsPrompt = String(body.prompt ?? "").trim();
+      if (!lyricsPrompt) {
+        return res.status(400).json({ message: "가사·노래 스타일 설명(가사란)을 입력한 뒤 생성해 주세요." });
+      }
+      const stylePart = String(body.tags ?? "").trim() || "pop";
+      const model = resolveSunoGenerateModel(body.mv);
+      const title = resolveSunoCustomModeTitle({
+        explicitTitle: String(body.title ?? ""),
+        lyricsPrimary: lyricsPrompt,
+        lyricsFallback: "",
+        styleTags: stylePart,
+        instrumental: false,
+        model,
+      });
+      const negativeTags = String(body.negative_tags ?? "").trim() || "low quality, harsh noise";
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
+      const createProvider = AI_MUSIC_PROVIDER!;
+
+      const promoMinForCreate = MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
+      const now = new Date();
+      const usagePeriodKey = getAiMusicUsagePeriodKey(row, row.role ?? null, now);
+      const isSubWallet = row.role !== "admin" && isUserPaidSubscriptionActive(row, now);
+      const tierNow = row.subscriptionTier ?? "free";
+      const promoWonCreate = Math.max(0, Number(row.promoAiCreditsWon ?? 0));
+      const promoExpCreate = row.promoAiCreditsExpiresAt ?? null;
+      const promoNotExpiredCreate = !promoExpCreate || new Date(promoExpCreate).getTime() > now.getTime();
+      const canUsePromoWallet = row.role !== "admin" && promoNotExpiredCreate && promoWonCreate >= promoMinForCreate;
+
+      let used = 0;
+      let limit = 0;
+      let usageWouldExceed = false;
+      if (row.role === "admin") {
+        limit = -1;
+      } else if (tierNow === "free") {
+        limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
+        const [usage] = await db
+          .select()
+          .from(aiMusicUsage)
+          .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+        used = usage?.count ?? 0;
+        usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
+      } else if (isSubWallet) {
+        const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
+        if (!w) {
+          return res.status(403).json({
+            message: "구독 AI 예산을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            code: "AI_MUSIC_LIMIT_REACHED",
+          });
+        }
+        used = w.periodConsumed;
+        limit = w.limitDisplay;
+        usageWouldExceed = w.walletSum < AI_MUSIC_WON_PER_TRACK;
+      } else {
+        limit = getAiMusicMonthlyUsageLimit(row, row.role ?? null, now);
+        const [usage] = await db
+          .select()
+          .from(aiMusicUsage)
+          .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, usagePeriodKey)));
+        used = usage?.count ?? 0;
+        usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used + AI_MUSIC_WON_PER_TRACK > limit;
+      }
+      if (usageWouldExceed) {
+        return res.status(403).json({
+          message: "AI 음악 생성 한도에 도달했습니다.",
+          code: "AI_MUSIC_LIMIT_REACHED",
+          limit,
+          usedThisMonth: used,
+        });
+      }
+
+      try {
+        const ext =
+          file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3") ? ".mp3" : ".webm";
+        const uploadUrl = await kieUploadAudioBuffer({
+          base: voiceUpstream.base,
+          apiKey: voiceUpstream.key,
+          buffer: file.buffer,
+          fileName: `voice-${crypto.randomUUID()}${ext}`,
+          mimeType: file.mimetype || "audio/webm",
+        });
+        const payload: Record<string, unknown> = {
+          uploadUrl,
+          prompt: lyricsPrompt.slice(0, 5000),
+          style: stylePart.slice(0, 1000),
+          title,
+          negativeTags: negativeTags.slice(0, 500),
+          model,
+          callBackUrl,
+        };
+        if (body.vocal_gender === "f" || body.vocal_gender === "m") payload.vocalGender = body.vocal_gender;
+
+        const apiRes = await fetch(`${voiceUpstream.base}/api/v1/generate/add-vocals`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${voiceUpstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const sunoBizCode = (data as { code?: number }).code;
+        if (typeof sunoBizCode === "number" && sunoBizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "보이스 생성 API 오류";
+          return res.status(502).json({ message: String(msg) });
+        }
+        const d = data as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string };
+        const taskId =
+          (typeof d?.data?.taskId === "string" && d.data.taskId) ||
+          (typeof d?.data?.task_id === "string" && d.data.task_id) ||
+          (typeof d?.taskId === "string" && d.taskId) ||
+          (typeof d?.task_id === "string" && d.task_id) ||
+          "";
+        if (!taskId) {
+          return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+        }
+        if ((row.subscriptionTier ?? "free") === "free" && row.role !== "admin" && !canUsePromoWallet) {
+          await db.execute(sql`
+            INSERT INTO ai_music_usage (user_id, period_month, count, updated_at)
+            VALUES (${userId}, ${usagePeriodKey}, 1, NOW())
+            ON CONFLICT (user_id, period_month) DO UPDATE SET count = ai_music_usage.count + 1, updated_at = NOW()
+          `);
+        }
+        await insertAiMusicGenerationLog({
+          userId,
+          user: row,
+          taskId,
+          provider: createProvider,
+          walletCreditsCharged: 0,
+          chargeStatus: "pending",
+          body: { title, tags: stylePart, prompt: lyricsPrompt, voice_record: true },
+          promoMinTracksForBilling: promoMinForCreate,
+        });
+        const [uAfter] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+        return res.json({
+          task_id: taskId,
+          provider: createProvider,
+          won_charged: 0,
+          billing_deferred: true,
+          balance_won: uAfter?.credits ?? 0,
+          credits_charged: 0,
+          credits_balance: uAfter?.credits ?? 0,
+        });
+      } catch (e) {
+        console.error("[ai-music create-from-voice-record]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        return res.status(500).json({
+          message: "보이스 녹음 생성 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_VOICE_CREATE_ERROR",
+          ...(process.env.NODE_ENV === "development" ? { detail: errMsg.slice(0, 500) } : {}),
+        });
+      }
+    },
+  );
+
   app.get("/api/ai-music/task/:taskId", isAuthenticated, async (req, res) => {
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
@@ -2855,7 +3212,8 @@ export async function registerRoutes(
     // @ts-ignore
     const pollUserId = req.user?.claims?.sub as string | undefined;
 
-    if (provider === "suno" && SUNOAPI_KEY) {
+    const taskSunoStyle = sunoStyleUpstream(provider);
+    if (taskSunoStyle) {
       try {
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
@@ -2880,13 +3238,13 @@ export async function registerRoutes(
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
         let apiRes: Response;
         try {
-          apiRes = await fetch(`${SUNOAPI_BASE}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
-            headers: { Authorization: `Bearer ${SUNOAPI_KEY}` },
+          apiRes = await fetch(`${taskSunoStyle.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
+            headers: { Authorization: `Bearer ${taskSunoStyle.key}` },
             signal: upstreamCtrl.signal,
           });
         } catch (e) {
           if ((e as Error)?.name === "AbortError") {
-            console.warn("[ai-music task suno] record-info upstream timeout:", String(taskId).slice(0, 20));
+            console.warn(`[ai-music task ${provider}] record-info upstream timeout:`, String(taskId).slice(0, 20));
             return res.json({ state: "pending", data: null });
           }
           throw e;
@@ -2994,9 +3352,15 @@ export async function registerRoutes(
         }
         return res.json({ state: status === "TEXT_SUCCESS" || status === "FIRST_SUCCESS" ? "running" : "pending", data: null });
       } catch (e) {
-        console.error("[ai-music task suno]", e);
+        console.error(`[ai-music task ${provider}]`, e);
         return res.status(500).json({ message: "작업 조회 중 오류가 발생했습니다." });
       }
+    }
+
+    if (!AIMUSICAPI_KEY) {
+      return res.status(503).json({
+        message: "이 작업의 제공자에 맞는 API 키가 없습니다. 옛 곡은 보관함에 저장된 URL로 재생할 수 있습니다.",
+      });
     }
 
     try {

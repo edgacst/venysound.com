@@ -18,7 +18,12 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  Plus,
+  RefreshCw,
+  Disc3,
+  Mic,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -36,8 +41,9 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
+import { Textarea } from "@/components/ui/textarea";
 
 /** 생성된 곡 목록 페이지당 개수 */
 const SAVED_TRACKS_LIST_PAGE_SIZE = 10;
@@ -259,6 +265,16 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 
 /** 동시에 고를 수 있는 스타일 프리셋 개수 */
 const MAX_STYLE_PRESETS = 6;
+
+/** 스튜디오 스타일 칩 빠른 선택 (Mureka형 UI) */
+const STUDIO_QUICK_STYLE_IDS: (typeof STYLE_PRESET_IDS)[number][] = [
+  "edm",
+  "ambient",
+  "piano",
+  "acoustic_guitar",
+  "slow_tempo",
+  "uk_drill",
+];
 
 const STYLE_CHIP_FALLBACK_LABEL: Partial<Record<StylePresetId, string>> = {
   falsetto_vocal: "가성(팔세토) 보컬",
@@ -515,6 +531,15 @@ function pickSavedTrackAudioUrl(t: Record<string, unknown>): string | undefined 
   return undefined;
 }
 
+/** 보관함·미리듣기용 — `pickSavedTrackAudioUrl` 우선, 없으면 `audio_url` 단일값(깨진 URL 제외) */
+function getSavedTrackPlayableUrl(track: SavedTrack): string | undefined {
+  const picked = pickSavedTrackAudioUrl(track as Record<string, unknown>);
+  if (picked && !isLikelyBadAiMusicAudioUrl(picked)) return picked;
+  const u = (track.audio_url ?? "").trim();
+  if (u && !isLikelyBadAiMusicAudioUrl(u)) return u;
+  return undefined;
+}
+
 /** 생성 곡 재생 길이(초) → 표시용 m:ss (1시간 이상이면 h:mm:ss) */
 function formatAiTrackDurationMmss(sec: number | undefined): string | null {
   if (sec == null || !Number.isFinite(sec) || sec <= 0) return null;
@@ -541,6 +566,7 @@ function TrackCard({
   isPublishing,
   isPublished,
   may2026EventFreeUi,
+  studioDark = false,
   t,
 }: {
   track: SavedTrack;
@@ -559,6 +585,7 @@ function TrackCard({
   isPublished: boolean;
   /** 5월 이벤트 승인+무료: '신곡으로 공개' 대신 다운로드 한 줄로 공개+저장, 옆 다운로드 링크 숨김 */
   may2026EventFreeUi?: boolean;
+  studioDark?: boolean;
   t: TTranslate;
 }) {
   const [showLyrics, setShowLyrics] = useState(false);
@@ -579,8 +606,20 @@ function TrackCard({
   /** 이벤트 무료 회원: 재생 줄의 별도 '다운로드' 링크 숨기고, 공개/다운로드는 오른쪽 한 줄로만 */
   const showInlineDownloadLink = !combinePublishAndDownload && !may2026EventFreeUi;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-3 flex gap-3 items-start w-full">
-      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-medium text-slate-700">
+    <div
+      className={cn(
+        "rounded-xl border p-3 flex gap-3 items-start w-full",
+        studioDark
+          ? "border-zinc-700/80 bg-zinc-900/90 text-zinc-100"
+          : "border-slate-200 bg-white shadow-sm",
+      )}
+    >
+      <span
+        className={cn(
+          "flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium",
+          studioDark ? "bg-zinc-800 text-zinc-300" : "bg-slate-100 text-slate-700",
+        )}
+      >
         {order}
       </span>
       {track.image_url && (
@@ -1121,7 +1160,7 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
 }
 
 export default function CreateMusic() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1238,6 +1277,8 @@ export default function CreateMusic() {
   const [styleOther, setStyleOther] = useState("");
   /** 서버 `make_instrumental` — 무보컬(연주) 생성 요청 */
   const [instrumentalOnly, setInstrumentalOnly] = useState(false);
+  /** Suno/KIE `vocalGender` — 여성 f / 남성 m */
+  const [vocalGender, setVocalGender] = useState<"f" | "m" | null>(null);
   /** 백엔드 보조 생성 API에 전달하는 모델 버전(sonic-*). Suno 프록시 경로는 서버가 별도 매핑합니다. */
   const [creationModelVersion, setCreationModelVersion] = useState<"sonic-v4-5" | "sonic-v5-5">("sonic-v4-5");
   const [prompt, setPrompt] = useState("");
@@ -1252,16 +1293,29 @@ export default function CreateMusic() {
   useEffect(() => {
     savedTracksRef.current = savedTracks;
   }, [savedTracks]);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [taskProvider, setTaskProvider] = useState<string | null>(null);
   const [savedTracksSearch, setSavedTracksSearch] = useState("");
   const [savedTracksListPage, setSavedTracksListPage] = useState(1);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [lyricsAssistLoading, setLyricsAssistLoading] = useState<"generate" | "optimize" | null>(null);
+  const [voiceRecordOpen, setVoiceRecordOpen] = useState(false);
+  const [voiceRecordBlob, setVoiceRecordBlob] = useState<Blob | null>(null);
+  const [voiceRecordPreviewUrl, setVoiceRecordPreviewUrl] = useState<string | null>(null);
+  const [voiceRecordSubmitting, setVoiceRecordSubmitting] = useState(false);
+  const { state: voiceRecState, startRecording, stopRecording, resetRecording } = useVoiceRecorder();
   const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
   const submittedLyricsRef = useRef<string>("");
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
+
+  useEffect(() => {
+    return () => {
+      if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
+    };
+  }, [voiceRecordPreviewUrl]);
 
   const totalDownloads = useMemo(
     () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
@@ -1564,9 +1618,10 @@ export default function CreateMusic() {
   );
 
   const playTrackInGlobalPlayer = useCallback((track: SavedTrack) => {
-    if (!track.audio_url) return;
+    const url = getSavedTrackPlayableUrl(track);
+    if (!url) return;
     usePlayerStore.getState().playExternalTrack({
-      url: track.audio_url,
+      url,
       title: track.title || "제목 없음",
       artist: track.tags,
       imageUrl: track.image_url,
@@ -1933,6 +1988,267 @@ export default function CreateMusic() {
     [persistTracks, queryClient, toast, t]
   );
 
+  const showStudioComingSoon = useCallback(() => {
+    toast({
+      title: t("createMusic.featureComingSoon", "준비 중"),
+      description: t("createMusic.featureComingSoonDesc", "다음 단계 업데이트에서 제공 예정입니다."),
+    });
+  }, [toast, t]);
+
+  const resetVoiceRecordDraft = useCallback(() => {
+    if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
+    setVoiceRecordPreviewUrl(null);
+    setVoiceRecordBlob(null);
+    resetRecording();
+  }, [voiceRecordPreviewUrl, resetRecording]);
+
+  const handleVoiceRecordStop = useCallback(async () => {
+    try {
+      const blob = await stopRecording();
+      if (!blob.size) {
+        toast({
+          title: t("createMusic.voiceRecordEmpty", "녹음이 비어 있습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
+      setVoiceRecordBlob(blob);
+      setVoiceRecordPreviewUrl(URL.createObjectURL(blob));
+    } catch {
+      toast({
+        title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."),
+        variant: "destructive",
+      });
+    }
+  }, [stopRecording, toast, t, voiceRecordPreviewUrl]);
+
+  const handleCreateFromVoiceRecord = useCallback(async () => {
+    if (!user) return;
+    if (!voiceRecordBlob?.size) {
+      toast({
+        title: t("createMusic.voiceRecordNeedAudio", "먼저 보이스를 녹음해 주세요."),
+        variant: "destructive",
+      });
+      return;
+    }
+    const promptTrim = prompt.trim();
+    if (!promptTrim) {
+      toast({
+        title: t("createMusic.voiceRecordNeedLyrics", "가사란에 넣을 가사·노래 설명을 작성해 주세요."),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (instrumentalOnly) {
+      toast({
+        title: t("createMusic.voiceRecordNoInstrumental", "보이스 녹음 생성은 보컬(기악 끄기) 모드에서 사용할 수 없습니다."),
+        variant: "destructive",
+      });
+      return;
+    }
+    setVoiceRecordSubmitting(true);
+    setVoiceRecordOpen(false);
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    setResultTracks([]);
+    setPreviewTracks([]);
+    setStatus("pending");
+    setElapsedSec(0);
+    generationStartRef.current = Date.now();
+    submitModeRef.current = "custom";
+    submittedLyricsRef.current = promptTrim;
+    submittedTitleRef.current = title.trim();
+    const mergedTags = buildTagsForApi(genreOther, styleOther);
+    submittedTagsRef.current = mergedTags;
+    try {
+      const fd = new FormData();
+      fd.append("audio", voiceRecordBlob, "voice-recording.webm");
+      fd.append("prompt", promptTrim);
+      if (title.trim()) fd.append("title", title.trim());
+      if (mergedTags) fd.append("tags", mergedTags);
+      fd.append("mv", creationModelVersion);
+      if (vocalGender === "f" || vocalGender === "m") fd.append("vocal_gender", vocalGender);
+
+      const res = await fetch("/api/ai-music/create-from-voice-record", {
+        method: "POST",
+        credentials: "include",
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus("failed");
+        setErrorMessage((data as { message?: string }).message ?? "보이스 생성 요청에 실패했습니다.");
+        if (res.status === 403 && (data as { code?: string }).code === "AI_MUSIC_LIMIT_REACHED") {
+          toast({ title: (data as { message?: string }).message, variant: "destructive" });
+          queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+        }
+        return;
+      }
+      const tid = (data as { task_id?: string }).task_id;
+      const provider = (data as { provider?: string }).provider;
+      if (!tid) {
+        setStatus("failed");
+        setErrorMessage("서버 응답 오류.");
+        return;
+      }
+      setTaskId(tid);
+      setTaskProvider(provider ?? null);
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      try {
+        sessionStorage.setItem(lastAiMusicTaskSessionKey(user.id), JSON.stringify({ task_id: tid, provider }));
+      } catch {}
+      toast({
+        title: t("createMusic.voiceRecordStarted", "보이스 녹음으로 생성을 시작했습니다"),
+        description: t(
+          "createMusic.voiceRecordStartedDesc",
+          "녹음한 멜로디·리듬을 바탕으로 가사란 내용으로 보컬 곡을 만듭니다.",
+        ),
+      });
+      pollTask(tid, provider);
+    } catch {
+      setStatus("failed");
+      setErrorMessage("네트워크 오류가 발생했습니다.");
+    } finally {
+      setVoiceRecordSubmitting(false);
+      setIsSubmitting(false);
+    }
+  }, [
+    user,
+    voiceRecordBlob,
+    prompt,
+    title,
+    genreOther,
+    styleOther,
+    instrumentalOnly,
+    vocalGender,
+    creationModelVersion,
+    toast,
+    t,
+    queryClient,
+    pollTask,
+  ]);
+
+  const handleStudioGenerateLyrics = useCallback(async () => {
+    if (!user) return;
+    const promptTrim = prompt.trim();
+    const mergedTags = buildTagsForApi(genreOther, styleOther);
+    if (!promptTrim && !mergedTags) {
+      toast({
+        title: t("createMusic.lyricsGenerateNeedInput", "주제·설명 또는 장르·스타일을 입력해 주세요."),
+        variant: "destructive",
+      });
+      return;
+    }
+    setLyricsAssistLoading("generate");
+    try {
+      const res = await fetch("/api/ai-music/lyrics/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          prompt: promptTrim,
+          tags: mergedTags || undefined,
+          language: i18n.language,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        lyrics?: string;
+        title?: string;
+        variations?: { text?: string; title?: string }[];
+      };
+      if (!res.ok) {
+        toast({ title: data.message ?? t("createMusic.lyricsGenerateFailed", "가사 생성에 실패했습니다."), variant: "destructive" });
+        return;
+      }
+      const text = typeof data.lyrics === "string" ? data.lyrics.trim() : "";
+      if (!text) {
+        toast({ title: t("createMusic.lyricsGenerateEmpty", "생성된 가사가 없습니다."), variant: "destructive" });
+        return;
+      }
+      setPrompt(text);
+      if (typeof data.title === "string" && data.title.trim() && !title.trim()) {
+        setTitle(data.title.trim().slice(0, 50));
+      }
+      const n = Array.isArray(data.variations) ? data.variations.length : 1;
+      toast({
+        title: t("createMusic.lyricsGenerateDone", "가사가 생성되었습니다"),
+        description:
+          n > 1
+            ? t("createMusic.lyricsGenerateVariants", "여러 버전 중 첫 번째를 적용했습니다. 다시 생성하면 다른 버전을 받을 수 있습니다.")
+            : undefined,
+      });
+    } catch (err) {
+      const isNetwork = err instanceof TypeError && /fetch|network|Failed/i.test(String(err));
+      toast({
+        title: isNetwork
+          ? t("login.serverErrorDesc", "서버에 연결할 수 없습니다.")
+          : t("createMusic.lyricsGenerateFailed", "가사 생성에 실패했습니다."),
+        description: isNetwork ? t("createMusic.devServerHint", "npm run dev 실행 후 http://127.0.0.1:5000 에 접속해 주세요.") : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setLyricsAssistLoading(null);
+    }
+  }, [user, prompt, genreOther, styleOther, title, toast, t, i18n.language]);
+
+  const handleStudioOptimizeLyrics = useCallback(async () => {
+    if (!user) return;
+    const promptTrim = prompt.trim();
+    if (!promptTrim) {
+      toast({
+        title: t("createMusic.lyricsOptimizeNeedInput", "최적화할 가사를 입력해 주세요."),
+        variant: "destructive",
+      });
+      return;
+    }
+    setLyricsAssistLoading("optimize");
+    try {
+      const res = await fetch("/api/ai-music/lyrics/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          lyrics: promptTrim,
+          tags: buildTagsForApi(genreOther, styleOther) || undefined,
+          language: i18n.language,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { message?: string; lyrics?: string; title?: string };
+      if (!res.ok) {
+        toast({ title: data.message ?? t("createMusic.lyricsOptimizeFailed", "가사 최적화에 실패했습니다."), variant: "destructive" });
+        return;
+      }
+      const text = typeof data.lyrics === "string" ? data.lyrics.trim() : "";
+      if (!text) {
+        toast({ title: t("createMusic.lyricsOptimizeEmpty", "최적화 결과가 없습니다."), variant: "destructive" });
+        return;
+      }
+      setPrompt(text);
+      if (typeof data.title === "string" && data.title.trim() && !title.trim()) {
+        setTitle(data.title.trim().slice(0, 50));
+      }
+      toast({ title: t("createMusic.lyricsOptimizeDone", "가사가 최적화되었습니다") });
+    } catch (err) {
+      const isNetwork = err instanceof TypeError && /fetch|network|Failed/i.test(String(err));
+      toast({
+        title: isNetwork
+          ? t("login.serverErrorDesc", "서버에 연결할 수 없습니다.")
+          : t("createMusic.lyricsOptimizeFailed", "가사 최적화에 실패했습니다."),
+        description: isNetwork ? t("createMusic.devServerHint", "npm run dev 실행 후 http://127.0.0.1:5000 에 접속해 주세요.") : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setLyricsAssistLoading(null);
+    }
+  }, [user, prompt, genreOther, styleOther, title, toast, t, i18n.language]);
+
+  const studioModelBadge =
+    creationModelVersion === "sonic-v5-5"
+      ? t("createMusic.studioModelV55", "V5.5")
+      : t("createMusic.studioModelV45", "V4.5");
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -1982,6 +2298,7 @@ export default function CreateMusic() {
         tags: mergedTags || undefined,
       };
       if (instrumentalOnly) body.make_instrumental = true;
+      if (vocalGender === "f" || vocalGender === "m") body.vocal_gender = vocalGender;
       if (customMode) body.prompt = boostedPrompt;
       else body.gpt_description_prompt = boostedPrompt;
 
@@ -2057,31 +2374,24 @@ export default function CreateMusic() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-white text-slate-900 flex flex-col">
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
         <Navigation />
 
-        <section className="relative overflow-hidden py-10 px-0">
-          <div className="absolute inset-0 bg-gradient-to-b from-white via-white to-slate-50 pointer-events-none" />
-          <div className="mx-auto w-full max-w-[1360px] relative z-10 px-4 md:px-8">
-            <div className="text-center mb-10">
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-sm mb-4">
-                <Sparkles className="w-4 h-4" />
-                {t("createMusic.badge", "AI 음악 생성")}
+        <section className="relative py-6 md:py-8 px-0">
+          <div className="mx-auto w-full max-w-[1480px] relative z-10 px-4 md:px-6">
+            <div className="mb-5 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+              <div>
+                <h1 className="text-xl md:text-2xl font-semibold text-white tracking-tight">
+                  {t("createMusic.studioTitle", "AI 음악 스튜디오")}
+                </h1>
+                <p className="text-sm text-zinc-400 mt-1 max-w-xl">
+                  {t(
+                    "createMusic.heroDesc",
+                    "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드한 뒤 「신곡으로 공개」해 사이트에 올릴 수 있습니다.",
+                  )}
+                </p>
               </div>
-              <h1 className="text-3xl md:text-4xl font-bold mb-2">
-                {t("createMusic.heroTitle1", "프롬프트로")}{" "}
-                <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">
-                  {t("createMusic.heroTitle2", "나만의 음악")}
-                </span>{" "}
-                {t("createMusic.heroTitle3", "만들기")}
-              </h1>
-              <p className="text-muted-foreground">
-                {t(
-                  "createMusic.heroDesc",
-                  "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드한 뒤 「신곡으로 공개」해 사이트에 올릴 수 있습니다.",
-                )}
-              </p>
-              <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400 max-w-2xl mx-auto leading-relaxed underline decoration-red-600 dark:decoration-red-400 underline-offset-2">
+              <p className="text-xs text-red-400/90 max-w-md leading-relaxed">
                 {t(
                   "createMusic.heroCopyrightWarning",
                   "유명가수를 모방하는 내용을 사용하면 알고리즘에 의해 저작권에 걸리므로 주의하세요",
@@ -2113,7 +2423,7 @@ export default function CreateMusic() {
                         </div>
                         <strong className="text-xl tabular-nums text-slate-900">
                           {Math.max(0, Number(aiUsage.walletCredits ?? aiUsage.creditsBalance ?? 0)).toLocaleString()}
-                          <span className="text-sm font-medium text-amber-100/90 ml-0.5">{t("common.won", "원")}</span>
+                          <span className="text-sm font-medium text-zinc-200 text-amber-100/90 ml-0.5">{t("common.won", "원")}</span>
                         </strong>
                       </Link>
                       <div className="flex flex-col items-center justify-center gap-0.5 rounded-2xl border border-violet-500/35 bg-violet-500/10 px-4 py-2.5 text-center min-h-[4.25rem]">
@@ -2313,73 +2623,54 @@ export default function CreateMusic() {
                     </Link>
                   </p>
                 )}
-                <div className="w-full space-y-6" data-testid="create-music-workspace">
-                  {/* 상단: 음악 생성 섹션 (넓게) */}
-                  <div className="w-full rounded-3xl border-2 border-border/60 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(0,0,0,0.25)] overflow-hidden">
-                    <div className="grid grid-cols-1 gap-0 items-stretch w-full">
-                    {/* 왼쪽: 생성 폼 */}
-                    <div className="flex flex-col items-stretch p-5 md:p-7 lg:p-8 bg-white">
-                    <div className="mb-4 flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-700 ring-1 ring-purple-200">
-                        <Wand2 className="h-4 w-4" aria-hidden />
-                      </span>
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wider text-purple-700">
-                          {t("createMusic.sectionCreateLabel", "새로 만들기")}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">{t("createMusic.sectionCreateHint", "프롬프트를 입력하고 생성을 누르세요")}</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-5 items-stretch min-h-[min(70vh,780px)]" data-testid="create-music-workspace">
+                  {/* 좌: 생성 패널 */}
+                  <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/70 overflow-hidden min-h-[420px] lg:min-h-0 h-full">
+                    <div className="flex items-center justify-between gap-2 px-4 pt-4 pb-2 border-b border-zinc-800">
+                      <div className="flex rounded-xl bg-zinc-950/80 p-1 border border-zinc-800">
+                        <button type="button" onClick={() => setMode("description")} className={cn("px-4 py-2 text-sm font-medium text-zinc-200 rounded-lg transition-colors", mode === "description" ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-zinc-200")}>{t("createMusic.tabEasy", "쉬움")}</button>
+                        <button type="button" onClick={() => { setMode("custom"); setPrompt((p) => stripAllDescriptionThemeSnippets(p)); }} className={cn("px-4 py-2 text-sm font-medium text-zinc-200 rounded-lg transition-colors", mode === "custom" ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-zinc-200")}>{t("createMusic.tabCustom", "커스텀")}</button>
+                        <button type="button" onClick={showStudioComingSoon} className="px-4 py-2 text-sm font-medium text-zinc-200 rounded-lg text-zinc-500 hover:text-zinc-300">{t("createMusic.tabVideo", "영상 음악")}</button>
                       </div>
+                      <span className="text-xs text-zinc-500 tabular-nums shrink-0">{studioModelBadge}</span>
                     </div>
-                    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 md:p-8 w-full max-w-none space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-2">{t("createMusic.modeLabel", "생성 방식")}</label>
-                        <div className="flex gap-3">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input type="radio" name="mode" checked={mode === "description"} onChange={() => setMode("description")} className="rounded-full" />
-                            <span>{t("createMusic.modeDescription", "설명으로 생성")}</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="mode"
-                              checked={mode === "custom"}
-                              onChange={() => {
-                                setMode("custom");
-                                setPrompt((p) => stripAllDescriptionThemeSnippets(p));
-                              }}
-                              className="rounded-full"
-                            />
-                            <span>{t("createMusic.modeCustom", "가사 직접 입력")}</span>
-                          </label>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">{t("createMusic.titleLabel", "제목 (선택)")}</label>
-                        <input
-                          type="text"
-                          value={title}
-                          onChange={(e) => setTitle(e.target.value)}
-                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2"
-                          placeholder={t("createMusic.titlePlaceholder", "예: Starry Night")}
-                          maxLength={80}
-                        />
+                    <form onSubmit={handleSubmit} className="flex flex-col flex-1 p-4 md:p-5 gap-4 overflow-y-auto min-h-0">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={instrumentalOnly || isSubmitting || voiceRecordSubmitting}
+                          onClick={() => {
+                            resetVoiceRecordDraft();
+                            setInstrumentalOnly(false);
+                            setMode("custom");
+                            setVoiceRecordOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-violet-600/40 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-200 hover:border-violet-500 disabled:opacity-50"
+                          title={t(
+                            "createMusic.voiceRecordChipHint",
+                            "멜로디·허밍을 녹음한 뒤 가사란 내용으로 AI 보컬 곡 생성 (KIE)",
+                          )}
+                        >
+                          <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          {t("createMusic.voiceRecordChip", "보이스 녹음 생성")}
+                        </button>
                       </div>
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-end justify-between gap-2">
-                          <label className="block text-sm font-medium">{t("createMusic.genreSectionLabel", "장르")}</label>
+                          <label className="block text-sm font-medium text-zinc-200">{t("createMusic.genreSectionLabel", "장르")}</label>
                           {genreOther.trim() && (
                             <button
                               type="button"
                               onClick={() => {
                                 setGenreOther("");
                               }}
-                              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                              className="text-xs text-zinc-500 hover:text-foreground underline underline-offset-2"
                             >
                               {t("createMusic.genreClear", "장르 선택 초기화")}
                             </button>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <p className="text-xs text-zinc-500 leading-relaxed">
                           {t(
                             "createMusic.genreHint",
                             "자주 쓰는 장르를 탭하면 아래 입력란에 현재 언어 라벨(한국어 설정 시 한글)이 들어가며, 직접 수정·추가할 수 있습니다. 프리셋은 최대 {{n}}개까지. 아래 스타일(보컬·악기 등)과 합쳐져 생성 API의 장르/스타일 태그로 전달됩니다.",
@@ -2419,7 +2710,7 @@ export default function CreateMusic() {
                                   "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
                                     ? "border-primary/50 bg-primary/10 text-primary shadow-sm shadow-primary/5"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-primary/35 hover:bg-slate-50",
+                                    : "border-zinc-600 bg-zinc-800/80 text-zinc-300 hover:border-violet-500/50 hover:bg-zinc-800",
                                 )}
                               >
                                 {t(`createMusic.genreChip.${id}`, GENRE_API_TOKEN[id])}
@@ -2432,14 +2723,14 @@ export default function CreateMusic() {
                           type="text"
                           value={genreOther}
                           onChange={(e) => setGenreOther(e.target.value)}
-                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2 text-sm"
+                          className="w-full rounded-xl bg-zinc-950/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 text-sm"
                           placeholder={t("createMusic.genreOtherPlaceholder", "예: city pop, synthwave")}
                           maxLength={120}
                         />
                       </div>
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-end justify-between gap-2">
-                          <label className="block text-sm font-medium">
+                          <label className="block text-sm font-medium text-zinc-200">
                             {t("createMusic.styleSectionLabel", "보컬/악기 스타일")}
                           </label>
                           {styleOther.trim() && (
@@ -2448,13 +2739,13 @@ export default function CreateMusic() {
                               onClick={() => {
                                 setStyleOther("");
                               }}
-                              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                              className="text-xs text-zinc-500 hover:text-foreground underline underline-offset-2"
                             >
                               {t("createMusic.styleClear", "보컬/악기 스타일 초기화")}
                             </button>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <p className="text-xs text-zinc-500 leading-relaxed">
                           {t(
                             "createMusic.styleHint",
                             "보컬·악기·템포 등을 칩으로 고르거나 아래에 직접 입력할 수 있습니다. 프리셋은 최대 {{n}}개까지. 위 장르와 합쳐져 Suno에 스타일 문자열로 전달됩니다. 같은 ‘여성 보컬’ 태그라도 모델·시드에 따라 비슷하게 들릴 수 있으며, 가사·설명에 톤(허스키, 어린 목소리 등)을 적으면 차이가 나기 쉽습니다.",
@@ -2494,7 +2785,7 @@ export default function CreateMusic() {
                                   "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                   selected
                                     ? "border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-700 shadow-sm shadow-fuchsia-500/5"
-                                    : "border-slate-200 bg-white text-slate-700 hover:border-fuchsia-500/35 hover:bg-slate-50",
+                                    : "border-zinc-600 bg-zinc-800/80 text-zinc-300 hover:border-fuchsia-500/50 hover:bg-zinc-800",
                                 )}
                               >
                                 {t(`createMusic.styleChip.${id}`, STYLE_CHIP_FALLBACK_LABEL[id] ?? STYLE_API_TOKEN[id])}
@@ -2507,42 +2798,61 @@ export default function CreateMusic() {
                           type="text"
                           value={styleOther}
                           onChange={(e) => setStyleOther(e.target.value)}
-                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-2 text-sm"
+                          className="w-full rounded-xl bg-zinc-950/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 text-sm"
                           placeholder={t("createMusic.styleOtherPlaceholder", "예: reverb-heavy mix, lo-fi crackle")}
                           maxLength={160}
                         />
                       </div>
-                      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <Checkbox
-                          id="create-music-instrumental"
-                          checked={instrumentalOnly}
-                          onCheckedChange={(v) => setInstrumentalOnly(v === true)}
-                          className="mt-0.5"
-                        />
-                        <div className="min-w-0 space-y-1">
-                          <label htmlFor="create-music-instrumental" className="text-sm font-medium leading-snug cursor-pointer block">
-                            {t("createMusic.instrumentalLabel", "연주만 (보컬 없음)")}
-                          </label>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            {t(
-                              "createMusic.instrumentalHint",
-                              "켜면 서버에 무보컬 생성을 요청합니다. 피아노·기타 등은 스타일 칩·직접 입력으로 지정하고, 설명 모드에서는 아래 칸에 연주곡 분위기를 적어 주세요.",
-                            )}
-                          </p>
-                        </div>
-                      </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1">
-                          {mode === "custom"
-                            ? instrumentalOnly
-                              ? t("createMusic.promptLabelInstrumental", "가사 (연주만이면 비워도 됨)")
-                              : t("createMusic.promptLabel", "가사 (필수)")
-                            : t("createMusic.lyricsInputLabel", "가사입력 (가사가 있는 곡은 가사를 입력하세요)")}
-                        </label>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <label className="text-sm font-medium text-zinc-200 shrink-0">
+                            {t("createMusic.studioLyricsLabel", "가사")}
+                          </label>
+                          <div className="flex flex-wrap items-center gap-2 ml-auto">
+                            {!instrumentalOnly && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleStudioOptimizeLyrics()}
+                                  disabled={lyricsAssistLoading !== null}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-300 hover:border-violet-500/50 hover:text-zinc-100 transition-colors disabled:opacity-50"
+                                >
+                                  {lyricsAssistLoading === "optimize" ? (
+                                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                  ) : (
+                                    <Wand2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                  )}
+                                  {t("createMusic.studioLyricsOptimize", "최적화")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleStudioGenerateLyrics()}
+                                  disabled={lyricsAssistLoading !== null}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-700 bg-zinc-800/60 px-2.5 py-1.5 text-xs text-zinc-300 hover:border-violet-500/50 hover:text-zinc-100 transition-colors disabled:opacity-50"
+                                >
+                                  {lyricsAssistLoading === "generate" ? (
+                                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                                  ) : (
+                                    <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                  )}
+                                  {t("createMusic.studioLyricsGenerate", "가사 생성")}
+                                </button>
+                              </>
+                            )}
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-xs text-zinc-500">{t("createMusic.studioInstrumental", "기악")}</span>
+                              <Switch
+                                id="create-music-instrumental"
+                                checked={instrumentalOnly}
+                                onCheckedChange={(v) => setInstrumentalOnly(v === true)}
+                              />
+                            </div>
+                          </div>
+                        </div>
                         <textarea
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          className="w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
+                          className="w-full rounded-xl bg-zinc-950/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 px-4 py-3 text-sm min-h-[140px] focus:outline-none focus:ring-2 focus:ring-violet-500/40 resize-y"
                           placeholder={
                             mode === "custom"
                               ? instrumentalOnly
@@ -2561,7 +2871,7 @@ export default function CreateMusic() {
                           required={mode === "custom" && !instrumentalOnly}
                         />
                         {mode === "custom" && !instrumentalOnly && (
-                          <p className="mt-1.5 text-xs text-muted-foreground">
+                          <p className="mt-1.5 text-xs text-zinc-500">
                             {t(
                               "createMusic.lyricsHint",
                               "입력한 가사는 그대로 전달됩니다. [Verse], [Chorus] 등 구조를 쓰면 반영이 좋습니다. 실제 노래는 AI 서비스에 따라 다를 수 있습니다.",
@@ -2569,7 +2879,7 @@ export default function CreateMusic() {
                           </p>
                         )}
                         {mode === "custom" && instrumentalOnly && (
-                          <p className="mt-1.5 text-xs text-muted-foreground">
+                          <p className="mt-1.5 text-xs text-zinc-500">
                             {t(
                               "createMusic.instrumentalCustomHint",
                               "연주만 + 가사 직접 입력 모드에서는 스타일(장르·스타일 칩)과 제목이 중요합니다. 가사 칸은 비워도 됩니다.",
@@ -2579,20 +2889,20 @@ export default function CreateMusic() {
                         {mode === "description" && (
                           <div className="mt-3 space-y-2">
                             <div className="flex flex-wrap items-end justify-between gap-2">
-                              <label className="block text-sm font-medium">
+                              <label className="block text-sm font-medium text-zinc-200">
                                 {t("createMusic.themeSectionLabel", "가사·분위기 주제")}
                               </label>
                               {countThemeSnippetsInPrompt(prompt) > 0 && (
                                 <button
                                   type="button"
                                   onClick={() => setPrompt((p) => stripAllDescriptionThemeSnippets(p))}
-                                  className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+                                  className="text-xs text-zinc-500 hover:text-foreground underline underline-offset-2"
                                 >
                                   {t("createMusic.themeClear", "주제 칩 초기화")}
                                 </button>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
+                            <p className="text-xs text-zinc-500 leading-relaxed">
                               {t(
                                 "createMusic.themeHint",
                                 "칩을 누르면 위 입력란에 주제 문장이 추가되고, 다시 누르면 제거됩니다. 직접 수정·삭제도 가능합니다(최대 {{n}}개).",
@@ -2630,7 +2940,7 @@ export default function CreateMusic() {
                                         "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
                                         selected
                                           ? "border-amber-500/50 bg-amber-500/10 text-amber-900 shadow-sm shadow-amber-500/10"
-                                          : "border-slate-200 bg-white text-slate-700 hover:border-amber-500/40 hover:bg-slate-50",
+                                          : "border-zinc-600 bg-zinc-800/80 text-zinc-300 hover:border-amber-500/40 hover:bg-zinc-800",
                                       )}
                                     >
                                       {t(`createMusic.themeChip.${id}`, id)}
@@ -2642,8 +2952,27 @@ export default function CreateMusic() {
                           </div>
                         )}
                       </div>
+                      <div id="create-music-studio-vocal">
+                        <label className="block text-sm font-medium text-zinc-200 mb-2">{t("createMusic.studioVocalGender", "보컬 성별")}</label>
+                        <div className="flex gap-2 mb-4">
+                          <button type="button" onClick={() => setVocalGender(vocalGender === "f" ? null : "f")} className={cn("flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors", vocalGender === "f" ? "border-violet-500 bg-violet-500/20 text-white" : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:border-zinc-500")}>{t("createMusic.vocalFemale", "여성")}</button>
+                          <button type="button" onClick={() => setVocalGender(vocalGender === "m" ? null : "m")} className={cn("flex-1 rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors", vocalGender === "m" ? "border-violet-500 bg-violet-500/20 text-white" : "border-zinc-700 bg-zinc-950/60 text-zinc-400 hover:border-zinc-500")}>{t("createMusic.vocalMale", "남성")}</button>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <label className="text-sm font-medium text-zinc-200">{t("createMusic.studioSongTitle", "노래 제목")}</label>
+                          <span className="text-xs text-zinc-500 tabular-nums">{title.length}/50</span>
+                        </div>
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(e) => setTitle(e.target.value)}
+                          className="w-full rounded-xl bg-zinc-950/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                          placeholder={t("createMusic.titlePlaceholder", "예: Starry Night")}
+                          maxLength={50}
+                        />
+                      </div>
                       <div className="space-y-1.5">
-                        <label className="block text-sm font-medium">
+                        <label className="block text-sm font-medium text-zinc-200">
                           {t("createMusic.modelVersionLabel", "생성 모델 버전")}
                         </label>
                         <Select
@@ -2662,7 +2991,7 @@ export default function CreateMusic() {
                             </SelectItem>
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-zinc-500">
                           {t(
                             "createMusic.modelVersionHint",
                             "좀더 안정적이고 향상된 기능을 제공하는 업데이트이지만 사용해 보고 마음에 드는 버전으로 선택해 사용하세요",
@@ -2672,7 +3001,7 @@ export default function CreateMusic() {
                       <Button
                         type="submit"
                         disabled={isSubmitting || status === "pending" || status === "running" || status === "preview"}
-                        className="w-full rounded-full gap-2"
+                        className="w-full rounded-xl gap-2 bg-violet-600 hover:bg-violet-500 text-white h-12 text-base font-semibold"
                         size="lg"
                       >
                         {(status === "pending" || status === "running" || status === "preview") && (
@@ -2688,7 +3017,7 @@ export default function CreateMusic() {
                                 elapsed,
                               });
                             })()
-                          : t("createMusic.submit", "음악 생성하기")}
+                          : t("createMusic.studioCreate", "만들기")}
                       </Button>
                     </form>
 
@@ -2702,56 +3031,48 @@ export default function CreateMusic() {
                       </div>
                     )}
 
-                    <div className="mt-6 flex flex-wrap gap-3">
+                    <div className="px-4 pb-4">
                       <Link href="/suno-guide">
-                        <Button variant="outline" className="rounded-full gap-2 border-slate-200 bg-white hover:bg-slate-50">
-                          <Wand2 className="w-4 h-4" />
+                        <Button type="button" variant="ghost" className="text-zinc-500 hover:text-zinc-300 text-xs h-8 px-0">
                           {t("createMusic.guideCta", "음악 만들기 가이드")}
                         </Button>
                       </Link>
                     </div>
                   </div>
-                </div>
 
-                {/* 하단: 곡 보관함 섹션 (아래로, 넓게) */}
-                <div className="w-full rounded-3xl border-2 border-slate-200 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_18px_50px_-18px_rgba(0,0,0,0.25)] overflow-hidden">
-                  <div className="flex flex-col p-5 md:p-7 lg:p-8 min-w-0 bg-white">
-                    <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fuchsia-100 text-fuchsia-700 ring-1 ring-fuchsia-200">
-                        <Music className="h-4 w-4" aria-hidden />
-                      </span>
-                      <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
-                        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-[11px] leading-snug">
-                          <span className="text-xs font-semibold uppercase tracking-wider text-fuchsia-700 shrink-0">
-                            {t("createMusic.sectionLibraryLabel", "곡 보관함")}
-                          </span>
-                          <span className="text-slate-400 shrink-0 select-none" aria-hidden>
-                            ·
-                          </span>
-                          <span className="text-slate-600 shrink-0">
-                            {t("createMusic.sectionLibraryHint", "재생·다운로드·신곡 공개")}
-                          </span>
-                        </div>
-                      </div>
-                      {scorePdfEnabled ? (
-                        <p className="w-full min-w-0 text-[10px] sm:text-[11px] text-red-600/90 dark:text-red-400/90 leading-relaxed break-words">
-                          {t(
-                            "createMusic.sectionLibraryScoreNotice",
-                            "※ 악보는 자동으로 만든 참고용 초안입니다. 원곡·실제 연주와 다를 수 있으며, 그대로 연습·공연에 쓰기 어려울 수 있어요.",
-                          )}
-                        </p>
-                      ) : null}
-                      <p className="w-full min-w-0 text-[10px] sm:text-[11px] text-amber-900/90 dark:text-amber-200/90 leading-relaxed break-words rounded-lg border border-amber-200/90 bg-amber-50/95 dark:bg-amber-950/30 dark:border-amber-800/50 px-3 py-2 mt-1">
-                        {t(
-                          "createMusic.sectionLibraryUnpublishedDownloadNotice",
-                          "※ 음원은 생성 후 14일 안에 다운로드하세요. 이후 다운로드가 불가합니다. 사이트에 배포(신곡 공개)한 경우는 언제든지 마이페이지에서 다운로드할 수 있습니다.",
-                        )}
-                      </p>
+                  {/* 우: 곡 보관함 */}
+                  <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/50 overflow-hidden min-h-[420px] lg:min-h-0 h-full">
+                  <div className="p-4 border-b border-zinc-800">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={savedTracksSearch}
+                        onChange={(e) => setSavedTracksSearch(e.target.value)}
+                        placeholder={t("createMusic.studioSearchPlaceholder", "노래제목을 입력하세요")}
+                        className="w-full rounded-xl bg-zinc-950/80 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/40 pl-9"
+                      />
                     </div>
+                  </div>
+                  <div className="flex flex-col flex-1 min-h-0 p-4 md:p-5 overflow-y-auto">
+                    {(status === "pending" || status === "running" || status === "preview") && (
+                      <div className="mb-4 rounded-xl border border-violet-500/30 bg-violet-500/10 p-4 flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 animate-spin text-violet-400 shrink-0" />
+                        <p className="text-sm text-violet-200">
+                          {t("createMusic.studioGeneratingRight", "음악을 생성하고 있습니다. 완료되면 아래 목록에 표시됩니다.")}
+                        </p>
+                      </div>
+                    )}
+                    <p className="mb-3 text-[11px] text-zinc-500 leading-relaxed rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2">
+                      {t(
+                        "createMusic.sectionLibraryUnpublishedDownloadNotice",
+                        "※ 음원은 생성 후 14일 안에 다운로드하세요. 이후 다운로드가 불가합니다. 사이트에 배포(신곡 공개)한 경우는 언제든지 마이페이지에서 다운로드할 수 있습니다.",
+                      )}
+                    </p>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-6 flex-1 flex flex-col min-h-0">
+                    <div className="flex-1 flex flex-col min-h-0">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
-                        <h2 className="text-lg font-bold shrink-0">
+                        <h2 className="text-lg font-bold shrink-0 text-zinc-200">
                           {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
                         </h2>
                         {savedTracks.length > 0 && totalDownloads > 0 && (
@@ -2763,21 +3084,12 @@ export default function CreateMusic() {
                         )}
                       </div>
 
-                      {savedTracks.length > 0 && (
-                        <div className="relative mb-3">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-                          <input
-                            type="text"
-                            value={savedTracksSearch}
-                            onChange={(e) => setSavedTracksSearch(e.target.value)}
-                            placeholder={t("createMusic.searchPlaceholder", "제목·스타일·가사로 검색")}
-                            className="w-full rounded-lg bg-white border border-slate-200 pl-9 pr-3 py-2 text-sm"
-                          />
-                        </div>
-                      )}
-
                       {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
-                        <p className="text-slate-600 text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 위에서 음악을 생성해 보세요.")}</p>
+                        <div className="flex flex-col items-center justify-center py-16 text-center text-zinc-500">
+                          <Disc3 className="h-14 w-14 mb-4 text-zinc-600" strokeWidth={1.2} />
+                          <p className="text-sm">{t("createMusic.studioEmpty", "아직 데이터가 없습니다")}</p>
+                          <p className="text-xs mt-2 text-zinc-600">{t("createMusic.noTracksYet", "왼쪽에서 음악을 생성해 보세요.")}</p>
+                        </div>
                       ) : sortedFilteredSavedTracks.length === 0 ? (
                         <p className="text-slate-600 text-sm">{t("createMusic.noSearchResults", "검색 결과가 없습니다.")}</p>
                       ) : (
@@ -2807,6 +3119,7 @@ export default function CreateMusic() {
                                   isPublishing={publishingId === track.id}
                                   isPublished={!!track.publishedToSite}
                                   may2026EventFreeUi={may2026EventFreeUi}
+                                  studioDark
                                   t={t as TTranslate}
                                 />
                               ))}
@@ -2856,7 +3169,6 @@ export default function CreateMusic() {
                   </div>
                 </div>
                 </div>
-                </div>
               </>
             )}
           </div>
@@ -2864,6 +3176,90 @@ export default function CreateMusic() {
 
         <Footer />
       </div>
+
+      <Dialog
+        open={voiceRecordOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVoiceRecordOpen(false);
+            resetVoiceRecordDraft();
+          }
+        }}
+      >
+        <DialogContent className="max-w-md border-zinc-700 bg-zinc-900 text-zinc-100">
+          <DialogHeader>
+            <DialogTitle>{t("createMusic.voiceRecordDialogTitle", "보이스 녹음 생성")}</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-2 text-sm text-zinc-400">
+                <p>
+                  {t(
+                    "createMusic.voiceRecordDialogLead",
+                    "멜로디·허밍·가이드 보컬을 30초 이내로 녹음합니다. 가사란에 넣을 가사와 장르·스타일을 먼저 적어 두세요. 녹음은 KIE에 업로드된 뒤 AI가 그 위에 노래 보컬을 입힙니다.",
+                  )}
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {t(
+                    "createMusic.voiceRecordDialogLegal",
+                    "타인의 목소리·곡을 무단으로 모방하지 마세요. 서버에 KIE_API_KEY가 설정되어 있어야 합니다.",
+                  )}
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {voiceRecState !== "recording" ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-zinc-600 gap-2"
+                onClick={() => void startRecording().catch(() => {
+                  toast({
+                    title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."),
+                    variant: "destructive",
+                  });
+                })}
+              >
+                <Mic className="h-4 w-4" aria-hidden />
+                {t("createMusic.voiceRecordStart", "녹음 시작")}
+              </Button>
+            ) : (
+              <Button type="button" className="bg-red-600 hover:bg-red-500 gap-2" onClick={() => void handleVoiceRecordStop()}>
+                <span className="h-2 w-2 rounded-full bg-white animate-pulse" aria-hidden />
+                {t("createMusic.voiceRecordStop", "녹음 중지")}
+              </Button>
+            )}
+            {(voiceRecordBlob || voiceRecState === "stopped") && (
+              <Button type="button" variant="ghost" className="text-zinc-400" onClick={resetVoiceRecordDraft}>
+                {t("createMusic.voiceRecordClear", "다시 녹음")}
+              </Button>
+            )}
+          </div>
+
+          {voiceRecordPreviewUrl ? (
+            <audio src={voiceRecordPreviewUrl} controls className="w-full rounded-lg" preload="metadata" />
+          ) : (
+            <p className="text-xs text-zinc-500">{t("createMusic.voiceRecordPreviewHint", "녹음 후 여기서 들을 수 있습니다.")}</p>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" className="border-zinc-600" onClick={() => setVoiceRecordOpen(false)}>
+              {t("createMusic.studioDialogCancel", "취소")}
+            </Button>
+            <Button
+              type="button"
+              className="bg-violet-600 hover:bg-violet-500"
+              disabled={!voiceRecordBlob || voiceRecordSubmitting}
+              onClick={() => void handleCreateFromVoiceRecord()}
+            >
+              {voiceRecordSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden />
+              ) : null}
+              {t("createMusic.voiceRecordSubmit", "이 녹음으로 생성")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 신곡 공개 동의 다이얼로그 (무료·미공개: 동의 후 공개 + 파일 다운로드) */}
       <Dialog open={!!publishConfirm} onOpenChange={(open) => { if (!open) setPublishConfirm(null); }}>
