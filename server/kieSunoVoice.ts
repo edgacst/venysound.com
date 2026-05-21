@@ -1,3 +1,5 @@
+import { formatKieApiUserMessage } from "@shared/kieVoiceUserMessage";
+
 /**
  * KIE Suno custom voice API (validate → generate → voiceId).
  * @see https://docs.kie.ai/suno-api/suno-voice-validate
@@ -54,7 +56,7 @@ export async function kieVoiceValidateSource(params: {
     body: JSON.stringify(body),
   });
   if (!ok) {
-    throw new Error(json.msg ?? "검증 문구 생성 요청에 실패했습니다.");
+    throw new Error(formatKieApiUserMessage(json.msg, { creditsProvider: "suno" }) || "검증 문구 생성 요청에 실패했습니다.");
   }
   const taskId = json.data?.taskId?.trim();
   if (!taskId) throw new Error("검증 taskId가 없습니다.");
@@ -79,15 +81,47 @@ export async function kieVoiceValidateInfo(
   }>(upstream, `/api/v1/voice/validate-info?${q}`);
 
   if (!ok) {
-    throw new Error(json.msg ?? "검증 문구 조회에 실패했습니다.");
+    throw new Error(formatKieApiUserMessage(json.msg, { creditsProvider: "suno" }) || "검증 문구 조회에 실패했습니다.");
   }
-  const d = json.data ?? {};
+  const d = (json.data ?? {}) as Record<string, unknown>;
   return {
-    taskId: d.taskId ?? taskId,
+    taskId: String(d.taskId ?? taskId),
     status: String(d.status ?? ""),
-    validateInfo: typeof d.validateInfo === "string" ? d.validateInfo : undefined,
-    errorMessage: typeof d.errorMessage === "string" ? d.errorMessage : undefined,
+    validateInfo: pickKieValidatePhrase(d),
+    errorMessage:
+      typeof d.errorMessage === "string"
+        ? d.errorMessage
+        : typeof d.error_message === "string"
+          ? d.error_message
+          : undefined,
   };
+}
+
+/** KIE 응답 필드명 차이·중첩 대응 */
+export function pickKieValidatePhrase(data: Record<string, unknown>): string | undefined {
+  const candidates = [
+    data.validateInfo,
+    data.validate_info,
+    data.validationInfo,
+    data.validation_info,
+    data.phrase,
+    data.text,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const t = c.trim();
+      if (t.length > 0 && !looksLikeKieStatusEnumBlob(t)) return t;
+    }
+  }
+  return undefined;
+}
+
+function looksLikeKieStatusEnumBlob(s: string): boolean {
+  return (
+    s.includes("wait_processing") ||
+    s.includes("processing_validate") ||
+    (s.includes("wait_validating") && s.includes("success") && s.length > 80)
+  );
 }
 
 export async function kieVoiceGenerate(params: {
@@ -117,7 +151,7 @@ export async function kieVoiceGenerate(params: {
     body: JSON.stringify(body),
   });
   if (!ok) {
-    throw new Error(json.msg ?? "보이스 등록 요청에 실패했습니다.");
+    throw new Error(formatKieApiUserMessage(json.msg, { creditsProvider: "suno" }) || "보이스 등록 요청에 실패했습니다.");
   }
   const genTaskId = json.data?.taskId?.trim();
   if (!genTaskId) throw new Error("보이스 생성 taskId가 없습니다.");
@@ -142,7 +176,7 @@ export async function kieVoiceRecordInfo(
   }>(upstream, `/api/v1/voice/record-info?${q}`);
 
   if (!ok) {
-    throw new Error(json.msg ?? "보이스 등록 상태 조회에 실패했습니다.");
+    throw new Error(formatKieApiUserMessage(json.msg, { creditsProvider: "suno" }) || "보이스 등록 상태 조회에 실패했습니다.");
   }
   const d = json.data ?? {};
   return {

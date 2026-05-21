@@ -30,6 +30,7 @@ import { useState, useRef } from "react";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { PageTransition } from "@/components/PageTransition";
 import profileMusicBg from "@/assets/images/profile-music-bg.png";
+import { redirectToLogin } from "@/lib/auth-utils";
 
 function StatItem({ label, value, onClick }: { label: string; value: number; onClick?: () => void }) {
   return (
@@ -134,6 +135,10 @@ function PlaylistSection({ profilePlaylists, isOwnProfile, userId }: { profilePl
 
   const handlePlayAll = (musics: any[]) => {
     if (musics.length === 0) return;
+    if (!user) {
+      redirectToLogin((opts) => toast(opts as any));
+      return;
+    }
     const ids = musics.map((m: any) => m.id);
     setPlaylist(ids);
     playMusic(ids[0]);

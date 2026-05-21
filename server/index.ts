@@ -340,14 +340,26 @@ app.use((req, res, next) => {
   await registerRoutes(httpServer, app);
   registerPayupRoutes(app);
 
+  const kieRaw = (process.env.KIE_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
   const sunoRaw = (process.env.SUNOAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
   const aimusicRaw = (process.env.AIMUSICAPI_API_KEY ?? "").replace(/^\uFEFF/, "").replace(/\r\n?|\n/g, "").trim();
   if (sunoRaw) {
-    log(`[aimusic] Suno API (sunoapi.org) 키 설정됨 (길이 ${sunoRaw.length}) — create-music 사용 가능`);
+    log(
+      `[aimusic] Suno API (sunoapi.org) 키 설정됨 (길이 ${sunoRaw.length}) — create-music·내 보이스·녹음 (기본 upstream)`,
+    );
+    if (kieRaw) {
+      log("[aimusic] KIE_API_KEY도 있으나 SUNOAPI 우선 — 일반·보이스 생성은 sunoapi.org 사용");
+    }
+  } else if (kieRaw) {
+    const kieBase = (process.env.KIE_API_BASE ?? "https://api.kie.ai").replace(/\/$/, "");
+    log(`[aimusic] KIE API (${kieBase}) 키 설정됨 (길이 ${kieRaw.length}) — SUNOAPI 없어 KIE로 create-music`);
+    log("[aimusic] 내 보이스·녹음 add-vocals는 SUNOAPI_API_KEY(sunoapi.org)가 별도로 필요합니다.");
   } else if (aimusicRaw) {
     log(`[aimusic] AIMusicAPI 키 설정됨 (길이 ${aimusicRaw.length}) — create-music 사용 가능`);
   } else {
-    log("[aimusic] API key 없음 — .env에 SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY 설정 시 /create-music에서 음악 생성 가능");
+    log(
+      "[aimusic] API key 없음 — .env에 SUNOAPI_API_KEY, KIE_API_KEY 또는 AIMUSICAPI_API_KEY 설정 시 /create-music에서 음악 생성 가능",
+    );
   }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -29,6 +29,7 @@ import banner1 from "@/assets/images/banner-1.png";
 import banner2 from "@/assets/images/banner-2.png";
 import banner3 from "@/assets/images/banner-3.png";
 import banner4 from "@/assets/images/banner-4.png";
+import banner5 from "@/assets/images/banner-5.png";
 
 const ANNOUNCEMENT_SEEN_KEY = (userId: string | undefined, announcementId: number) =>
   userId ? `announcement_seen_${userId}_${announcementId}` : `announcement_seen_guest_${announcementId}`;
@@ -970,6 +971,42 @@ export default function Home() {
             </motion.div>
           </div>
         </div>
+      </section>
+
+      {/* 유튜브 플레이리스트 무료배포 — 히어로 직후 고정 배너 */}
+      <section className="container relative z-10 px-4 pt-6 md:pt-8" data-testid="section-playlist-studio-banner">
+        <Link
+          href="/playlist-studio"
+          className="group relative flex min-h-[112px] overflow-hidden rounded-xl border-2 border-cyan-500/45 bg-cover bg-center shadow-lg shadow-cyan-950/30 ring-2 ring-cyan-400/25 transition-all hover:border-cyan-400/60 hover:ring-cyan-300/40 md:min-h-[132px]"
+          style={{
+            backgroundImage: `linear-gradient(to right, rgba(0,20,40,0.92) 0%, rgba(20,10,50,0.75) 45%, rgba(80,20,60,0.55) 100%), url(${banner5})`,
+          }}
+        >
+          <div className="relative z-10 flex w-full flex-col justify-between gap-3 px-5 py-4 sm:flex-row sm:items-center sm:gap-4 md:px-8 md:py-5">
+            <div className="flex min-w-0 items-start gap-3 sm:items-center sm:gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-cyan-500/25 text-2xl md:h-14 md:w-14">
+                <Play className="h-6 w-6 fill-cyan-200 text-cyan-200 md:h-7 md:w-7" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="mb-0.5 text-sm font-bold text-cyan-300 md:text-base">
+                  {t("home.playlistStudioBannerBadge", "무료")}
+                </p>
+                <h2 className="text-lg font-bold leading-tight text-white drop-shadow-md md:text-2xl">
+                  {t("home.banner5Title", "유튜브플레이리스트 무료배포")}
+                </h2>
+                <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/85 sm:text-sm md:line-clamp-none">
+                  {t(
+                    "home.banner5Subtitle",
+                    "오디오 플레이리스트를 영상으로 — YouTube Playlist Studio를 무료로 이용해 보세요",
+                  )}
+                </p>
+              </div>
+            </div>
+            <span className="shrink-0 self-start rounded-full bg-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-md group-hover:bg-cyan-400 sm:self-center">
+              {t("home.banner5Button", "무료 배포 보기")} →
+            </span>
+          </div>
+        </Link>
       </section>
 
       {/* 빠른 입구: 방송·업로드·가이드·AI (히어로 CTA 부담 분산) */}

@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Disc3,
   Mic,
+  Upload,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
@@ -44,6 +45,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useKieCustomVoiceRegister } from "@/hooks/useKieCustomVoice";
+import { createVoicePlaybackPreviewUrl } from "@/lib/voicePreviewUrl";
+import { formatKieApiUserMessage, KIE_VOICE_COPYRIGHT_REJECTION_USER_MESSAGE } from "@shared/kieVoiceUserMessage";
+import {
+  MAX_VOICE_AUDIO_BYTES,
+  readVoiceAudioFile,
+  VOICE_AUDIO_INPUT_ACCEPT,
+} from "@/lib/voiceAudioFile";
 import { Textarea } from "@/components/ui/textarea";
 
 /** 생성된 곡 목록 페이지당 개수 */
@@ -1301,11 +1309,6 @@ export default function CreateMusic() {
   const [savedTracksListPage, setSavedTracksListPage] = useState(1);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [lyricsAssistLoading, setLyricsAssistLoading] = useState<"generate" | "optimize" | null>(null);
-  const [voiceRecordOpen, setVoiceRecordOpen] = useState(false);
-  const [voiceRecordBlob, setVoiceRecordBlob] = useState<Blob | null>(null);
-  const [voiceRecordPreviewUrl, setVoiceRecordPreviewUrl] = useState<string | null>(null);
-  const [voiceRecordSubmitting, setVoiceRecordSubmitting] = useState(false);
-  const { state: voiceRecState, startRecording, stopRecording, resetRecording } = useVoiceRecorder();
   const [customVoiceOpen, setCustomVoiceOpen] = useState(false);
   const [useMyVoice, setUseMyVoice] = useState(false);
   const [cvSourceBlob, setCvSourceBlob] = useState<Blob | null>(null);
@@ -1313,6 +1316,8 @@ export default function CreateMusic() {
   const [cvVerifyBlob, setCvVerifyBlob] = useState<Blob | null>(null);
   const [cvVerifyPreviewUrl, setCvVerifyPreviewUrl] = useState<string | null>(null);
   const cv = useKieCustomVoiceRegister();
+  const cvSourceFileInputRef = useRef<HTMLInputElement>(null);
+  const cvVerifyFileInputRef = useRef<HTMLInputElement>(null);
   const {
     state: cvRecState,
     startRecording: cvStartRecording,
@@ -1362,11 +1367,10 @@ export default function CreateMusic() {
 
   useEffect(() => {
     return () => {
-      if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
       if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
       if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
     };
-  }, [voiceRecordPreviewUrl, cvSourcePreviewUrl, cvVerifyPreviewUrl]);
+  }, [cvSourcePreviewUrl, cvVerifyPreviewUrl]);
 
   const totalDownloads = useMemo(
     () => savedTracks.reduce((sum, t) => sum + (t.downloadCount ?? 0), 0),
@@ -2026,7 +2030,7 @@ export default function CreateMusic() {
       if (state === "failed") {
         generationStartRef.current = null;
         setPreviewTracks([]);
-        setErrorMessage(data.message ?? "생성에 실패했습니다.");
+        setErrorMessage(formatKieApiUserMessage(data.message, { creditsProvider: "suno" }) || "생성에 실패했습니다.");
         setTaskId(null);
         queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
         queryClient.invalidateQueries({ queryKey: ["/api/credits"] });
@@ -2051,160 +2055,194 @@ export default function CreateMusic() {
     cv.reset();
   }, [cv, cvResetRecording, cvSourcePreviewUrl, cvVerifyPreviewUrl]);
 
-  const handleCvRecordStop = useCallback(async () => {
-    try {
-      const blob = await cvStopRecording();
-      if (!blob.size) {
-        toast({ title: t("createMusic.voiceRecordEmpty", "녹음이 비어 있습니다."), variant: "destructive" });
-        return;
-      }
-      if (cv.step === "source") {
-        if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
-        setCvSourceBlob(blob);
-        setCvSourcePreviewUrl(URL.createObjectURL(blob));
-      } else if (cv.step === "verify") {
-        if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
-        setCvVerifyBlob(blob);
-        setCvVerifyPreviewUrl(URL.createObjectURL(blob));
-      }
-    } catch {
-      toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" });
-    }
-  }, [cv.step, cvStopRecording, cvSourcePreviewUrl, cvVerifyPreviewUrl, toast, t]);
-
-  const resetVoiceRecordDraft = useCallback(() => {
-    if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
-    setVoiceRecordPreviewUrl(null);
-    setVoiceRecordBlob(null);
-    resetRecording();
-  }, [voiceRecordPreviewUrl, resetRecording]);
-
-  const handleVoiceRecordStop = useCallback(async () => {
-    try {
-      const blob = await stopRecording();
+  const applyCvRecordingPreview = useCallback(
+    async (blob: Blob, step: "source" | "verify"): Promise<boolean> => {
       if (!blob.size) {
         toast({
           title: t("createMusic.voiceRecordEmpty", "녹음이 비어 있습니다."),
           variant: "destructive",
         });
-        return;
+        return false;
       }
-      if (voiceRecordPreviewUrl) URL.revokeObjectURL(voiceRecordPreviewUrl);
-      setVoiceRecordBlob(blob);
-      setVoiceRecordPreviewUrl(URL.createObjectURL(blob));
-    } catch {
-      toast({
-        title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."),
-        variant: "destructive",
-      });
-    }
-  }, [stopRecording, toast, t, voiceRecordPreviewUrl]);
 
-  const handleCreateFromVoiceRecord = useCallback(async () => {
-    if (!user) return;
-    if (!voiceRecordBlob?.size) {
-      toast({
-        title: t("createMusic.voiceRecordNeedAudio", "먼저 보이스를 녹음해 주세요."),
-        variant: "destructive",
-      });
-      return;
-    }
-    const promptTrim = prompt.trim();
-    if (!promptTrim) {
-      toast({
-        title: t("createMusic.voiceRecordNeedLyrics", "가사란에 넣을 가사·노래 설명을 작성해 주세요."),
-        variant: "destructive",
-      });
-      return;
-    }
-    if (instrumentalOnly) {
-      toast({
-        title: t("createMusic.voiceRecordNoInstrumental", "보이스 녹음 생성은 보컬(기악 끄기) 모드에서 사용할 수 없습니다."),
-        variant: "destructive",
-      });
-      return;
-    }
-    setVoiceRecordSubmitting(true);
-    setVoiceRecordOpen(false);
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    setResultTracks([]);
-    setPreviewTracks([]);
-    setStatus("pending");
-    setElapsedSec(0);
-    generationStartRef.current = Date.now();
-    submitModeRef.current = "custom";
-    submittedLyricsRef.current = promptTrim;
-    submittedTitleRef.current = title.trim();
-    const mergedTags = buildTagsForApi(genreOther, styleOther);
-    submittedTagsRef.current = mergedTags;
-    try {
-      const fd = new FormData();
-      fd.append("audio", voiceRecordBlob, "voice-recording.webm");
-      fd.append("prompt", promptTrim);
-      if (title.trim()) fd.append("title", title.trim());
-      if (mergedTags) fd.append("tags", mergedTags);
-      fd.append("mv", creationModelVersion);
-      if (vocalGender === "f" || vocalGender === "m") fd.append("vocal_gender", vocalGender);
+      if (step === "source") {
+        if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
+        setCvSourceBlob(blob);
+        setCvSourcePreviewUrl(null);
+      } else {
+        if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
+        setCvVerifyBlob(blob);
+        setCvVerifyPreviewUrl(null);
+      }
 
-      const res = await fetch("/api/ai-music/create-from-voice-record", {
-        method: "POST",
-        credentials: "include",
-        body: fd,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStatus("failed");
-        setErrorMessage((data as { message?: string }).message ?? "보이스 생성 요청에 실패했습니다.");
-        if (res.status === 403 && (data as { code?: string }).code === "AI_MUSIC_LIMIT_REACHED") {
-          toast({ title: (data as { message?: string }).message, variant: "destructive" });
-          queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
-        }
-        return;
-      }
-      const tid = (data as { task_id?: string }).task_id;
-      const provider = (data as { provider?: string }).provider;
-      if (!tid) {
-        setStatus("failed");
-        setErrorMessage("서버 응답 오류.");
-        return;
-      }
-      setTaskId(tid);
-      setTaskProvider(provider ?? null);
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
       try {
-        sessionStorage.setItem(lastAiMusicTaskSessionKey(user.id), JSON.stringify({ task_id: tid, provider }));
-      } catch {}
-      toast({
-        title: t("createMusic.voiceRecordStarted", "보이스 녹음으로 생성을 시작했습니다"),
-        description: t(
-          "createMusic.voiceRecordStartedDesc",
-          "녹음한 멜로디·리듬을 바탕으로 가사란 내용으로 보컬 곡을 만듭니다.",
-        ),
-      });
-      pollTask(tid, provider);
+        const previewUrl = await createVoicePlaybackPreviewUrl(blob);
+        if (step === "source") setCvSourcePreviewUrl(previewUrl);
+        else setCvVerifyPreviewUrl(previewUrl);
+      } catch {
+        toast({
+          title: t("createMusic.voiceRecordPreviewFailed", "미리듣기만 실패했습니다. 파일은 선택되었으니 「다음」으로 진행할 수 있습니다."),
+          variant: "destructive",
+        });
+      }
+      return true;
+    },
+    [cvSourcePreviewUrl, cvVerifyPreviewUrl, toast, t],
+  );
+
+  const clearCvSourcePreview = useCallback(() => {
+    if (cvSourcePreviewUrl) URL.revokeObjectURL(cvSourcePreviewUrl);
+    setCvSourcePreviewUrl(null);
+    setCvSourceBlob(null);
+  }, [cvSourcePreviewUrl]);
+
+  const clearCvVerifyPreview = useCallback(() => {
+    if (cvVerifyPreviewUrl) URL.revokeObjectURL(cvVerifyPreviewUrl);
+    setCvVerifyPreviewUrl(null);
+    setCvVerifyBlob(null);
+  }, [cvVerifyPreviewUrl]);
+
+  const handleCvRecordStop = useCallback(async () => {
+    try {
+      const blob = await cvStopRecording();
+      if (cv.step === "source") await applyCvRecordingPreview(blob, "source");
+      else if (cv.step === "verify") await applyCvRecordingPreview(blob, "verify");
     } catch {
-      setStatus("failed");
-      setErrorMessage("네트워크 오류가 발생했습니다.");
-    } finally {
-      setVoiceRecordSubmitting(false);
-      setIsSubmitting(false);
+      toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" });
     }
-  }, [
-    user,
-    voiceRecordBlob,
-    prompt,
-    title,
-    genreOther,
-    styleOther,
-    instrumentalOnly,
-    vocalGender,
-    creationModelVersion,
-    toast,
-    t,
-    queryClient,
-    pollTask,
-  ]);
+  }, [cv.step, cvStopRecording, applyCvRecordingPreview, toast, t]);
+
+  const handleCvAudioUpload = useCallback(
+    async (step: "source" | "verify", file: File | null | undefined) => {
+      if (!file) return;
+      try {
+        const blob = await readVoiceAudioFile(file);
+        if (cvRecState === "recording") cvResetRecording();
+        if (step === "source") clearCvSourcePreview();
+        else clearCvVerifyPreview();
+        const ok = await applyCvRecordingPreview(blob, step);
+        if (!ok) return;
+        toast({ title: t("createMusic.voiceUploadDone", "오디오 파일을 불러왔습니다.") });
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "";
+        const title =
+          code === "UNSUPPORTED_TYPE"
+            ? t("createMusic.voiceUploadUnsupported", "mp3, wav, webm, m4a, ogg 등 오디오 파일만 업로드할 수 있습니다.")
+            : code === "TOO_LARGE"
+              ? t("createMusic.voiceUploadTooLarge", "파일 크기는 8MB 이하여야 합니다.")
+              : code === "EMPTY"
+                ? t("createMusic.voiceRecordEmpty", "녹음이 비어 있습니다.")
+                : t("createMusic.voiceUploadFailed", "오디오 파일을 불러오지 못했습니다.");
+        toast({ title, variant: "destructive" });
+      }
+    },
+    [
+      applyCvRecordingPreview,
+      clearCvSourcePreview,
+      clearCvVerifyPreview,
+      cvRecState,
+      cvResetRecording,
+      toast,
+      t,
+    ],
+  );
+
+  const renderCvAudioCapture = useCallback(
+    (step: "source" | "verify") => {
+      const fileInputRef = step === "source" ? cvSourceFileInputRef : cvVerifyFileInputRef;
+      const previewUrl = step === "source" ? cvSourcePreviewUrl : cvVerifyPreviewUrl;
+      const audioBlob = step === "source" ? cvSourceBlob : cvVerifyBlob;
+      const clearPreview = step === "source" ? clearCvSourcePreview : clearCvVerifyPreview;
+      const recordingBlocked = cvRecState === "recording";
+
+      return (
+        <div className="space-y-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={VOICE_AUDIO_INPUT_ACCEPT}
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              void handleCvAudioUpload(step, f);
+              e.target.value = "";
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            {recordingBlocked ? (
+              <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleCvRecordStop()}>
+                <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> {t("createMusic.voiceRecordStop", "녹음 중지")}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={cv.busy}
+                  onClick={() => {
+                    clearPreview();
+                    cvResetRecording();
+                    void cvStartRecording().catch(() =>
+                      toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" }),
+                    );
+                  }}
+                >
+                  <Mic className="h-4 w-4" /> {t("createMusic.voiceRecordStart", "녹음 시작")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={cv.busy}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-4 w-4" />
+                  {t("createMusic.voiceUploadBtn", "오디오 업로드")}
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "createMusic.voiceUploadHint",
+              "mp3·wav·webm·m4a·ogg, 최대 {{mb}}MB. 업로드 후 재생으로 확인하세요.",
+              { mb: Math.round(MAX_VOICE_AUDIO_BYTES / (1024 * 1024)) },
+            )}
+          </p>
+          {previewUrl ? (
+            <audio key={previewUrl} src={previewUrl} controls playsInline preload="auto" className="w-full rounded-lg" />
+          ) : audioBlob ? (
+            <p className="text-xs font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+              {t("createMusic.voiceUploadSelected", "오디오 선택됨")} ({Math.max(1, Math.round(audioBlob.size / 1024))} KB)
+              {" — "}
+              {t("createMusic.voiceUploadSelectedHint", "미리듣기가 안 되어도 「다음」으로 진행할 수 있습니다.")}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {t("createMusic.voiceRecordPreviewHint", "녹음 또는 업로드 후 여기서 들을 수 있습니다.")}
+            </p>
+          )}
+        </div>
+      );
+    },
+    [
+      clearCvSourcePreview,
+      clearCvVerifyPreview,
+      cv.busy,
+      cvRecState,
+      cvResetRecording,
+      cvSourceBlob,
+      cvSourcePreviewUrl,
+      cvStartRecording,
+      cvVerifyBlob,
+      cvVerifyPreviewUrl,
+      handleCvAudioUpload,
+      handleCvRecordStop,
+      toast,
+      t,
+    ],
+  );
 
   const handleStudioGenerateLyrics = useCallback(async () => {
     if (!user) return;
@@ -2388,7 +2426,7 @@ export default function CreateMusic() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus("failed");
-        setErrorMessage(data.message ?? "생성 요청에 실패했습니다.");
+        setErrorMessage(formatKieApiUserMessage(data.message, { creditsProvider: "suno" }) || "생성 요청에 실패했습니다.");
         if (res.status === 403 && (data as { code?: string }).code === "AI_MUSIC_LIMIT_REACHED") {
           toast({ title: data.message, variant: "destructive" });
           queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
@@ -2750,7 +2788,7 @@ export default function CreateMusic() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
-                          disabled={isSubmitting || voiceRecordSubmitting || cv.busy}
+                          disabled={isSubmitting || cv.busy}
                           onClick={() => {
                             resetCvDrafts();
                             setCustomVoiceOpen(true);
@@ -2758,7 +2796,7 @@ export default function CreateMusic() {
                           className="inline-flex items-center gap-1.5 rounded-full border border-violet-400 bg-violet-100 px-3 py-1.5 text-xs font-semibold text-violet-900 hover:bg-violet-200 disabled:opacity-50"
                           title={t(
                             "createMusic.customVoiceChipHint",
-                            "내 목소리를 등록한 뒤, 이후 생성 곡에 내 보이스를 적용합니다 (KIE Generate Voice)",
+                            "내 목소리를 녹음·등록한 뒤, 아래 체크를 켜고 생성하면 내 보이스로 노래가 만들어집니다.",
                           )}
                         >
                           <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -2770,24 +2808,14 @@ export default function CreateMusic() {
                           <span className="text-xs text-violet-800/90">
                             {t("createMusic.customVoiceReadyBadge", "등록됨")}: {myVoiceProfile?.voiceName || "My Voice"}
                           </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          disabled={instrumentalOnly || isSubmitting || voiceRecordSubmitting}
-                          onClick={() => {
-                            resetVoiceRecordDraft();
-                            setInstrumentalOnly(false);
-                            setMode("custom");
-                            setVoiceRecordOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 hover:border-slate-300 disabled:opacity-50"
-                          title={t(
-                            "createMusic.voiceRecordChipHint",
-                            "멜로디 녹음 위에 이번 가사만 입히기 (add-vocals)",
-                          )}
-                        >
-                          {t("createMusic.voiceRecordChipShort", "녹음으로 바로 생성")}
-                        </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {t(
+                              "createMusic.customVoiceChipGuide",
+                              "등록 후 「등록한 내 보이스로 노래 생성」을 켜고 생성하세요.",
+                            )}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -3166,7 +3194,6 @@ export default function CreateMusic() {
                         type="submit"
                         disabled={
                           isSubmitting ||
-                          voiceRecordSubmitting ||
                           status === "pending" ||
                           status === "running" ||
                           status === "preview"
@@ -3373,7 +3400,7 @@ export default function CreateMusic() {
           }
         }}
       >
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto bg-white text-slate-900 [&_input]:text-slate-900 [&_textarea]:text-slate-900 [&_input]:bg-white [&_textarea]:bg-white [&_input::placeholder]:text-slate-400 [&_textarea::placeholder]:text-slate-400">
           <DialogHeader>
             <DialogTitle>{t("createMusic.customVoiceDialogTitle", "내 보이스 등록")}</DialogTitle>
             <DialogDescription asChild>
@@ -3381,28 +3408,24 @@ export default function CreateMusic() {
                 <p>
                   {t(
                     "createMusic.customVoiceDialogLead",
-                    "① 노래·허밍 샘플 업로드 → ② 안내 문구를 노래처럼 녹음 → 등록 후 「내 보이스로 노래 생성」으로 곡을 만듭니다.",
+                    "① 내 목소리 샘플(녹음 또는 오디오 파일) → ② 안내 문구를 노래처럼 녹음·업로드 → 등록 후 「등록한 내 보이스로 노래 생성」을 켜고 생성하세요.",
                   )}
                 </p>
               </div>
             </DialogDescription>
           </DialogHeader>
-          {cv.error ? <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2">{cv.error}</p> : null}
+          {cv.error ? (
+            <p className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2 whitespace-pre-line leading-relaxed">
+              {cv.error}
+            </p>
+          ) : null}
           {cv.step === "source" && (
-            <div className="space-y-3">
+            <div className="space-y-2">
               <p className="text-sm font-medium">{t("createMusic.customVoiceStepSource", "① 내 목소리 샘플 (약 10~15초)")}</p>
-              <div className="flex flex-wrap gap-2">
-                {cvRecState !== "recording" ? (
-                  <Button type="button" variant="outline" className="gap-2" onClick={() => void cvStartRecording().catch(() => toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" }))}>
-                    <Mic className="h-4 w-4" /> {t("createMusic.voiceRecordStart", "녹음 시작")}
-                  </Button>
-                ) : (
-                  <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleCvRecordStop()}>
-                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> {t("createMusic.voiceRecordStop", "녹음 중지")}
-                  </Button>
-                )}
-              </div>
-              {cvSourcePreviewUrl ? <audio src={cvSourcePreviewUrl} controls className="w-full rounded-lg" /> : null}
+              <p className="text-xs text-amber-900/90 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 leading-relaxed">
+                {t("createMusic.customVoiceSourceTip", KIE_VOICE_COPYRIGHT_REJECTION_USER_MESSAGE)}
+              </p>
+              {renderCvAudioCapture("source")}
             </div>
           )}
           {cv.step === "phrase" && (
@@ -3413,22 +3436,35 @@ export default function CreateMusic() {
           )}
           {cv.step === "verify" && (
             <div className="space-y-3">
-              <p className="text-sm font-medium">{t("createMusic.customVoiceStepVerify", "② 아래 문구를 노래처럼 읽어 녹음")}</p>
-              {cv.validatePhrase ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed">{cv.validatePhrase}</p>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                {cvRecState !== "recording" ? (
-                  <Button type="button" variant="outline" className="gap-2" onClick={() => void cvStartRecording().catch(() => toast({ title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."), variant: "destructive" }))}>
-                    <Mic className="h-4 w-4" /> {t("createMusic.voiceRecordStart", "녹음 시작")}
-                  </Button>
+              <p className="text-sm font-medium">{t("createMusic.customVoiceStepVerify", "② 아래 문구를 노래처럼 읽어 녹음·업로드")}</p>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 min-h-[3.5rem] flex flex-col justify-center gap-2">
+                {cv.validatePhrase ? (
+                  <p className="text-sm leading-relaxed text-amber-950 whitespace-pre-line">{cv.validatePhrase}</p>
+                ) : cv.busy ? (
+                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                    {t("createMusic.customVoicePhraseLoading", "검증 문구 불러오는 중…")}
+                  </p>
                 ) : (
-                  <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleCvRecordStop()}>
-                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> {t("createMusic.voiceRecordStop", "녹음 중지")}
-                  </Button>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">
+                      {t("createMusic.customVoicePhraseMissing", "검증 문구가 표시되지 않았습니다.")}
+                    </p>
+                    {cv.validateTaskId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={cv.busy}
+                        onClick={() => void cv.pollValidatePhrase(cv.validateTaskId!).catch(() => {})}
+                      >
+                        {t("createMusic.customVoicePhraseRetry", "문구 다시 불러오기")}
+                      </Button>
+                    ) : null}
+                  </div>
                 )}
               </div>
-              {cvVerifyPreviewUrl ? <audio src={cvVerifyPreviewUrl} controls className="w-full rounded-lg" /> : null}
+              {renderCvAudioCapture("verify")}
               <Button type="button" variant="secondary" disabled={!cvVerifyBlob} onClick={() => cv.setStep("meta")}>
                 {t("createMusic.customVoiceNextMeta", "다음: 이름·스타일")}
               </Button>
@@ -3436,10 +3472,22 @@ export default function CreateMusic() {
           )}
           {cv.step === "meta" && (
             <div className="space-y-3">
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder={t("createMusic.customVoiceNamePh", "보이스 이름")} value={cv.voiceName} onChange={(e) => cv.setVoiceName(e.target.value)} />
-              <input className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder={t("createMusic.customVoiceStylePh", "Pop, Korean vocal")} value={cv.style} onChange={(e) => cv.setStyle(e.target.value)} />
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 px-3 py-2 text-sm"
+                placeholder={t("createMusic.customVoiceNamePh", "보이스 이름")}
+                value={cv.voiceName}
+                onChange={(e) => cv.setVoiceName(e.target.value)}
+              />
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 px-3 py-2 text-sm"
+                placeholder={t("createMusic.customVoiceStylePh", "Pop, Korean vocal")}
+                value={cv.style}
+                onChange={(e) => cv.setStyle(e.target.value)}
+              />
               <Select value={cv.singerSkillLevel} onValueChange={cv.setSingerSkillLevel}>
-                <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full bg-white text-slate-900 border-slate-200">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="beginner">{t("createMusic.skillBeginner", "초급")}</SelectItem>
                   <SelectItem value="intermediate">{t("createMusic.skillIntermediate", "중급")}</SelectItem>
@@ -3447,7 +3495,11 @@ export default function CreateMusic() {
                   <SelectItem value="professional">{t("createMusic.skillPro", "프로")}</SelectItem>
                 </SelectContent>
               </Select>
-              <Textarea className="min-h-[72px] rounded-lg border-slate-200" value={cv.description} onChange={(e) => cv.setDescription(e.target.value)} />
+              <Textarea
+                className="min-h-[72px] rounded-lg border border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 px-3 py-2 text-sm"
+                value={cv.description}
+                onChange={(e) => cv.setDescription(e.target.value)}
+              />
             </div>
           )}
           {cv.step === "done" && (
@@ -3461,7 +3513,17 @@ export default function CreateMusic() {
                 className="bg-violet-600 hover:bg-violet-700 text-white"
                 disabled={!cvSourceBlob || cv.busy}
                 onClick={() =>
-                  void cv.submitSource(cvSourceBlob!).then(() => toast({ title: t("createMusic.customVoicePhraseReady", "검증 문구 준비됨") })).catch(() => {})
+                  void cv
+                    .submitSource(cvSourceBlob!)
+                    .then((phrase) => {
+                      if (phrase?.trim()) {
+                        toast({
+                          title: t("createMusic.customVoicePhraseReady", "검증 문구 준비됨"),
+                          description: phrase.length > 120 ? `${phrase.slice(0, 120)}…` : phrase,
+                        });
+                      }
+                    })
+                    .catch(() => {})
                 }
               >
                 {cv.busy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -3487,88 +3549,6 @@ export default function CreateMusic() {
                 {t("createMusic.customVoiceSubmitRegister", "등록 완료")}
               </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={voiceRecordOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setVoiceRecordOpen(false);
-            resetVoiceRecordDraft();
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("createMusic.voiceRecordDialogTitle", "보이스 녹음 생성")}</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  {t(
-                    "createMusic.voiceRecordDialogLead",
-                    "멜로디·허밍·가이드 보컬을 30초 이내로 녹음합니다. 가사란에 넣을 가사와 장르·스타일을 먼저 적어 두세요. 녹음은 KIE에 업로드된 뒤 AI가 그 위에 노래 보컬을 입힙니다.",
-                  )}
-                </p>
-                <p className="text-xs">
-                  {t(
-                    "createMusic.voiceRecordDialogLegal",
-                    "타인의 목소리·곡을 무단으로 모방하지 마세요. 서버에 KIE_API_KEY가 설정되어 있어야 합니다.",
-                  )}
-                </p>
-              </div>
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {voiceRecState !== "recording" ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2"
-                onClick={() => void startRecording().catch(() => {
-                  toast({
-                    title: t("createMusic.voiceRecordMicDenied", "마이크 권한이 필요합니다."),
-                    variant: "destructive",
-                  });
-                })}
-              >
-                <Mic className="h-4 w-4" aria-hidden />
-                {t("createMusic.voiceRecordStart", "녹음 시작")}
-              </Button>
-            ) : (
-              <Button type="button" variant="destructive" className="gap-2" onClick={() => void handleVoiceRecordStop()}>
-                <span className="h-2 w-2 rounded-full bg-white animate-pulse" aria-hidden />
-                {t("createMusic.voiceRecordStop", "녹음 중지")}
-              </Button>
-            )}
-            {(voiceRecordBlob || voiceRecState === "stopped") && (
-              <Button type="button" variant="ghost" onClick={resetVoiceRecordDraft}>
-                {t("createMusic.voiceRecordClear", "다시 녹음")}
-              </Button>
-            )}
-          </div>
-
-          {voiceRecordPreviewUrl ? (
-            <audio src={voiceRecordPreviewUrl} controls className="w-full rounded-lg" preload="metadata" />
-          ) : (
-            <p className="text-xs text-muted-foreground">{t("createMusic.voiceRecordPreviewHint", "녹음 후 여기서 들을 수 있습니다.")}</p>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setVoiceRecordOpen(false)}>
-              {t("common.cancel", "취소")}
-            </Button>
-            <Button
-              type="button"
-              className="bg-violet-600 hover:bg-violet-700 text-white"
-              disabled={!voiceRecordBlob || voiceRecordSubmitting}
-              onClick={() => void handleCreateFromVoiceRecord()}
-            >
-              {voiceRecordSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden /> : null}
-              {t("createMusic.voiceRecordSubmit", "이 녹음으로 생성")}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

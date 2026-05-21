@@ -6,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { redirectToLogin } from "@/lib/queryClient";
-import { blockGuestPlaybackIfNeeded, markGuestListenQuotaConsumed } from "@/lib/guest-listen-quota";
+import { blockGuestPlaybackIfNeeded } from "@/lib/guest-listen-quota";
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
@@ -541,6 +540,7 @@ export function GlobalAudioPlayer() {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [needsTap, setNeedsTap] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
   const [showLyricsPanel, setShowLyricsPanel] = useState(false);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
@@ -727,7 +727,10 @@ export function GlobalAudioPlayer() {
       void audio
         .play()
         .then(() => {
-          if (!cancelled) audio.muted = false;
+          if (!cancelled) {
+            audio.muted = false;
+            setNeedsTap(false);
+          }
         })
         .catch(() => {
           if (cancelled) return;
@@ -738,9 +741,12 @@ export function GlobalAudioPlayer() {
               if (!cancelled) {
                 audio.muted = false;
                 setIsMuted(false);
+                setNeedsTap(false);
               }
             })
-            .catch(() => {});
+            .catch(() => {
+              if (!cancelled) setNeedsTap(true);
+            });
         });
     };
 
@@ -788,6 +794,7 @@ export function GlobalAudioPlayer() {
         .play()
         .then(() => {
           setIsPlaying(true);
+          setNeedsTap(false);
         })
         .catch(() => {
           audio.muted = true;
@@ -797,11 +804,58 @@ export function GlobalAudioPlayer() {
               audio.muted = false;
               setIsPlaying(true);
               setIsMuted(false);
+              setNeedsTap(false);
             })
-            .catch(() => {});
+            .catch(() => {
+              setNeedsTap(true);
+            });
         });
     }
   }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
+
+  // 일부 모바일(특히 S24)에서 "조용히 paused" 되는 케이스 방지:
+  // 재생해야 하는데 paused면 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
+  useEffect(() => {
+    const audio = audioRef.current;
+    const hasTrack = activeMusicId || activeExternalTrack;
+    if (!audio || !hasTrack) return;
+    if (pauseRequested) return;
+    if (document.visibilityState !== "visible") return;
+
+    const isCoarseOrTouchDevice = () => {
+      try {
+        if (window.matchMedia("(pointer: coarse)").matches) return true;
+        if (navigator.maxTouchPoints > 0 && window.matchMedia("(hover: none)").matches) return true;
+      } catch {
+        /* ignore */
+      }
+      return false;
+    };
+    if (!isCoarseOrTouchDevice()) return;
+
+    const interval = window.setInterval(() => {
+      const st = usePlayerStore.getState();
+      const shouldBePlaying = !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
+      if (!shouldBePlaying) return;
+      if (document.visibilityState !== "visible") return;
+      const a = audioRef.current;
+      if (!a) return;
+
+      if (isPlaying && a.paused) setIsPlaying(false);
+
+      if (a.paused) {
+        a.muted = false;
+        a.volume = volume;
+        void a.play()
+          .then(() => setNeedsTap(false))
+          .catch(() => {
+            setNeedsTap(true);
+          });
+      }
+    }, 1200);
+
+    return () => window.clearInterval(interval);
+  }, [activeMusicId, activeExternalTrack, pauseRequested, volume, isPlaying]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -821,48 +875,10 @@ export function GlobalAudioPlayer() {
     const onPause = () => { setIsPlaying(false); tracker.onPause(); };
     const onEnded = () => {
       setIsPlaying(false);
-      if (user) {
-        playNext();
-      } else {
-        tracker.onEnded();
-        if (!unauthEndedToastShownRef.current) {
-          unauthEndedToastShownRef.current = true;
-          unauthStoppedRef.current = true;
-          markGuestListenQuotaConsumed();
-          toast({
-            title: t("player.loginContinuousPlayTitle", "음악 연속 듣기를 하시려면 로그인 하세요"),
-            description: t("player.loginContinuousPlayDesc", "로그인하면 이어서 들을 수 있습니다."),
-            variant: "default",
-            action: (
-              <ToastAction altText={t("nav.login", "로그인")} onClick={() => redirectToLogin()}>
-                {t("nav.login", "로그인")}
-              </ToastAction>
-            ),
-          });
-          // 재생은 이미 종료됨 — 글로벌 플레이바·오디오 리소스만 정리 (연속 재생 분기는 위와 동일)
-          isClosingRef.current = true;
-          const aud = audioRef.current;
-          if (aud) {
-            try {
-              aud.pause();
-              aud.removeAttribute("src");
-              aud.load();
-            } catch {
-              /* ignore */
-            }
-          }
-          if (audioContextRef.current) {
-            audioContextRef.current.close().catch(() => {});
-            audioContextRef.current = null;
-            sourceNodeRef.current = null;
-            eqFiltersRef.current = [];
-          }
-          closePlayer();
-          setTimeout(() => {
-            isClosingRef.current = false;
-          }, 300);
-        }
-      }
+      // 연속 재생 여부는 playMusic 내부의 guest quota 차단(blockGuestPlaybackIfNeeded)에서 결정한다.
+      // (모바일에서 auth/user가 순간 null로 흔들리면 여기서 연속 재생이 끊기는 문제가 있어 ended에서는 항상 다음 곡을 시도)
+      tracker.onEnded();
+      playNext();
     };
     const onError = () => {
       if (isClosingRef.current) return;
@@ -901,7 +917,7 @@ export function GlobalAudioPlayer() {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
-      audio.play().catch(() => {});
+      audio.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
     } else {
       audio.pause();
     }
@@ -1083,6 +1099,22 @@ export function GlobalAudioPlayer() {
   return (
     <>
       <audio ref={audioRef} preload="auto" crossOrigin="anonymous" playsInline />
+      {needsTap && !isPlaying && !pauseRequested && ((activeMusicId && displayMusic) || activeExternalTrack) && (
+        <div className="fixed bottom-[68px] left-2 right-2 z-50">
+          <button
+            className="w-full flex items-center justify-center gap-2 py-1.5 bg-primary text-primary-foreground text-xs font-semibold rounded-lg shadow-lg"
+            onClick={() => {
+              const a = audioRef.current;
+              if (!a) return;
+              a.muted = false;
+              a.volume = volume;
+              void a.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+            }}
+          >
+            {t("player.tapToContinue", "탭해서 계속 듣기")}
+          </button>
+        </div>
+      )}
       {((activeMusicId && displayMusic) || activeExternalTrack) && <AnimatePresence>
         <motion.div
           initial={{ y: 100, opacity: 0 }}

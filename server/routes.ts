@@ -31,7 +31,8 @@ import {
   openaiGenerateStudioLyrics,
   openaiOptimizeStudioLyrics,
 } from "./aiMusicStudioLyrics";
-import { kieUploadAudioBuffer } from "./kieFileUpload";
+import { kieUploadAudioBuffer, resolveSunoStyleFileUploadBase } from "./kieFileUpload";
+import { formatKieApiUserMessage, formatKieVoiceUserMessage } from "@shared/kieVoiceUserMessage";
 import {
   kieVoiceGenerate,
   kieVoiceRecordInfo,
@@ -1344,7 +1345,8 @@ export async function registerRoutes(
   const AIMUSICAPI_BASE = "https://api.aimusicapi.ai";
   const AIMUSICAPI_KEY = normalizeAiMusicApiKey(process.env.AIMUSICAPI_API_KEY);
 
-  const AI_MUSIC_PROVIDER = KIE_API_KEY ? "kie" : SUNOAPI_KEY ? "suno" : AIMUSICAPI_KEY ? "aimusicapi" : null;
+  /** 기본: sunoapi.org — KIE는 SUNOAPI 키가 없을 때만 폴백 */
+  const AI_MUSIC_PROVIDER = SUNOAPI_KEY ? "suno" : KIE_API_KEY ? "kie" : AIMUSICAPI_KEY ? "aimusicapi" : null;
 
   const aiVoiceRecordUpload = multer({
     storage: multer.memoryStorage(),
@@ -1879,7 +1881,7 @@ export async function registerRoutes(
     }
   });
 
-  // 로그인 없이 API 키 유효성만 확인 (디버깅용). KIE → SUNOAPI → AIMusicAPI.
+  // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI → KIE → AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
     const checkSunoStyleCredits = async (label: "kie" | "suno", base: string, key: string) => {
       try {
@@ -1912,12 +1914,12 @@ export async function registerRoutes(
         return res.status(500).json({ ok: false, provider: label, message: "연결 실패" });
       }
     };
-    if (KIE_API_KEY) return checkSunoStyleCredits("kie", KIE_API_BASE, KIE_API_KEY);
     if (SUNOAPI_KEY) return checkSunoStyleCredits("suno", SUNOAPI_BASE, SUNOAPI_KEY);
+    if (KIE_API_KEY) return checkSunoStyleCredits("kie", KIE_API_BASE, KIE_API_KEY);
     if (!AIMUSICAPI_KEY) {
       return res.status(503).json({
         ok: false,
-        message: "KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
+        message: "SUNOAPI_API_KEY, KIE_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
         keyLength: 0,
       });
     }
@@ -2613,7 +2615,7 @@ export async function registerRoutes(
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({
         ok: false,
-        message: "KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
+        message: "SUNOAPI_API_KEY, KIE_API_KEY 또는 AIMUSICAPI_API_KEY가 .env에 없습니다.",
       });
     }
     const activeSunoStyle = sunoStyleUpstream(AI_MUSIC_PROVIDER);
@@ -2647,7 +2649,7 @@ export async function registerRoutes(
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({
         message:
-          "AI 음악 생성 API가 설정되지 않았습니다. .env에 KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
+          "AI 음악 생성 API가 설정되지 않았습니다. .env에 SUNOAPI_API_KEY, KIE_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
       });
     }
     const body = req.body as { prompt?: string; tags?: string; language?: string };
@@ -2750,7 +2752,7 @@ export async function registerRoutes(
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({
         message:
-          "AI 음악 생성 API가 설정되지 않았습니다. .env에 KIE_API_KEY, SUNOAPI_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
+          "AI 음악 생성 API가 설정되지 않았습니다. .env에 SUNOAPI_API_KEY, KIE_API_KEY 또는 AIMUSICAPI_API_KEY를 설정하세요.",
       });
     }
     // @ts-ignore
@@ -2850,9 +2852,12 @@ export async function registerRoutes(
       });
     }
 
-    const createSunoStyle = AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno" ? sunoStyleUpstream(AI_MUSIC_PROVIDER) : null;
-    if (createSunoStyle && (AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno")) {
-      const createProvider = AI_MUSIC_PROVIDER;
+    const createSunoStyleDefault =
+      AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno" ? sunoStyleUpstream(AI_MUSIC_PROVIDER) : null;
+    const sunoapiForCustomVoice = sunoStyleUpstream("suno");
+    if (createSunoStyleDefault && (AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno")) {
+      let createSunoStyle = createSunoStyleDefault;
+      let createProvider = AI_MUSIC_PROVIDER;
       const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
       let model = resolveSunoGenerateModel(body.mv);
@@ -2863,6 +2868,14 @@ export async function registerRoutes(
             message: "내 보이스로 생성은 연주만(보컬 없음) 모드와 함께 사용할 수 없습니다.",
           });
         }
+        if (!sunoapiForCustomVoice) {
+          return res.status(503).json({
+            message: "내 보이스로 생성하려면 SUNOAPI_API_KEY(sunoapi.org)가 설정되어 있어야 합니다.",
+            code: "SUNOAPI_VOICE_REQUIRED",
+          });
+        }
+        createSunoStyle = sunoapiForCustomVoice;
+        createProvider = "suno";
         const [voiceRow] = await db.select().from(aiMusicUserVoices).where(eq(aiMusicUserVoices.userId, userId));
         const vid = voiceRow?.voiceId?.trim();
         if (!vid || voiceRow?.status !== "ready") {
@@ -3050,11 +3063,15 @@ export async function registerRoutes(
     }
   });
 
-  /** KIE Suno 커스텀 보이스 — 회원당 voiceId 등록·조회 (Generate Voice 플로우) */
-  function kieVoiceUpstreamOnly(): { base: string; key: string } | null {
-    if (AI_MUSIC_PROVIDER !== "kie" && AI_MUSIC_PROVIDER !== "suno") return null;
-    return sunoStyleUpstream(AI_MUSIC_PROVIDER);
+  const SUNOAPI_VOICE_REQUIRED_MSG =
+    "내 보이스 등록·녹음 생성은 SUNOAPI_API_KEY(sunoapi.org)가 설정되어 있어야 합니다.";
+
+  /** sunoapi.org 커스텀 보이스 — KIE 전환 없이 기존 SUNOAPI 키만 사용 */
+  function sunoapiVoiceUpstreamOnly(): { base: string; key: string } | null {
+    return sunoStyleUpstream("suno");
   }
+
+  const sunoapiVoiceFileUploadBase = () => resolveSunoStyleFileUploadBase("suno");
 
   app.get("/api/ai-music/custom-voice", isAuthenticated, async (req, res) => {
     // @ts-ignore
@@ -3100,10 +3117,11 @@ export async function registerRoutes(
     isAuthenticated,
     aiVoiceRecordUpload.single("audio"),
     async (req, res) => {
-      const upstream = kieVoiceUpstreamOnly();
+      const upstream = sunoapiVoiceUpstreamOnly();
       if (!upstream) {
         return res.status(503).json({
-          message: "내 보이스 등록은 KIE_API_KEY(또는 SUNOAPI)가 설정된 환경에서만 사용할 수 있습니다.",
+          message: SUNOAPI_VOICE_REQUIRED_MSG,
+          code: "SUNOAPI_VOICE_REQUIRED",
         });
       }
       const file = req.file;
@@ -3123,12 +3141,12 @@ export async function registerRoutes(
       try {
         const ext = file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") ? ".mp3" : ".webm";
         const voiceUrl = await kieUploadAudioBuffer({
-          base: upstream.base,
           apiKey: upstream.key,
           buffer: file.buffer,
           fileName: `voice-source-${crypto.randomUUID()}${ext}`,
           mimeType: file.mimetype || "audio/webm",
           uploadPath: "venysound/voice-source",
+          fileUploadBase: sunoapiVoiceFileUploadBase(),
         });
         const { taskId } = await kieVoiceValidateSource({
           upstream,
@@ -3157,22 +3175,27 @@ export async function registerRoutes(
         return res.json({ validate_task_id: taskId });
       } catch (e) {
         console.error("[ai-music custom-voice validate-source]", e);
-        const msg = e instanceof Error ? e.message : "검증 문구 생성에 실패했습니다.";
+        const msg =
+          formatKieApiUserMessage(e instanceof Error ? e.message : "", { creditsProvider: "suno" }) ||
+          "검증 문구 생성에 실패했습니다.";
         return res.status(502).json({ message: msg });
       }
     },
   );
 
   app.get("/api/ai-music/custom-voice/validate-info", isAuthenticated, async (req, res) => {
-    const upstream = kieVoiceUpstreamOnly();
+    const upstream = sunoapiVoiceUpstreamOnly();
     if (!upstream) {
-      return res.status(503).json({ message: "KIE API가 설정되지 않았습니다." });
+      return res.status(503).json({ message: SUNOAPI_VOICE_REQUIRED_MSG, code: "SUNOAPI_VOICE_REQUIRED" });
     }
     const taskId = String(req.query.taskId ?? "").trim();
     if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
     try {
       const info = await kieVoiceValidateInfo(upstream, taskId);
-      return res.json(info);
+      return res.json({
+        ...info,
+        errorMessage: info.errorMessage ? formatKieVoiceUserMessage(info.errorMessage) : undefined,
+      });
     } catch (e) {
       console.error("[ai-music custom-voice validate-info]", e);
       const msg = e instanceof Error ? e.message : "검증 문구 조회에 실패했습니다.";
@@ -3185,10 +3208,11 @@ export async function registerRoutes(
     isAuthenticated,
     aiVoiceRecordUpload.single("audio"),
     async (req, res) => {
-      const upstream = kieVoiceUpstreamOnly();
+      const upstream = sunoapiVoiceUpstreamOnly();
       if (!upstream) {
         return res.status(503).json({
-          message: "내 보이스 등록은 KIE_API_KEY(또는 SUNOAPI)가 설정된 환경에서만 사용할 수 있습니다.",
+          message: SUNOAPI_VOICE_REQUIRED_MSG,
+          code: "SUNOAPI_VOICE_REQUIRED",
         });
       }
       const file = req.file;
@@ -3214,12 +3238,12 @@ export async function registerRoutes(
       try {
         const ext = file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") ? ".mp3" : ".webm";
         const verifyUrl = await kieUploadAudioBuffer({
-          base: upstream.base,
           apiKey: upstream.key,
           buffer: file.buffer,
           fileName: `voice-verify-${crypto.randomUUID()}${ext}`,
           mimeType: file.mimetype || "audio/webm",
           uploadPath: "venysound/voice-verify",
+          fileUploadBase: sunoapiVoiceFileUploadBase(),
         });
         const { taskId: generateTaskId } = await kieVoiceGenerate({
           upstream,
@@ -3257,16 +3281,18 @@ export async function registerRoutes(
         return res.json({ generate_task_id: generateTaskId });
       } catch (e) {
         console.error("[ai-music custom-voice register]", e);
-        const msg = e instanceof Error ? e.message : "보이스 등록에 실패했습니다.";
+        const msg =
+          formatKieApiUserMessage(e instanceof Error ? e.message : "", { creditsProvider: "suno" }) ||
+          "보이스 등록에 실패했습니다.";
         return res.status(502).json({ message: msg });
       }
     },
   );
 
   app.get("/api/ai-music/custom-voice/record-info", isAuthenticated, async (req, res) => {
-    const upstream = kieVoiceUpstreamOnly();
+    const upstream = sunoapiVoiceUpstreamOnly();
     if (!upstream) {
-      return res.status(503).json({ message: "KIE API가 설정되지 않았습니다." });
+      return res.status(503).json({ message: SUNOAPI_VOICE_REQUIRED_MSG, code: "SUNOAPI_VOICE_REQUIRED" });
     }
     const taskId = String(req.query.taskId ?? "").trim();
     if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
@@ -3299,7 +3325,12 @@ export async function registerRoutes(
             },
           });
       }
-      return res.json(info);
+      return res.json({
+        ...info,
+        errorMessage: info.errorMessage
+          ? formatKieApiUserMessage(info.errorMessage, { creditsProvider: "suno" })
+          : undefined,
+      });
     } catch (e) {
       console.error("[ai-music custom-voice record-info]", e);
       const msg = e instanceof Error ? e.message : "보이스 상태 조회에 실패했습니다.";
@@ -3307,18 +3338,17 @@ export async function registerRoutes(
     }
   });
 
-  /** 마이크 녹음 → KIE 파일 업로드 → add-vocals (Suno 호환). 일반 텍스트 생성과 동일 한도·과금. */
+  /** 마이크 녹음 → sunoapi.org 파일 업로드 → add-vocals. 일반 텍스트 생성과 동일 한도·과금. */
   app.post(
     "/api/ai-music/create-from-voice-record",
     isAuthenticated,
     aiVoiceRecordUpload.single("audio"),
     async (req, res) => {
-      const voiceUpstream =
-        AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno" ? sunoStyleUpstream(AI_MUSIC_PROVIDER) : null;
+      const voiceUpstream = sunoapiVoiceUpstreamOnly();
       if (!voiceUpstream) {
         return res.status(503).json({
-          message:
-            "보이스 녹음 생성은 KIE_API_KEY 또는 SUNOAPI_API_KEY가 설정된 환경에서만 사용할 수 있습니다.",
+          message: SUNOAPI_VOICE_REQUIRED_MSG,
+          code: "SUNOAPI_VOICE_REQUIRED",
         });
       }
       const file = req.file;
@@ -3361,7 +3391,7 @@ export async function registerRoutes(
       });
       const negativeTags = String(body.negative_tags ?? "").trim() || "low quality, harsh noise";
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
-      const createProvider = AI_MUSIC_PROVIDER!;
+      const createProvider = "suno" as const;
 
       const promoMinForCreate = MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
       const now = new Date();
@@ -3419,11 +3449,11 @@ export async function registerRoutes(
         const ext =
           file.mimetype?.includes("wav") ? ".wav" : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3") ? ".mp3" : ".webm";
         const uploadUrl = await kieUploadAudioBuffer({
-          base: voiceUpstream.base,
           apiKey: voiceUpstream.key,
           buffer: file.buffer,
           fileName: `voice-${crypto.randomUUID()}${ext}`,
           mimeType: file.mimetype || "audio/webm",
+          fileUploadBase: sunoapiVoiceFileUploadBase(),
         });
         const payload: Record<string, unknown> = {
           uploadUrl,
@@ -3644,7 +3674,7 @@ export async function registerRoutes(
           }
         }
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
-          const failMsg = String(d?.errorMessage ?? "생성에 실패했습니다.");
+          const failMsg = formatKieApiUserMessage(d?.errorMessage) || "생성에 실패했습니다.";
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, failMsg);
           return res.json({ state: "failed", message: failMsg, data: null });
         }

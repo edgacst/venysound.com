@@ -15,6 +15,7 @@ import { StreamingPlatformsStrip } from "@/components/StreamingPlatformsStrip";
 import { useAuth } from "@/hooks/use-auth";
 import { useTranslation } from 'react-i18next';
 import { resolveStorageUrl } from "@/lib/utils";
+import { redirectToLogin } from "@/lib/auth-utils";
 
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -102,6 +103,11 @@ export default function Explore() {
 
   const { playMusic, setPlaylist } = usePlayerStore();
 
+  const sitePageIds = useMemo(() => {
+    if (!musicList || musicList.length === 0) return [];
+    return musicList.map((m) => m.id);
+  }, [musicList]);
+
   const { data: curatedPlaylists } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
     queryKey: ["/api/curated-playlists"],
     queryFn: async () => {
@@ -119,6 +125,11 @@ export default function Explore() {
       return res.json();
     },
   });
+
+  const popularIds = useMemo(() => {
+    if (!Array.isArray(popularTracks) || popularTracks.length === 0) return [];
+    return popularTracks.map((m) => m.id);
+  }, [popularTracks]);
 
   const { data: genreList } = useQuery<string[]>({
     queryKey: ["/api/music/genres"],
@@ -203,6 +214,7 @@ export default function Explore() {
                   variant="outline"
                   className="gap-2 border-white/10"
                   onClick={() => {
+                    if (!user) return redirectToLogin();
                     const ids = musicList.map((m) => m.id);
                     setPlaylist(ids);
                     if (musicList[0]) playMusic(musicList[0].id);
@@ -272,7 +284,7 @@ export default function Explore() {
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {popularTracks.map((track) => (
                 <div key={track.id} className="w-[140px] sm:w-[160px] flex-shrink-0">
-                  <MusicCard music={track} />
+                  <MusicCard music={track} playlistIds={popularIds} />
                 </div>
               ))}
             </div>
@@ -345,7 +357,7 @@ export default function Explore() {
             <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
               {musicList?.map((music) => (
                 <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
-                  <MusicCard music={music} />
+                  <MusicCard music={music} playlistIds={sitePageIds} />
                 </div>
               ))}
             </div>

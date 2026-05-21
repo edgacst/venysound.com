@@ -20,3 +20,8 @@
 - **코드만 `git pull` + `build` + `pm2 restart` 하고 `npm run db:deploy`를 빼면**, `shared/schema.ts`에만 있는 새 컬럼이 DB에 없어 **`/api/music` 등이 500**이 될 수 있다. 데이터가 사라진 것이 아니라 **스키마 불일치**다.
 - Hostinger 등 운영 반영 시 **기본 한 줄**은 `npm install --include=dev` 다음에 **`npm run db:deploy`**, 그다음 `npm run build`, `pm2 restart` 순서를 따른다. (이번 변경이 DB·`deploy/`·스키마와 무관할 때만 `db:deploy` 생략을 고려.)
 - 상세는 `.cursor/rules/deploy-db-schema-sync.mdc`, `post-push-server-deploy.mdc`를 본다.
+
+## KIE AI 음악 API 전환 (데이터 보존)
+
+- 회원 AI 보관함·월 한도는 **우리 DB**(`ai_music_saved_tracks`, `ai_music_usage`)에 있다. KIE로 데이터를 이전하지 않는다.
+- KIE 전환·`/api/ai-music`·`CreateMusic` 작업·운영 배포 시 **`.cursor/rules/kie-ai-music-migration.mdc`** 체크리스트를 반드시 따른다. (테이블 삭제·library 전체 덮어쓰기·옛 suno task를 KIE로 재조회 금지 등)

@@ -8,9 +8,12 @@ import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "@/hooks/use-auth";
+import { redirectToLogin } from "@/lib/auth-utils";
 
 export default function CuratedPlaylist() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const params = useParams<{ slug: string }>();
   const slug = params?.slug ?? "";
   const { playMusic, setPlaylist } = usePlayerStore();
@@ -36,6 +39,7 @@ export default function CuratedPlaylist() {
 
   const handlePlayAll = () => {
     if (!playlist?.tracks?.length) return;
+    if (!user) return redirectToLogin();
     const ids = playlist.tracks.map((m: any) => m.id);
     setPlaylist(ids);
     playMusic(playlist.tracks[0].id);
