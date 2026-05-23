@@ -208,21 +208,44 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       other.volume = 1;
     }
     setIsMuted(false);
+    if (!primary.paused && !primary.ended) {
+      setPlaying(true);
+      setNeedsTap(false);
+    }
     const shouldAttemptPlay = primary.paused || isCoarseOrTouchDevice();
     if (!shouldAttemptPlay) return;
     void primary
       .play()
       .then(() => {
         setNeedsTap(false);
+        setPlaying(true);
       })
       .catch(() => {
         setNeedsTap(true);
+        setPlaying(false);
       });
-  }, [getActiveAudio, setNeedsTap]);
+  }, [getActiveAudio, setNeedsTap, setPlaying]);
 
+  /** SPA 라우트 변경: 모바일은 focus/visibility 없이 pause 되는 경우가 많음 — restore만(aggressive recovery는 연속 재생·곡 경계와 충돌) */
   useEffect(() => {
+    const s = useRadioPlayerStore.getState();
+    if (s.userStopped || !s.slug || !s.streamUrl) return;
     restoreAudibleOutput();
-  }, [locationPath, restoreAudibleOutput]);
+    if (!isCoarseOrTouchDevice()) return;
+    const retry1 = window.setTimeout(() => restoreAudibleOutput(), 280);
+    const retry2 = window.setTimeout(() => {
+      const st = useRadioPlayerStore.getState();
+      if (st.userStopped || !st.streamUrl || !st.slug) return;
+      const el = getActiveAudio();
+      if (el?.paused && !el.ended && radioAudioPathMatchesStream(el, st.streamUrl)) {
+        requestPlay();
+      }
+    }, 520);
+    return () => {
+      window.clearTimeout(retry1);
+      window.clearTimeout(retry2);
+    };
+  }, [locationPath, restoreAudibleOutput, getActiveAudio, requestPlay]);
 
   useEffect(() => {
     const onVis = () => {
@@ -358,14 +381,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       void runRadioRecoveryAfterSystemPause();
     }, 180);
   }, [runRadioRecoveryAfterSystemPause]);
-
-  // 모바일: SPA 라우트만 바뀌면 visibility/focus 이벤트가 안 오는 경우가 있어 schedule까지 함께 호출
-  useEffect(() => {
-    if (!isCoarseOrTouchDevice()) return;
-    const s = useRadioPlayerStore.getState();
-    if (s.userStopped || !s.slug || !s.streamUrl) return;
-    scheduleRadioRecoveryAfterSystemPause();
-  }, [locationPath, scheduleRadioRecoveryAfterSystemPause]);
 
   useEffect(() => {
     const onVis = () => {
@@ -911,7 +926,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     [getActiveAudio, processActiveTrackEnded],
   );
 
-  if (!slug || onDemandActive) return null;
+  const showRadioChrome = !!slug && !onDemandActive;
 
   const listenerText =
     listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
@@ -919,6 +934,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   return (
     <>
+      {showRadioChrome ? (
+        <>
       {/* 음소거 안내 */}
       {isMuted && isPlaying && (
         <div className="fixed bottom-[68px] left-2 right-2 z-50">
@@ -994,8 +1011,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           </Button>
         </div>
       </div>
+        </>
+      ) : null}
 
-      {/* 숨겨진 오디오 엘리먼트 — streamUrl이 곡 사이에 null이어도 마운트 유지(리스너 페이지 밖에서 ref 끊김 방지) */}
+      {/* 숨겨진 오디오: slug 있으면 UI 없어도 마운트(페이지 이동·곡 사이 streamUrl null 구간). onDemandActive 시 store clear로 정지 */}
+      {slug && !onDemandActive ? (
       <>
         <audio
           ref={audioARef}
@@ -1020,6 +1040,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           onEnded={onAudioEnded}
         />
       </>
+      ) : null}
     </>
   );
 }
