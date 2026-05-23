@@ -36,6 +36,8 @@ type RadioPlayerState = {
   channelName: string | null;
   trackTitle: string | null;
   streamUrl: string | null;
+  /** setStream 호출마다 증가 — URL 동일·effect 취소 후에도 다음 곡 핸드오프가 다시 돌게 함 */
+  streamHandoffSeq: number;
   isPlaying: boolean;
   userStopped: boolean;
   initialSeekSeconds: number | null;
@@ -58,6 +60,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   channelName: null,
   trackTitle: null,
   streamUrl: null,
+  streamHandoffSeq: 0,
   isPlaying: false,
   userStopped: false,
   initialSeekSeconds: null,
@@ -66,13 +69,14 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
   playNowRef: null,
   currentTimeRef: _currentTimeRef,
   setStream: (slug, channelName, streamUrl, initialSeekSeconds) =>
-    set({
+    set((s) => ({
       slug,
       channelName,
       streamUrl,
       initialSeekSeconds: initialSeekSeconds ?? null,
       userStopped: false, // 새 채널 진입 시 정지 상태 초기화
-    }),
+      streamHandoffSeq: s.streamHandoffSeq + 1,
+    })),
   setTrackTitle: (trackTitle) => set({ trackTitle }),
   setPlaying: (isPlaying) => set({ isPlaying }),
   setUserStopped: (userStopped) => set({ userStopped }),
@@ -88,6 +92,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       channelName: null,
       trackTitle: null,
       streamUrl: null,
+      streamHandoffSeq: 0,
       isPlaying: false,
       userStopped: false,
       initialSeekSeconds: null,

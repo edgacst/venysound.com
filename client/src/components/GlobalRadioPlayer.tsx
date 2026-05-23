@@ -100,6 +100,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     slug,
     channelName,
     streamUrl,
+    streamHandoffSeq,
     isPlaying,
     userStopped,
     playTrigger,
@@ -212,8 +213,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       setPlaying(true);
       setNeedsTap(false);
     }
-    const shouldAttemptPlay = primary.paused || isCoarseOrTouchDevice();
-    if (!shouldAttemptPlay) return;
+    if (!primary.paused) return;
     void primary
       .play()
       .then(() => {
@@ -237,7 +237,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const st = useRadioPlayerStore.getState();
       if (st.userStopped || !st.streamUrl || !st.slug) return;
       const el = getActiveAudio();
-      if (el?.paused && !el.ended && radioAudioPathMatchesStream(el, st.streamUrl)) {
+      if (
+        !trackEndLockRef.current &&
+        !radioAutoAdvanceRef.current &&
+        el?.paused &&
+        !el.ended &&
+        radioAudioPathMatchesStream(el, st.streamUrl)
+      ) {
         requestPlay();
       }
     }, 520);
@@ -520,6 +526,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
   const trackEndLockRef = useRef(false);
+  /** client-advance·핸드오프 구간 pause는 UI 일시정지로 오인하지 않음 */
+  const radioAutoAdvanceRef = useRef(false);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
@@ -540,6 +548,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         const releaseTrackEndLock = () => {
           // 모바일에서 play()가 거절되면 onAudioPlay가 안 와서 ended 처리 락이 풀리지 않고 연속 재생이 멈출 수 있음
           trackEndLockRef.current = false;
+          radioAutoAdvanceRef.current = false;
         };
         el.volume = 1;
         el.muted = false;
@@ -548,6 +557,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             releaseTrackEndLock();
             setNeedsTap(false);
             setIsMuted(false);
+            setPlaying(true);
           })
           .catch(() => {
             el.muted = true;
@@ -556,9 +566,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
                 releaseTrackEndLock();
                 setIsMuted(true);
                 setNeedsTap(false);
+                setPlaying(true);
               })
               .catch(() => {
                 setNeedsTap(true);
+                setPlaying(false);
                 releaseTrackEndLock();
               });
           });
@@ -580,7 +592,6 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (oldActive) {
           try {
             oldActive.pause();
-            oldActive.currentTime = 0;
           } catch {
             /* ignore */
           }
@@ -604,6 +615,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           }
           setIsMuted(false);
           setNeedsTap(false);
+          setPlaying(true);
+          trackEndLockRef.current = false;
+          radioAutoAdvanceRef.current = false;
           return;
         }
         if (active) tryPlay(active);
@@ -641,13 +655,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       cancelled = true;
       clearTimeout(tId);
     };
-  }, [streamUrl, getActiveAudio, getInactiveAudio]);
+  }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, setPlaying]);
 
   useEffect(() => {
     const el = getActiveAudio();
     if (!el) return;
-    if (playTrigger > 0 && !userStopped) el.play().catch(() => {});
-  }, [playTrigger, userStopped, getActiveAudio]);
+    if (playTrigger > 0 && !userStopped) {
+      el.play()
+        .then(() => setPlaying(true))
+        .catch(() => setPlaying(false));
+    }
+  }, [playTrigger, userStopped, getActiveAudio, setPlaying]);
 
   useEffect(() => {
     const el = getActiveAudio();
@@ -712,12 +730,15 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const el = e.target as HTMLAudioElement;
       if (el.volume < 0.05) el.volume = 1;
       trackEndLockRef.current = false;
+      radioAutoAdvanceRef.current = false;
       setPlaying(true);
     }
   }, [getActiveAudio, setPlaying]);
 
   const onAudioPause = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
-    if (e.target === getActiveAudio()) setPlaying(false);
+    if (e.target !== getActiveAudio()) return;
+    if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
+    setPlaying(false);
   }, [getActiveAudio, setPlaying]);
 
   const processActiveTrackEnded = useCallback(
@@ -747,6 +768,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
           /* ignore */
         }
         trackEndLockRef.current = false;
+        radioAutoAdvanceRef.current = false;
       };
 
       const state = useRadioPlayerStore.getState();
@@ -791,10 +813,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const chName = (state.channelName ?? def).trim() || def;
 
       const failAdvance = () => {
-        useRadioPlayerStore.setState({ streamUrl: null });
         releaseEndLockAndClearAudio();
+        setNeedsTap(true);
+        setPlaying(false);
       };
 
+      radioAutoAdvanceRef.current = true;
       fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
