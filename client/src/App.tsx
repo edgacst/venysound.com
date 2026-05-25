@@ -102,6 +102,7 @@ function PageTitle() {
       "suno-guide": "음악 만들기 가이드 | VenySound",
       "global-distribution-guide": "글로벌 음원출시로 수익방법 | VenySound",
       "playlist-studio": "YouTube Playlist Studio | VenySound",
+      "ai-singer-guide": "내 음성으로 나만의 곡 만들기 | VenySound",
     };
     let title = DEFAULT_TITLE;
     if (path.startsWith("music/")) title = "음원 상세 | VenySound";
@@ -428,6 +429,7 @@ import RadioChannels from "@/pages/RadioChannels";
 import GlobalDistributionGuide from "@/pages/GlobalDistributionGuide";
 import May2026Event from "@/pages/May2026Event";
 import PlaylistStudio from "@/pages/PlaylistStudio";
+import AiSingerGuide from "@/pages/AiSingerGuide";
 
 function Routes() {
   return (
@@ -486,6 +488,7 @@ function Routes() {
       <Route path="/events/may-2026" component={May2026Event} />
       <Route path="/create-music" component={CreateMusic} />
       <Route path="/playlist-studio" component={PlaylistStudio} />
+      <Route path="/ai-singer-guide" component={AiSingerGuide} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>
