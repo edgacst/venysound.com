@@ -38,6 +38,7 @@ export function RegisterForm({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [step, setStep] = useState<1 | 2>(1);
+  const [emailSignupOpen, setEmailSignupOpen] = useState(false);
 
   const { data: loginOptions } = useQuery({
     queryKey: ["/api/auth/login-options"],
@@ -102,6 +103,7 @@ export function RegisterForm({
 
   const goToStep2 = () => {
     if (!validateCredentials()) return;
+    setEmailSignupOpen(true);
     setStep(2);
     void recordSignupConversionEvent("signup_step2");
     if (variant === "page") {
@@ -282,15 +284,27 @@ export function RegisterForm({
               <span className="w-full border-t border-zinc-700" />
             </div>
             <div className="relative flex justify-center">
-              <span className={cn("px-3 text-xs text-zinc-500", dividerBg)}>
-                {t("register.orSignUpWithEmail", "또는 이메일로 가입")}
-              </span>
+              <button
+                type="button"
+                onClick={() => setEmailSignupOpen((open) => !open)}
+                className={cn(
+                  "px-3 text-xs font-medium transition-colors",
+                  dividerBg,
+                  emailSignupOpen ? "text-purple-300" : "text-zinc-400 hover:text-purple-300",
+                )}
+                aria-expanded={emailSignupOpen}
+              >
+                {emailSignupOpen
+                  ? t("register.hideEmailSignup", "이메일 가입 접기")
+                  : t("register.emailSignupToggle", "이메일로 가입하기")}
+              </button>
             </div>
           </div>
         </>
       )}
 
-      <form onSubmit={onFormSubmit} className="space-y-4">
+      {(emailSignupOpen || step === 2) && (
+        <form onSubmit={onFormSubmit} className="space-y-4">
         {step === 1 && (
           <>
             <div>
@@ -422,7 +436,8 @@ export function RegisterForm({
             </button>
           </>
         )}
-      </form>
+        </form>
+      )}
 
       <p className={cn("text-center text-sm text-zinc-500", variant === "modal" ? "mt-4" : "mt-6")}>
         {t("register.alreadyHaveAccount", "이미 계정이 있으신가요?")}{" "}

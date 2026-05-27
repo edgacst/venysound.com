@@ -516,7 +516,7 @@ export default function Home() {
           >
             <div className="container flex flex-wrap items-center justify-between gap-3 py-2.5 px-4">
               <p className="text-sm font-medium leading-snug min-w-0">
-                {t("home.may2026BannerSignup", "5월 신규 가입 이벤트 — 가입 후 무료 AI 곡분 신청 (선착순)")}
+                {t("home.may2026BannerSignup", "5월 이벤트 마감 임박! 지금 무료회원가입하고 음악 40곡 만들어보세요")}
               </p>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {!user ? (
@@ -602,7 +602,7 @@ export default function Home() {
               </p>
             ) : null}
           </motion.div>
-          <div className="grid min-w-0 max-w-full items-center gap-6 md:gap-10 lg:grid-cols-2 lg:gap-14">
+          <div className="grid min-w-0 max-w-full items-center gap-6 md:gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-14">
             <motion.div
               className="order-2 min-w-0 w-full max-w-full will-change-[transform,opacity] lg:order-1"
               style={
@@ -616,7 +616,7 @@ export default function Home() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.45 }}
               >
-              <div className="mx-auto w-full min-w-0 max-w-md lg:mx-0">
+              <div className="mx-auto w-full min-w-0 max-w-sm lg:mx-0 lg:max-w-[23rem]">
                 <HomeHeroLiveWaveform />
                 <div className="rounded-2xl border border-white/12 bg-black/35 p-4 shadow-2xl shadow-purple-950/40 backdrop-blur-md">
                 {liveTickerText ? (
@@ -708,7 +708,7 @@ export default function Home() {
             </motion.div>
 
             <motion.div
-              className="order-1 flex min-w-0 w-full max-w-full flex-col items-center will-change-[transform,opacity] lg:order-2 lg:items-stretch"
+              className="order-1 flex min-w-0 w-full max-w-full flex-col items-center rounded-3xl border border-white/10 bg-white/[0.035] p-4 shadow-2xl shadow-black/20 backdrop-blur-sm will-change-[transform,opacity] sm:p-5 lg:order-2 lg:items-stretch lg:p-6"
               style={
                 heroParallaxLg
                   ? { x: heroColRightX, opacity: heroColOutOpacity }
@@ -797,7 +797,7 @@ export default function Home() {
                         className="mb-2.5 text-balance text-xl font-display font-bold leading-snug tracking-tight text-white sm:mb-3 sm:text-2xl sm:leading-[1.2] md:text-[2.1rem] md:leading-tight lg:text-4xl"
                         data-testid="text-hero-subtitle"
                       >
-                        {t("home.heroHeadlineCreator", "오늘 작곡하고, 내일 가수가 되세요.")}
+                        {t("home.heroHeadlineCreator", "내 목소리로 첫 곡을 완성하세요.")}
                       </h2>
                       <p
                         className="whitespace-pre-line text-pretty break-keep text-sm leading-relaxed text-white/75 sm:text-base sm:leading-relaxed md:text-lg lg:leading-snug"
@@ -805,7 +805,7 @@ export default function Home() {
                       >
                         {t(
                           "home.heroLeadCreator",
-                          "3분 만에 AI 음악 생성부터 전 세계 음원 사이트\n(유튜브 뮤직, 스포티파이)에 발매까지 한 번에!",
+                          "목소리 샘플을 등록하고, 가사나 분위기만 적으면 AI가 나만의 노래를 만들어줍니다.\n만든 곡은 보관·공개·다운로드까지 이어갈 수 있습니다.",
                         )}
                       </p>
                     </div>
@@ -820,13 +820,13 @@ export default function Home() {
                     <div className="mx-auto flex w-full min-w-0 max-w-sm flex-col gap-2.5 lg:mx-0 lg:max-w-none lg:items-stretch lg:justify-start">
                       {!user ? (
                         <>
-                          <Link href={REGISTER_PATH} className="block w-full min-w-0 shrink-0">
+                          <Link href="/create-music" className="block w-full min-w-0 shrink-0">
                             <Button
                               size="lg"
                               className="h-12 w-full rounded-full bg-primary px-6 text-base font-semibold text-white shadow-lg shadow-primary/35 sm:h-[3.25rem] sm:px-10"
                               data-testid="button-hero-signup"
                             >
-                              {t("home.heroSignUpCtaPrimary", "무료 가입하고 시작하기")}
+                              {t("home.heroSignUpCtaPrimary", "내 목소리로 음악 만들기")}
                             </Button>
                           </Link>
                           <div className="grid min-w-0 grid-cols-2 gap-2.5">
@@ -837,7 +837,7 @@ export default function Home() {
                                 className="h-auto min-h-11 w-full whitespace-normal rounded-full border-white/30 bg-white/10 px-2 py-2.5 text-center text-xs leading-snug text-white backdrop-blur-sm hover:bg-white/15 hover:text-white sm:min-h-12 sm:px-3 sm:text-sm"
                                 data-testid="button-start-listening"
                               >
-                                {t("home.heroListenFirstCta", "먼저 음악 듣기")}
+                                {t("home.heroListenFirstCta", "음악 둘러보기")}
                               </Button>
                             </Link>
                             <Button
@@ -863,7 +863,7 @@ export default function Home() {
                               className="h-11 w-full rounded-full bg-primary px-6 text-sm text-white shadow-lg shadow-primary/30 sm:h-12 sm:px-8 sm:text-base md:px-10 lg:w-auto lg:shrink-0 lg:whitespace-nowrap"
                               data-testid="button-hero-create-music"
                             >
-                              {t("home.makeMusicBtn", "음악 만들러 가기")}
+                              {t("home.makeMusicBtn", "내 목소리로 음악 만들기")}
                             </Button>
                           </Link>
                           <div className="grid min-w-0 grid-cols-2 gap-2.5 lg:contents">
