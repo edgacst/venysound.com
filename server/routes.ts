@@ -2408,7 +2408,7 @@ export async function registerRoutes(
         row?.role !== "admin" && isPaidSubscriptionTierId(tier) && !subActive;
       const walletCredits = row?.credits ?? 0;
       const quotaKind: "songs" | "subscription_credits" | "unlimited" =
-        row?.role === "admin" ? "unlimited" : tier === "free" ? "songs" : "subscription_credits";
+        row?.role === "admin" ? "unlimited" : subActive ? "subscription_credits" : "songs";
       return res.json({
         limit,
         usedThisMonth,

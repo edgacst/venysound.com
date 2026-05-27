@@ -3495,7 +3495,7 @@ export class DatabaseStorage implements IStorage {
     }
     let aiUnit: "songs" | "credits" | "won" | "unlimited" = "won";
     if (aiLimit === -1) aiUnit = "unlimited";
-    else if (aiLimit === FREE_AI_MUSIC_LIMIT_PER_MONTH && !isUserPaidSubscriptionActive(user, now)) aiUnit = "songs";
+    else if (!isUserPaidSubscriptionActive(user, now)) aiUnit = "songs";
     else aiUnit = "won";
 
     const [txCountRow] = await db
