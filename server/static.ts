@@ -15,7 +15,6 @@ function projectRoot(): string {
 
 export function serveStatic(app: Express) {
   const distPath = path.join(projectRoot(), "dist", "public");
-  const assetsPath = path.join(distPath, "assets");
   if (!fs.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`,
@@ -29,40 +28,6 @@ export function serveStatic(app: Express) {
     );
   }
   let indexTemplate = fs.readFileSync(indexPath, "utf-8");
-  if (!fs.existsSync(assetsPath)) {
-    throw new Error(
-      `SPA assets directory is missing: ${assetsPath}\nRun npm run build before restarting the server.`,
-    );
-  }
-
-  const sendHashedAssetFallback = (req: Request, res: Response) => {
-    const requested = path.basename(req.path);
-    const requestedPath = path.join(assetsPath, requested);
-    if (fs.existsSync(requestedPath)) {
-      res.sendFile(requestedPath);
-      return;
-    }
-
-    const match = /^(.+)-[A-Za-z0-9_-]+(\.(?:js|css|png|jpe?g|gif|svg|webp|woff2?))$/i.exec(requested);
-    if (!match) {
-      res.status(404).type("text/plain; charset=utf-8").send("asset not found");
-      return;
-    }
-
-    const [, prefix, ext] = match;
-    const replacement = fs
-      .readdirSync(assetsPath)
-      .filter((name) => name.startsWith(`${prefix}-`) && name.toLowerCase().endsWith(ext.toLowerCase()))
-      .sort()
-      .at(-1);
-    if (!replacement) {
-      res.status(404).type("text/plain; charset=utf-8").send("asset not found");
-      return;
-    }
-
-    res.setHeader("Cache-Control", "no-store");
-    res.sendFile(path.join(assetsPath, replacement));
-  };
 
   /** AdSense ads.txt — 크롤러/대시보드가 text/plain 루트 파일을 기대 */
   const adsTxtPath = path.resolve(distPath, "ads.txt");
@@ -104,10 +69,6 @@ export function serveStatic(app: Express) {
       },
     }),
   );
-
-  // Never let built asset requests fall through to SPA HTML. During a rolling or partial deploy,
-  // stale HTML may reference an older hashed filename, so serve the latest matching asset when possible.
-  app.get("/assets/:file", sendHashedAssetFallback);
 
   app.get("/", sendSpaIndex);
   // SPA: serve index.html for any other GET (e.g. /music/190). Express 5: /*splat does not match "/"
