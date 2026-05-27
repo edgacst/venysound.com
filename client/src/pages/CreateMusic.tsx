@@ -2908,9 +2908,17 @@ export default function CreateMusic() {
                             : t("createMusic.customVoiceChip", "내 보이스 등록")}
                         </button>
                         {myVoiceReady ? (
-                          <span className="text-xs text-violet-800/90">
-                            {t("createMusic.customVoiceReadyBadge", "등록됨")}: {myVoiceProfile?.voiceName || "My Voice"}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                            <span className="font-medium text-violet-800/90">
+                              {t("createMusic.customVoiceReadyBadge", "등록됨")}: {myVoiceProfile?.voiceName || "My Voice"}
+                            </span>
+                            <span className="text-slate-500">
+                              {t(
+                                "createMusic.customVoiceExpiryNote",
+                                "내 음성 등록 유효기간은 3~5일입니다. 유효기간 경과 후에는 재등록해 주세요.",
+                              )}
+                            </span>
+                          </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             {t(
