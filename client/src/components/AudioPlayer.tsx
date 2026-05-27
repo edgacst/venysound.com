@@ -813,14 +813,13 @@ export function GlobalAudioPlayer() {
     }
   }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
 
-  // 일부 모바일(특히 S24)에서 "조용히 paused" 되는 케이스 방지:
-  // 재생해야 하는데 paused면 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
+  // 일부 모바일(특히 S24/LTE 백그라운드)에서 "조용히 paused" 되는 케이스 방지:
+  // 재생해야 하는데 paused면 hidden 상태에서도 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
   useEffect(() => {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !hasTrack) return;
     if (pauseRequested) return;
-    if (document.visibilityState !== "visible") return;
 
     const isCoarseOrTouchDevice = () => {
       try {
@@ -837,7 +836,6 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       const shouldBePlaying = !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
       if (!shouldBePlaying) return;
-      if (document.visibilityState !== "visible") return;
       const a = audioRef.current;
       if (!a) return;
 
@@ -849,6 +847,7 @@ export function GlobalAudioPlayer() {
         void a.play()
           .then(() => setNeedsTap(false))
           .catch(() => {
+            setIsPlaying(false);
             setNeedsTap(true);
           });
       }

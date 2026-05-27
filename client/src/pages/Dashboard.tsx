@@ -59,7 +59,7 @@ export default function Dashboard() {
     };
 
     let cancelled = false;
-    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
+    const timeoutIds: number[] = [];
 
     const scheduleAttempts = () => {
       if (statsLoading) return;
@@ -89,7 +89,7 @@ export default function Dashboard() {
 
     return () => {
       cancelled = true;
-      for (const id of timeoutIds) clearTimeout(id);
+      for (const id of timeoutIds) window.clearTimeout(id);
       timeoutIds.length = 0;
       window.removeEventListener("hashchange", onHashChange);
     };

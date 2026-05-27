@@ -150,4 +150,9 @@ android-twa/local.properties
 android-twa/keystore.properties
 android-twa/android.keystore
 android-twa/*.keystore
+android-twa/*.keystore.*
 android-twa/upload_certificate.pem
+android-twa/*.aab
+
+# Local database backups / dumps
+*.dump

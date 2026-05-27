@@ -298,7 +298,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [isAuthenticated]);
 
   /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
-  const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const radioRecoverTimerRef = useRef<number | null>(null);
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;

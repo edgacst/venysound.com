@@ -384,7 +384,7 @@ export interface IStorage {
     ownerDisplayName: string;
     homeTickerText: string | null;
   }[]>;
-  listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
+  listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number | null; nowPlayingObjectPath: string | null; nowPlayingStartedAt: Date; nowPlayingTempDurationSeconds: number | null; nowPlayingTempNextSnapshotIndex: number | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }[]>;
   listAllRadioChannels(): Promise<{
     id: number;
     ownerId: string;
@@ -394,18 +394,18 @@ export interface IStorage {
     description: string | null;
     coverFilename: string | null;
     ownerUsername: string | null;
-    ownerDisplayName: string;
+    ownerDisplayName?: string | null;
     updatedAt: Date | null;
   }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
-  getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
+  getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date | null; username?: string | null }[]>;
   deleteRadioChatMessagesByChannel(channelId: number): Promise<void>;
   deleteRadioChatMessagesOlderThanDays(days: number): Promise<void>;
   createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date }>;
-  getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date; musicTitle?: string | null; musicArtist?: string | null }[]>;
+  getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date | null; musicTitle?: string | null; musicArtist?: string | null }[]>;
   updateRadioSongRequest(id: number, channelId: number, data: { status?: string; sortOrder?: number }): Promise<void>;
 
   getRadioChannelStaff(channelId: number): Promise<{ id: number; channelId: number; userId: string; role: string; username?: string | null }[]>;
@@ -481,6 +481,7 @@ export interface IStorage {
     /** 구독 월 AI 한도 vs 충전 지갑(users.credits)은 별개 */
     aiMusicMonthly: {
       periodMonth: string;
+      usagePeriodKey?: string;
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";
@@ -2197,6 +2198,8 @@ export class DatabaseStorage implements IStorage {
     pendingSubscriptionCount: number;
     pendingCreditChargeWon: number;
     pendingCreditChargeCount: number;
+    pendingPayupSubscriptionWon: number;
+    pendingPayupSubscriptionCount: number;
     pendingTotalWon: number;
   }> {
     const tierIds = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
@@ -2535,14 +2538,14 @@ export class DatabaseStorage implements IStorage {
 
       const baseId = fileId.replace(/\.(png|jpe?g|webp)$/i, "");
       const candidates = [
-        { p: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
-        { p: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
-        { p: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
-        { p: path.join(uploadsDir, `${baseId}.webp`), ext: ".webp" },
-        { p: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
+        { path: path.join(uploadsDir, `${baseId}.jpg`), ext: ".jpg" },
+        { path: path.join(uploadsDir, `${baseId}.jpeg`), ext: ".jpeg" },
+        { path: path.join(uploadsDir, `${baseId}.png`), ext: ".png" },
+        { path: path.join(uploadsDir, `${baseId}.webp`), ext: ".webp" },
+        { path: path.join(uploadsDir, fileId), ext: path.extname(fileId).toLowerCase() || ".jpg" },
       ];
 
-      const found = candidates.find((c) => existsSync(c.p));
+      const found = candidates.find((c) => existsSync(c.path));
       return found ?? null;
     }
 
@@ -3432,6 +3435,7 @@ export class DatabaseStorage implements IStorage {
     payments: { total: number; rows: any[] };
     aiMusicMonthly: {
       periodMonth: string;
+      usagePeriodKey?: string;
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";

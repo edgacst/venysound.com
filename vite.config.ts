@@ -20,6 +20,18 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 1800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@radix-ui")) return "vendor-radix";
+          if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
+          if (id.includes("framer-motion")) return "vendor-motion";
+          if (id.includes("react") || id.includes("wouter") || id.includes("@tanstack")) return "vendor-react";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     fs: {

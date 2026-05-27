@@ -57,7 +57,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const ctrl = options?.timeoutMs ? new AbortController() : undefined;
   const timeoutId = ctrl
-    ? setTimeout(() => ctrl.abort(), options.timeoutMs)
+    ? setTimeout(() => ctrl.abort(), options?.timeoutMs)
     : undefined;
   try {
     const res = await fetch(url, {

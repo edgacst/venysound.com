@@ -92,6 +92,7 @@ function PlaylistSection({ profilePlaylists, isOwnProfile, userId }: { profilePl
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { playMusic, setPlaylist } = usePlayerStore();
+  const { user } = useAuth();
 
   const { data: playlistDetail } = usePlaylist(selectedPlaylistId || 0);
 
