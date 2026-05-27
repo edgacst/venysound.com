@@ -345,6 +345,7 @@ export default function Home() {
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const [learnMoreOpen, setLearnMoreOpen] = useState(false);
   const [learnMoreMode, setLearnMoreMode] = useState<HomeLearnMoreSheetMode>("creator");
+  const [mayEventNow, setMayEventNow] = useState(() => Date.now());
 
   const lang = (i18n.language || "ko").split("-")[0].toLowerCase();
   const { data: activeAnnouncement } = useQuery<{ id: number; content: string; imageUrl: string | null; textSize?: string; startsAt: string; endsAt: string } | null>({
@@ -388,6 +389,11 @@ export default function Home() {
     const timer = setInterval(nextBanner, 5000);
     return () => clearInterval(timer);
   }, [nextBanner]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setMayEventNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function WeeklyTopArtistSection() {
     const { t } = useTranslation();
@@ -505,18 +511,31 @@ export default function Home() {
         </div>
       )}
       {(() => {
-        const now = Date.now();
+        const now = mayEventNow;
         const start = Date.parse("2026-04-30T15:00:00.000Z");
         const end = Date.parse("2026-05-31T15:00:00.000Z");
         if (now < start || now >= end) return null;
+        const remainingMs = Math.max(0, end - now);
+        const days = Math.floor(remainingMs / 86_400_000);
+        const hours = String(Math.floor((remainingMs % 86_400_000) / 3_600_000)).padStart(2, "0");
+        const minutes = String(Math.floor((remainingMs % 3_600_000) / 60_000)).padStart(2, "0");
+        const seconds = String(Math.floor((remainingMs % 60_000) / 1000)).padStart(2, "0");
         return (
           <div
             className="border-b border-violet-500/35 bg-gradient-to-r from-violet-950/95 via-fuchsia-950/90 to-violet-950/95 text-violet-50"
             data-testid="home-may-2026-event-banner"
           >
             <div className="container flex flex-wrap items-center justify-between gap-3 py-2.5 px-4">
-              <p className="text-sm font-medium leading-snug min-w-0">
+              <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium leading-snug">
                 {t("home.may2026BannerSignup", "5월 이벤트 마감 임박! 지금 무료회원가입하고 음악 40곡 만들어보세요")}
+                <span className="inline-flex shrink-0 items-center rounded-full border border-white/25 bg-white/12 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
+                  {t("home.may2026BannerCountdown", "마감까지 {{days}}일 {{hours}}:{{minutes}}:{{seconds}}", {
+                    days,
+                    hours,
+                    minutes,
+                    seconds,
+                  })}
+                </span>
               </p>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {!user ? (

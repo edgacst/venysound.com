@@ -95,6 +95,7 @@
     "heroSignUpCtaPrimary": "내 목소리로 음악 만들기",
     "heroListenFirstCta": "음악 둘러보기",
     "may2026BannerSignup": "5월 이벤트 마감 임박! 지금 무료회원가입하고 음악 40곡 만들어보세요",
+    "may2026BannerCountdown": "마감까지 {{days}}일 {{hours}}:{{minutes}}:{{seconds}}",
     "may2026BannerCtaSignup": "무료 가입",
     "may2026BannerCtaEvent": "이벤트 안내",
     "heroHeadlineBusiness": "브랜드와 매장을 위한 음악·방송",

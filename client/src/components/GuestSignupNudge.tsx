@@ -32,7 +32,7 @@ export function GuestSignupNudge() {
   };
 
   return (
-    <div className="fixed inset-x-3 bottom-4 z-40 mx-auto flex max-w-md items-center gap-2 rounded-full border border-violet-300/35 bg-zinc-950/92 px-3 py-2 text-white shadow-2xl shadow-black/30 backdrop-blur-md sm:bottom-5 sm:right-5 sm:left-auto sm:mx-0 sm:max-w-none">
+    <div className="fixed inset-x-3 top-1/2 z-40 mx-auto flex max-w-md -translate-y-1/2 items-center gap-2 rounded-full border border-violet-300/35 bg-zinc-950/92 px-3 py-2 text-white shadow-2xl shadow-black/30 backdrop-blur-md sm:inset-x-auto sm:right-5 sm:max-w-sm">
       <button
         type="button"
         onClick={() => {
