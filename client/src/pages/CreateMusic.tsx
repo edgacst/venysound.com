@@ -501,6 +501,8 @@ function lastAiMusicTaskSessionKey(userId: string): string {
   return `ai_music_last_task:${userId}`;
 }
 
+const GUEST_CREATE_DRAFT_SESSION_KEY = "createMusic_guestDraft";
+
 type TTranslate = (key: string, fallback?: string) => string;
 
 function sanitizeFilename(name: string): string {
@@ -1364,6 +1366,26 @@ export default function CreateMusic() {
   const submittedLyricsRef = useRef<string>("");
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
+  const didRestoreGuestDraft = useRef(false);
+
+  useEffect(() => {
+    if (didRestoreGuestDraft.current) return;
+    didRestoreGuestDraft.current = true;
+    try {
+      const raw = sessionStorage.getItem(GUEST_CREATE_DRAFT_SESSION_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        title?: string;
+        genreOther?: string;
+        prompt?: string;
+      };
+      if (typeof draft.title === "string") setTitle(draft.title.slice(0, 80));
+      if (typeof draft.genreOther === "string") setGenreOther(draft.genreOther.slice(0, 120));
+      if (typeof draft.prompt === "string") setPrompt(draft.prompt);
+    } catch {
+      // Ignore malformed client-side drafts.
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2362,6 +2384,7 @@ export default function CreateMusic() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    sessionStorage.removeItem(GUEST_CREATE_DRAFT_SESSION_KEY);
     const promptTrim = prompt.trim();
     const customMode = mode === "custom";
     if (mode === "custom" && !promptTrim && !instrumentalOnly) {
@@ -2513,42 +2536,101 @@ export default function CreateMusic() {
                   "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드한 뒤 「신곡으로 공개」해 사이트에 올릴 수 있습니다.",
                 )}
               </p>
-              <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400 max-w-2xl mx-auto leading-relaxed underline decoration-red-600 dark:decoration-red-400 underline-offset-2">
+              <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
                 {t(
                   "createMusic.heroCopyrightWarning",
-                  "유명가수를 모방하는 내용을 사용하면 알고리즘에 의해 저작권에 걸리므로 주의하세요",
+                  "유명 아티스트의 이름·목소리·스타일을 직접 모방하는 요청은 피해주세요.",
                 )}
               </p>
             </div>
 
             {!authLoading && !user && (
-              <div className="mx-auto max-w-2xl rounded-2xl border border-purple-200 bg-purple-50 p-6 text-center shadow-sm">
-                <h2 className="mb-2 text-xl font-bold text-slate-950">
-                  {t("createMusic.guestCtaTitle", "무료로 AI 음악 2곡 만들기")}
-                </h2>
-                <p className="mx-auto mb-5 max-w-xl text-sm leading-relaxed text-slate-700">
-                  {t(
-                    "createMusic.guestCtaDesc",
-                    "가입하면 프롬프트로 만든 곡을 보관함에 저장하고, 재생·공개·다운로드까지 이어갈 수 있습니다.",
-                  )}
-                </p>
-                <div className="mb-5 grid gap-2 text-left text-sm text-slate-700 sm:grid-cols-3">
-                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
-                    {t("createMusic.guestCtaBenefitPrompt", "가사나 분위기만 입력")}
-                  </div>
-                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
-                    {t("createMusic.guestCtaBenefitSave", "생성곡 보관함 저장")}
-                  </div>
-                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
-                    {t("createMusic.guestCtaBenefitPublish", "공개·다운로드 가능")}
-                  </div>
+              <form
+                className="mx-auto max-w-3xl rounded-2xl border border-purple-200 bg-purple-50 p-5 text-left shadow-sm md:p-6"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const promptTrim = prompt.trim();
+                  if (!promptTrim) {
+                    toast({
+                      title: t("createMusic.guestPromptRequired", "만들고 싶은 음악의 분위기나 가사를 먼저 입력해 주세요."),
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  sessionStorage.setItem(
+                    GUEST_CREATE_DRAFT_SESSION_KEY,
+                    JSON.stringify({
+                      title: title.trim(),
+                      genreOther: genreOther.trim(),
+                      prompt: promptTrim,
+                    }),
+                  );
+                  window.location.href = `${LOGIN_PATH}?next=${encodeURIComponent("/create-music")}`;
+                }}
+              >
+                <div className="text-center">
+                  <h2 className="mb-2 text-xl font-bold text-slate-950">
+                    {t("createMusic.guestCtaTitle", "무료로 AI 음악 2곡 만들기")}
+                  </h2>
+                  <p className="mx-auto mb-5 max-w-xl text-sm leading-relaxed text-slate-700">
+                    {t(
+                      "createMusic.guestCtaDesc",
+                      "가입 전에 만들고 싶은 음악을 먼저 적어보세요. 실제 생성은 로그인 후 무료 2곡으로 바로 이어집니다.",
+                    )}
+                  </p>
                 </div>
-                <Link href={LOGIN_PATH}>
-                  <Button className="rounded-full px-8">
-                    {t("createMusic.guestCtaButton", "로그인하고 무료로 시작하기")}
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem]">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm"
+                    placeholder={t("createMusic.titlePlaceholder", "예: Starry Night")}
+                    maxLength={80}
+                  />
+                  <input
+                    type="text"
+                    value={genreOther}
+                    onChange={(e) => setGenreOther(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm"
+                    placeholder={t("createMusic.genreOtherPlaceholder", "예: city pop, synthwave")}
+                    maxLength={120}
+                  />
+                </div>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  className="mt-3 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm"
+                  placeholder={t(
+                    "createMusic.guestPromptPlaceholder",
+                    "예: 비 오는 밤, 창밖을 보며 다시 시작하는 마음을 담은 감성 팝 발라드",
+                  )}
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    t("createMusic.guestPromptExample1", "따뜻한 어쿠스틱 발라드"),
+                    t("createMusic.guestPromptExample2", "새벽 드라이브 감성 팝"),
+                    t("createMusic.guestPromptExample3", "몽환적인 로파이 비트"),
+                  ].map((example) => (
+                    <button
+                      key={example}
+                      type="button"
+                      onClick={() => setPrompt((p) => (p.trim() ? `${p.trim()}\n${example}` : example))}
+                      className="rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-purple-300 hover:bg-purple-100"
+                    >
+                      {example}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-5 flex flex-col items-center gap-2 text-center">
+                  <Button type="submit" className="rounded-full px-8">
+                    {t("createMusic.guestCtaButton", "로그인하고 무료로 생성하기")}
                   </Button>
-                </Link>
-              </div>
+                  <p className="text-xs text-slate-500">
+                    {t("createMusic.guestLoginNote", "입력은 자유롭게 해볼 수 있고, 생성 요청은 로그인 후 진행됩니다.")}
+                  </p>
+                </div>
+              </form>
             )}
 
             {user && (
