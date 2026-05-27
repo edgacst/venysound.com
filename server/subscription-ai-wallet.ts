@@ -74,9 +74,37 @@ async function performSubscriptionAiWalletSync(
   const eventBonusWon = await getMay2026SubscriptionAiBonusWon(tx, u, userId, now);
   const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now) + eventBonusWon;
   let wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
-  const sumBeforeSync = sumAiWallet(wallet);
+  let sumBeforeSync = sumAiWallet(wallet);
   let consumed = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
   const curKey = u.subscriptionAiPeriodKey ?? null;
+  const maxReasonableWallet = monthlyGrant * 13;
+  const walletLooksCorrupt =
+    monthlyGrant > 0 &&
+    (!Number.isSafeInteger(sumBeforeSync) || !Number.isFinite(sumBeforeSync) || sumBeforeSync > maxReasonableWallet);
+
+  if (walletLooksCorrupt) {
+    consumed = Math.min(consumed, monthlyGrant);
+    const remaining = Math.max(0, monthlyGrant - consumed);
+    wallet = remaining > 0 ? [{ won: remaining, creditedAt: now.toISOString() }] : [];
+    sumBeforeSync = sumAiWallet(wallet);
+    await tx
+      .update(users)
+      .set({
+        subscriptionAiWallet: wallet,
+        subscriptionAiPeriodConsumedWon: consumed,
+        subscriptionAiPeriodKey: desiredKey,
+        subscriptionAiBudgetExhaustionNoticeKey: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+    return {
+      walletSum: sumBeforeSync,
+      periodConsumed: consumed,
+      periodKey: desiredKey,
+      monthlyGrant,
+      limitDisplay: sumBeforeSync + consumed,
+    };
+  }
 
   if (curKey === desiredKey) {
     wallet = normalizeEventSignupWalletToBudget(wallet, consumed, monthlyGrant, eventBonusWon, now);
