@@ -1781,6 +1781,7 @@
     "guestPromptExample2": "새벽 드라이브 감성 팝",
     "guestPromptExample3": "몽환적인 로파이 비트",
     "guestLoginNote": "입력은 자유롭게 해볼 수 있고, 생성 요청은 로그인 후 진행됩니다.",
+    "customVoiceExpiryNote": "내 음성 등록 유효기간은 3~5일입니다. 유효기간 경과 후에는 재등록해 주세요.",
     "sectionCreateLabel": "새로 만들기",
     "sectionCreateHint": "프롬프트를 입력하고 생성을 누르세요",
     "sectionLibraryLabel": "곡 보관함",
