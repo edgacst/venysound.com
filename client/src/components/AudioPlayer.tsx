@@ -574,6 +574,31 @@ export function GlobalAudioPlayer() {
   const isExternalTrack = !!activeExternalTrack;
   const baseList = playlist.length > 0 ? playlist : (allMusic?.data?.map((m: any) => m.id) || []);
 
+  const tryStartNextTrackImmediately = useCallback((nextId: number) => {
+    const audio = audioRef.current;
+    if (!audio || pauseRequested) return;
+    try {
+      audio.muted = false;
+      audio.volume = volume;
+      audio.src = `/api/music/${nextId}/stream`;
+      audio.load();
+      void audio
+        .play()
+        .then(() => {
+          setIsPlaying(true);
+          setIsMuted(false);
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          setIsPlaying(false);
+          setNeedsTap(true);
+        });
+    } catch {
+      setIsPlaying(false);
+      setNeedsTap(true);
+    }
+  }, [pauseRequested, volume]);
+
   useEffect(() => {
     if (shuffleEnabled && baseList.length > 0) {
       const currentShuffled = usePlayerStore.getState().shuffledOrder;
@@ -670,6 +695,7 @@ export function GlobalAudioPlayer() {
       const nextId = queue[0];
       removeFromQueue(0);
       playMusic(nextId);
+      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
       return;
     }
     if (currentList.length === 0) return;
@@ -684,12 +710,16 @@ export function GlobalAudioPlayer() {
     const nextIndex = currentIndex + 1;
     if (nextIndex >= currentList.length) {
       if (repeatMode === 'all') {
-        playMusic(currentList[0]);
+        const nextId = currentList[0];
+        playMusic(nextId);
+        if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
       }
     } else {
-      playMusic(currentList[nextIndex]);
+      const nextId = currentList[nextIndex];
+      playMusic(nextId);
+      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue]);
+  }, [tracker, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
