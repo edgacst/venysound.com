@@ -2524,11 +2524,11 @@ export default function CreateMusic() {
                 {t("createMusic.badge", "AI 음악 생성")}
               </div>
               <h1 className="text-3xl md:text-4xl font-bold mb-2">
-                {t("createMusic.heroTitle1", "프롬프트로")}{" "}
+                {t("createMusic.heroTitle1", "당신의 목소리로")}{" "}
                 <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-pink-400">
-                  {t("createMusic.heroTitle2", "나만의 음악")}
+                  {t("createMusic.heroTitle2", "노래를")}
                 </span>{" "}
-                {t("createMusic.heroTitle3", "만들기")}
+                {t("createMusic.heroTitle3", "만들어보세요")}
               </h1>
               <p className="text-muted-foreground">
                 {t(
