@@ -155,7 +155,7 @@ export function getAiMusicMonthlyUsageLimit(
     return sumActivePaidAiMusicMonthlyWonBudget(user, now);
   }
   if ((user?.subscriptionTier ?? "free") === "free") return FREE_AI_MUSIC_LIMIT_PER_MONTH;
-  return Number.MAX_SAFE_INTEGER;
+  return FREE_AI_MUSIC_LIMIT_PER_MONTH;
 }
 
 /** AI 집계·레거시 ai_music_usage 행과 맞추기 위해 export */
