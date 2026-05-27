@@ -1759,9 +1759,9 @@
   "createMusic": {
     "badge": "AI 음악 생성",
     "guideCta": "음악 만들기 가이드",
-    "heroTitle1": "프롬프트로",
-    "heroTitle2": "나만의 음악",
-    "heroTitle3": "만들기",
+    "heroTitle1": "당신의 목소리로",
+    "heroTitle2": "노래를",
+    "heroTitle3": "만들어보세요",
     "heroDesc": "가사나 스타일을 입력하면 AI가 음악을 생성합니다. 생성된 곡은 재생·다운로드한 뒤 「신곡으로 공개」해 사이트에 올릴 수 있습니다.",
     "heroCopyrightWarning": "유명 아티스트의 이름·목소리·스타일을 직접 모방하는 요청은 피해주세요.",
     "comingSoon": "음악 생성 API 연동을 준비 중입니다. 준비가 완료되면 이 페이지에서 바로 생성할 수 있습니다.",
