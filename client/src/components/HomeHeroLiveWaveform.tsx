@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
 /**
- * 홈 히어로 라디오 카드 위 장식 파형 — Canvas + rAF로 여러 주파수를 겹쳐 계속 변하는 “살아 있는” 곡선.
- * 실제 오디오 분석 아님(GlobalRadioPlayer `<audio>`와 연결하지 않음).
+ * Decorative bar waveform for the home hero card.
+ * This is not connected to real audio analysis.
  */
 export function HomeHeroLiveWaveform() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -31,52 +31,15 @@ export function HomeHeroLiveWaveform() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    const sampleY = (xNorm: number, t: number, h: number, amp: number) => {
-      const mid = h * 0.52;
-      const p = xNorm * Math.PI * 11;
-      const y =
-        Math.sin(p + t * 1.25) * (h * 0.17) +
-        Math.sin(p * 2.15 + t * 1.95) * (h * 0.095) +
-        Math.sin(p * 0.41 + t * 0.62) * (h * 0.072) +
-        Math.sin(p * 3.45 + t * 2.2) * (h * 0.045) +
-        Math.sin(p * 5.25 - t * 1.08) * (h * 0.028) +
-        Math.sin(p * 7.1 + t * 2.8) * (h * 0.018);
-      return mid + y * amp;
-    };
-
-    const fillUnder = (pts: [number, number][], fillStyle: CanvasGradient) => {
-      ctx.beginPath();
-      ctx.moveTo(0, wrap.clientHeight);
-      ctx.lineTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i][0], pts[i][1]);
-      }
-      ctx.lineTo(wrap.clientWidth, wrap.clientHeight);
-      ctx.closePath();
-      ctx.fillStyle = fillStyle;
-      ctx.fill();
-    };
-
-    const strokeTop = (pts: [number, number][], strokeStyle: CanvasGradient, lineWidth: number) => {
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) {
-        ctx.lineTo(pts[i][0], pts[i][1]);
-      }
-      ctx.strokeStyle = strokeStyle;
-      ctx.lineWidth = lineWidth;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.stroke();
-    };
-
-    const buildPts = (tOff: number, amp: number, w: number, h: number, n: number) => {
-      const pts: [number, number][] = [];
-      for (let i = 0; i <= n; i++) {
-        const x = (i / n) * w;
-        pts.push([x, sampleY(i / n, phase + tOff, h, amp)]);
-      }
-      return pts;
+    const barLevel = (xNorm: number, t: number) => {
+      const p = xNorm * Math.PI;
+      const carrier =
+        Math.sin(p * 5.8 + t * 1.35) * 0.36 +
+        Math.sin(p * 12.5 - t * 1.9) * 0.24 +
+        Math.sin(p * 21.7 + t * 2.45) * 0.18 +
+        Math.sin(p * 33.1 - t * 1.1) * 0.12;
+      const envelope = 0.72 + Math.sin(p * 2.2 - t * 0.58) * 0.22;
+      return Math.max(0.16, Math.min(1, (0.58 + carrier) * envelope));
     };
 
     const draw = (now: number) => {
@@ -94,37 +57,42 @@ export function HomeHeroLiveWaveform() {
 
       ctx.clearRect(0, 0, w, h);
 
-      const n = Math.min(200, Math.max(56, Math.ceil(w / 2.5)));
+      const centerY = h * 0.54;
+      const barCount = Math.min(88, Math.max(34, Math.floor(w / 7)));
+      const gap = Math.max(2, Math.min(4, w / 120));
+      const barW = Math.max(3, (w - gap * (barCount - 1)) / barCount);
 
-      const fillBack = ctx.createLinearGradient(0, h, 0, 0);
-      fillBack.addColorStop(0, "rgba(139,92,246,0.12)");
-      fillBack.addColorStop(1, "rgba(34,211,238,0.16)");
+      const rail = ctx.createLinearGradient(0, 0, w, 0);
+      rail.addColorStop(0, "rgba(34,211,238,0.12)");
+      rail.addColorStop(0.5, "rgba(167,139,250,0.16)");
+      rail.addColorStop(1, "rgba(240,171,252,0.12)");
+      ctx.fillStyle = rail;
+      ctx.fillRect(0, centerY - 1, w, 2);
 
-      const strokeBack = ctx.createLinearGradient(0, 0, w, 0);
-      strokeBack.addColorStop(0, "rgba(167,139,250,0.4)");
-      strokeBack.addColorStop(1, "rgba(34,211,238,0.45)");
+      ctx.shadowColor = "rgba(168,85,247,0.32)";
+      ctx.shadowBlur = 9;
 
-      const ptsBack = buildPts(2.1, 0.52, w, h, n);
-      fillUnder(ptsBack, fillBack);
-      strokeTop(ptsBack, strokeBack, 1.25);
+      for (let i = 0; i < barCount; i++) {
+        const xNorm = barCount <= 1 ? 0 : i / (barCount - 1);
+        const x = i * (barW + gap);
+        const edgeFalloff = 0.72 + Math.sin(xNorm * Math.PI) * 0.28;
+        const level = barLevel(xNorm, phase) * edgeFalloff;
+        const barH = Math.max(12, level * h * 0.78);
+        const y = centerY - barH / 2;
 
-      const fillMain = ctx.createLinearGradient(0, h, 0, 0);
-      fillMain.addColorStop(0, "rgba(6,182,212,0.18)");
-      fillMain.addColorStop(0.5, "rgba(139,92,246,0.34)");
-      fillMain.addColorStop(1, "rgba(217,70,239,0.4)");
+        const grad = ctx.createLinearGradient(x, y, x, y + barH);
+        grad.addColorStop(0, "rgba(240,171,252,0.96)");
+        grad.addColorStop(0.48, "rgba(167,139,250,0.92)");
+        grad.addColorStop(1, "rgba(34,211,238,0.96)");
+        ctx.fillStyle = grad;
 
-      const strokeMain = ctx.createLinearGradient(0, 0, w, 0);
-      strokeMain.addColorStop(0, "rgba(34,211,238,0.98)");
-      strokeMain.addColorStop(0.45, "rgba(167,139,250,0.98)");
-      strokeMain.addColorStop(1, "rgba(240,171,252,0.98)");
+        const radius = Math.min(barW / 2, 4);
+        ctx.beginPath();
+        ctx.roundRect(x, y, barW, barH, radius);
+        ctx.fill();
+      }
 
-      const ptsMain = buildPts(0, 1, w, h, n);
-      fillUnder(ptsMain, fillMain);
-      ctx.shadowColor = "rgba(168,85,247,0.35)";
-      ctx.shadowBlur = 8;
-      strokeTop(ptsMain, strokeMain, 2.1);
       ctx.shadowBlur = 0;
-
       raf = requestAnimationFrame(draw);
     };
 

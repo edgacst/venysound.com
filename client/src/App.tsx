@@ -13,6 +13,7 @@ import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
+import { GuestSignupNudge } from "@/components/GuestSignupNudge";
 import { WsProvider } from "@/contexts/WsContext";
 import { RealtimeInboxSync } from "@/hooks/use-realtime-inbox";
 import { RadioWaveformProvider } from "@/contexts/RadioWaveformContext";
@@ -519,6 +520,7 @@ function App() {
                   <GlobalAudioPlayer />
                   <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
                   <ScrollToTop />
+                  <GuestSignupNudge />
                   <LoginModal />
                   <Toaster />
                 </RadioWaveformProvider>

@@ -57,7 +57,7 @@
     "uploadTrack": "음원업로드",
     "musicMakingGuide": "음악 만들기 가이드",
     "newHere": "처음이신가요?",
-    "makeMusicBtn": "음악 만들러 가기",
+    "makeMusicBtn": "내 목소리로 음악 만들기",
     "recentUploads": "최근 업로드된 음악",
     "viewAll": "전체 보기",
     "noMusic": "아직 등록된 음악이 없습니다. 첫 번째 음악을 업로드해보세요!",
@@ -90,11 +90,11 @@
     "heroPersonaCreator": "개인 · 크리에이터",
     "heroPersonaBusiness": "매장 · 비즈니스",
     "heroSignupBridge": "무료 가입 → AI로 첫 곡 만들기 → 베니사운드에 공개 · 5월 신규 가입 이벤트 신청 가능",
-    "heroHeadlineCreator": "가입하고, 오늘부터 작곡가로 시작하세요.",
-    "heroLeadCreator": "3분 만에 AI로 곡을 만들고 사이트에 공개하세요. 유튜브 뮤직·스포티파이 발매까지 이어갈 수 있습니다.",
-    "heroSignUpCtaPrimary": "무료 가입하고 시작하기",
-    "heroListenFirstCta": "먼저 음악 듣기",
-    "may2026BannerSignup": "5월 신규 가입 이벤트 — 가입 후 무료 AI 곡분 신청 (선착순)",
+    "heroHeadlineCreator": "내 목소리로 첫 곡을 완성하세요.",
+    "heroLeadCreator": "목소리 샘플을 등록하고, 가사나 분위기만 적으면 AI가 나만의 노래를 만들어줍니다.\n만든 곡은 보관·공개·다운로드까지 이어갈 수 있습니다.",
+    "heroSignUpCtaPrimary": "내 목소리로 음악 만들기",
+    "heroListenFirstCta": "음악 둘러보기",
+    "may2026BannerSignup": "5월 이벤트 마감 임박! 지금 무료회원가입하고 음악 40곡 만들어보세요",
     "may2026BannerCtaSignup": "무료 가입",
     "may2026BannerCtaEvent": "이벤트 안내",
     "heroHeadlineBusiness": "브랜드와 매장을 위한 음악·방송",
@@ -1011,6 +1011,9 @@
     "sponsor": "스폰서",
     "sponsorDesc": "누적 후원 1,500,000원 이상"
   },
+  "guestSignupNudge": {
+    "message": "3초 가입하고 무료 AI 음악을 만들어보세요"
+  },
   "privacy": {
     "title": "개인정보처리방침",
     "scopeIntro": "본 개인정보처리방침은 VenySound(이하 \"서비스\")에 적용됩니다. VenySound는 주식회사 에드가씨에스티가 운영하는 음악 스트리밍·업로드·커뮤니티 및 관련 서비스로, 웹사이트 venysound.com 및 동일 운영자가 제공하는 연결 서비스·앱 연동을 포함합니다.",
@@ -1269,6 +1272,8 @@
   "register": {
     "createAccount": "새 계정 만들기",
     "orSignUpWithEmail": "또는 이메일로 가입",
+    "emailSignupToggle": "이메일로 가입하기",
+    "hideEmailSignup": "이메일 가입 접기",
     "usernameLabel": "아이디",
     "usernamePlaceholder": "사용할 아이디 입력 (3자 이상)",
     "emailLabel": "이메일",
@@ -1304,6 +1309,8 @@
     "usernamePlaceholder": "아이디 또는 이메일",
     "passwordPlaceholder": "비밀번호",
     "loginButton": "로그인",
+    "localLoginToggle": "아이디/이메일로 로그인",
+    "hideLocalLogin": "아이디/이메일 로그인 접기",
     "loggingIn": "로그인 중...",
     "socialLogin": "소셜 로그인",
     "continueWithGoogle": "Google로 계속하기",

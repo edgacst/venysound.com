@@ -19,6 +19,7 @@ export function LoginModal() {
   const [form, setForm] = useState({ username: "", password: "" });
   const [showPw, setShowPw] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
+  const [localLoginOpen, setLocalLoginOpen] = useState(false);
 
   const { data: loginOptions } = useQuery({
     queryKey: ["/api/auth/login-options"],
@@ -44,6 +45,7 @@ export function LoginModal() {
     if (!isOpen) {
       setForm({ username: "", password: "" });
       setShowPw(false);
+      setLocalLoginOpen(false);
     }
   }, [isOpen]);
 
@@ -138,6 +140,28 @@ export function LoginModal() {
           </div>
 
           {/* 아이디/비번 로그인 폼 */}
+          <div className="relative w-full mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-white/20" />
+            </div>
+            <div className="relative flex justify-center">
+              <button
+                type="button"
+                onClick={() => setLocalLoginOpen((open) => !open)}
+                className={cn(
+                  "bg-[#1a1a1a] px-3 text-xs font-medium transition-colors",
+                  localLoginOpen ? "text-purple-300" : "text-white/60 hover:text-purple-300",
+                )}
+                aria-expanded={localLoginOpen}
+              >
+                {localLoginOpen
+                  ? t("login.hideLocalLogin", "아이디/이메일 로그인 접기")
+                  : t("login.localLoginToggle", "아이디/이메일로 로그인")}
+              </button>
+            </div>
+          </div>
+
+          {localLoginOpen && (
           <form onSubmit={handleLocalLogin} className="w-full space-y-2.5 mb-4">
             <div>
               <input
@@ -178,6 +202,7 @@ export function LoginModal() {
               {localLoading ? t("login.loggingIn", "로그인 중...") : t("login.loginButton", "로그인")}
             </button>
           </form>
+          )}
 
           {/* 구분선 */}
           <div className="relative w-full my-3">
