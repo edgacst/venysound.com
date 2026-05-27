@@ -579,14 +579,14 @@ export default function Home() {
                 <Trans
                   i18nKey="home.heroTaglineBelowNavMobile"
                   components={heroTaglineTransComponents}
-                  defaults="<row1><coffee>커피 한 잔 값</coffee>으로 <composer>작곡가로서</composer></row1><row2>내 음악 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>"
+                  defaults="<row1><coffee>당신의 목소리로</coffee> 진정한</row1><row2><royalty>당신의 음악</royalty>을 만들어보세요</row2>"
                 />
               </div>
               <div className="hidden md:block">
                 <Trans
                   i18nKey="home.heroTaglineBelowNav"
                   components={heroTaglineTransComponents}
-                  defaults="<row1><coffee>커피 한 잔 값</coffee>으로 작사, <composer>작곡가로서의 재능</composer>과</row1><row2>내가 만든 앨범 출시로 <royalty>평생 저작권 수익</royalty>을 만들어 보시겠어요?</row2>"
+                  defaults="<row1><coffee>당신의 목소리로</coffee> 진정한</row1><row2><royalty>당신의 음악</royalty>을 만들어보세요</row2>"
                 />
               </div>
             </div>
