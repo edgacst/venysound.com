@@ -18,6 +18,10 @@ import { usePlayerStore } from "@/components/AudioPlayer";
 const REFETCH_INTERVAL_MS = 8000;
 /** 모바일/네트워크 흔들림에서 status가 잠깐 non-live로 오는 경우가 있어 즉시 clear하지 않음 */
 const POLL_NOT_LIVE_CLEAR_AFTER = 5;
+/** 리스너: 곡 끝난 뒤 client-advance (포그라운드). 백그라운드·LTE는 지연 0 — setTimeout 스로틀 방지 */
+const LISTENER_ADVANCE_AFTER_TRACK_END_MS = 1000;
+/** LTE에서 client-advance 실패 시 재시도 간격(ms) */
+const CLIENT_ADVANCE_RETRY_DELAYS_MS = [2000, 5000, 10000] as const;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -63,6 +67,14 @@ function shouldDeferHandoffToNewRadioTrack(
   }
   const d = el.duration;
   return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.2;
+}
+
+function streamPathname(url: string): string {
+  try {
+    return new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost").pathname;
+  } catch {
+    return url;
+  }
 }
 
 function radioAudioPathMatchesStream(el: HTMLAudioElement | null, wanted: string): boolean {
@@ -410,9 +422,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     if (!slug) return;
     const schedule = scheduleRadioRecoveryAfterSystemPause;
     const onMediaStall = () => {
-      if (document.visibilityState !== "visible") return;
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl) return;
+      if (document.visibilityState === "hidden" && isCoarseOrTouchDevice()) {
+        restoreAudibleOutput();
+        return;
+      }
+      if (document.visibilityState !== "visible") return;
       schedule();
     };
     const a = audioARef.current;
@@ -427,7 +443,23 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       b?.removeEventListener("stalled", onMediaStall);
       b?.removeEventListener("suspend", onMediaStall);
     };
-  }, [slug, scheduleRadioRecoveryAfterSystemPause]);
+  }, [slug, scheduleRadioRecoveryAfterSystemPause, restoreAudibleOutput]);
+
+  /** LTE·화면 꺼짐: 버퍼 끊김 후 paused면 주기적으로 play()만 재시도 (aggressive src 재부착은 하지 않음) */
+  useEffect(() => {
+    if (!isCoarseOrTouchDevice()) return;
+    if (!slug || !streamUrl || userStopped) return;
+    const tick = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") return;
+      const s = useRadioPlayerStore.getState();
+      if (s.userStopped || !s.streamUrl || !s.slug) return;
+      if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
+      const el = getActiveAudio();
+      if (!el || el.ended || !radioAudioPathMatchesStream(el, s.streamUrl)) return;
+      if (el.paused) restoreAudibleOutput();
+    }, 4500);
+    return () => window.clearInterval(tick);
+  }, [slug, streamUrl, userStopped, getActiveAudio, restoreAudibleOutput]);
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
@@ -528,6 +560,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const trackEndLockRef = useRef(false);
   /** client-advance·핸드오프 구간 pause는 UI 일시정지로 오인하지 않음 */
   const radioAutoAdvanceRef = useRef(false);
+  /** 곡 종료 → client-advance 전용 (streamUrl effect cleanup과 분리) */
+  const listenerAdvanceDelayTimerRef = useRef<number | null>(null);
+  const clientAdvanceRetryTimersRef = useRef<number[]>([]);
 
   // streamUrl 변경 시 에러 상태 초기화 + A/B 버퍼에 로드
   // PC에서 rAF 크로스페이드는 라우트 전환·effect cleanup과 겹치면 볼륨/활성 버퍼가 꼬여 무음이 되므로, 모바일과 동일하게 즉시 핸드오프만 사용
@@ -677,6 +712,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setPlayError(false);
     setNeedsTap(false);
     setIsMuted(false);
+    if (listenerAdvanceDelayTimerRef.current != null) {
+      window.clearTimeout(listenerAdvanceDelayTimerRef.current);
+      listenerAdvanceDelayTimerRef.current = null;
+    }
+    clientAdvanceRetryTimersRef.current.forEach((id) => window.clearTimeout(id));
+    clientAdvanceRetryTimersRef.current = [];
     [audioARef.current, audioBRef.current].forEach((el) => {
       if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
     });
@@ -812,78 +853,139 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       const def = i18n.t("radio.defaultChannelName");
       const chName = (state.channelName ?? def).trim() || def;
 
-      const failAdvance = () => {
+      const clearAdvanceRetryTimers = () => {
+        clientAdvanceRetryTimersRef.current.forEach((id) => window.clearTimeout(id));
+        clientAdvanceRetryTimersRef.current = [];
+      };
+
+      const unlockAdvanceWithoutClearingSrc = () => {
+        trackEndLockRef.current = false;
+        radioAutoAdvanceRef.current = false;
+      };
+
+      /** LTE 등 일시적 실패: src 유지 + 폴링/재시도가 이어가게 함 */
+      const failAdvanceSoft = () => {
+        unlockAdvanceWithoutClearingSrc();
+        setNeedsTap(true);
+        setPlaying(false);
+      };
+
+      const failAdvanceHard = () => {
+        clearAdvanceRetryTimers();
         releaseEndLockAndClearAudio();
         setNeedsTap(true);
         setPlaying(false);
       };
 
-      radioAutoAdvanceRef.current = true;
-      fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        keepalive: true,
-        body: advanceBody,
-      })
-        .then(async (r) => (r.ok ? r.json() : null))
-        .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
-          let didSetNext = false;
-          const applyChannelPayload = (channelData: Record<string, unknown>) => {
-            if (channelData?.status !== "live") return;
-            const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
-            const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
-            if (nowPlayingId == null && !nowPlayingObjectPath) return;
-            const newStreamUrl =
-              nowPlayingObjectPath != null
-                ? String(nowPlayingObjectPath)
-                : nowPlayingId != null
-                  ? `/api/music/${Number(nowPlayingId)}/stream`
-                  : null;
-            if (!newStreamUrl) return;
-            const s = useRadioPlayerStore.getState();
-            if (s.userStopped || s.slug !== currentSlug) return;
-            const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
-            const elapsed =
-              typeof channelData?.nowPlayingElapsedSeconds === "number"
-                ? (channelData.nowPlayingElapsedSeconds as number)
-                : null;
-            s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
-            didSetNext = true;
-          };
+      const applyChannelPayload = (channelData: Record<string, unknown>) => {
+        if (channelData?.status !== "live") return false;
+        const nowPlayingId = channelData?.nowPlayingMusicId ?? null;
+        const nowPlayingObjectPath = channelData?.nowPlayingObjectPath ?? null;
+        if (nowPlayingId == null && !nowPlayingObjectPath) return false;
+        const newStreamUrl =
+          nowPlayingObjectPath != null
+            ? String(nowPlayingObjectPath)
+            : nowPlayingId != null
+              ? `/api/music/${Number(nowPlayingId)}/stream`
+              : null;
+        if (!newStreamUrl) return false;
+        const s = useRadioPlayerStore.getState();
+        if (s.userStopped || s.slug !== currentSlug) return false;
+        const resolvedName = String(channelData?.name ?? chName).trim() || i18n.t("radio.defaultChannelName");
+        const elapsed =
+          typeof channelData?.nowPlayingElapsedSeconds === "number"
+            ? (channelData.nowPlayingElapsedSeconds as number)
+            : null;
+        s.setStream(currentSlug, resolvedName, newStreamUrl, radioSeekSecondsForHandoff(endedSrc, newStreamUrl, elapsed));
+        return true;
+      };
 
-          if (data?.ok && data.nextMusicId != null) {
-            const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
-            const s = useRadioPlayerStore.getState();
-            if (!s.userStopped && s.slug === currentSlug) {
-              s.setStream(currentSlug, chName, nextUrl);
-              didSetNext = true;
+      const runClientAdvanceFetch = (retryIndex: number) => {
+        const sBefore = useRadioPlayerStore.getState();
+        if (sBefore.userStopped || sBefore.slug !== currentSlug) {
+          unlockAdvanceWithoutClearingSrc();
+          return;
+        }
+        if (sBefore.streamUrl && streamPathname(sBefore.streamUrl) !== streamPathname(endedSrc)) {
+          unlockAdvanceWithoutClearingSrc();
+          return;
+        }
+
+        radioAutoAdvanceRef.current = true;
+        fetch(`/api/radio/channels/${currentSlug}/client-advance`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          keepalive: true,
+          body: advanceBody,
+        })
+          .then(async (r) => (r.ok ? r.json() : null))
+          .then(async (data: { ok?: boolean; nextMusicId?: number; reason?: string } | null) => {
+            let didSetNext = false;
+
+            if (data?.ok && data.nextMusicId != null) {
+              const nextUrl = `/api/music/${Number(data.nextMusicId)}/stream`;
+              const s = useRadioPlayerStore.getState();
+              if (!s.userStopped && s.slug === currentSlug) {
+                s.setStream(currentSlug, chName, nextUrl);
+                didSetNext = true;
+              }
+            } else if (data?.reason === "not_live") {
+              failAdvanceHard();
+              return;
+            } else {
+              try {
+                const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
+                if (r2.ok) {
+                  const channelData = await r2.json();
+                  didSetNext = applyChannelPayload(channelData);
+                }
+              } catch {
+                /* fall through */
+              }
             }
-            if (!didSetNext) failAdvance();
-            return;
-          }
-          if (data?.reason === "not_live") {
-            failAdvance();
-            return;
-          }
-          try {
-            const r2 = await fetch(`/api/radio/channels/${currentSlug}`, { credentials: "include" });
-            if (!r2.ok) {
-              failAdvance();
+
+            if (didSetNext) {
+              clearAdvanceRetryTimers();
+              unlockAdvanceWithoutClearingSrc();
               return;
             }
-            const channelData = await r2.json();
-            applyChannelPayload(channelData);
-            if (!didSetNext) failAdvance();
-          } catch {
-            failAdvance();
-          }
-        })
-        .catch(() => {
-          failAdvance();
-        });
 
-      if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+            if (retryIndex < CLIENT_ADVANCE_RETRY_DELAYS_MS.length) {
+              const delay = CLIENT_ADVANCE_RETRY_DELAYS_MS[retryIndex];
+              const tid = window.setTimeout(() => runClientAdvanceFetch(retryIndex + 1), delay);
+              clientAdvanceRetryTimersRef.current.push(tid);
+              return;
+            }
+            failAdvanceSoft();
+          })
+          .catch(() => {
+            if (retryIndex < CLIENT_ADVANCE_RETRY_DELAYS_MS.length) {
+              const delay = CLIENT_ADVANCE_RETRY_DELAYS_MS[retryIndex];
+              const tid = window.setTimeout(() => runClientAdvanceFetch(retryIndex + 1), delay);
+              clientAdvanceRetryTimersRef.current.push(tid);
+              return;
+            }
+            failAdvanceSoft();
+          });
+      };
+
+      if (listenerAdvanceDelayTimerRef.current != null) {
+        window.clearTimeout(listenerAdvanceDelayTimerRef.current);
+        listenerAdvanceDelayTimerRef.current = null;
+      }
+      clearAdvanceRetryTimers();
+
+      const advanceDelayMs =
+        typeof document !== "undefined" && document.visibilityState === "hidden"
+          ? 0
+          : LISTENER_ADVANCE_AFTER_TRACK_END_MS;
+
+      listenerAdvanceDelayTimerRef.current = window.setTimeout(() => {
+        listenerAdvanceDelayTimerRef.current = null;
+        runClientAdvanceFetch(0);
+        if (slug) queryClient.invalidateQueries({ queryKey: ["/api/radio/channels", slug] });
+      }, advanceDelayMs);
     },
     [
       getActiveAudio,
@@ -906,9 +1008,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el !== getActiveAudio()) return;
       useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
       if (trackEndLockRef.current) return;
+      if (el.ended) {
+        processActiveTrackEnded(el);
+        return;
+      }
+      // 포그라운드에서는 ended만 신뢰(조기 넘김 방지). 화면 꺼짐·LTE에서 ended 누락 시에만 말미 보조.
+      if (typeof document !== "undefined" && document.visibilityState === "visible") return;
       const d = el.duration;
       if (!Number.isFinite(d) || d < 2) return;
-      if (el.ended) return;
       // ended 미발화 보조용: 과도한 조기 진행 방지 — (1) reported duration 끝 근처 (2) 버퍼도 거의 소진
       // duration이 실제보다 짧게 잡힌 경우, 버퍼 끝이 아직 metadata 끝보다 짧으면 조기 종료하지 않음
       try {
