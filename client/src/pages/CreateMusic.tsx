@@ -2522,10 +2522,31 @@ export default function CreateMusic() {
             </div>
 
             {!authLoading && !user && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center max-w-xl mx-auto">
-                <p className="text-amber-900 mb-4">{t("createMusic.loginRequired", "로그인 후 음악 생성을 이용할 수 있습니다.")}</p>
+              <div className="mx-auto max-w-2xl rounded-2xl border border-purple-200 bg-purple-50 p-6 text-center shadow-sm">
+                <h2 className="mb-2 text-xl font-bold text-slate-950">
+                  {t("createMusic.guestCtaTitle", "무료로 AI 음악 2곡 만들기")}
+                </h2>
+                <p className="mx-auto mb-5 max-w-xl text-sm leading-relaxed text-slate-700">
+                  {t(
+                    "createMusic.guestCtaDesc",
+                    "가입하면 프롬프트로 만든 곡을 보관함에 저장하고, 재생·공개·다운로드까지 이어갈 수 있습니다.",
+                  )}
+                </p>
+                <div className="mb-5 grid gap-2 text-left text-sm text-slate-700 sm:grid-cols-3">
+                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
+                    {t("createMusic.guestCtaBenefitPrompt", "가사나 분위기만 입력")}
+                  </div>
+                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
+                    {t("createMusic.guestCtaBenefitSave", "생성곡 보관함 저장")}
+                  </div>
+                  <div className="rounded-xl bg-white px-4 py-3 shadow-sm">
+                    {t("createMusic.guestCtaBenefitPublish", "공개·다운로드 가능")}
+                  </div>
+                </div>
                 <Link href={LOGIN_PATH}>
-                  <Button className="rounded-full">{t("nav.login", "로그인")}</Button>
+                  <Button className="rounded-full px-8">
+                    {t("createMusic.guestCtaButton", "로그인하고 무료로 시작하기")}
+                  </Button>
                 </Link>
               </div>
             )}
