@@ -378,10 +378,10 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   if ("skipped" in pg && pg.skipped) {
     return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
   }
-  if ("cancelledAtPg" in pg && pg.cancelledAtPg) {
+  if (pg.cancelledAtPg) {
     return { ok: false, message: "PG 조회상 이 거래는 취소·환불 상태입니다." };
   }
-  const flat = "flat" in pg ? pg.flat ?? {} : {};
+  const flat = pg.flat ?? {};
   if (!payupInquiryFlatIndicatesSuccessfulAuth0000(flat)) {
     return {
       ok: false,
@@ -734,21 +734,11 @@ function redirectPricingPayupOutcome(res: Response, outcome: "success" | "fail")
 }
 
 /** 경로 파라미터를 양의 정수 id로 파싱 (NaN·0·음수·비정수면 null) */
-function parsePositiveIntParam(raw: string | string[] | undefined): number | null {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (value == null || value === "") return null;
-  const n = Number(value);
+function parsePositiveIntParam(raw: string | undefined): number | null {
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
   if (!Number.isFinite(n) || n < 1 || !Number.isInteger(n)) return null;
   return n;
-}
-
-function saveBufferToLocalUploads(buffer: Buffer, ext: string): string {
-  const cleanExt = ext.startsWith(".") ? ext : `.${ext}`;
-  const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
-  mkdirSync(uploadsDir, { recursive: true });
-  const filename = `${crypto.randomUUID()}${cleanExt}`;
-  writeFileSync(path.join(uploadsDir, filename), buffer);
-  return `/uploads/${filename}`;
 }
 
 /** 관리자 일괄 정산: 스프레드시트에서 복사한 CSV (externalRef, 금액[, 수수료]) */
@@ -1028,7 +1018,7 @@ export async function registerRoutes(
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "auth" && msg.userId) {
-          wsUserId = String(msg.userId);
+          wsUserId = msg.userId;
           wsToUserId.set(ws, wsUserId);
           if (!userSockets.has(wsUserId!)) {
             userSockets.set(wsUserId!, new Set());
@@ -1439,51 +1429,6 @@ export async function registerRoutes(
       if (typeof v === "string" && v.trim().length > 12) return true;
     }
     return false;
-  }
-
-  /** sunoapi 콜백 URL — localhost는 업스트림이 호출 불가하므로 공개 URL 우선 */
-  function resolveSunoCallbackSiteBase(): string {
-    const candidates = [
-      process.env.PUBLIC_SITE_URL,
-      process.env.SITE_URL,
-      "https://venysound.com",
-    ];
-    for (const raw of candidates) {
-      const base = (raw ?? "").trim().replace(/\/$/, "");
-      if (!base) continue;
-      try {
-        const host = new URL(base).hostname.toLowerCase();
-        if (host === "localhost" || host === "127.0.0.1" || host === "::1") continue;
-        return base;
-      } catch {
-        continue;
-      }
-    }
-    return "https://venysound.com";
-  }
-
-  function clampSunoStyleForModel(style: string, model: string): string {
-    const max = model === "V4" ? 200 : 1000;
-    return style.trim().slice(0, max);
-  }
-
-  function clampSunoPromptForModel(prompt: string, model: string, customMode: boolean): string {
-    const p = prompt.trim();
-    if (!customMode) return p.slice(0, 500);
-    const max = model === "V4" ? 3000 : 5000;
-    return p.slice(0, max);
-  }
-
-  function sunoRecordInfoIndicatesFailure(status: string, errorMessage: string): boolean {
-    const u = status.trim().toUpperCase();
-    if (
-      ["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(u)
-    ) {
-      return true;
-    }
-    if (u.endsWith("_FAILED") || u === "FAILED" || u === "ERROR") return true;
-    const em = errorMessage.trim();
-    return Boolean(em && (u.includes("FAIL") || u.includes("ERROR") || u.includes("EXCEPTION")));
   }
 
   /** CreateMusic UI는 sonic-* (AIMusicAPI) 값을 보냄 — Suno generate API 모델명으로 매핑 */
@@ -2030,7 +1975,6 @@ export async function registerRoutes(
       tags?: string;
       prompt?: string;
       gpt_description_prompt?: string;
-      voice_record?: boolean;
     };
     /** 5월 이벤트 전용 잔액(promo)으로 생성 시, 성공 과금에 필요한 최소 무료 트랙 슬롯(보통 2, instrumental 1) */
     promoMinTracksForBilling?: number;
@@ -2913,8 +2857,9 @@ export async function registerRoutes(
     const sunoapiForCustomVoice = sunoStyleUpstream("suno");
     if (createSunoStyleDefault && (AI_MUSIC_PROVIDER === "kie" || AI_MUSIC_PROVIDER === "suno")) {
       let createSunoStyle = createSunoStyleDefault;
-      let createProvider: "kie" | "suno" = AI_MUSIC_PROVIDER;
-      const callBackUrl = `${resolveSunoCallbackSiteBase()}/api/ai-music/suno-callback`;
+      let createProvider = AI_MUSIC_PROVIDER;
+      const siteBase = (process.env.SITE_URL || "https://venysound.com").replace(/\/$/, "");
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
       let model = resolveSunoGenerateModel(body.mv);
       let personaVoiceId: string | null = null;
       if (useMyVoice) {
@@ -2956,7 +2901,7 @@ export async function registerRoutes(
         payload.personaModel = "voice_persona";
       }
       if (customMode) {
-        payload.style = clampSunoStyleForModel((body.tags ?? "").trim() || "pop", model);
+        payload.style = (body.tags ?? "").trim() || "pop";
         payload.title = resolveSunoCustomModeTitle({
           explicitTitle: String(body.title ?? ""),
           lyricsPrimary: String(body.prompt ?? ""),
@@ -2965,14 +2910,12 @@ export async function registerRoutes(
           instrumental: makeInstrumental,
           model,
         });
-        if (!makeInstrumental) {
-          payload.prompt = clampSunoPromptForModel(String(body.prompt ?? ""), model, true);
-        }
+        if (!makeInstrumental) payload.prompt = (body.prompt ?? "").trim() || "";
       } else {
         const stylePart = (body.tags ?? "").trim();
         const descPart = (body.gpt_description_prompt ?? body.prompt ?? "").trim();
         const combined = stylePart ? `[스타일] ${stylePart}${descPart ? "\n\n" + descPart : ""}` : descPart;
-        payload.prompt = clampSunoPromptForModel(combined, model, false);
+        payload.prompt = combined.slice(0, 500);
       }
       if (body.vocal_gender) payload.vocalGender = body.vocal_gender;
       try {
@@ -2988,12 +2931,8 @@ export async function registerRoutes(
         }
         const sunoBizCode = (data as { code?: number }).code;
         if (typeof sunoBizCode === "number" && sunoBizCode !== 200) {
-          const rawMsg = (data as { msg?: string }).msg ?? "음악 생성 API 오류";
-          const msg =
-            formatKieApiUserMessage(rawMsg, {
-              creditsProvider: createProvider === "suno" ? "suno" : "kie",
-            }) || String(rawMsg);
-          return res.status(502).json({ message: msg });
+          const msg = (data as { msg?: string }).msg ?? "음악 생성 API 오류";
+          return res.status(502).json({ message: String(msg) });
         }
         const d = data as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string };
         const taskId =
@@ -3451,7 +3390,7 @@ export async function registerRoutes(
         model,
       });
       const negativeTags = String(body.negative_tags ?? "").trim() || "low quality, harsh noise";
-      const callBackUrl = `${resolveSunoCallbackSiteBase()}/api/ai-music/suno-callback`;
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
       const createProvider = "suno" as const;
 
       const promoMinForCreate = MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
@@ -3595,10 +3534,8 @@ export async function registerRoutes(
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
     }
-    const taskIdRaw = req.params.taskId;
-    const taskId = Array.isArray(taskIdRaw) ? taskIdRaw[0] : taskIdRaw;
-    const providerRaw = req.query.provider;
-    const provider = String((Array.isArray(providerRaw) ? providerRaw[0] : providerRaw) || AI_MUSIC_PROVIDER);
+    const taskId = req.params.taskId;
+    const provider = (req.query.provider as string) || AI_MUSIC_PROVIDER;
     if (!taskId) return res.status(400).json({ message: "task_id가 필요합니다." });
     // @ts-ignore
     const pollUserId = req.user?.claims?.sub as string | undefined;
@@ -3627,7 +3564,7 @@ export async function registerRoutes(
         }
         const upstreamCtrl = new AbortController();
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-        let apiRes: globalThis.Response;
+        let apiRes: Response;
         try {
           apiRes = await fetch(`${taskSunoStyle.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
             headers: { Authorization: `Bearer ${taskSunoStyle.key}` },
@@ -3736,13 +3673,8 @@ export async function registerRoutes(
             return res.json({ state: "preview", data: list });
           }
         }
-        const errMsgRaw = String(d?.errorMessage ?? "").trim();
-        if (sunoRecordInfoIndicatesFailure(status, errMsgRaw)) {
-          const failMsg =
-            formatKieApiUserMessage(errMsgRaw || status, {
-              creditsProvider: provider === "suno" ? "suno" : "kie",
-            }) || "생성에 실패했습니다.";
-          console.warn(`[ai-music task ${provider}] failed`, { taskId: taskId.slice(0, 24), status, errMsgRaw: errMsgRaw.slice(0, 200) });
+        if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
+          const failMsg = formatKieApiUserMessage(d?.errorMessage) || "생성에 실패했습니다.";
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, failMsg);
           return res.json({ state: "failed", message: failMsg, data: null });
         }
@@ -3762,7 +3694,7 @@ export async function registerRoutes(
     try {
       const upstreamCtrl = new AbortController();
       const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-      let apiRes: globalThis.Response;
+      let apiRes: Response;
       try {
         apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
           headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
@@ -3891,7 +3823,7 @@ export async function registerRoutes(
       const audioFilename = `${audioId}.mp3`;
       const audioLocalPath = path.join(localUploadsDir, audioFilename);
 
-      let audioRes: globalThis.Response;
+      let audioRes: Response;
       try {
         audioRes = await fetch(audioUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
       } catch (e) {
@@ -7333,7 +7265,7 @@ export async function registerRoutes(
   app.post("/api/copyright-reports", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
-      const reporterId = String(req.user.claims.sub);
+      const reporterId = req.user.claims.sub;
       const { musicId, reason, originalArtist, originalTitle, details } = req.body;
       if (!musicId || !reason) {
         return res.status(400).json({ message: "음원 ID와 신고 사유는 필수입니다" });
@@ -8015,8 +7947,7 @@ export async function registerRoutes(
       const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob.trim());
       if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
-        const payMessage = "message" in payRes ? payRes.message : "invalid payup response";
-        console.error("[payup] payUrl 승인 실패", payMessage, orderNumber, "http", payRes.status, bt.slice(0, 500));
+        console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8150,7 +8081,7 @@ export async function registerRoutes(
       let lastMsg = "";
       for (const row of rows) {
         const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(row);
-        if (out.ok) return res.json(out);
+        if (out.ok) return res.json({ ok: true, ...out });
         lastMsg = out.message;
       }
       return res.status(400).json({ ok: false, message: lastMsg || "PG 승인 반영에 실패했습니다." });
@@ -8316,7 +8247,7 @@ export async function registerRoutes(
       if ("skipped" in pg && pg.skipped) {
         return res.json({ ok: true, action: "http_skipped" as const, reason: pg.reason });
       }
-      if (!("cancelledAtPg" in pg) || !pg.cancelledAtPg) {
+      if (!pg.cancelledAtPg) {
         return res.json({ ok: true, action: "still_paid_at_pg" as const });
       }
       const out = await revertPayupCardSubscriptionPaymentById(latest.id);
@@ -9569,7 +9500,7 @@ export async function registerRoutes(
   app.delete("/api/radio/channels/:slug/staff/:userId", isAuthenticated, async (req, res) => {
     try {
       const slug = String(req.params.slug || "").trim().toLowerCase();
-      const targetUserId = String(req.params.userId ?? "");
+      const targetUserId = req.params.userId;
       if (!slug || !targetUserId) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
@@ -10269,8 +10200,7 @@ export async function registerRoutes(
 
   app.patch("/api/radio/channels/:slug/requests/:id", isAuthenticated, async (req, res) => {
     try {
-      const slug = String(req.params.slug ?? "");
-      const id = String(req.params.id ?? "");
+      const { slug, id } = req.params;
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       // @ts-ignore
@@ -11157,7 +11087,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const blockerId = req.user.claims.sub;
-      const blockedId = String(req.params.userId ?? "");
+      const blockedId = req.params.userId;
       if (!blockedId || blockedId === blockerId) {
         return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       }
@@ -11171,8 +11101,8 @@ export async function registerRoutes(
   app.delete("/api/block/:userId", isAuthenticated, async (req, res) => {
     try {
       // @ts-ignore
-      const blockerId = String(req.user.claims.sub);
-      const blockedId = String(req.params.userId ?? "");
+      const blockerId = req.user.claims.sub;
+      const blockedId = req.params.userId;
       if (!blockedId) return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       await storage.unblockUser(blockerId, blockedId);
       res.json({ success: true });
@@ -11185,17 +11115,11 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const reporterId = req.user.claims.sub;
-      const body = req.body as Record<string, unknown>;
-      const reportedUserId = body.reportedUserId;
-      const reason = body.reason;
-      const messageId = typeof body.messageId === "number" ? body.messageId : undefined;
-      const conversationId = typeof body.conversationId === "number" ? body.conversationId : undefined;
-      const reportedUserIdValue = typeof reportedUserId === "string" ? reportedUserId : "";
-      const reportReason = typeof reason === "string" ? reason.trim() : "";
-      if (!reportedUserIdValue || !reportReason) {
+      const { reportedUserId, reason, messageId, conversationId } = req.body;
+      if (!reportedUserId || !reason || !reason.trim()) {
         return res.status(400).json({ message: "신고 대상과 사유를 입력해주세요." });
       }
-      await storage.createUserReport({ reporterId, reportedUserId: String(reportedUserIdValue), reason: reportReason, messageId, conversationId });
+      await storage.createUserReport({ reporterId, reportedUserId, reason: reason.trim(), messageId, conversationId });
       const adminRows = await db.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
       for (const admin of adminRows) {
         await storage.createNotification({

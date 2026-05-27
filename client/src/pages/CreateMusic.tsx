@@ -63,7 +63,6 @@ const GENRE_PRESET_IDS = [
   "rnb",
   "rock",
   "hiphop",
-  "uk_drill",
   "jazz",
   "classical",
   "edm",
@@ -90,7 +89,6 @@ const GENRE_API_TOKEN: Record<GenrePresetId, string> = {
   rnb: "R&B",
   rock: "Rock",
   hiphop: "Hip-hop",
-  uk_drill: "UK drill",
   jazz: "Jazz",
   classical: "Classical",
   edm: "EDM",
@@ -278,7 +276,7 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 const MAX_STYLE_PRESETS = 6;
 
 /** 스튜디오 스타일 칩 빠른 선택 (Mureka형 UI) */
-const STUDIO_QUICK_STYLE_IDS: (GenrePresetId | StylePresetId)[] = [
+const STUDIO_QUICK_STYLE_IDS: (typeof STYLE_PRESET_IDS)[number][] = [
   "edm",
   "ambient",
   "piano",

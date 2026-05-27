@@ -1,14 +1,19 @@
 import type { Config } from "tailwindcss";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Forward slash만 사용 (Windows에서 node_modules 경고 방지)
+const toSlash = (p: string) => p.split(path.sep).join("/");
+const clientRoot = toSlash(path.resolve(__dirname, "client"));
+const clientSrc = toSlash(path.resolve(__dirname, "client", "src"));
 
 export default {
   darkMode: ["class"],
-  content: {
-    relative: true,
-    files: [
-      "./client/index.html",
-      "./client/src/**/*.{js,jsx,ts,tsx}",
-    ],
-  },
+  content: [
+    `${clientRoot}/index.html`,
+    `${clientSrc}/**/*.{js,jsx,ts,tsx}`,
+  ],
   theme: {
     container: {
       center: true,

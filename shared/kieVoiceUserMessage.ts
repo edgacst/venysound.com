@@ -25,20 +25,6 @@ export function isKieCreditsInsufficient(raw?: string | null): boolean {
   );
 }
 
-/** sunoapi.org 일시 서버 오류(영문 Internal Error 등) */
-export const SUNOAPI_INTERNAL_ERROR_USER_MESSAGE =
-  "sunoapi.org 서버에서 일시 오류가 발생했습니다. 1~2분 뒤 다시 시도해 주세요. 반복되면 sunoapi.org 대시보드에서 API 크레딧·요청 빈도를 확인해 주세요. (앱 지갑과 별개)";
-
-export function isSunoUpstreamInternalError(raw?: string | null): boolean {
-  const lower = (raw ?? "").toLowerCase();
-  return (
-    lower.includes("internal error") ||
-    lower.includes("server error") ||
-    lower.includes("please try again later") ||
-    lower.includes("try again later")
-  );
-}
-
 export function isKieVoiceCopyrightRejection(raw?: string | null): boolean {
   const lower = (raw ?? "").toLowerCase();
   return (
@@ -64,11 +50,6 @@ export function formatKieApiUserMessage(
   }
   if (isKieVoiceCopyrightRejection(s)) {
     return KIE_VOICE_COPYRIGHT_REJECTION_USER_MESSAGE;
-  }
-  if (isSunoUpstreamInternalError(s)) {
-    return opts?.creditsProvider === "kie"
-      ? "AI 생성 서비스에서 일시 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
-      : SUNOAPI_INTERNAL_ERROR_USER_MESSAGE;
   }
 
   return s;

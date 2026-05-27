@@ -202,8 +202,8 @@ export async function setupAuth(app: Express) {
           callbackURL: googleCallback,
           proxy: true,
           passReqToCallback: true,
-        } as any,
-        (async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
+        },
+        async (req, accessToken, refreshToken, profile, done) => {
           try {
             const email = profile.emails?.[0]?.value || null;
             const firstName = profile.name?.givenName || profile.displayName?.split(" ")[0] || "";
@@ -227,7 +227,7 @@ export async function setupAuth(app: Express) {
           } catch (error) {
             done(error as Error);
           }
-        }) as any
+        }
       )
     );
   }
@@ -243,8 +243,8 @@ export async function setupAuth(app: Express) {
           clientSecret: process.env.NAVER_CLIENT_SECRET!,
           callbackURL: naverCallback,
           passReqToCallback: true,
-        } as any,
-        (async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
+        },
+        async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
           try {
             const email = profile.email || null;
             const firstName = profile.name || profile.nickname || "";
@@ -267,7 +267,7 @@ export async function setupAuth(app: Express) {
           } catch (error) {
             done(error as Error);
           }
-        }) as any
+        }
       )
     );
   }
@@ -419,7 +419,7 @@ export async function setupAuth(app: Express) {
         normalizeOutgoingEmailAddress(email) ?? normalizeOutgoingEmailAddress(user.email);
       if (welcomeTo) {
         const locale = typeof req.body?.locale === "string" ? req.body.locale : undefined;
-        sendWelcomeEmail(welcomeTo, { username: user.username ?? user.firstName ?? "회원", locale }).catch((e) =>
+        sendWelcomeEmail(welcomeTo, { username: user.username, locale }).catch((e) =>
           console.error("[auth] welcome email failed:", e)
         );
       }
@@ -513,7 +513,7 @@ export async function setupAuth(app: Express) {
             return res.redirect(`${getLoginPagePath()}?error=google`);
           }
           if (!user) return res.redirect(`${getLoginPagePath()}?error=google`);
-          req.login(user as Express.User, (loginErr) => {
+          req.login(user, (loginErr) => {
             if (loginErr) {
               console.error("[auth] Google session error:", loginErr);
               return res.redirect(`${getLoginPagePath()}?error=google`);
