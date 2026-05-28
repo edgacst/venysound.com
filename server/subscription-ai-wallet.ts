@@ -7,6 +7,7 @@ import {
   sumActivePaidAiMusicMonthlyWonBudget,
   getAiMusicUsagePeriodKey,
   AI_MUSIC_WON_PER_TRACK,
+  getWalletBackedPaidTierId,
 } from "@shared/subscription-entitlements";
 import {
   appendAiWalletGrant,
@@ -77,6 +78,7 @@ async function performSubscriptionAiWalletSync(
   let sumBeforeSync = sumAiWallet(wallet);
   let consumed = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
   const curKey = u.subscriptionAiPeriodKey ?? null;
+  const walletBackedTier = getWalletBackedPaidTierId(u);
   const maxReasonableWallet = monthlyGrant * 13;
   const walletLooksCorrupt =
     monthlyGrant > 0 &&
@@ -124,7 +126,9 @@ async function performSubscriptionAiWalletSync(
     };
   }
 
-  if (curKey === null) {
+  if (curKey === null && walletBackedTier && sumBeforeSync > 0) {
+    consumed = 0;
+  } else if (curKey === null) {
     const [usageDesired] = await tx
       .select()
       .from(aiMusicUsage)

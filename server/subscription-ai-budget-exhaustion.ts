@@ -29,7 +29,7 @@ export async function ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted(user
   const [row] = await db.select().from(users).where(eq(users.id, userId));
   if (!row || row.role === "admin" || !isUserPaidSubscriptionActive(row, now)) return;
   const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
-  if (!w || w.walletSum >= AI_MUSIC_WON_PER_TRACK) return;
+  if (!w || w.walletSum > 0) return;
   await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
 }
 
@@ -42,7 +42,7 @@ export async function runSubscriptionAiBudgetExhaustionIfNeeded(userId: string, 
 
     const wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
     const sum = sumAiWallet(wallet);
-    if (sum >= AI_MUSIC_WON_PER_TRACK) return null;
+    if (sum > 0) return null;
 
     const periodKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
     const marker = subscriptionAiBudgetExhaustionMarker(periodKey);
@@ -63,7 +63,7 @@ export async function runSubscriptionAiBudgetExhaustionIfNeeded(userId: string, 
     const [u2] = await tx.select().from(users).where(eq(users.id, userId));
     if (!u2 || !isUserPaidSubscriptionActive(u2, now)) return null;
     const sum2 = sumAiWallet(pruneAiWallet(parseAiWallet(u2.subscriptionAiWallet), now));
-    if (sum2 >= AI_MUSIC_WON_PER_TRACK) return null;
+    if (sum2 > 0) return null;
 
     await tx
       .update(users)

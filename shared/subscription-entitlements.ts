@@ -118,15 +118,32 @@ export type UserSubscriptionFields = {
   subscriptionTier?: string | null;
   subscriptionExpiresAt?: Date | null;
   subscriptionEntitlements?: unknown;
+  subscriptionAiWallet?: unknown;
+  subscriptionAiPeriodKey?: string | null;
   /** payments.billingPeriod 등에서 온 값: `monthly` | `yearly` (계좌이체·토스 갱신 시 설정) */
   subscriptionPlan?: string | null;
 };
+
+export function sumRemainingSubscriptionAiWallet(raw: unknown): number {
+  if (!Array.isArray(raw)) return 0;
+  return raw.reduce((sum, item) => {
+    if (!item || typeof item !== "object") return sum;
+    const won = Math.floor(Number((item as { won?: unknown }).won));
+    return Number.isFinite(won) && won > 0 ? sum + won : sum;
+  }, 0);
+}
+
+export function getWalletBackedPaidTierId(user: UserSubscriptionFields | undefined): PaidSubscriptionTierId | null {
+  const tier = String(user?.subscriptionTier ?? "free").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(tier)) return null;
+  return sumRemainingSubscriptionAiWallet(user?.subscriptionAiWallet) > 0 ? (tier as PaidSubscriptionTierId) : null;
+}
 
 export function isUserPaidSubscriptionActive(user: UserSubscriptionFields | undefined, now: Date): boolean {
   if (!user) return false;
   const view = buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now);
   const pruned = pruneExpiredEntitlements(view, now);
-  return getActivePaidTierIds(pruned, now).length > 0;
+  return getActivePaidTierIds(pruned, now).length > 0 || getWalletBackedPaidTierId(user) != null;
 }
 
 /** 활성 유료 플랜이 있으면 각 tier 월 AI 예산(원)을 합산 */
@@ -134,7 +151,10 @@ export function sumActivePaidAiMusicMonthlyWonBudget(user: UserSubscriptionField
   const view = buildEntitlementsView(user?.subscriptionEntitlements, user?.subscriptionTier, user?.subscriptionExpiresAt, now);
   const pruned = pruneExpiredEntitlements(view, now);
   const active = getActivePaidTierIds(pruned, now);
-  if (active.length === 0) return FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  if (active.length === 0) {
+    const walletTier = getWalletBackedPaidTierId(user);
+    return walletTier ? AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[walletTier] : FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  }
   return active.reduce((sum, t) => sum + AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[t], 0);
 }
 
@@ -178,6 +198,9 @@ export function getAiMusicUsagePeriodKey(
   if (role === "admin") return cal;
   if (!isUserPaidSubscriptionActive(user, now)) return cal;
 
+  const walletTier = getWalletBackedPaidTierId(user);
+  if (walletTier) return `wallet:${walletTier}`;
+
   const billing = String(user?.subscriptionPlan ?? "").trim().toLowerCase();
   if (billing === "yearly") {
     return cal;
@@ -200,6 +223,7 @@ export function computeDisplayedSubscriptionFromEntitlements(
   legacyTier: string | null | undefined,
   legacyExp: Date | null | undefined,
   now: Date,
+  subscriptionAiWallet?: unknown,
 ): {
   subscriptionEntitlements: Record<string, string>;
   subscriptionTier: string;
@@ -209,6 +233,10 @@ export function computeDisplayedSubscriptionFromEntitlements(
   const pruned = pruneExpiredEntitlements(view, now);
   const active = getActivePaidTierIds(pruned, now);
   if (active.length === 0) {
+    const walletTier = getWalletBackedPaidTierId({ subscriptionTier: legacyTier, subscriptionAiWallet });
+    if (walletTier) {
+      return { subscriptionEntitlements: pruned, subscriptionTier: walletTier, subscriptionExpiresAt: null };
+    }
     return { subscriptionEntitlements: pruned, subscriptionTier: "free", subscriptionExpiresAt: null };
   }
   return {
@@ -232,6 +260,7 @@ export function subscriptionRowNeedsSync(
     user.subscriptionTier,
     user.subscriptionExpiresAt,
     now,
+    user.subscriptionAiWallet,
   );
   const storedMap = parseEntitlementsMap(user.subscriptionEntitlements);
   const jsonSame = JSON.stringify(storedMap) === JSON.stringify(computed.subscriptionEntitlements);
