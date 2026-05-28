@@ -1998,6 +1998,7 @@ export async function registerRoutes(
         user?.subscriptionTier,
         user?.subscriptionExpiresAt,
         nowLog,
+        user?.subscriptionAiWallet,
       );
       const tier = displayed.subscriptionTier;
       const subscriptionActive = isUserPaidSubscriptionActive(user, nowLog);
@@ -2090,6 +2091,7 @@ export async function registerRoutes(
       r.subscriptionTier,
       r.subscriptionExpiresAt,
       now,
+      r.subscriptionAiWallet,
     );
     const tier = displayed.subscriptionTier ?? "free";
 
@@ -2291,6 +2293,7 @@ export async function registerRoutes(
       user.subscriptionTier,
       user.subscriptionExpiresAt,
       nowLog,
+      user.subscriptionAiWallet,
     );
     const tier = displayed.subscriptionTier;
     const subscriptionActive = isUserPaidSubscriptionActive(user, nowLog);
@@ -2351,7 +2354,7 @@ export async function registerRoutes(
       /** 활성 유료 + 구독 AI 지갑: 동기화 후 잔액이 1곡 미만이면 소진 처리(과금 직후 호출 누락·탭만 열어둔 경우 보정) 후 행 재조회. */
       if (row?.role !== "admin" && isUserPaidSubscriptionActive(row, now)) {
         let wSub = await syncSubscriptionAiWalletForPaidUser(userId, now);
-        if (wSub && wSub.walletSum < AI_MUSIC_WON_PER_TRACK) {
+        if (wSub && wSub.walletSum <= 0) {
           try {
             await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
           } catch (e) {
@@ -7508,6 +7511,7 @@ export async function registerRoutes(
         user.subscriptionTier,
         user.subscriptionExpiresAt,
         now,
+        user.subscriptionAiWallet,
       );
       let cancelPlanId: PaidSubscriptionTierId = "pro";
       if (isPaidSubscriptionTierId(displayed.subscriptionTier)) {
