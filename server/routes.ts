@@ -6720,6 +6720,61 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/admin/users/:id/credits/adjust", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const targetId = req.params.id as string;
+      const amount = Math.trunc(Number((req.body as { amount?: unknown })?.amount));
+      const reason = String((req.body as { reason?: unknown })?.reason ?? "").trim();
+      // @ts-ignore
+      const adminId = String(req.user?.claims?.sub ?? "admin");
+
+      if (!Number.isFinite(amount) || amount === 0) {
+        return res.status(400).json({ message: "조정 금액은 0이 아닌 정수여야 합니다." });
+      }
+      if (!reason) {
+        return res.status(400).json({ message: "관리자 조정 사유를 입력해 주세요." });
+      }
+
+      const result = await db.transaction(async (tx) => {
+        const [u] = await tx
+          .select({ id: users.id, credits: users.credits })
+          .from(users)
+          .where(eq(users.id, targetId))
+          .for("update");
+        if (!u) {
+          const err = new Error("회원을 찾을 수 없습니다.");
+          (err as any).statusCode = 404;
+          throw err;
+        }
+
+        const previous = Math.max(0, Number(u.credits ?? 0));
+        const next = previous + amount;
+        if (next < 0) {
+          const err = new Error("차감 후 잔액이 0원보다 작아질 수 없습니다.");
+          (err as any).statusCode = 400;
+          throw err;
+        }
+
+        await tx
+          .update(users)
+          .set({ credits: next, updatedAt: new Date() })
+          .where(eq(users.id, targetId));
+        await tx.insert(creditTransactions).values({
+          userId: targetId,
+          type: "admin_adjustment",
+          amount,
+          description: `관리자 수동 조정: ${reason} (admin:${adminId}, ${previous}원 → ${next}원)`,
+        });
+        return { previous, next };
+      });
+
+      res.json({ ok: true, amount, previous: result.previous, next: result.next });
+    } catch (e: any) {
+      console.error("[admin/users/:id/credits/adjust]", e);
+      res.status(e?.statusCode ?? 500).json({ message: e?.message ?? "크레딧 조정에 실패했습니다." });
+    }
+  });
+
   /**
    * 관리자: 구독 AI 지갑을 **현재 플랜 월 공급가(부가세 제외)** 기준만 남기고 재구성(이월 제거).
    * 중복 월 충전 버그 등으로 한도가 부풀어 오른 회원 정리용.

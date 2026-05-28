@@ -221,6 +221,8 @@ export default function Admin() {
   const [walletTxPage, setWalletTxPage] = useState(0);
   const [aiMusicUsageEditPeriod, setAiMusicUsageEditPeriod] = useState("");
   const [aiMusicUsageEditUsed, setAiMusicUsageEditUsed] = useState("");
+  const [creditAdjustAmount, setCreditAdjustAmount] = useState("");
+  const [creditAdjustReason, setCreditAdjustReason] = useState("");
   const [adminMainTab, setAdminMainTab] = useState("stats");
   const [may2026AppsFilter, setMay2026AppsFilter] = useState<"pending" | "all" | "approved" | "rejected">("pending");
   const [may2026AdminNotes, setMay2026AdminNotes] = useState<Record<number, string>>({});
@@ -1047,6 +1049,8 @@ export default function Admin() {
 
   useEffect(() => {
     setWalletTxPage(0);
+    setCreditAdjustAmount("");
+    setCreditAdjustReason("");
   }, [walletModalUser?.id]);
 
   const {
@@ -1114,6 +1118,29 @@ export default function Admin() {
     onError: (err: any) => {
       toast({
         title: err?.message || t("admin.walletAiWalletRebuildFailed", "재구성에 실패했습니다"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const adjustCreditsMutation = useMutation({
+    mutationFn: async (payload: { userId: string; amount: number; reason: string }) => {
+      await apiRequest("POST", `/api/admin/users/${encodeURIComponent(payload.userId)}/credits/adjust`, {
+        amount: payload.amount,
+        reason: payload.reason,
+      });
+    },
+    onSuccess: () => {
+      setCreditAdjustAmount("");
+      setCreditAdjustReason("");
+      setWalletTxPage(0);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: t("admin.walletCreditsAdjusted", "크레딧 잔액을 조정했습니다.") });
+    },
+    onError: (err: any) => {
+      toast({
+        title: err?.message || t("admin.walletCreditsAdjustFailed", "크레딧 조정에 실패했습니다."),
         variant: "destructive",
       });
     },
@@ -5464,6 +5491,81 @@ export default function Admin() {
                   <div className="text-lg font-semibold tabular-nums text-rose-600 dark:text-rose-400">
                     −{walletData.creditSummary.totalCreditsOut.toLocaleString()}
                   </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+                <div>
+                  <div className="text-sm font-medium">{t("admin.walletCreditsManualAdjust", "충전 크레딧 수동 조정")}</div>
+                  <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                    {t(
+                      "admin.walletCreditsManualAdjustHint",
+                      "관리자 오류 보정용입니다. 양수는 지급, 음수는 차감이며 결제 내역은 변경하지 않고 크레딧 거래 내역에 기록됩니다.",
+                    )}
+                  </p>
+                </div>
+                <div className="grid gap-2 md:grid-cols-[9rem_1fr_auto] md:items-end">
+                  <div className="space-y-1">
+                    <Label htmlFor="admin-credit-adjust-amount" className="text-[11px] text-muted-foreground">
+                      {t("admin.walletCreditsAdjustAmount", "조정 금액(원)")}
+                    </Label>
+                    <Input
+                      id="admin-credit-adjust-amount"
+                      type="number"
+                      step={1}
+                      className="h-8 tabular-nums text-xs"
+                      value={creditAdjustAmount}
+                      onChange={(e) => setCreditAdjustAmount(e.target.value)}
+                      placeholder="-150 또는 5000"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="admin-credit-adjust-reason" className="text-[11px] text-muted-foreground">
+                      {t("admin.walletCreditsAdjustReason", "조정 사유")}
+                    </Label>
+                    <Input
+                      id="admin-credit-adjust-reason"
+                      className="h-8 text-xs"
+                      value={creditAdjustReason}
+                      onChange={(e) => setCreditAdjustReason(e.target.value)}
+                      placeholder={t("admin.walletCreditsAdjustReasonPlaceholder", "예: 결제 오류 보정, 중복 차감 복구")}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-8"
+                    disabled={!walletModalUser || adjustCreditsMutation.isPending}
+                    onClick={() => {
+                      if (!walletModalUser) return;
+                      const amount = Math.trunc(Number(creditAdjustAmount));
+                      const reason = creditAdjustReason.trim();
+                      if (!Number.isFinite(amount) || amount === 0) {
+                        toast({
+                          title: t("admin.walletCreditsAdjustInvalidAmount", "조정 금액은 0이 아닌 정수여야 합니다."),
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      if (!reason) {
+                        toast({
+                          title: t("admin.walletCreditsAdjustReasonRequired", "조정 사유를 입력해 주세요."),
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      const current = walletData.creditSummary.currentBalance ?? walletData.user.credits ?? 0;
+                      if (current + amount < 0) {
+                        toast({
+                          title: t("admin.walletCreditsAdjustBelowZero", "차감 후 잔액이 0원보다 작아질 수 없습니다."),
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      adjustCreditsMutation.mutate({ userId: walletModalUser.id, amount, reason });
+                    }}
+                  >
+                    {adjustCreditsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.walletCreditsAdjustSave", "조정 저장")}
+                  </Button>
                 </div>
               </div>
               {(() => {
