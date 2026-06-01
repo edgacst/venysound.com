@@ -573,6 +573,7 @@ function TrackCard({
   scoreExportLoading,
   scorePdfEnabled,
   onPlay,
+  isNowPlaying,
   onRequestPublish,
   isPublishing,
   isPublished,
@@ -590,6 +591,7 @@ function TrackCard({
   scoreExportLoading: boolean;
   scorePdfEnabled: boolean;
   onPlay: () => void;
+  isNowPlaying: boolean;
   /** 공개만, 또는 무료·미공개 시 공개+파일 다운로드(확인 후) */
   onRequestPublish: (opts?: { publishThenDownload?: boolean }) => void;
   isPublishing: boolean;
@@ -620,9 +622,11 @@ function TrackCard({
     <div
       className={cn(
         "rounded-xl border p-3 flex gap-3 items-start w-full",
-        studioDark
-          ? "border-zinc-700/80 bg-zinc-900/90 text-zinc-100"
-          : "border-slate-200 bg-white shadow-sm",
+        isNowPlaying
+          ? "border-cyan-400 bg-cyan-50/80 shadow-sm shadow-cyan-200/60 ring-1 ring-cyan-300/70"
+          : studioDark
+            ? "border-zinc-700/80 bg-zinc-900/90 text-zinc-100"
+            : "border-slate-200 bg-white shadow-sm",
       )}
     >
       <span
@@ -699,10 +703,12 @@ function TrackCard({
                   <button
                     type="button"
                     onClick={onPlay}
-                    className={`inline-flex items-center gap-0.5 hover:underline ${actionLinkClass}`}
+                    className={`inline-flex items-center gap-0.5 hover:underline ${
+                      isNowPlaying ? "font-semibold text-cyan-800" : actionLinkClass
+                    }`}
                     title={t("createMusic.play", "재생")}
                   >
-                    <Play className="w-3 h-3" />
+                    {isNowPlaying ? <Disc3 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                     {t("createMusic.play", "재생")}
                   </button>
                   {showInlineDownloadLink ? (
@@ -1300,6 +1306,7 @@ export default function CreateMusic() {
   const [previewTracks, setPreviewTracks] = useState<GeneratedTrack[]>([]);
   const [resultTracks, setResultTracks] = useState<GeneratedTrack[]>([]);
   const [savedTracks, setSavedTracks] = useState<SavedTrack[]>([]);
+  const activeExternalTrack = usePlayerStore((state) => state.activeExternalTrack);
   const savedTracksRef = useRef<SavedTrack[]>([]);
   useEffect(() => {
     savedTracksRef.current = savedTracks;
@@ -3435,6 +3442,7 @@ export default function CreateMusic() {
                                   scoreExportLoading={scorePdfTrackId === track.id}
                                   scorePdfEnabled={scorePdfEnabled}
                                   onPlay={() => playTrackInGlobalPlayer(track)}
+                                  isNowPlaying={activeExternalTrack?.url === getSavedTrackPlayableUrl(track)}
                                   onRequestPublish={(opts) =>
                                     setPublishConfirm({
                                       track,

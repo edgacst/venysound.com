@@ -2904,16 +2904,17 @@ export async function registerRoutes(
         payload.personaModel = "voice_persona";
       }
       if (customMode) {
+        const promptForSuno = (body.prompt ?? "").trim() || (body.gpt_description_prompt ?? "").trim();
         payload.style = (body.tags ?? "").trim() || "pop";
         payload.title = resolveSunoCustomModeTitle({
           explicitTitle: String(body.title ?? ""),
-          lyricsPrimary: String(body.prompt ?? ""),
+          lyricsPrimary: promptForSuno,
           lyricsFallback: String(body.gpt_description_prompt ?? ""),
           styleTags: String(body.tags ?? ""),
           instrumental: makeInstrumental,
           model,
         });
-        if (!makeInstrumental) payload.prompt = (body.prompt ?? "").trim() || "";
+        if (!makeInstrumental) payload.prompt = promptForSuno || String(payload.title ?? "Untitled");
       } else {
         const stylePart = (body.tags ?? "").trim();
         const descPart = (body.gpt_description_prompt ?? body.prompt ?? "").trim();
