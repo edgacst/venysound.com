@@ -691,6 +691,16 @@ export function GlobalAudioPlayer() {
 
   const playNext = useCallback(() => {
     tracker.onEnded();
+    if (activeExternalTrack) {
+      if (repeatMode === 'one') {
+        const audio = audioRef.current;
+        if (audio) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
+      }
+      return;
+    }
     if (queue.length > 0) {
       const nextId = queue[0];
       removeFromQueue(0);
@@ -719,7 +729,7 @@ export function GlobalAudioPlayer() {
       playMusic(nextId);
       if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
+  }, [tracker, activeExternalTrack, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
