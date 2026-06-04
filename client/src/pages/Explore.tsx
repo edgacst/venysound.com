@@ -423,7 +423,7 @@ export default function Explore() {
               ))}
             </div>
             ) : (
-              <div className="rounded-2xl border border-primary/15 bg-background/80 px-4 py-5 text-sm font-semibold text-muted-foreground">
+              <div className="rounded-2xl border border-white/15 bg-white/10 px-4 py-5 text-sm font-semibold text-white/75 backdrop-blur">
                 {t('explore.emptyThemedPlaylists', '테마 플레이리스트를 준비 중입니다.')}
               </div>
             )}

@@ -36,26 +36,28 @@ export default function Popular() {
             <TrendingUp className="text-red-400" size={24} />
             <h1 className="text-2xl font-display font-bold leading-tight text-slate-950 dark:text-foreground md:text-3xl" data-testid="text-popular-title">{t('popular.title')}</h1>
           </div>
+        </div>
+
+        <div className="mb-5 flex items-center justify-between gap-3 md:mb-6">
+          <div className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap text-xs font-semibold text-muted-foreground md:gap-4 md:text-sm">
+            <span className="flex items-center gap-1"><Heart size={14} className="text-red-400" /> {t('popular.likes')}</span>
+            <span>+</span>
+            <span className="flex items-center gap-1"><Clock size={14} className="text-primary" /> {t('popular.streamTime')}</span>
+            <span>{t('popular.sortBy')}</span>
+          </div>
           {user && popularList && popularList.length > 0 && (
-            <Button 
-              variant="outline"
-              className="h-10 gap-2 border-slate-200 bg-white text-slate-950 shadow-sm dark:border-white/10 dark:bg-transparent dark:text-foreground"
+            <button
+              type="button"
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-black text-white/90 transition-colors hover:text-primary md:text-sm"
               onClick={() => {
                 if (popularList[0]) playMusic(popularList[0].id);
               }}
               data-testid="button-play-all-popular"
             >
-              <Play size={16} />
-              {t('popular.playAll')}
-            </Button>
+              <Play size={14} />
+              {t('popular.playAll', '전체재생')}
+            </button>
           )}
-        </div>
-
-        <div className="mb-5 flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs font-semibold text-muted-foreground md:mb-6 md:gap-4 md:text-sm">
-          <span className="flex items-center gap-1"><Heart size={14} className="text-red-400" /> {t('popular.likes')}</span>
-          <span>+</span>
-          <span className="flex items-center gap-1"><Clock size={14} className="text-primary" /> {t('popular.streamTime')}</span>
-          <span>{t('popular.sortBy')}</span>
         </div>
 
         {isLoading ? (
