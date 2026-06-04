@@ -255,8 +255,8 @@ export default function Credits() {
     <PageTransition>
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
-        <div className="p-6 max-w-4xl mx-auto">
-        <div className="mb-8">
+        <div className="w-full max-w-4xl mx-auto px-4 py-5 sm:p-6">
+        <div className="mb-5 sm:mb-8">
           <h1 className="text-3xl font-bold mb-2" data-testid="text-credits-title">{t("credits.titleWon", "지갑 충전")}</h1>
           <p className="text-muted-foreground">{t("credits.subtitleWon", "원화를 충전해 후원·유료 음원 구매·AI 생성 등에 사용하세요")}</p>
           <p className="text-xs text-muted-foreground mt-1">
@@ -264,35 +264,35 @@ export default function Credits() {
           </p>
         </div>
 
-        <Card className="p-6 mb-8">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-xl bg-primary/20 flex items-center justify-center">
-                <Coins className="text-primary" size={28} />
+        <Card className="mb-5 overflow-hidden border-white/10 bg-gradient-to-br from-violet-600 via-fuchsia-600 to-slate-950 p-5 text-white shadow-[0_18px_45px_-30px_rgba(124,58,237,0.9)] sm:mb-8 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20 sm:h-14 sm:w-14">
+                <Coins className="text-white" size={26} />
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">{t("credits.myBalanceWon", "내 지갑 잔액")}</p>
-                <p className="text-3xl font-bold" data-testid="text-credit-balance">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-white/70 sm:text-sm">{t("credits.myBalanceWon", "내 지갑 잔액")}</p>
+                <p className="break-words text-3xl font-black leading-tight sm:text-4xl" data-testid="text-credit-balance">
                   {isLoading ? (
                     <Loader2 className="animate-spin" size={24} />
                   ) : (
                     <>
                       {balanceWon.toLocaleString()}
-                      <span className="text-lg font-semibold text-muted-foreground ml-1">{t("common.won", "원")}</span>
+                      <span className="ml-1 text-base font-bold text-white/75 sm:text-lg">{t("common.won", "원")}</span>
                     </>
                   )}
                 </p>
               </div>
             </div>
-            <Badge variant="outline" className="text-sm px-3 py-1">
+            <Badge variant="outline" className="w-fit border-white/25 bg-white/10 px-3 py-1 text-xs text-white sm:text-sm">
               {t("credits.vatIncludedHint", "총결제액에 부가세 10% 포함")}
             </Badge>
           </div>
         </Card>
 
-        <Card className="p-6 mb-8 border-border/80">
+        <Card className="mb-5 border-border/80 p-4 sm:mb-8 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-lg font-semibold flex items-center gap-2">
                 <Undo2 className="text-orange-400" size={20} />
                 {t("credits.refundSectionTitleWon", "충전 원화 환불")}
@@ -307,7 +307,7 @@ export default function Credits() {
                 {t("credits.refundPolicyLink", "환불 정책 보기")}
               </Link>
             </div>
-            <Button variant="outline" className="shrink-0 gap-2" onClick={() => setRefundOpen(true)} data-testid="button-refund-request">
+            <Button variant="outline" className="w-full shrink-0 gap-2 sm:w-auto" onClick={() => setRefundOpen(true)} data-testid="button-refund-request">
               <Undo2 size={16} />
               {t("credits.refundRequestButton", "환불 신청")}
             </Button>
@@ -340,7 +340,7 @@ export default function Credits() {
                 return (
                   <div
                     key={r.id}
-                    className="flex items-center justify-between gap-2 text-xs rounded-lg bg-muted/30 px-3 py-1.5"
+                    className="flex flex-col gap-1.5 rounded-lg bg-muted/30 px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:py-1.5"
                     data-testid={`refund-request-${r.id}`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -353,7 +353,7 @@ export default function Credits() {
                       </Badge>
                     </div>
                     <span
-                      className="text-muted-foreground whitespace-nowrap overflow-hidden text-ellipsis max-w-[260px] sm:max-w-[420px]"
+                      className="min-w-0 break-words text-muted-foreground sm:max-w-[420px] sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap"
                       title={metaText || undefined}
                     >
                       {metaText || "—"}
@@ -670,11 +670,11 @@ export default function Credits() {
           </DialogContent>
         </Dialog>
 
-        <div className="mb-8">
-          <h2 className="text-xl font-semibold mb-4">{t("credits.topupAmountTitle", "충전 금액")}</h2>
-          <Card className="p-6">
+        <div className="mb-6 sm:mb-8">
+          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">{t("credits.topupAmountTitle", "충전 금액")}</h2>
+          <Card className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
-              <div className="flex items-center justify-center gap-3">
+              <div className="grid w-full grid-cols-[3rem_minmax(0,1fr)_3rem] items-center gap-2 sm:flex sm:w-auto sm:justify-center sm:gap-3">
                 <Button
                   type="button"
                   variant="outline"
@@ -687,9 +687,9 @@ export default function Credits() {
                 >
                   <Minus className="h-5 w-5" />
                 </Button>
-                <div className="text-center min-w-[140px]">
+                <div className="min-w-0 text-center sm:min-w-[140px]">
                   <p className="text-xs text-muted-foreground mb-1">{t("credits.totalPaymentLabel", "총 결제(부가세 포함)")}</p>
-                  <p className="text-3xl font-bold tabular-nums" data-testid="text-topup-total">
+                  <p className="break-words text-2xl font-black tabular-nums sm:text-3xl" data-testid="text-topup-total">
                     {topupTotalWon.toLocaleString()}
                     <span className="text-lg font-semibold text-muted-foreground ml-1">{t("common.won", "원")}</span>
                   </p>
@@ -706,7 +706,7 @@ export default function Credits() {
                   <Plus className="h-5 w-5" />
                 </Button>
               </div>
-              <div className="flex-1 space-y-1 text-sm text-muted-foreground border-t sm:border-t-0 sm:border-l border-border/60 pt-4 sm:pt-0 sm:pl-6">
+              <div className="flex-1 space-y-1 border-t border-border/60 pt-4 text-sm leading-relaxed text-muted-foreground sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
                 <p>
                   {t("credits.topupSupplyLine", "지갑 적립(공급가액): {{n}}원", {
                     n: topupSupplyWon.toLocaleString(),
@@ -715,13 +715,14 @@ export default function Credits() {
                 <p className="text-xs">{t("credits.topupStepHint", "기본 3,000원에서 +를 누를 때마다 2,000원씩 증가합니다.")}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2 mt-6">
+            <div className="mt-5 flex flex-col gap-2 sm:mt-6 sm:flex-row sm:flex-wrap">
               <Button
                 variant="outline"
                 onClick={() => {
                   setBankRequestResult(null);
                   setBankModalOpen(true);
                 }}
+                className="w-full justify-center sm:w-auto"
                 data-testid="button-charge-bank"
               >
                 <Landmark size={16} className="mr-2" />
@@ -729,7 +730,7 @@ export default function Credits() {
               </Button>
             </div>
             {bankInfo && (
-              <p className="text-xs text-muted-foreground mt-3 font-medium">
+              <p className="mt-3 break-words text-xs font-medium text-muted-foreground">
                 {bankInfo.bankName} {bankInfo.bankAccount} {bankInfo.bankHolder}
               </p>
             )}
@@ -737,19 +738,19 @@ export default function Credits() {
         </div>
 
         <Dialog open={bankModalOpen} onOpenChange={setBankModalOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="max-h-[min(90vh,720px)] w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{t("credits.bankTransferTitleWon", "계좌이체로 지갑 충전")}</DialogTitle>
             </DialogHeader>
             {bankRequestResult ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">{bankRequestResult.message}</p>
-                <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4 text-sm break-words">
                   <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankRequestResult.bankInfo.bankName}</p>
                   <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankRequestResult.bankInfo.bankAccount}</p>
                   <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankRequestResult.bankInfo.bankHolder}</p>
                   <p><span className="font-medium">{t('pricing.amount', '입금액')}:</span> {bankRequestResult.amount.toLocaleString("ko-KR")}{t('pricing.won', '원')}</p>
-                  <p className="text-xs text-muted-foreground">{t('pricing.orderId', '신청 번호')}: {bankRequestResult.orderId}</p>
+                  <p className="break-all text-xs text-muted-foreground">{t('pricing.orderId', '신청 번호')}: {bankRequestResult.orderId}</p>
                 </div>
               </div>
             ) : (
@@ -765,7 +766,7 @@ export default function Credits() {
                   )}
                 </p>
                 {bankInfo && (
-                  <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2 text-sm">
+                  <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4 text-sm break-words">
                     <p><span className="font-medium">{t('pricing.bankName', '은행')}:</span> {bankInfo.bankName}</p>
                     <p><span className="font-medium">{t('pricing.accountNumber', '계좌번호')}:</span> {bankInfo.bankAccount}</p>
                     <p><span className="font-medium">{t('pricing.accountHolder', '예금주')}:</span> {bankInfo.bankHolder}</p>
@@ -787,30 +788,30 @@ export default function Credits() {
         </Dialog>
 
         <div>
-          <h2 className="text-xl font-semibold mb-4">{t("credits.transactionHistoryWon", "지갑 사용 내역")}</h2>
+          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">{t("credits.transactionHistoryWon", "지갑 사용 내역")}</h2>
           {isLoadingTx ? (
             <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" size={24} /></div>
           ) : (!transactions || transactions.length === 0) ? (
-            <Card className="p-8 text-center">
+            <Card className="p-6 text-center sm:p-8">
               <Clock className="mx-auto mb-3 text-muted-foreground opacity-50" size={40} />
               <p className="text-muted-foreground">{t('credits.noTransactions', '아직 거래 내역이 없습니다')}</p>
             </Card>
           ) : (
-            <div className="max-h-[600px] overflow-y-auto pr-1">
+            <div className="max-h-[600px] overflow-y-auto pr-0 sm:pr-1">
               <div className="space-y-2">
                 {transactions.map((tx: any) => (
-                  <Card key={tx.id} className="p-4" data-testid={`card-transaction-${tx.id}`}>
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-3 min-w-0">
+                  <Card key={tx.id} className="p-3 sm:p-4" data-testid={`card-transaction-${tx.id}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
                           {getTypeIcon(tx.type)}
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium">{getTypeLabel(tx.type)}</p>
-                          {tx.description && <p className="text-xs text-muted-foreground truncate">{tx.description}</p>}
+                          {tx.description && <p className="break-words text-xs text-muted-foreground sm:truncate">{tx.description}</p>}
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="shrink-0 text-right">
                         <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
                           {tx.amount > 0 ? "+" : ""}
                           {tx.amount.toLocaleString()}

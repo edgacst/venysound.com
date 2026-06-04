@@ -1315,7 +1315,7 @@ export default function Profile() {
                   </Button>
                 </div>
               )}
-              <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+              <div className="music-grid grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 md:gap-6">
                 {uploadedMusic?.map(music => (
                   <MusicCard key={music.id} music={music} />
                 ))}
