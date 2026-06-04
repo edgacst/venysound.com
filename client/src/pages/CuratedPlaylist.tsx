@@ -70,9 +70,9 @@ export default function CuratedPlaylist() {
           <div className="container px-4 py-8">
             <div className="h-8 w-48 bg-muted rounded animate-pulse mb-4" />
             <div className="h-4 w-full max-w-xl bg-muted rounded animate-pulse mb-8" />
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
               {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="aspect-square bg-muted rounded-lg animate-pulse" />
+                <div key={i} className="h-20 bg-muted rounded-2xl animate-pulse" />
               ))}
             </div>
           </div>
@@ -102,6 +102,8 @@ export default function CuratedPlaylist() {
       </PageTransition>
     );
   }
+
+  const playlistTrackIds = playlist.tracks.map((track: any) => track.id);
 
   return (
     <PageTransition>
@@ -146,10 +148,17 @@ export default function CuratedPlaylist() {
           {playlist.tracks.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center">{t("curated.empty", "아직 수록곡이 없습니다.")}</p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-10 gap-4">
-              {playlist.tracks.map((track: any) => (
-                <div key={track.id} className="transform scale-90 md:scale-90 origin-top-left">
-                  <MusicCard music={track} />
+            <div className="flex max-w-4xl flex-col gap-3" data-testid="curated-track-list">
+              {playlist.tracks.map((track: any, index: number) => (
+                <div
+                  key={track.id}
+                  className="relative rounded-[22px] border border-primary/10 bg-gradient-to-r from-primary/10 via-card to-card p-1 shadow-[0_18px_44px_-34px_rgba(124,58,237,0.65)]"
+                  data-testid={`curated-track-row-${track.id}`}
+                >
+                  <span className="absolute -left-1.5 -top-1.5 z-10 rounded-full bg-primary px-2 py-0.5 text-[11px] font-black text-primary-foreground shadow-lg">
+                    {index + 1}
+                  </span>
+                  <MusicCard music={track} variant="homeLikedRow" playlistIds={playlistTrackIds} />
                 </div>
               ))}
             </div>
