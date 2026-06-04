@@ -19,7 +19,7 @@ import {
   Sparkles,
   TrendingUp,
   Upload,
-  Wand2,
+  Youtube,
 } from "lucide-react";
 import { Navigation } from "@/components/Navigation";
 import { useAuth } from "@/hooks/use-auth";
@@ -65,6 +65,7 @@ const L = {
   welcome: "\uc5b4\uc11c\uc624\uc138\uc694",
   won: "\uc6d0",
   weeklyTop: "\uc774\ubc88 \uc8fc \uc778\uae30\uace1",
+  playlistStudio: "\ud50c.\uc2a4\ud29c\ub514\uc624",
 } as const;
 
 const MOBILE_COPY = {
@@ -105,6 +106,7 @@ const MOBILE_COPY = {
     welcome: "Welcome",
     won: " KRW",
     weeklyTop: "Weekly Top",
+    playlistStudio: "PL Studio",
   },
   ja: {
     aiCreate: "AI生成",
@@ -142,6 +144,7 @@ const MOBILE_COPY = {
     welcome: "ようこそ",
     won: "ウォン",
     weeklyTop: "今週の人気曲",
+    playlistStudio: "PLスタジオ",
   },
   zh: {
     aiCreate: "AI 生成",
@@ -179,6 +182,7 @@ const MOBILE_COPY = {
     welcome: "欢迎",
     won: "韩元",
     weeklyTop: "本周热门",
+    playlistStudio: "播放列表工作室",
   },
 } as const;
 
@@ -493,7 +497,7 @@ export default function MobileHome() {
 
         <section className="px-4">
           <div className="flex items-center gap-1 rounded-[24px] border border-white/10 bg-black/22 px-2 shadow-[0_18px_54px_-38px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
-            <QuickAction href="/create-music" icon={Wand2} label={copy.aiCreate} />
+            <QuickAction href="/playlist-studio" icon={Youtube} label={copy.playlistStudio} />
             <QuickAction href="/upload" icon={Upload} label={copy.upload} />
             <QuickAction href="/radio/channels" icon={Radio} label={copy.broadcast} />
             <QuickAction href="/pricing" icon={Crown} label={copy.premium} />
@@ -513,7 +517,7 @@ export default function MobileHome() {
             <div className="grid grid-cols-3 gap-2">
               <FlowCard href="/music" icon={Search} title={copy.searchMusic} desc={copy.recommended} />
               <FlowCard href="/popular" icon={TrendingUp} title={copy.quickChart} desc={copy.weeklyTop} />
-              <FlowCard href="/create-music" icon={Wand2} title={copy.aiCreate} desc={copy.upload} />
+              <FlowCard href="/playlist-studio" icon={Youtube} title={copy.playlistStudio} desc={copy.recommended} />
             </div>
           </div>
         </section>

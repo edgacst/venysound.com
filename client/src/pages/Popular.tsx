@@ -4,7 +4,6 @@ import { MusicCard } from "@/components/MusicCard";
 import { usePlayerStore } from "@/components/AudioPlayer";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Loader2, Play, TrendingUp, Clock, Heart } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,21 +67,11 @@ export default function Popular() {
             {t('popular.noPopular')}
           </div>
         ) : (
-          <div className="music-grid grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="music-grid grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5">
             {popularList.map((music, index) => (
               <div key={music.id} className="relative" data-testid={`card-popular-${music.id}`}>
-                {index < 3 && (
-                  <Badge className="absolute -top-2 -left-2 z-10 bg-red-500 text-white border-none text-xs px-2">
-                    TOP {index + 1}
-                  </Badge>
-                )}
-                {index >= 3 && index < 10 && (
-                  <Badge variant="secondary" className="absolute -top-2 -left-2 z-10 text-xs px-2">
-                    {index + 1}
-                  </Badge>
-                )}
-                <MusicCard music={music} />
-                <div className="mt-1 flex items-center justify-between px-1 text-xs text-muted-foreground md:mt-2">
+                <MusicCard music={music} chartRank={index + 1} />
+                <div className="mt-1 hidden items-center justify-between px-1 text-xs text-muted-foreground md:mt-2 md:flex">
                   <span className="flex items-center gap-1" data-testid={`text-likes-${music.id}`}>
                     <Heart size={10} className="text-red-400" /> {music.likeCount}
                   </span>

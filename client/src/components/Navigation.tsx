@@ -69,10 +69,14 @@ export function Navigation() {
     setTimeout(() => logout(), 400);
   };
 
-  const handleMobileLanguageChange = (lng: "ko" | "en" | "zh" | "ja") => {
-    void i18n.changeLanguage(lng);
+  const handleMobileLanguageChange = (lng: string) => {
+    if (lng === "ko" || lng === "en" || lng === "zh" || lng === "ja") {
+      void i18n.changeLanguage(lng);
+      setIsMobileLanguageOpen(false);
+    }
   };
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileLanguageOpen, setIsMobileLanguageOpen] = useState(false);
   const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
     enabled: !!user,
@@ -428,28 +432,47 @@ export function Navigation() {
                   {adminCheck?.isAdmin && (
                     <NavLink href={ADMIN_PATH} icon={ShieldCheck}>{t('nav.admin')}</NavLink>
                   )}
-                  <div className="px-4 py-2">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                      <Globe size={16} />
-                      {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5" data-testid="mobile-language-buttons">
-                      {(["ko", "en", "zh", "ja"] as const).map((lng) => {
-                        const active = (i18n.language || "").startsWith(lng);
-                        return (
-                          <button
-                            key={lng}
-                            type="button"
-                            onClick={() => handleMobileLanguageChange(lng)}
-                            className={`rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${
-                              active ? "bg-primary text-primary-foreground" : "bg-white/8 text-muted-foreground hover:bg-white/12 hover:text-foreground"
-                            }`}
-                          >
-                            {lng.toUpperCase()}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="px-4 py-2 text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileLanguageOpen((open) => !open)}
+                      className="flex w-full min-w-0 items-center justify-between gap-2 text-sm font-medium"
+                      aria-expanded={isMobileLanguageOpen}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Globe size={16} />
+                        <span>{t("language.title", "언어")}</span>
+                      </span>
+                      <span className="text-xs font-bold text-foreground">
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
+                      </span>
+                    </button>
+                    {isMobileLanguageOpen ? (
+                      <div className="mt-3 flex flex-col gap-3 text-sm font-bold" data-testid="mobile-language-buttons">
+                        {(["ko", "en", "zh", "ja"] as const).map((lng) => {
+                          const active = (i18n.language || "").startsWith(lng);
+                          const meta = {
+                            ko: { code: "KR", label: t("language.ko") },
+                            en: { code: "US", label: "English" },
+                            zh: { code: "CN", label: "中文" },
+                            ja: { code: "JP", label: "日本語" },
+                          }[lng];
+                          return (
+                            <button
+                              key={lng}
+                              type="button"
+                              onClick={() => handleMobileLanguageChange(lng)}
+                              className={`flex items-center gap-1.5 py-0.5 text-left transition-colors ${
+                                active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <span className="w-5 text-[10px] font-black uppercase tracking-tight">{meta.code}</span>
+                              <span>{meta.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <div 
                     onClick={handleLogout} 
@@ -462,28 +485,47 @@ export function Navigation() {
               )}
               {!user && (
                 <>
-                  <div className="px-4 py-2">
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                      <Globe size={16} />
-                      {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5" data-testid="mobile-language-buttons-guest">
-                      {(["ko", "en", "zh", "ja"] as const).map((lng) => {
-                        const active = (i18n.language || "").startsWith(lng);
-                        return (
-                          <button
-                            key={lng}
-                            type="button"
-                            onClick={() => handleMobileLanguageChange(lng)}
-                            className={`rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${
-                              active ? "bg-primary text-primary-foreground" : "bg-white/8 text-muted-foreground hover:bg-white/12 hover:text-foreground"
-                            }`}
-                          >
-                            {lng.toUpperCase()}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  <div className="px-4 py-2 text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileLanguageOpen((open) => !open)}
+                      className="flex w-full min-w-0 items-center justify-between gap-2 text-sm font-medium"
+                      aria-expanded={isMobileLanguageOpen}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Globe size={16} />
+                        <span>{t("language.title", "언어")}</span>
+                      </span>
+                      <span className="text-xs font-bold text-foreground">
+                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
+                      </span>
+                    </button>
+                    {isMobileLanguageOpen ? (
+                      <div className="mt-3 flex flex-col gap-3 text-sm font-bold" data-testid="mobile-language-buttons-guest">
+                        {(["ko", "en", "zh", "ja"] as const).map((lng) => {
+                          const active = (i18n.language || "").startsWith(lng);
+                          const meta = {
+                            ko: { code: "KR", label: t("language.ko") },
+                            en: { code: "US", label: "English" },
+                            zh: { code: "CN", label: "中文" },
+                            ja: { code: "JP", label: "日本語" },
+                          }[lng];
+                          return (
+                            <button
+                              key={lng}
+                              type="button"
+                              onClick={() => handleMobileLanguageChange(lng)}
+                              className={`flex items-center gap-1.5 py-0.5 text-left transition-colors ${
+                                active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              <span className="w-5 text-[10px] font-black uppercase tracking-tight">{meta.code}</span>
+                              <span>{meta.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <div
                     onClick={openLoginModal}
