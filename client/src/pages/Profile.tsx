@@ -19,7 +19,7 @@ import {
   Loader2, UserPlus, UserCheck, Upload as UploadIcon, Heart, 
   MessageSquare, ListMusic, Music, Users, Bell, BellOff, 
   Plus, Trash2, X, Flag, Clock, Search, CheckCircle, XCircle, Crown,
-  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins, Pencil
+  Wallet, Gift, Download, TrendingUp, Banknote, ArrowDownToLine, Coins, Pencil, ChevronDown
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePlaylists, useCreatePlaylist, usePlaylist } from "@/hooks/use-playlists";
@@ -948,6 +948,7 @@ export default function Profile() {
   const [editLastName, setEditLastName] = useState("");
   const [editProfileImageUrl, setEditProfileImageUrl] = useState("");
   const [profileImageUploading, setProfileImageUploading] = useState(false);
+  const [streamingStatsOpen, setStreamingStatsOpen] = useState(false);
   const profileImageInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1248,14 +1249,33 @@ export default function Profile() {
             </div>
 
             {(uploadedMusic?.length || 0) > 0 && (
-              <div className="mb-8">
-                <Card className="p-4">
-                  <div className="flex items-center gap-2 mb-4">
+              <div className="mb-5 sm:mb-8">
+                <Card className="overflow-hidden border-primary/10 bg-card/80">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 p-4 text-left"
+                    onClick={() => setStreamingStatsOpen((open) => !open)}
+                    aria-expanded={streamingStatsOpen}
+                    data-testid="button-toggle-streaming-stats"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
                     <div className="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center shrink-0">
                       <Clock className="text-primary" size={16} />
                     </div>
-                    <h3 className="font-semibold text-sm">{t('profile.streamingStatus', '내 음원 스트리밍 현황')}</h3>
-                  </div>
+                    <h3 className="truncate text-sm font-semibold">{t('profile.streamingStatus', '내 음원 스트리밍 현황')}</h3>
+                    <span className="hidden text-xs text-muted-foreground sm:inline">
+                      {t('profile.streamingStatusSummary', '총 {{plays}}회 · {{time}}', {
+                        plays: (streamingStats?.totalPlays || 0).toLocaleString(),
+                        time: formatStreamingTime(streamingStats?.totalSeconds || 0),
+                      })}
+                    </span>
+                    </div>
+                    <ChevronDown
+                      size={18}
+                      className={`shrink-0 text-muted-foreground transition-transform duration-200 ${streamingStatsOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <div className={streamingStatsOpen ? "border-t border-border/70 p-4 pt-3" : "hidden"}>
                   {(streamingStats?.tracks || []).length > 0 && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
                       {streamingStats!.tracks.map((track) => (
@@ -1293,6 +1313,7 @@ export default function Profile() {
                         {(streamingStats?.totalPlays || 0).toLocaleString()}{t('profile.timesUnit', '회')}
                       </p>
                     </div>
+                  </div>
                   </div>
                 </Card>
               </div>
