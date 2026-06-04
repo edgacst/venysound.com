@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Home, Radio, Search, User, Wand2 } from "lucide-react";
+import { Home, Radio, Search, User, Youtube } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -30,7 +30,7 @@ export function MobileBottomTab() {
     <nav className="fixed inset-x-0 bottom-0 z-[60] flex h-14 items-center gap-0 border-t border-slate-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_-24px_rgba(15,23,42,0.55)] backdrop-blur-xl md:hidden">
       <BottomTab href="/" icon={Home} label={t("nav.home", "홈")} />
       <BottomTab href="/music" icon={Search} label={t("nav.musicList", "탐색")} />
-      <BottomTab href="/create-music" icon={Wand2} label={t("nav.createMusic", "AI")} />
+      <BottomTab href="/playlist-studio" icon={Youtube} label={t("playlistStudio.shortLabel", "플.스튜디오")} />
       <BottomTab href="/radio/channels" icon={Radio} label={t("mobileHome.broadcast", "방송")} />
       <BottomTab href={user ? `/profile/${user.id}` : "/login"} icon={User} label={t("nav.myPage", "MY")} />
     </nav>

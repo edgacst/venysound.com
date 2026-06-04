@@ -68,6 +68,10 @@ export function Navigation() {
     toast({ title: t("nav.logoutSuccess", "로그아웃되었습니다") });
     setTimeout(() => logout(), 400);
   };
+
+  const handleMobileLanguageChange = (lng: "ko" | "en" | "zh" | "ja") => {
+    void i18n.changeLanguage(lng);
+  };
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
     queryKey: ["/api/admin/check"],
@@ -424,20 +428,29 @@ export function Navigation() {
                   {adminCheck?.isAdmin && (
                     <NavLink href={ADMIN_PATH} icon={ShieldCheck}>{t('nav.admin')}</NavLink>
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle">
-                        <Globe size={16} />
-                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="px-4 py-2">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <Globe size={16} />
+                      {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5" data-testid="mobile-language-buttons">
+                      {(["ko", "en", "zh", "ja"] as const).map((lng) => {
+                        const active = (i18n.language || "").startsWith(lng);
+                        return (
+                          <button
+                            key={lng}
+                            type="button"
+                            onClick={() => handleMobileLanguageChange(lng)}
+                            className={`rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${
+                              active ? "bg-primary text-primary-foreground" : "bg-white/8 text-muted-foreground hover:bg-white/12 hover:text-foreground"
+                            }`}
+                          >
+                            {lng.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div 
                     onClick={handleLogout} 
                     className="flex items-center gap-2 px-4 py-2 text-red-400 cursor-pointer"
@@ -449,20 +462,29 @@ export function Navigation() {
               )}
               {!user && (
                 <>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground justify-start w-full" data-testid="button-language-toggle-guest">
-                        <Globe size={16} />
-                        {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ko')}>🇰🇷 {t('language.ko')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('en')}>🇺🇸 {t('language.en')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('zh')}>🇨🇳 {t('language.zh')}</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => i18n.changeLanguage('ja')}>🇯🇵 {t('language.ja')}</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="px-4 py-2">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <Globe size={16} />
+                      {t(`language.${['ko','ja','zh','en'].find(l => (i18n.language || '').startsWith(l)) || 'ko'}`)}
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5" data-testid="mobile-language-buttons-guest">
+                      {(["ko", "en", "zh", "ja"] as const).map((lng) => {
+                        const active = (i18n.language || "").startsWith(lng);
+                        return (
+                          <button
+                            key={lng}
+                            type="button"
+                            onClick={() => handleMobileLanguageChange(lng)}
+                            className={`rounded-full px-2 py-1.5 text-xs font-bold transition-colors ${
+                              active ? "bg-primary text-primary-foreground" : "bg-white/8 text-muted-foreground hover:bg-white/12 hover:text-foreground"
+                            }`}
+                          >
+                            {lng.toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <div
                     onClick={openLoginModal}
                     className="flex items-center gap-2 px-4 py-2 rounded-full text-foreground font-medium hover:bg-secondary cursor-pointer transition-colors"
