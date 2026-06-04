@@ -1066,49 +1066,8 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
             )}
           </div>
 
-          {!freeAiLocked && (
-            <div
-              className="absolute right-2 top-2 z-[14] flex items-center gap-1"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full bg-black/55 text-amber-300 backdrop-blur hover:bg-black/70 hover:text-amber-200"
-                title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setRingtoneDialogOpen(true);
-                }}
-                data-testid={`button-ringtone-card-overlay-${music.id}`}
-                aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
-              >
-                <Bell size={15} />
-              </Button>
-              {uploaderIsPremium && !isOwner && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-full bg-black/55 text-yellow-300 backdrop-blur hover:bg-black/70 hover:text-yellow-200"
-                  title={t("music.tipTitle")}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (!user) return redirectToLogin();
-                    setTipOpen(true);
-                  }}
-                  data-testid={`button-tip-overlay-${music.id}`}
-                  aria-label={t("music.tipTitle")}
-                >
-                  <Gift size={15} />
-                </Button>
-              )}
-            </div>
-          )}
-
           {showMenu && (
-            <div className={`absolute right-2 ${freeAiLocked ? "top-2" : "top-12"} z-[14] opacity-0 group-hover:opacity-100 transition-opacity`} style={{ visibility: 'visible' }} onClick={(e) => e.stopPropagation()}>
+            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ visibility: 'visible' }} onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="icon" variant="ghost" className="bg-black/50 text-white" data-testid={`button-music-menu-${music.id}`}>
