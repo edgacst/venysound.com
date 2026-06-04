@@ -5,7 +5,7 @@ import { InternationalReleaseCard, type InternationalReleaseItem } from "@/compo
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, Pause, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2, Clock3 } from "lucide-react";
+import { Search, Play, Pause, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2 } from "lucide-react";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -148,11 +148,6 @@ export default function Explore() {
     if (!musicList || musicList.length === 0) return [];
     return musicList.map((m) => m.id);
   }, [musicList]);
-  const recentUploadTracks = useMemo(() => (musicList ?? []).slice(0, 8), [musicList]);
-  const recentUploadIds = useMemo(() => recentUploadTracks.map((m) => m.id), [recentUploadTracks]);
-  const showRecentUploadsSection =
-    catalogTab === "site" && currentPage === 1 && !debouncedSearch && !selectedGenre && recentUploadTracks.length > 0;
-
   const { data: curatedPlaylists } = useQuery<{ id: number; name: string; description: string | null; slug: string; sortOrder: number; coverImageFilename: string | null; genreMain?: string | null; genreSub?: string | null }[]>({
     queryKey: ["/api/curated-playlists"],
     queryFn: async () => {
@@ -389,7 +384,7 @@ export default function Explore() {
           <section id="recommended-playlists" className="mb-8 rounded-[28px] border border-primary/10 bg-primary/5 px-3 py-4" data-testid="section-recommended-playlists">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <ListMusic size={20} className="text-primary" />
-              {t('explore.recommendedPlaylists', '추천 플레이리스트')}
+              {t('explore.themedPlaylists', '테마 플레이리스트')}
             </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {curatedPlaylists.map((pl) => (
@@ -423,29 +418,6 @@ export default function Explore() {
                     </div>
                   </div>
                 </Link>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {showRecentUploadsSection && (
-          <section className="mb-8" data-testid="section-explore-recent-uploads">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
-                  <Clock3 size={20} className="text-primary" />
-                  {t("explore.recentUploadsTitle", "방금 올라온 음악")}
-                </h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("explore.recentUploadsDesc", "새로 올라온 음원을 먼저 확인해보세요.")}
-                </p>
-              </div>
-            </div>
-            <div className="flex snap-x gap-3 overflow-x-auto pb-2 scrollbar-hide">
-              {recentUploadTracks.map((music) => (
-                <div key={music.id} className="w-[88vw] max-w-[25rem] shrink-0 snap-start md:w-[22rem]">
-                  <MusicCard music={music} playlistIds={recentUploadIds} />
-                </div>
               ))}
             </div>
           </section>
