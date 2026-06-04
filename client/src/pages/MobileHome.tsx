@@ -22,6 +22,7 @@ import {
   Youtube,
 } from "lucide-react";
 import { Navigation } from "@/components/Navigation";
+import { MusicCard } from "@/components/MusicCard";
 import { useAuth } from "@/hooks/use-auth";
 import { useMusicList } from "@/hooks/use-music";
 import { usePlayerStore } from "@/components/AudioPlayer";
@@ -332,6 +333,7 @@ export default function MobileHome() {
   const tracks = musicResult?.data ?? [];
   const heroTrack = tracks[0];
   const recentTracks = tracks.slice(0, 10);
+  const recentTrackIds = recentTracks.map((track) => track.id);
   const displayName = user?.firstName?.trim() || user?.username?.trim() || "MY";
 
   const { data: weeklyTop = [] } = useQuery<MusicType[]>({
@@ -640,42 +642,7 @@ export default function MobileHome() {
             <SectionHeader title={copy.latest} href="/music" />
             <div className="space-y-2 px-4">
               {recentTracks.slice(0, 8).map((music) => (
-                <div
-                  key={music.id}
-                  className={`rounded-2xl border bg-white p-2 shadow-[0_12px_32px_-26px_rgba(15,23,42,0.55)] ${
-                    activeMusicId === music.id
-                      ? pauseRequested
-                        ? "border-violet-400"
-                        : "playing-card-soft-pulse border-teal-400"
-                      : "border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <img src={coverFor(music)} alt="" className="h-[52px] w-[52px] rounded-xl object-cover" />
-                    <Link href={`/music/${music.id}`} className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-black leading-tight text-slate-950">{music.title}</p>
-                      <p className="mt-0.5 truncate text-[11px] font-semibold leading-tight text-slate-500">{music.artist}</p>
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (activeMusicId === music.id) {
-                          togglePause();
-                          return;
-                        }
-                        playMusic(music.id);
-                      }}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"
-                      aria-label={copy.play}
-                    >
-                      {activeMusicId === music.id && !pauseRequested ? (
-                        <Disc3 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Play className="ml-0.5 h-3.5 w-3.5 fill-current" />
-                      )}
-                    </button>
-                  </div>
-                </div>
+                <MusicCard key={music.id} music={music} playlistIds={recentTrackIds} />
               ))}
             </div>
           </section>
