@@ -1,7 +1,8 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
+import { useTranslation } from "react-i18next";
 import {
   BarChart3,
   ChevronDown,
@@ -66,14 +67,125 @@ const L = {
   weeklyTop: "\uc774\ubc88 \uc8fc \uc778\uae30\uace1",
 } as const;
 
-const moodChips = [
-  { label: "\ub4dc\ub77c\uc774\ube0c", href: "/music?q=drive" },
-  { label: "\uac10\uc131", href: "/music?q=emotional" },
-  { label: "\uc2e0\ub098\ub294", href: "/music?q=upbeat" },
-  { label: "\ubc24", href: "/music?q=night" },
-  { label: "\ud53c\uc544\ub178", href: "/music?q=piano" },
-  { label: "\ub77c\ub514\uc624", href: "/radio/channels" },
-] as const;
+const MOBILE_COPY = {
+  ko: L,
+  en: {
+    aiCreate: "AI Create",
+    broadcast: "Radio",
+    continueLogin: "Log in to continue to your library and wallet.",
+    dashboard: "Dashboard",
+    dashboardValue: "View activity",
+    emptyMusic: "No music yet.",
+    expand: "Open",
+    exploreMood: "Find by mood",
+    exploreMoodDesc: "Choose the mood you want to hear now.",
+    fastStart: "Quick Start",
+    featuredFlow: "Today's Flow",
+    featuredFlowDesc: "Listen, create, and broadcast from one mobile screen.",
+    latest: "Recently Uploaded",
+    liveNow: "Live now",
+    login: "Log In",
+    message: "Messages",
+    messageEmpty: "Inbox",
+    messageNew: " new",
+    more: "More",
+    myLibrary: "My Library",
+    myLibraryValue: "Saved music",
+    nameSuffix: "",
+    pick: "Today's Pick",
+    play: "Play",
+    playing: "Playing",
+    premium: "Premium",
+    quickChart: "Mini Chart",
+    recommended: "Recommended Playlists",
+    searchMusic: "Explore",
+    start: "Start VenySound",
+    upload: "Upload",
+    wallet: "Wallet",
+    welcome: "Welcome",
+    won: " KRW",
+    weeklyTop: "Weekly Top",
+  },
+  ja: {
+    aiCreate: "AI生成",
+    broadcast: "ラジオ",
+    continueLogin: "ログインするとライブラリとウォレットを続けて確認できます。",
+    dashboard: "ダッシュボード",
+    dashboardValue: "活動を見る",
+    emptyMusic: "音源はまだありません。",
+    expand: "開く",
+    exploreMood: "ムードで探す",
+    exploreMoodDesc: "今聴きたい雰囲気を選んでください。",
+    fastStart: "すぐ始める",
+    featuredFlow: "今日のフロー",
+    featuredFlowDesc: "聴く、作る、配信まで一画面でつながります。",
+    latest: "新着音楽",
+    liveNow: "配信中",
+    login: "ログイン",
+    message: "メッセージ",
+    messageEmpty: "受信メッセージ",
+    messageNew: "件の新着",
+    more: "もっと見る",
+    myLibrary: "マイライブラリ",
+    myLibraryValue: "保存した音楽",
+    nameSuffix: "さん",
+    pick: "今日のピック",
+    play: "再生",
+    playing: "再生中",
+    premium: "プレミアム",
+    quickChart: "ミニチャート",
+    recommended: "おすすめプレイリスト",
+    searchMusic: "音楽を探す",
+    start: "VenySoundを始める",
+    upload: "アップロード",
+    wallet: "ウォレット",
+    welcome: "ようこそ",
+    won: "ウォン",
+    weeklyTop: "今週の人気曲",
+  },
+  zh: {
+    aiCreate: "AI 生成",
+    broadcast: "电台",
+    continueLogin: "登录后可继续查看资料库和钱包。",
+    dashboard: "仪表盘",
+    dashboardValue: "查看活动",
+    emptyMusic: "还没有音乐。",
+    expand: "展开",
+    exploreMood: "按氛围查找",
+    exploreMoodDesc: "选择现在想听的氛围。",
+    fastStart: "快速开始",
+    featuredFlow: "今日流程",
+    featuredFlowDesc: "听歌、创作、广播都在一个画面中完成。",
+    latest: "最新上传",
+    liveNow: "正在直播",
+    login: "登录",
+    message: "消息",
+    messageEmpty: "收件箱",
+    messageNew: " 条新消息",
+    more: "更多",
+    myLibrary: "我的资料库",
+    myLibraryValue: "已保存音乐",
+    nameSuffix: "",
+    pick: "今日推荐",
+    play: "播放",
+    playing: "播放中",
+    premium: "高级",
+    quickChart: "迷你榜单",
+    recommended: "推荐播放列表",
+    searchMusic: "探索音乐",
+    start: "开始使用 VenySound",
+    upload: "上传",
+    wallet: "钱包",
+    welcome: "欢迎",
+    won: "韩元",
+    weeklyTop: "本周热门",
+  },
+} as const;
+
+function getMobileCopy(language?: string) {
+  const base = String(language || "ko").split(/[-_]/)[0] as keyof typeof MOBILE_COPY;
+  return MOBILE_COPY[base] ?? MOBILE_COPY.ko;
+}
 
 function coverFor(music?: Pick<MusicType, "imageFilename"> | null) {
   if (music?.imageFilename) return resolveStorageUrl(music.imageFilename);
@@ -81,6 +193,8 @@ function coverFor(music?: Pick<MusicType, "imageFilename"> | null) {
 }
 
 function MobileTrackCard({ music, rank }: { music: MusicType; rank?: number }) {
+  const { i18n } = useTranslation();
+  const copy = getMobileCopy(i18n.language);
   const { playMusic, activeMusicId, pauseRequested, togglePause } = usePlayerStore();
   const isActive = activeMusicId === music.id;
   const isPlaying = isActive && !pauseRequested;
@@ -110,7 +224,7 @@ function MobileTrackCard({ music, rank }: { music: MusicType; rank?: number }) {
               playMusic(music.id);
             }}
             className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-black shadow-lg"
-            aria-label={isPlaying ? L.playing : L.play}
+            aria-label={isPlaying ? copy.playing : copy.play}
           >
             {isPlaying ? <Disc3 className="h-4 w-4 animate-spin" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
           </button>
@@ -123,12 +237,14 @@ function MobileTrackCard({ music, rank }: { music: MusicType; rank?: number }) {
 }
 
 function SectionHeader({ title, href }: { title: string; href?: string }) {
+  const { i18n } = useTranslation();
+  const copy = getMobileCopy(i18n.language);
   return (
     <div className="mb-3 flex items-center justify-between px-4">
       <h2 className="text-lg font-bold tracking-normal text-white">{title}</h2>
       {href ? (
         <Link href={href} className="text-xs font-semibold text-white/75">
-          {L.more}
+          {copy.more}
         </Link>
       ) : null}
     </div>
@@ -202,6 +318,8 @@ function FlowCard({
 }
 
 export default function MobileHome() {
+  const { i18n } = useTranslation();
+  const copy = getMobileCopy(i18n.language);
   const { user } = useAuth();
   const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const openLogin = useLoginModalStore((s) => s.open);
@@ -254,6 +372,14 @@ export default function MobileHome() {
 
   const balanceWon = creditsData?.balanceWon ?? creditsData?.credits ?? 0;
   const unreadMessageCount = unreadMsgData?.count ?? 0;
+  const moodChips = [
+    { label: i18n.t("mobileHome.moodDrive", { defaultValue: i18n.language.startsWith("en") ? "Drive" : i18n.language.startsWith("ja") ? "ドライブ" : i18n.language.startsWith("zh") ? "兜风" : "드라이브" }), href: "/music?q=drive" },
+    { label: i18n.t("mobileHome.moodEmotional", { defaultValue: i18n.language.startsWith("en") ? "Emotional" : i18n.language.startsWith("ja") ? "感性" : i18n.language.startsWith("zh") ? "感性" : "감성" }), href: "/music?q=emotional" },
+    { label: i18n.t("mobileHome.moodUpbeat", { defaultValue: i18n.language.startsWith("en") ? "Upbeat" : i18n.language.startsWith("ja") ? "楽しい" : i18n.language.startsWith("zh") ? "欢快" : "신나는" }), href: "/music?q=upbeat" },
+    { label: i18n.t("mobileHome.moodNight", { defaultValue: i18n.language.startsWith("en") ? "Night" : i18n.language.startsWith("ja") ? "夜" : i18n.language.startsWith("zh") ? "夜晚" : "밤" }), href: "/music?q=night" },
+    { label: i18n.t("mobileHome.moodPiano", { defaultValue: i18n.language.startsWith("en") ? "Piano" : i18n.language.startsWith("ja") ? "ピアノ" : i18n.language.startsWith("zh") ? "钢琴" : "피아노" }), href: "/music?q=piano" },
+    { label: copy.broadcast, href: "/radio/channels" },
+  ] as const;
 
   return (
     <div className="min-h-screen bg-transparent pb-36 text-white" data-testid="mobile-home-redesign">
@@ -265,10 +391,10 @@ export default function MobileHome() {
             <div className="rounded-[24px] border border-white/10 bg-white/12 px-4 py-3 shadow-[0_18px_48px_-34px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-baseline gap-2">
-                  <span className="shrink-0 text-xs font-bold text-cyan-200">{L.welcome}</span>
+                  <span className="shrink-0 text-xs font-bold text-cyan-200">{copy.welcome}</span>
                   <h1 className="truncate text-base font-black text-white">
                     {displayName}
-                    {L.nameSuffix}
+                    {copy.nameSuffix}
                   </h1>
                 </div>
                 <button
@@ -277,7 +403,7 @@ export default function MobileHome() {
                   className="flex shrink-0 items-center gap-1 rounded-full bg-black/45 px-3 py-2 text-xs font-black text-white"
                   aria-expanded={quickMenuOpen}
                 >
-                  {L.expand}
+                  {copy.expand}
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${quickMenuOpen ? "rotate-180" : ""}`} />
                 </button>
               </div>
@@ -291,15 +417,15 @@ export default function MobileHome() {
                     className="overflow-hidden"
                   >
                     <div className="grid grid-cols-2 gap-2 pt-3">
-                      <MobileActionLink href="/my-library" icon={Download} label={L.myLibrary} value={L.myLibraryValue} />
+                      <MobileActionLink href="/my-library" icon={Download} label={copy.myLibrary} value={copy.myLibraryValue} />
                       <MobileActionLink
                         href="/messages"
                         icon={MessageSquare}
-                        label={L.message}
-                        value={unreadMessageCount > 0 ? `${unreadMessageCount}${L.messageNew}` : L.messageEmpty}
+                        label={copy.message}
+                        value={unreadMessageCount > 0 ? `${unreadMessageCount}${copy.messageNew}` : copy.messageEmpty}
                       />
-                      <MobileActionLink href="/dashboard" icon={BarChart3} label={L.dashboard} value={L.dashboardValue} />
-                      <MobileActionLink href="/credits" icon={Coins} label={L.wallet} value={`${balanceWon.toLocaleString()}${L.won}`} />
+                      <MobileActionLink href="/dashboard" icon={BarChart3} label={copy.dashboard} value={copy.dashboardValue} />
+                      <MobileActionLink href="/credits" icon={Coins} label={copy.wallet} value={`${balanceWon.toLocaleString()}${copy.won}`} />
                     </div>
                   </motion.div>
                 ) : null}
@@ -307,10 +433,10 @@ export default function MobileHome() {
             </div>
           ) : (
             <div className="rounded-[24px] border border-white/10 bg-white/12 p-4 shadow-[0_18px_48px_-34px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-              <p className="text-xs font-bold text-cyan-200">{L.start}</p>
-              <h1 className="mt-1 text-lg font-black leading-tight text-white">{L.continueLogin}</h1>
+              <p className="text-xs font-bold text-cyan-200">{copy.start}</p>
+              <h1 className="mt-1 text-lg font-black leading-tight text-white">{copy.continueLogin}</h1>
               <button onClick={openLogin} className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-black text-violet-950">
-                {L.login}
+                {copy.login}
               </button>
             </div>
           )}
@@ -321,7 +447,7 @@ export default function MobileHome() {
             <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-fuchsia-300/35 to-transparent" />
             <div className="relative p-4">
               <div className="mb-4 flex items-center justify-between">
-                <span className="rounded-full bg-black/65 px-3 py-1 text-[11px] font-bold text-white">{L.pick}</span>
+                <span className="rounded-full bg-black/65 px-3 py-1 text-[11px] font-bold text-white">{copy.pick}</span>
                 <Sparkles className="h-5 w-5 text-white/70" />
               </div>
               {isLoading ? (
@@ -348,7 +474,7 @@ export default function MobileHome() {
                         playMusic(heroTrack.id);
                       }}
                       className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white text-violet-950"
-                      aria-label={L.play}
+                      aria-label={copy.play}
                     >
                       {activeMusicId === heroTrack.id && !pauseRequested ? (
                         <Disc3 className="h-6 w-6 animate-spin" />
@@ -359,7 +485,7 @@ export default function MobileHome() {
                   </div>
                 </>
               ) : (
-                <div className="flex h-72 items-center justify-center text-sm font-semibold text-white/55">{L.emptyMusic}</div>
+                <div className="flex h-72 items-center justify-center text-sm font-semibold text-white/55">{copy.emptyMusic}</div>
               )}
             </div>
           </div>
@@ -367,10 +493,10 @@ export default function MobileHome() {
 
         <section className="px-4">
           <div className="flex items-center gap-1 rounded-[24px] border border-white/10 bg-black/22 px-2 shadow-[0_18px_54px_-38px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
-            <QuickAction href="/create-music" icon={Wand2} label={L.aiCreate} />
-            <QuickAction href="/upload" icon={Upload} label={L.upload} />
-            <QuickAction href="/radio/channels" icon={Radio} label={L.broadcast} />
-            <QuickAction href="/pricing" icon={Crown} label={L.premium} />
+            <QuickAction href="/create-music" icon={Wand2} label={copy.aiCreate} />
+            <QuickAction href="/upload" icon={Upload} label={copy.upload} />
+            <QuickAction href="/radio/channels" icon={Radio} label={copy.broadcast} />
+            <QuickAction href="/pricing" icon={Crown} label={copy.premium} />
           </div>
         </section>
 
@@ -378,16 +504,16 @@ export default function MobileHome() {
           <div className="rounded-[28px] border border-white/10 bg-black/24 p-4 shadow-[0_22px_68px_-46px_rgba(0,0,0,0.95)] backdrop-blur-2xl">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[11px] font-bold text-fuchsia-200">{L.featuredFlow}</p>
-                <h2 className="mt-0.5 text-xl font-black leading-tight text-white">{L.fastStart}</h2>
+                <p className="text-[11px] font-bold text-fuchsia-200">{copy.featuredFlow}</p>
+                <h2 className="mt-0.5 text-xl font-black leading-tight text-white">{copy.fastStart}</h2>
               </div>
               <Sparkles className="h-5 w-5 shrink-0 text-white/70" />
             </div>
-            <p className="mb-4 text-xs font-semibold leading-relaxed text-white/60">{L.featuredFlowDesc}</p>
+            <p className="mb-4 text-xs font-semibold leading-relaxed text-white/60">{copy.featuredFlowDesc}</p>
             <div className="grid grid-cols-3 gap-2">
-              <FlowCard href="/music" icon={Search} title={L.searchMusic} desc={L.recommended} />
-              <FlowCard href="/popular" icon={TrendingUp} title={L.quickChart} desc={L.weeklyTop} />
-              <FlowCard href="/create-music" icon={Wand2} title={L.aiCreate} desc={L.upload} />
+              <FlowCard href="/music" icon={Search} title={copy.searchMusic} desc={copy.recommended} />
+              <FlowCard href="/popular" icon={TrendingUp} title={copy.quickChart} desc={copy.weeklyTop} />
+              <FlowCard href="/create-music" icon={Wand2} title={copy.aiCreate} desc={copy.upload} />
             </div>
           </div>
         </section>
@@ -397,11 +523,11 @@ export default function MobileHome() {
             <div className="rounded-[28px] border border-white/10 bg-white/10 p-4 shadow-[0_22px_68px_-46px_rgba(0,0,0,0.95)] backdrop-blur-xl">
               <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <p className="text-[11px] font-bold text-cyan-200">{L.quickChart}</p>
-                  <h2 className="text-lg font-black text-white">{L.weeklyTop}</h2>
+                  <p className="text-[11px] font-bold text-cyan-200">{copy.quickChart}</p>
+                  <h2 className="text-lg font-black text-white">{copy.weeklyTop}</h2>
                 </div>
                 <Link href="/popular" className="text-xs font-bold text-white/72">
-                  {L.more}
+                  {copy.more}
                 </Link>
               </div>
               <div className="space-y-2">
@@ -423,7 +549,7 @@ export default function MobileHome() {
                         playMusic(music.id);
                       }}
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-violet-950"
-                      aria-label={L.play}
+                      aria-label={copy.play}
                     >
                       {activeMusicId === music.id && !pauseRequested ? (
                         <Disc3 className="h-4 w-4 animate-spin" />
@@ -441,8 +567,8 @@ export default function MobileHome() {
         <section className="px-4">
           <div className="rounded-[28px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
             <div className="mb-3">
-              <p className="text-[11px] font-bold text-fuchsia-200">{L.exploreMood}</p>
-              <h2 className="text-lg font-black text-white">{L.exploreMoodDesc}</h2>
+              <p className="text-[11px] font-bold text-fuchsia-200">{copy.exploreMood}</p>
+              <h2 className="text-lg font-black text-white">{copy.exploreMoodDesc}</h2>
             </div>
             <div className="flex flex-wrap gap-2">
               {moodChips.map((chip) => (
@@ -470,7 +596,7 @@ export default function MobileHome() {
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] font-bold text-fuchsia-200">LIVE RADIO</p>
                 <h2 className="truncate text-base font-black">{liveChannels[0].name}</h2>
-                <p className="mt-0.5 truncate text-xs text-white/55">{liveChannels[0].homeTickerText || L.liveNow}</p>
+                <p className="mt-0.5 truncate text-xs text-white/55">{liveChannels[0].homeTickerText || copy.liveNow}</p>
               </div>
             </Link>
           </section>
@@ -478,7 +604,7 @@ export default function MobileHome() {
 
         {curatedPlaylists.length > 0 ? (
           <section>
-            <SectionHeader title={L.recommended} href="/music" />
+            <SectionHeader title={copy.recommended} href="/music" />
             <div className="flex snap-x gap-3 overflow-x-auto px-4 pb-2 scrollbar-hide">
               {curatedPlaylists.slice(0, 8).map((playlist) => (
                 <Link
@@ -507,7 +633,7 @@ export default function MobileHome() {
 
         {recentTracks.length > 0 ? (
           <section>
-            <SectionHeader title={L.latest} href="/music" />
+            <SectionHeader title={copy.latest} href="/music" />
             <div className="space-y-2 px-4">
               {recentTracks.slice(0, 8).map((music) => (
                 <div
@@ -536,7 +662,7 @@ export default function MobileHome() {
                         playMusic(music.id);
                       }}
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-white"
-                      aria-label={L.play}
+                      aria-label={copy.play}
                     >
                       {activeMusicId === music.id && !pauseRequested ? (
                         <Disc3 className="h-3.5 w-3.5 animate-spin" />
