@@ -386,19 +386,19 @@ export default function Explore() {
         )}
 
         {catalogTab === "site" && Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
-          <section className="mb-8">
+          <section id="recommended-playlists" className="mb-8 rounded-[28px] border border-primary/10 bg-primary/5 px-3 py-4" data-testid="section-recommended-playlists">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <ListMusic size={20} className="text-primary" />
-              {t('explore.themedPlaylists', '테마 플레이리스트')}
+              {t('explore.recommendedPlaylists', '추천 플레이리스트')}
             </h2>
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {curatedPlaylists.map((pl) => (
                 <Link key={pl.id} href={`/curated/${pl.slug}`}>
                   <div
-                    className="w-40 sm:w-48 flex-shrink-0 rounded-lg border border-border bg-card p-4 hover:bg-card/80 transition-colors cursor-pointer"
+                    className="w-40 sm:w-48 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-card shadow-[0_18px_44px_-34px_rgba(124,58,237,0.75)] transition-colors hover:border-primary/40 cursor-pointer"
                     data-testid={`curated-card-${pl.slug}`}
                   >
-                    <div className="aspect-square rounded-md bg-muted/50 flex items-center justify-center mb-3 overflow-hidden">
+                    <div className="aspect-square bg-muted/50 flex items-center justify-center overflow-hidden">
                       {pl.coverImageFilename ? (
                         <img
                           src={resolveStorageUrl(pl.coverImageFilename)}
@@ -409,16 +409,18 @@ export default function Explore() {
                         <ListMusic size={32} className="text-muted-foreground" />
                       )}
                     </div>
-                    <p className="font-medium truncate" title={pl.name}>{t(`explore.curatedPlaylist.${pl.slug}.name`, pl.name)}</p>
+                    <div className="p-3">
+                      <p className="text-sm font-black truncate" title={pl.name}>{t(`explore.curatedPlaylist.${pl.slug}.name`, pl.name)}</p>
                     {(pl.genreMain || pl.genreSub) && (
-                      <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                      <p className="text-[11px] font-semibold text-primary/80 truncate mt-0.5">
                         {[pl.genreMain, pl.genreSub].filter(Boolean).join(" / ")}
                       </p>
                     )}
                     {(() => {
                       const desc = t(`explore.curatedPlaylist.${pl.slug}.description`, pl.description || '');
-                      return desc ? <p className="text-xs text-muted-foreground truncate mt-0.5" title={desc}>{desc}</p> : null;
+                      return desc ? <p className="text-xs text-muted-foreground line-clamp-2 mt-1" title={desc}>{desc}</p> : null;
                     })()}
+                    </div>
                   </div>
                 </Link>
               ))}
