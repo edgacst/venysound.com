@@ -16,8 +16,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertPostSchema } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
-import { useState, useMemo } from "react";
-import { Link } from "wouter";
+import { useEffect, useState, useMemo } from "react";
+import { Link, useLocation, useSearch } from "wouter";
 import { PageTransition } from "@/components/PageTransition";
 import { useTranslation } from 'react-i18next';
 
@@ -38,9 +38,16 @@ const IMAGE_ACCEPT = "image/jpeg,image/png,image/gif,image/webp";
 
 export default function Community() {
   const { t, i18n } = useTranslation();
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const pageFromSearch = useMemo(() => {
+    const rawPage = new URLSearchParams(searchString).get("page");
+    const page = Number(rawPage);
+    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  }, [searchString]);
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromSearch);
   const { data: posts, isLoading } = usePosts({ 
     category: selectedCategory,
     search: searchQuery 
@@ -61,9 +68,39 @@ export default function Community() {
     return posts.slice(start, start + POSTS_PER_PAGE);
   }, [posts, currentPage]);
 
+  useEffect(() => {
+    setCurrentPage(pageFromSearch);
+  }, [pageFromSearch]);
+
+  const replacePageParam = (page: number) => {
+    const params = new URLSearchParams(searchString);
+    if (page <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(page));
+    }
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `/community?${qs}` : "/community");
+  };
+
+  const handlePageChange = (page: number) => {
+    const nextPage = Math.max(1, Math.min(totalPages, page));
+    const params = new URLSearchParams(searchString);
+    if (nextPage <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(nextPage));
+    }
+    const qs = params.toString();
+    setCurrentPage(nextPage);
+    setLocation(qs ? `/community?${qs}` : "/community");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat === "전체" ? undefined : cat);
     setCurrentPage(1);
+    replacePageParam(1);
   };
 
   const form = useForm({
@@ -263,7 +300,7 @@ export default function Community() {
               placeholder={t('community.searchPlaceholder')}
               className="pl-9 bg-secondary/50 border-white/5"
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); replacePageParam(1); }}
               data-testid="input-search-post"
             />
           </div>
@@ -326,7 +363,7 @@ export default function Community() {
               variant="outline"
               size="icon"
               disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => p - 1)}
+              onClick={() => handlePageChange(currentPage - 1)}
               data-testid="button-prev-page"
             >
               <ChevronLeft size={16} />
@@ -336,7 +373,7 @@ export default function Community() {
                 key={page}
                 variant={page === currentPage ? "default" : "outline"}
                 size="sm"
-                onClick={() => setCurrentPage(page)}
+                onClick={() => handlePageChange(page)}
                 data-testid={`button-page-${page}`}
               >
                 {page}
@@ -346,7 +383,7 @@ export default function Community() {
               variant="outline"
               size="icon"
               disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => p + 1)}
+              onClick={() => handlePageChange(currentPage + 1)}
               data-testid="button-next-page"
             >
               <ChevronRight size={16} />

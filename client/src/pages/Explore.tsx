@@ -6,7 +6,7 @@ import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Play, Pause, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "@/components/AudioPlayer";
@@ -35,6 +35,11 @@ export default function Explore() {
   const { user } = useAuth();
   const searchString = useSearch();
   const [, setLocation] = useLocation();
+  const pageFromSearch = useMemo(() => {
+    const rawPage = new URLSearchParams(searchString).get("page");
+    const page = Number(rawPage);
+    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  }, [searchString]);
   const catalogTab = useMemo(() => {
     const p = new URLSearchParams(searchString);
     return p.get("catalog") === "international" ? "international" as const : "site" as const;
@@ -42,7 +47,8 @@ export default function Explore() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | undefined>(undefined);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(pageFromSearch);
+  const didInitPagingReset = useRef(false);
   
   const debouncedSearch = useDebounce(searchTerm, 500);
 
@@ -54,11 +60,46 @@ export default function Explore() {
   }, [searchString]);
 
   useEffect(() => {
+    setCurrentPage(pageFromSearch);
+  }, [pageFromSearch]);
+
+  const replacePageParam = (page: number) => {
+    const params = new URLSearchParams(searchString);
+    if (page <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(page));
+    }
+    const qs = params.toString();
+    window.history.replaceState(null, "", qs ? `/music?${qs}` : "/music");
+  };
+
+  const pushPageParam = (page: number) => {
+    const params = new URLSearchParams(searchString);
+    if (page <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(page));
+    }
+    const qs = params.toString();
+    setLocation(qs ? `/music?${qs}` : "/music");
+  };
+
+  useEffect(() => {
+    if (!didInitPagingReset.current) return;
+    if (currentPage === 1) return;
     setCurrentPage(1);
+    replacePageParam(1);
   }, [debouncedSearch, selectedGenre]);
 
   useEffect(() => {
+    if (!didInitPagingReset.current) {
+      didInitPagingReset.current = true;
+      return;
+    }
+    if (currentPage === 1) return;
     setCurrentPage(1);
+    replacePageParam(1);
   }, [catalogTab]);
 
   const setCatalogTab = (next: "site" | "international") => {
@@ -144,6 +185,7 @@ export default function Explore() {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+    pushPageParam(page);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
