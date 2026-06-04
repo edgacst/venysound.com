@@ -61,9 +61,139 @@
 
 /* 모바일만: 가로 넘침 방지 (데스크톱 레이아웃에는 영향 없음) */
 @media (max-width: 767px) {
+  :root {
+    --background: 258 42% 11%;
+    --foreground: 0 0% 98%;
+
+    --card: 258 36% 14%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 258 36% 13%;
+    --popover-foreground: 0 0% 98%;
+
+    --secondary: 260 30% 22%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 260 26% 20%;
+    --muted-foreground: 260 18% 78%;
+
+    --border: 260 24% 26%;
+    --input: 260 24% 26%;
+  }
+
   html, body {
     overflow-x: hidden;
     max-width: 100vw;
+  }
+
+  body {
+    background:
+      radial-gradient(circle at 18% -8%, rgba(236, 72, 153, 0.26), transparent 24rem),
+      radial-gradient(circle at 96% 8%, rgba(168, 85, 247, 0.34), transparent 24rem),
+      radial-gradient(circle at 50% 34%, rgba(126, 34, 206, 0.2), transparent 30rem),
+      linear-gradient(180deg, #3a164f 0%, #50196a 32%, #291842 72%, #17142f 100%);
+    color: hsl(var(--foreground));
+    background-attachment: fixed;
+  }
+
+  .app-root,
+  .app-main {
+    min-height: 100vh;
+    background: transparent;
+  }
+
+  .app-main {
+    padding-top: 4rem;
+  }
+
+  .app-main > div[class*="bg-background"],
+  .app-main main[class*="bg-background"] {
+    background-color: transparent !important;
+  }
+
+  .app-main {
+    color: rgba(255, 255, 255, 0.96);
+  }
+
+  .app-main :where(.text-slate-950, .text-slate-900, .text-gray-900, .text-zinc-900, .text-neutral-900, .text-black) {
+    color: rgba(255, 255, 255, 0.96) !important;
+  }
+
+  .app-main :where(.text-muted-foreground, .text-slate-500, .text-slate-600, .text-gray-500, .text-gray-600, .text-zinc-500, .text-zinc-600) {
+    color: rgba(255, 255, 255, 0.68) !important;
+  }
+
+  .app-main :where(.border-slate-200, .border-gray-200, .border-zinc-200) {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+  }
+
+  .app-main :where([class~="bg-secondary"], [class~="bg-muted"]) {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .app-main :where(.bg-white) {
+    color: rgb(15, 23, 42);
+  }
+
+  .app-main :where(.bg-white) :where(.text-slate-950, .text-slate-900, .text-gray-900, .text-zinc-900, .text-neutral-900, .text-black) {
+    color: rgb(15, 23, 42) !important;
+  }
+
+  .app-main :where(.bg-white) :where(.text-muted-foreground, .text-slate-500, .text-slate-600, .text-gray-500, .text-gray-600, .text-zinc-500, .text-zinc-600) {
+    color: rgb(71, 85, 105) !important;
+  }
+
+  .create-music-field {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(88, 28, 135, 0.3) !important;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.82),
+      0 1px 0 rgba(15, 23, 42, 0.04);
+  }
+
+  .create-music-field:focus {
+    border-color: rgba(124, 58, 237, 0.78) !important;
+    box-shadow:
+      0 0 0 3px rgba(124, 58, 237, 0.14),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+    outline: none;
+  }
+
+  .create-music-field::placeholder {
+    color: rgb(148, 163, 184) !important;
+  }
+
+  .create-music-usage-card {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+      rgba(0, 0, 0, 0.24) !important;
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    color: rgba(255, 255, 255, 0.96) !important;
+  }
+
+  .create-music-usage-card--wallet {
+    border-color: rgba(251, 191, 36, 0.5) !important;
+  }
+
+  .create-music-usage-card--quota {
+    border-color: rgba(216, 180, 254, 0.45) !important;
+  }
+
+  .create-music-usage-card :where(div, span, p, strong) {
+    color: rgba(255, 255, 255, 0.92) !important;
+  }
+
+  .create-music-usage-card :where(strong) {
+    color: #ffffff !important;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.22);
+  }
+
+  .create-music-usage-card :where(svg) {
+    color: rgba(253, 224, 71, 0.95) !important;
+  }
+
+  .create-music-usage-card--quota :where(svg) {
+    color: rgba(233, 213, 255, 0.95) !important;
   }
 }
 
@@ -237,6 +367,26 @@
   50% {
     transform: scaleY(1);
     opacity: 1;
+  }
+}
+
+@keyframes playing-card-soft-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.32), 0 12px 32px -24px rgba(15, 23, 42, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.08), 0 18px 42px -24px rgba(45, 212, 191, 0.45);
+  }
+}
+
+.playing-card-soft-pulse {
+  animation: playing-card-soft-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playing-card-soft-pulse {
+    animation: none;
   }
 }
 .home-hero-fake-wave__bar {

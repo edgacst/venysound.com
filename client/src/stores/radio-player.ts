@@ -74,7 +74,7 @@ export const useRadioPlayerStore = create<RadioPlayerState>((set) => ({
       channelName,
       streamUrl,
       initialSeekSeconds: initialSeekSeconds ?? null,
-      userStopped: false, // 새 채널 진입 시 정지 상태 초기화
+      userStopped: s.slug === slug ? s.userStopped : false,
       streamHandoffSeq: s.streamHandoffSeq + 1,
     })),
   setTrackTitle: (trackTitle) => set({ trackTitle }),

@@ -156,6 +156,7 @@ export function injectAdSenseReviewContent(html: string, req: Request): string {
 
   const block = [
     "",
+    '<style data-venysound="adsense-review-mobile-hide">@media (max-width: 767px){article[data-venysound="adsense-review"]{display:none!important;}}</style>',
     '<article data-venysound="adsense-review" lang="ko" style="max-width:960px;margin:0 auto 32px;padding:24px 16px 40px;color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,Helvetica,Arial,sans-serif;line-height:1.7;">',
     `    <h1 style="margin:0 0 10px;font-size:22px;font-weight:700;">${escapeHtmlText(copy.title)}</h1>`,
     `    <p style="margin:0 0 12px;font-size:15px;opacity:.95;">${escapeHtmlText(copy.lead)}</p>`,

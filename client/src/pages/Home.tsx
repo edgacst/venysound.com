@@ -14,12 +14,13 @@ import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
-import { useIsLgUp } from "@/hooks/use-mobile";
+import { useIsLgUp, useIsMobile } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
 import { isGuestPlaybackBlocked } from "@/lib/guest-listen-quota";
 import { usePlayerStore } from "@/components/AudioPlayer";
+import MobileHome from "@/pages/MobileHome";
 import { RadioBannerWaveformCanvas } from "@/components/RadioBannerWaveformCanvas";
 import { HomeHeroLiveWaveform } from "@/components/HomeHeroLiveWaveform";
 import { HomeLearnMoreSheet, type HomeLearnMoreSheetMode } from "@/components/HomeLearnMoreSheet";
@@ -91,6 +92,11 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
 }
 
 export default function Home() {
+  const isMobile = useIsMobile();
+  return isMobile ? <MobileHome /> : <DesktopHome />;
+}
+
+function DesktopHome() {
   const { t, i18n } = useTranslation();
   const { scrollY } = useScroll();
   const taglineScaleRaw = useTransform(scrollY, [0, 220], [1, 0.62]);

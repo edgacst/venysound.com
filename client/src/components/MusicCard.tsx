@@ -13,6 +13,7 @@ import { usePlaylists, useAddToPlaylist, useCreatePlaylist } from "@/hooks/use-p
 import { motion } from "framer-motion";
 import { resolveStorageUrl } from "@/lib/utils";
 import { useTranslation } from 'react-i18next';
+import { api } from "@shared/routes";
 import { DonationBadge } from "@/components/DonationBadge";
 import { parseSpotifyAlbumIdFromUserInput } from "@shared/spotify-album-id";
 import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
@@ -240,7 +241,7 @@ interface MusicCardProps {
 export function MusicCard({ music, chartRank, variant = "card", playlistIds }: MusicCardProps) {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
-  const { playMusic, setPlaylist, activeMusicId } = usePlayerStore();
+  const { playMusic, setPlaylist, activeMusicId, pauseRequested, togglePause } = usePlayerStore();
   const { mutate: likeMusic } = useLikeMusic();
   const { mutate: updateMusic, isPending: isUpdating } = useUpdateMusic();
   const { mutate: deleteMusic, isPending: isDeleting } = useDeleteMusic();
@@ -423,7 +424,8 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
   /** 무료 플랜 AI 월 한도로 생성 후 사이트 공개된 곡 — 후원·유료 다운로드·벨소리 비활성(관리자 생성 로그는 해당 없음) */
   const freeAiLocked = music.freeAiSiteRestrictions === true;
 
-  const isPlaying = activeMusicId === music.id;
+  const isActive = activeMusicId === music.id;
+  const isPlaying = isActive && !pauseRequested;
   const isLiked = myLikes?.includes(music.id) ?? false;
 
   const imageUrl = music.imageFilename 
@@ -432,7 +434,12 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
 
   const startPlay = (e: React.MouseEvent) => {
     e.stopPropagation();
+    queryClient.setQueryData([api.music.get.path, music.id], music);
     if (playlistIds && playlistIds.length > 0) setPlaylist(playlistIds);
+    if (isActive) {
+      togglePause();
+      return;
+    }
     playMusic(music.id);
   };
 
@@ -659,7 +666,9 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
           whileHover={{ y: -1 }}
           className={`group relative flex w-full items-center gap-2.5 sm:gap-3 rounded-xl border bg-card/80 px-2 py-1.5 sm:py-2 pr-2 shadow-sm cursor-pointer transition-colors ${
             isPlaying
-              ? "border-emerald-400/70 shadow-emerald-500/15"
+              ? "playing-card-soft-pulse border-emerald-400/70 shadow-emerald-500/15"
+              : isActive
+                ? "border-violet-400/70 shadow-violet-500/15"
               : "border-white/10 hover:border-primary/35 hover:bg-card"
           }`}
           data-testid={`card-music-${music.id}`}
@@ -843,9 +852,146 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
           </div>
         </motion.div>
       ) : (
+      <>
+      <motion.div
+        whileTap={{ scale: 0.99 }}
+        className={`group relative flex w-full items-center gap-2.5 rounded-2xl border bg-white p-2 shadow-[0_12px_32px_-24px_rgba(15,23,42,0.55)] transition-colors md:hidden ${
+          isPlaying
+            ? "playing-card-soft-pulse border-teal-400 shadow-teal-500/20"
+            : isActive
+              ? "border-violet-400 shadow-violet-500/20"
+              : "border-slate-200"
+        }`}
+        data-testid={`card-music-mobile-${music.id}`}
+        onClick={() => navigate(`/music/${music.id}`)}
+      >
+        {isActive ? (
+          <span
+            className={`absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full ${
+              isPlaying ? "bg-teal-400" : "bg-violet-400"
+            }`}
+            aria-hidden
+          />
+        ) : null}
+        <div className="relative h-[52px] w-[52px] shrink-0 overflow-hidden rounded-xl bg-slate-100">
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          {chartRank != null && chartRank > 0 ? (
+            <span className="absolute left-1.5 top-1.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] font-black text-white">
+              #{chartRank}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {music.isAi ? (
+              <span className="shrink-0 rounded-full bg-teal-50 px-1.5 py-0.5 text-[10px] font-black text-teal-700">
+                AI
+              </span>
+            ) : null}
+            <h3 className="truncate text-[13px] font-black leading-tight text-slate-950" data-testid={`text-title-${music.id}`}>
+              {music.title}
+            </h3>
+          </div>
+          <p className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-[11px] font-semibold leading-tight text-slate-500" data-testid={`text-artist-${music.id}`}>
+            <span className="truncate">{music.artist}</span>
+            {showDonationBadgeByArtist && uploaderDonationBadge ? (
+              <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />
+            ) : null}
+          </p>
+          <div className="mt-1 flex items-center gap-2.5 text-[10px] font-semibold leading-none text-slate-400">
+            <span className="inline-flex items-center gap-1" data-testid={`text-like-count-${music.id}`}>
+              <Heart className={`h-3 w-3 ${isLiked ? "fill-red-500 text-red-500" : ""}`} />
+              {likeCount}
+            </span>
+            <span className="inline-flex items-center gap-1" data-testid={`text-play-count-${music.id}`}>
+              <Headphones className="h-3 w-3" />
+              {playCount}
+            </span>
+            {music.genre ? <span className="min-w-0 truncate">{music.genre}</span> : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button
+            size="icon"
+            variant="secondary"
+            className="h-9 w-9 rounded-full bg-slate-950 text-white hover:bg-slate-800"
+            onClick={startPlay}
+            data-testid={`button-play-${music.id}`}
+            aria-label={t("music.play", { defaultValue: "재생" })}
+          >
+            {isPlaying ? <Pause className="h-3.5 w-3.5" fill="currentColor" /> : <Play className="ml-0.5 h-3.5 w-3.5" fill="currentColor" />}
+          </Button>
+          {showMenu ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-8 w-7 text-slate-500" data-testid={`button-music-menu-${music.id}`}>
+                  <MoreVertical size={15} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canEdit && (
+                  <DropdownMenuItem onClick={handleEdit} data-testid={`button-edit-music-${music.id}`}>
+                    <Pencil size={14} className="mr-2" />
+                    {t("music.edit")}
+                  </DropdownMenuItem>
+                )}
+                {isOwner && (
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleOwnerDownload();
+                    }}
+                    disabled={isOwnerDownloading}
+                    data-testid={`button-download-music-${music.id}`}
+                  >
+                    <Download size={14} className="mr-2" />
+                    {isOwnerDownloading ? t("music.ringtoneCardDownloading", "받는 중...") : t("myLibrary.download", "다운로드")}
+                  </DropdownMenuItem>
+                )}
+                {canDelete && (
+                  <DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-red-500 focus:text-red-500" data-testid={`button-delete-music-${music.id}`}>
+                    <Trash2 size={14} className="mr-2" />
+                    {`${t("music.delete")}${isAdmin && !isOwner ? ` (${t("nav.admin")})` : ""}`}
+                  </DropdownMenuItem>
+                )}
+                {user && (
+                  <>
+                    {(canEdit || isOwner || canDelete) && <DropdownMenuSeparator />}
+                    <DropdownMenuItem onClick={handleOpenPlaylistDialog} data-testid={`button-add-to-playlist-${music.id}`}>
+                      <ListPlus size={14} className="mr-2" />
+                      {t("music.addToPlaylist")}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        usePlayerStore.getState().addToQueue(music.id);
+                        toast({ title: t("music.addedToQueue"), description: t("music.addedToQueueDesc", { title: music.title }) });
+                      }}
+                      data-testid={`button-add-to-queue-${music.id}`}
+                    >
+                      <ListPlus size={14} className="mr-2" />
+                      {t("music.addToQueue")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {canReport && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setReportOpen(true)} className="text-orange-500 focus:text-orange-500" data-testid={`button-report-music-${music.id}`}>
+                      <Flag size={14} className="mr-2" />
+                      {t("music.copyrightReport")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </div>
+      </motion.div>
       <motion.div 
         whileHover={{ y: -5 }}
-        className={`group relative bg-card rounded-xl overflow-hidden border transition-all duration-300 shadow-lg cursor-pointer ${
+        className={`group relative hidden bg-card rounded-xl overflow-hidden border transition-all duration-300 shadow-lg cursor-pointer md:block ${
           isPlaying
             ? "border-emerald-400/80 shadow-emerald-400/40"
             : "border-white/5 hover:border-primary/30 hover:shadow-xl hover:shadow-primary/10"
@@ -1092,6 +1238,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
           </div>
         </div>
       </motion.div>
+      </>
       )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

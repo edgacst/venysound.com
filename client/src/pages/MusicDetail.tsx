@@ -477,17 +477,17 @@ export default function MusicDetail() {
 
   return (
     <PageTransition>
-      <div className="min-h-screen flex flex-col pb-24 relative">
+      <div className="min-h-screen flex flex-col pb-24 relative text-white">
         <div className="fixed inset-0 z-0 pointer-events-none">
           <img
             src={coverImage}
             alt=""
-            className="w-full h-full object-cover blur-2xl scale-150 opacity-90"
+            className="w-full h-full object-cover blur-2xl scale-150 opacity-80"
           />
-          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 bg-black/65 md:bg-black/50" />
         </div>
 
-        <div className="relative z-10">
+        <div className="relative z-10 text-white [&_.text-foreground]:text-white [&_.text-muted-foreground]:text-white/70 [&_.bg-secondary\\/30]:bg-white/10">
         <Navigation />
 
         <div className="relative h-[280px] md:h-[360px] overflow-hidden">
@@ -496,7 +496,7 @@ export default function MusicDetail() {
             alt={musicData.title}
             className="w-full h-full object-cover blur-xl scale-110 opacity-40"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/50 to-black/10" />
         </div>
 
         <div className="container px-4 -mt-52 md:-mt-56 relative z-10">
@@ -756,7 +756,7 @@ export default function MusicDetail() {
                       placeholder={t('musicDetail.storyPlaceholder', '이 음원의 창작 배경, 영감, 제작 과정 등을 공유해주세요...')}
                       value={storyContent}
                       onChange={(e) => setStoryContent(e.target.value)}
-                      className="resize-none mb-3 bg-white/5 border-white/10"
+                      className="resize-none mb-3 border-white/15 bg-white/10 text-white placeholder:text-white/45"
                       rows={4}
                       data-testid="input-story"
                     />
@@ -850,7 +850,7 @@ export default function MusicDetail() {
                                       placeholder={t('musicDetail.commentPlaceholder', '댓글을 남겨주세요...')}
                                       value={commentText}
                                       onChange={(e) => setStoryCommentTexts((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                                      className="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                                      className="flex-1 rounded-md border border-white/15 bg-white/10 px-3 py-1.5 text-sm text-white placeholder:text-white/45 focus:outline-none focus:ring-1 focus:ring-primary"
                                       data-testid={`input-story-comment-${s.id}`}
                                     />
                                     <Button
@@ -891,7 +891,7 @@ export default function MusicDetail() {
                       placeholder={t('musicDetail.reviewPlaceholder', '이 음악에 대한 리뷰를 남겨주세요...')}
                       value={reviewContent}
                       onChange={(e) => setReviewContent(e.target.value)}
-                      className="resize-none mb-3 bg-white/5 border-white/10"
+                      className="resize-none mb-3 border-white/15 bg-white/10 text-white placeholder:text-white/45"
                       rows={3}
                       data-testid="input-review"
                     />

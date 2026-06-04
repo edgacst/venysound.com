@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { GlobalAudioPlayer } from "@/components/AudioPlayer";
 import { GlobalRadioPlayer } from "@/components/GlobalRadioPlayer";
+import { MobileBottomTab } from "@/components/MobileBottomTab";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { RouteSmoothScroll } from "@/components/RouteSmoothScroll";
 import { LoginModal } from "@/components/LoginModal";
@@ -519,6 +520,7 @@ function App() {
                   <Routes />
                   <GlobalAudioPlayer />
                   <GlobalRadioPlayer waveformBufferRef={radioWaveformRef} />
+                  <MobileBottomTab />
                   <ScrollToTop />
                   <GuestSignupNudge />
                   <LoginModal />

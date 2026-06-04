@@ -5,7 +5,7 @@ import { InternationalReleaseCard, type InternationalReleaseItem } from "@/compo
 import { useMusicList } from "@/hooks/use-music";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Play, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2 } from "lucide-react";
+import { Search, Play, Pause, ChevronLeft, ChevronRight, ListMusic, TrendingUp, Globe, Loader2 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -101,7 +101,7 @@ export default function Explore() {
   const totalCount = catalogTab === "international" ? intlTotal : siteTotalCount;
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
 
-  const { playMusic, setPlaylist } = usePlayerStore();
+  const { playMusic, setPlaylist, activeMusicId, pauseRequested, togglePause } = usePlayerStore();
 
   const sitePageIds = useMemo(() => {
     if (!musicList || musicList.length === 0) return [];
@@ -281,11 +281,59 @@ export default function Explore() {
               <TrendingUp size={20} className="text-primary" />
               {t('explore.recommendedForYou', '이런 곡은 어때요')}
             </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide md:gap-3">
               {popularTracks.map((track) => (
-                <div key={track.id} className="w-[140px] sm:w-[160px] flex-shrink-0">
-                  <MusicCard music={track} playlistIds={popularIds} />
-                </div>
+                <Link
+                  key={track.id}
+                  href={`/music/${track.id}`}
+                  className="group w-[38vw] min-w-[8.75rem] max-w-[10rem] flex-shrink-0 md:w-[160px]"
+                  data-testid={`recommended-square-card-${track.id}`}
+                >
+                  <div
+                    className={`relative aspect-square overflow-hidden rounded-2xl bg-card shadow-[0_16px_36px_-26px_rgba(0,0,0,0.75)] ring-2 transition ${
+                      activeMusicId === track.id
+                        ? pauseRequested
+                          ? "ring-violet-300"
+                          : "ring-teal-300"
+                        : "ring-white/10"
+                    }`}
+                  >
+                    <img
+                      src={track.imageFilename ? resolveStorageUrl(track.imageFilename) : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop"}
+                      alt=""
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/72 via-black/10 to-transparent" />
+                    {track.isAi ? (
+                      <span className="absolute left-2 top-2 rounded-full bg-teal-300/95 px-1.5 py-0.5 text-[10px] font-black text-teal-950">
+                        AI
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPlaylist(popularIds);
+                        if (activeMusicId === track.id) {
+                          togglePause();
+                          return;
+                        }
+                        playMusic(track.id);
+                      }}
+                      className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-violet-950 shadow-lg"
+                      aria-label={activeMusicId === track.id && !pauseRequested ? "pause" : "play"}
+                    >
+                      {activeMusicId === track.id && !pauseRequested ? (
+                        <Pause className="h-4 w-4 fill-current" />
+                      ) : (
+                        <Play className="ml-0.5 h-4 w-4 fill-current" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="mt-2 truncate text-sm font-black text-foreground">{track.title}</p>
+                  <p className="truncate text-xs font-semibold text-muted-foreground">{track.artist}</p>
+                </Link>
               ))}
             </div>
           </section>
@@ -354,9 +402,9 @@ export default function Explore() {
 
         {catalogTab === "site" && (
           <>
-            <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+            <div className="music-grid grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5">
               {musicList?.map((music) => (
-                <div key={music.id} className="transform scale-90 md:scale-90 origin-top-left">
+                <div key={music.id} className="origin-top-left md:scale-90">
                   <MusicCard music={music} playlistIds={sitePageIds} />
                 </div>
               ))}

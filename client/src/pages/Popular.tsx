@@ -31,16 +31,16 @@ export default function Popular() {
       <div className="min-h-screen bg-background flex flex-col pb-24">
         <Navigation />
       
-        <div className="container px-4 py-8">
-        <div className="flex flex-col md:flex-row gap-4 mb-8 items-center justify-between flex-wrap">
+        <div className="container px-4 py-6 md:py-8">
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 md:mb-8 md:flex-row md:items-center md:flex-wrap">
           <div className="flex items-center gap-3">
-            <TrendingUp className="text-red-400" size={28} />
-            <h1 className="text-3xl font-display font-bold" data-testid="text-popular-title">{t('popular.title')}</h1>
+            <TrendingUp className="text-red-400" size={24} />
+            <h1 className="text-2xl font-display font-bold leading-tight text-slate-950 dark:text-foreground md:text-3xl" data-testid="text-popular-title">{t('popular.title')}</h1>
           </div>
           {user && popularList && popularList.length > 0 && (
             <Button 
               variant="outline"
-              className="gap-2 border-white/10"
+              className="h-10 gap-2 border-slate-200 bg-white text-slate-950 shadow-sm dark:border-white/10 dark:bg-transparent dark:text-foreground"
               onClick={() => {
                 if (popularList[0]) playMusic(popularList[0].id);
               }}
@@ -52,7 +52,7 @@ export default function Popular() {
           )}
         </div>
 
-        <div className="flex items-center gap-4 mb-6 text-sm text-muted-foreground flex-wrap">
+        <div className="mb-5 flex items-center gap-2 overflow-x-auto whitespace-nowrap text-xs font-semibold text-muted-foreground md:mb-6 md:gap-4 md:text-sm">
           <span className="flex items-center gap-1"><Heart size={14} className="text-red-400" /> {t('popular.likes')}</span>
           <span>+</span>
           <span className="flex items-center gap-1"><Clock size={14} className="text-primary" /> {t('popular.streamTime')}</span>
@@ -68,9 +68,9 @@ export default function Popular() {
             {t('popular.noPopular')}
           </div>
         ) : (
-          <div className="music-grid grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <div className="music-grid grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 md:gap-6 lg:grid-cols-4 xl:grid-cols-5">
             {popularList.map((music, index) => (
-              <div key={music.id} className="relative transform scale-90 md:scale-90 origin-top-left" data-testid={`card-popular-${music.id}`}>
+              <div key={music.id} className="relative" data-testid={`card-popular-${music.id}`}>
                 {index < 3 && (
                   <Badge className="absolute -top-2 -left-2 z-10 bg-red-500 text-white border-none text-xs px-2">
                     TOP {index + 1}
@@ -82,7 +82,7 @@ export default function Popular() {
                   </Badge>
                 )}
                 <MusicCard music={music} />
-                <div className="flex items-center justify-between mt-1 px-1 text-xs text-muted-foreground">
+                <div className="mt-1 flex items-center justify-between px-1 text-xs text-muted-foreground md:mt-2">
                   <span className="flex items-center gap-1" data-testid={`text-likes-${music.id}`}>
                     <Heart size={10} className="text-red-400" /> {music.likeCount}
                   </span>

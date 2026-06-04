@@ -4,7 +4,7 @@ import logoImage from "@assets/image_3fb5572f_1771157735033.png";
 export function Footer() {
   const { t } = useTranslation();
   return (
-    <footer className="border-t border-white/5 bg-card mt-auto text-[11px] text-muted-foreground leading-4">
+    <footer className="mt-auto hidden border-t border-white/5 bg-card text-[11px] leading-4 text-muted-foreground md:block">
       <div className="container px-4 py-5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           <div>

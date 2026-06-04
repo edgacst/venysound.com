@@ -106,6 +106,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const activeMusicId = usePlayerStore((s) => s.activeMusicId);
   const activeExternalTrack = usePlayerStore((s) => s.activeExternalTrack);
+  const closeOnDemandPlayer = usePlayerStore((s) => s.closePlayer);
   const onDemandActive = activeMusicId != null || activeExternalTrack != null;
 
   const {
@@ -127,16 +128,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** 음악 글로벌 플레이어가 켜지면 라디오 플레이바·오디오를 즉시 내림 (홈 자동 라디오와 중복 방지) */
   useEffect(() => {
-    if (!onDemandActive || !slug) return;
-    [audioARef.current, audioBRef.current].forEach((el) => {
-      if (el) {
-        el.pause();
-        el.removeAttribute("src");
-        el.load();
-      }
-    });
-    clear();
-  }, [onDemandActive, slug, clear]);
+    if (!onDemandActive || !slug || !streamUrl) return;
+    closeOnDemandPlayer();
+  }, [onDemandActive, slug, streamUrl, closeOnDemandPlayer]);
 
   // Refetch channel to keep stream in sync (streamUrl이 잠깐 null이어도 폴링 유지 — 곡 종료 직후 다른 페이지에서 다음 곡 복구)
   useEffect(() => {
@@ -1057,7 +1051,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     [getActiveAudio, processActiveTrackEnded],
   );
 
-  const showRadioChrome = !!slug && !onDemandActive;
+  const showRadioChrome = !!slug;
 
   const listenerText =
     listenerCount != null ? ` · ${t("radio.listenersCount", { count: listenerCount })}` : "";
@@ -1090,7 +1084,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       )}
 
       {/* 플레이 바 - 한 줄 floating */}
-      <div className="fixed bottom-2 left-2 right-2 z-50 bg-card border border-border rounded-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
+      <div className="fixed bottom-14 left-2 right-2 z-50 bg-card border border-border rounded-xl shadow-2xl pb-[env(safe-area-inset-bottom)] sm:bottom-2">
         <div className="px-3 py-2 flex items-center gap-2">
           {/* 라이브 인디케이터 */}
           <Radio className={`h-4 w-4 shrink-0 ${isPlaying ? "text-red-500" : "text-muted-foreground"}`} />
@@ -1146,7 +1140,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       ) : null}
 
       {/* 숨겨진 오디오: slug 있으면 UI 없어도 마운트(페이지 이동·곡 사이 streamUrl null 구간). onDemandActive 시 store clear로 정지 */}
-      {slug && !onDemandActive ? (
+      {slug ? (
       <>
         <audio
           ref={audioARef}

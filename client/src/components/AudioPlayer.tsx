@@ -39,6 +39,7 @@ interface PlayerStore {
   playMusicWithLyrics: (id: number) => void;
   playExternalTrack: (track: ExternalTrack) => void;
   togglePause: () => void;
+  setPauseRequested: (paused: boolean) => void;
   setPlaylist: (ids: number[]) => void;
   closePlayer: () => void;
   clearLyricsRequest: () => void;
@@ -90,6 +91,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     set({ activeMusicId: null, activeExternalTrack: track, pauseRequested: false, lyricsRequested: false });
   },
   togglePause: () => set((state) => ({ pauseRequested: !state.pauseRequested })),
+  setPauseRequested: (paused) => set({ pauseRequested: paused }),
   setPlaylist: (ids) => {
     const state = get();
     set({ playlist: ids, shuffledOrder: state.shuffleEnabled ? shuffleArray(ids) : [] });
@@ -479,7 +481,7 @@ export function GlobalAudioPlayer() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { activeMusicId, activeExternalTrack, playlist, queue, playMusic, closePlayer, pauseRequested, lyricsRequested, clearLyricsRequest, repeatMode, shuffleEnabled, shuffledOrder, toggleRepeat, toggleShuffle, removeFromQueue, clearQueue, addToQueue } = usePlayerStore();
+  const { activeMusicId, activeExternalTrack, playlist, queue, playMusic, closePlayer, pauseRequested, setPauseRequested, lyricsRequested, clearLyricsRequest, repeatMode, shuffleEnabled, shuffledOrder, toggleRepeat, toggleShuffle, removeFromQueue, clearQueue, addToQueue } = usePlayerStore();
   const { data: music } = useMusic(activeMusicId || 0);
   const { data: allMusic } = useMusicList({ limit: 500 });
   const { toast } = useToast();
@@ -821,7 +823,17 @@ export function GlobalAudioPlayer() {
   useEffect(() => {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
-    if (!audio || !hasTrack) return;
+    if (!audio) return;
+    if (!hasTrack) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
+      setNeedsTap(false);
+      return;
+    }
     if (pauseRequested) {
       audio.pause();
       setIsPlaying(false);
@@ -956,11 +968,13 @@ export function GlobalAudioPlayer() {
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
+      setPauseRequested(false);
       audio.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
     } else {
+      setPauseRequested(true);
       audio.pause();
     }
-  }, []);
+  }, [setPauseRequested]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -1056,9 +1070,11 @@ export function GlobalAudioPlayer() {
     });
 
     navigator.mediaSession.setActionHandler('play', () => {
+      setPauseRequested(false);
       audioRef.current?.play().catch(() => {});
     });
     navigator.mediaSession.setActionHandler('pause', () => {
+      setPauseRequested(true);
       audioRef.current?.pause();
     });
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
@@ -1079,7 +1095,7 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, playNext, playPrev]);
+  }, [displayMusic, imageUrl, playNext, playPrev, setPauseRequested]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -1159,7 +1175,7 @@ export function GlobalAudioPlayer() {
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border shadow-2xl pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)]"
+          className="fixed bottom-14 left-0 right-0 z-50 border-t border-border bg-card shadow-2xl pr-[env(safe-area-inset-right)] sm:bottom-0"
         >
           <div
             ref={progressRef}
@@ -1169,21 +1185,21 @@ export function GlobalAudioPlayer() {
             onTouchStart={handleSeekStart}
             data-testid="progress-bar"
           >
-            <div className="h-6 flex items-center">
-              <div className="w-full h-1.5 bg-muted rounded-full relative">
+            <div className="h-4 flex items-center sm:h-6">
+              <div className="w-full h-1 bg-muted rounded-full relative sm:h-1.5">
                 <div
                   className="h-full bg-primary rounded-full transition-none"
                   style={{ width: `${progress}%` }}
                 />
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md"
+                  className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-primary rounded-full sm:h-4 sm:w-4 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md"
                   style={{ left: `${progress}%`, transform: `translate(-50%, -50%)` }}
                 />
               </div>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 flex items-center gap-1.5 sm:gap-4">
+          <div className="max-w-7xl mx-auto px-2.5 sm:px-4 py-1.5 flex items-center gap-1 sm:gap-4">
             <button
               type="button"
               onClick={() => !isExternalTrack && activeMusicId != null && setLocation(`/music/${activeMusicId}`)}
@@ -1193,11 +1209,11 @@ export function GlobalAudioPlayer() {
               <img 
                 src={imageUrl} 
                 alt={displayMusic.title} 
-                className="w-10 h-10 sm:w-12 sm:h-12 rounded-md object-cover shadow-md shrink-0"
+                className="w-9 h-9 sm:w-12 sm:h-12 rounded-md object-cover shadow-md shrink-0"
               />
               <div className="overflow-hidden min-w-0">
-                <h4 className="font-semibold truncate text-white text-sm sm:text-base" data-testid="text-player-title">{displayMusic.title}</h4>
-                <p className="text-xs sm:text-sm text-muted-foreground truncate" data-testid="text-player-artist">{displayMusic.artist}</p>
+                <h4 className="font-semibold truncate text-white text-xs sm:text-base" data-testid="text-player-title">{displayMusic.title}</h4>
+                <p className="text-[11px] sm:text-sm text-muted-foreground truncate" data-testid="text-player-artist">{displayMusic.artist}</p>
               </div>
             </button>
 
@@ -1215,6 +1231,7 @@ export function GlobalAudioPlayer() {
                 size="icon"
                 variant="ghost"
                 onClick={playPrev}
+                className="h-8 w-8 sm:h-10 sm:w-10"
                 data-testid="button-prev-track"
               >
                 <SkipBack size={18} />
@@ -1223,6 +1240,7 @@ export function GlobalAudioPlayer() {
                 size="icon"
                 variant="ghost"
                 onClick={togglePlay}
+                className="h-8 w-8 sm:h-10 sm:w-10"
                 data-testid="button-play-pause"
               >
                 {isPlaying ? <Pause size={20} /> : <Play size={20} />}
@@ -1231,6 +1249,7 @@ export function GlobalAudioPlayer() {
                 size="icon"
                 variant="ghost"
                 onClick={playNext}
+                className="h-8 w-8 sm:h-10 sm:w-10"
                 data-testid="button-next-track"
               >
                 <SkipForward size={18} />
@@ -1246,14 +1265,14 @@ export function GlobalAudioPlayer() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <div className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0 sm:gap-2 sm:text-xs" style={{ fontVariantNumeric: "tabular-nums" }}>
               <span className="min-w-[2.5em] text-right" data-testid="text-current-time">{formatTime(currentTime)}</span>
               <span>/</span>
               <span className="min-w-[2.5em]" data-testid="text-duration">{formatTime(duration)}</span>
             </div>
 
             {/* 고정 높이로 가사 유무에 따른 플레이바 흔들림 방지 (모바일). 모바일에서 오른쪽 버튼 공간 확보를 위해 min-w-0 */}
-            <div className="flex-1 min-w-0 flex items-center h-10 sm:h-9 overflow-hidden">
+            <div className="flex-1 min-w-0 flex items-center h-8 sm:h-9 overflow-hidden">
               {displayMusic?.lyrics ? (
                 <MarqueeLyric lyrics={displayMusic.lyrics} currentTime={currentTime} duration={duration} />
               ) : null}
@@ -1301,7 +1320,7 @@ export function GlobalAudioPlayer() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className={shuffleEnabled ? "text-primary" : ""}
+                  className={`h-8 w-8 sm:h-10 sm:w-10 ${shuffleEnabled ? "text-primary" : ""}`}
                   data-testid="button-shuffle-mobile"
                   onClick={toggleShuffle}
                 >
@@ -1310,7 +1329,7 @@ export function GlobalAudioPlayer() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className={repeatMode !== 'none' ? "text-primary" : ""}
+                  className={`h-8 w-8 sm:h-10 sm:w-10 ${repeatMode !== 'none' ? "text-primary" : ""}`}
                   data-testid="button-repeat-mobile"
                   onClick={toggleRepeat}
                 >
@@ -1325,10 +1344,11 @@ export function GlobalAudioPlayer() {
                 size="icon"
                 variant="ghost"
                 onClick={handleClose}
-                className="shrink-0"
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground sm:h-10 sm:w-10"
                 data-testid="button-close-player"
+                aria-label={t("player.close", "\ub2eb\uae30")}
               >
-                <X size={18} className="sm:w-5 sm:h-5" />
+                <X size={16} className="sm:h-5 sm:w-5" />
               </Button>
             </div>
           </div>

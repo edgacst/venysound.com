@@ -113,6 +113,19 @@ export function Navigation() {
     window.dispatchEvent(new Event(SITE_NOTICE_SEEN_EVENT));
   }, [latestSiteNoticeId, location]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (!isMobileMenuOpen) return;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isMobileMenuOpen]);
+
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
 
   const openLoginModal = useLoginModalStore((s) => s.open);
@@ -143,7 +156,7 @@ export function Navigation() {
   );
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b border-white/15 bg-background/80 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+    <nav className="fixed top-0 z-[70] w-full border-b border-white/10 bg-[#07080b] text-white shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] md:sticky md:bg-[#07080b]/95 md:backdrop-blur-xl">
       <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
         <Link href="/" className="flex-shrink-0 min-w-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
@@ -347,9 +360,9 @@ export function Navigation() {
         {isMobileMenuOpen && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
+            animate={{ opacity: 1, height: "calc(100dvh - 4rem)" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-white/10 bg-background overflow-y-auto max-h-[85vh]"
+            className="fixed inset-x-0 top-16 z-[69] md:hidden overflow-y-auto overscroll-contain border-t border-white/10 bg-[#101114] shadow-[0_18px_50px_-28px_rgba(0,0,0,0.8)]"
           >
             <div className="flex flex-col p-3 gap-0.5">
               <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.menu', '메뉴')}</p>
