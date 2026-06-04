@@ -156,6 +156,7 @@ export default function Explore() {
       return res.json();
     },
   });
+  const hasCuratedPlaylists = Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0;
 
   const { data: popularTracks } = useQuery<any[]>({
     queryKey: ["/api/music/popular"],
@@ -380,12 +381,13 @@ export default function Explore() {
           </section>
         )}
 
-        {catalogTab === "site" && Array.isArray(curatedPlaylists) && curatedPlaylists.length > 0 && (
-          <section id="recommended-playlists" className="mb-8 rounded-[28px] border border-primary/10 bg-primary/5 px-3 py-4" data-testid="section-recommended-playlists">
+        {catalogTab === "site" && (
+          <section id="themed-playlists" className="mb-8 rounded-[28px] border border-primary/10 bg-primary/5 px-3 py-4" data-testid="section-themed-playlists">
             <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <ListMusic size={20} className="text-primary" />
               {t('explore.themedPlaylists', '테마 플레이리스트')}
             </h2>
+            {hasCuratedPlaylists ? (
             <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
               {curatedPlaylists.map((pl) => (
                 <Link key={pl.id} href={`/curated/${pl.slug}`}>
@@ -420,6 +422,11 @@ export default function Explore() {
                 </Link>
               ))}
             </div>
+            ) : (
+              <div className="rounded-2xl border border-primary/15 bg-background/80 px-4 py-5 text-sm font-semibold text-muted-foreground">
+                {t('explore.emptyThemedPlaylists', '테마 플레이리스트를 준비 중입니다.')}
+              </div>
+            )}
           </section>
         )}
 
