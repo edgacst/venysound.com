@@ -900,24 +900,23 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
               <DonationBadge badge={uploaderDonationBadge} showLabel={false} size="sm" />
             ) : null}
           </p>
-          <div className="mt-1 flex items-center gap-2.5 text-[10px] font-semibold leading-none text-slate-400">
-            <span className="inline-flex items-center gap-1" data-testid={`text-like-count-${music.id}`}>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-semibold leading-none text-slate-400">
+            <span className="inline-flex shrink-0 items-center gap-1" data-testid={`text-like-count-${music.id}`}>
               <Heart className={`h-3 w-3 ${isLiked ? "fill-red-500 text-red-500" : ""}`} />
               {likeCount}
             </span>
-            <span className="inline-flex items-center gap-1" data-testid={`text-play-count-${music.id}`}>
+            <span className="inline-flex shrink-0 items-center gap-1" data-testid={`text-play-count-${music.id}`}>
               <Headphones className="h-3 w-3" />
               {playCount}
             </span>
-            {music.genre ? <span className="min-w-0 truncate">{music.genre}</span> : null}
-          </div>
-          {showPaidUploaderActions ? (
-            <div className="mt-1.5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            {music.genre ? <span className="min-w-0 flex-1 truncate">{music.genre}</span> : <span className="min-w-0 flex-1" />}
+            {showPaidUploaderActions ? (
+            <span className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 shrink-0 rounded-full bg-amber-50 text-amber-500 hover:bg-amber-100 hover:text-amber-600"
+                className="h-5 w-5 shrink-0 rounded-full bg-amber-50 text-amber-500 hover:bg-amber-100 hover:text-amber-600"
                 title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -926,13 +925,13 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-ringtone-card-mobile-${music.id}`}
                 aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
               >
-                <Bell size={13} />
+                <Bell size={11} />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 shrink-0 rounded-full bg-yellow-50 text-yellow-500 hover:bg-yellow-100 hover:text-yellow-600"
+                className="h-5 w-5 shrink-0 rounded-full bg-yellow-50 text-yellow-500 hover:bg-yellow-100 hover:text-yellow-600"
                 title={t("music.tipTitle")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -942,10 +941,11 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-tip-mobile-${music.id}`}
                 aria-label={t("music.tipTitle")}
               >
-                <Gift size={13} />
+                <Gift size={11} />
               </Button>
-            </div>
-          ) : null}
+            </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
