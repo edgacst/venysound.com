@@ -916,7 +916,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-3 w-3 shrink-0 rounded-none p-0 text-amber-500 hover:bg-transparent hover:text-amber-600 [&_svg]:h-[9px] [&_svg]:w-[9px]"
+                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-amber-500 hover:bg-transparent hover:text-amber-600 [&_svg]:h-2.5 [&_svg]:w-2.5"
                 title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -925,13 +925,13 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-ringtone-card-mobile-${music.id}`}
                 aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
               >
-                <Bell size={9} strokeWidth={2} />
+                <Bell size={10} strokeWidth={2} />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-3 w-3 shrink-0 rounded-none p-0 text-yellow-500 hover:bg-transparent hover:text-yellow-600 [&_svg]:h-[9px] [&_svg]:w-[9px]"
+                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-yellow-500 hover:bg-transparent hover:text-yellow-600 [&_svg]:h-2.5 [&_svg]:w-2.5"
                 title={t("music.tipTitle")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -941,7 +941,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-tip-mobile-${music.id}`}
                 aria-label={t("music.tipTitle")}
               >
-                <Gift size={9} strokeWidth={2} />
+                <Gift size={10} strokeWidth={2} />
               </Button>
             </span>
             ) : null}
