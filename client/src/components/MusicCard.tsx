@@ -911,12 +911,12 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
             </span>
             {music.genre ? <span className="min-w-0 flex-1 truncate">{music.genre}</span> : <span className="min-w-0 flex-1" />}
             {showPaidUploaderActions ? (
-            <span className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 shrink-0 rounded-full bg-amber-50 text-amber-500 hover:bg-amber-100 hover:text-amber-600"
+                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-amber-500 hover:bg-transparent hover:text-amber-600"
                 title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -925,13 +925,13 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-ringtone-card-mobile-${music.id}`}
                 aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
               >
-                <Bell size={11} />
+                <Bell size={10} />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-5 w-5 shrink-0 rounded-full bg-yellow-50 text-yellow-500 hover:bg-yellow-100 hover:text-yellow-600"
+                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-yellow-500 hover:bg-transparent hover:text-yellow-600"
                 title={t("music.tipTitle")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -941,7 +941,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-tip-mobile-${music.id}`}
                 aria-label={t("music.tipTitle")}
               >
-                <Gift size={11} />
+                <Gift size={10} />
               </Button>
             </span>
             ) : null}
