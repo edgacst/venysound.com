@@ -423,6 +423,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
   const showDonationBadgeByArtist = Boolean(uploaderDonationBadge && !isOwner);
   /** 무료 플랜 AI 월 한도로 생성 후 사이트 공개된 곡 — 후원·유료 다운로드·벨소리 비활성(관리자 생성 로그는 해당 없음) */
   const freeAiLocked = music.freeAiSiteRestrictions === true;
+  const showPaidUploaderActions = uploaderIsPremium && !isOwner && !freeAiLocked;
 
   const isActive = activeMusicId === music.id;
   const isPlaying = isActive && !pauseRequested;
@@ -910,6 +911,41 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
             </span>
             {music.genre ? <span className="min-w-0 truncate">{music.genre}</span> : null}
           </div>
+          {showPaidUploaderActions ? (
+            <div className="mt-1.5 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0 rounded-full bg-amber-50 text-amber-500 hover:bg-amber-100 hover:text-amber-600"
+                title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRingtoneDialogOpen(true);
+                }}
+                data-testid={`button-ringtone-card-mobile-${music.id}`}
+                aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
+              >
+                <Bell size={13} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0 rounded-full bg-yellow-50 text-yellow-500 hover:bg-yellow-100 hover:text-yellow-600"
+                title={t("music.tipTitle")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!user) return redirectToLogin();
+                  setTipOpen(true);
+                }}
+                data-testid={`button-tip-mobile-${music.id}`}
+                aria-label={t("music.tipTitle")}
+              >
+                <Gift size={13} />
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
