@@ -911,12 +911,12 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
             </span>
             {music.genre ? <span className="min-w-0 flex-1 truncate">{music.genre}</span> : <span className="min-w-0 flex-1" />}
             {showPaidUploaderActions ? (
-            <span className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <span className="flex shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-amber-500 hover:bg-transparent hover:text-amber-600"
+                className="h-3 w-3 shrink-0 rounded-none p-0 text-amber-500 hover:bg-transparent hover:text-amber-600 [&_svg]:h-[9px] [&_svg]:w-[9px]"
                 title={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -925,13 +925,13 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-ringtone-card-mobile-${music.id}`}
                 aria-label={t("music.ringtoneCardButtonTitle", "벨소리 받기")}
               >
-                <Bell size={10} />
+                <Bell size={9} strokeWidth={2} />
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-3.5 w-3.5 shrink-0 rounded-none p-0 text-yellow-500 hover:bg-transparent hover:text-yellow-600"
+                className="h-3 w-3 shrink-0 rounded-none p-0 text-yellow-500 hover:bg-transparent hover:text-yellow-600 [&_svg]:h-[9px] [&_svg]:w-[9px]"
                 title={t("music.tipTitle")}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -941,7 +941,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
                 data-testid={`button-tip-mobile-${music.id}`}
                 aria-label={t("music.tipTitle")}
               >
-                <Gift size={10} />
+                <Gift size={9} strokeWidth={2} />
               </Button>
             </span>
             ) : null}
