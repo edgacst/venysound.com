@@ -1,10 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { users } from "@shared/models/auth";
-import {
-  AI_MUSIC_WON_PER_TRACK,
-  getAiMusicUsagePeriodKey,
-  isUserPaidSubscriptionActive,
-} from "@shared/subscription-entitlements";
+import { getAiMusicUsagePeriodKey } from "@shared/subscription-entitlements";
+import { isPaidSubscriptionTierId } from "@shared/subscription-plan-pricing";
 import { parseAiWallet, pruneAiWallet, sumAiWallet } from "@shared/subscription-ai-wallet";
 import { db } from "./db";
 import { storage } from "./storage";
@@ -27,9 +24,10 @@ export function subscriptionAiBudgetExhaustionMarker(periodKey: string): string 
  */
 export async function ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted(userId: string, now: Date): Promise<void> {
   const [row] = await db.select().from(users).where(eq(users.id, userId));
-  if (!row || row.role === "admin" || !isUserPaidSubscriptionActive(row, now)) return;
+  if (!row || row.role === "admin" || !isPaidSubscriptionTierId(row.subscriptionTier ?? "free")) return;
   const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
-  if (!w || w.walletSum > 0) return;
+  const walletSum = w?.walletSum ?? sumAiWallet(pruneAiWallet(parseAiWallet(row.subscriptionAiWallet), now));
+  if (walletSum > 0) return;
   await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
 }
 
@@ -38,7 +36,7 @@ export async function runSubscriptionAiBudgetExhaustionIfNeeded(userId: string, 
 
   const post = await db.transaction(async (tx) => {
     const [u] = await tx.select().from(users).where(eq(users.id, userId)).for("update");
-    if (!u || !isUserPaidSubscriptionActive(u, now)) return null;
+    if (!u || !isPaidSubscriptionTierId(u.subscriptionTier ?? "free")) return null;
 
     const wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
     const sum = sumAiWallet(wallet);
@@ -61,7 +59,7 @@ export async function runSubscriptionAiBudgetExhaustionIfNeeded(userId: string, 
       });
 
     const [u2] = await tx.select().from(users).where(eq(users.id, userId));
-    if (!u2 || !isUserPaidSubscriptionActive(u2, now)) return null;
+    if (!u2 || !isPaidSubscriptionTierId(u2.subscriptionTier ?? "free")) return null;
     const sum2 = sumAiWallet(pruneAiWallet(parseAiWallet(u2.subscriptionAiWallet), now));
     if (sum2 > 0) return null;
 
