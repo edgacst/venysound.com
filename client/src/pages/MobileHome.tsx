@@ -34,6 +34,7 @@ const L = {
   aiCreate: "\u0041\u0049 \uc0dd\uc131",
   broadcast: "\ubc29\uc1a1",
   continueLogin: "\ub85c\uadf8\uc778\ud558\uba74 \ubcf4\uad00\ud568\uacfc \uc9c0\uac11\uc744 \ubc14\ub85c \uc774\uc5b4\uc11c \ubcfc \uc218 \uc788\uc5b4\uc694.",
+  collapse: "\uc811\uae30",
   dashboard: "\ub300\uc2dc\ubcf4\ub4dc",
   dashboardValue: "\ub0b4 \ud65c\ub3d9 \ubcf4\uae30",
   emptyMusic: "\uc74c\uc6d0\uc774 \uc544\uc9c1 \uc5c6\uc2b5\ub2c8\ub2e4.",
@@ -79,6 +80,7 @@ const MOBILE_COPY = {
     aiCreate: "AI Create",
     broadcast: "Radio",
     continueLogin: "Log in to continue to your library and wallet.",
+    collapse: "Close",
     dashboard: "Dashboard",
     dashboardValue: "View activity",
     emptyMusic: "No music yet.",
@@ -121,6 +123,7 @@ const MOBILE_COPY = {
     aiCreate: "AI生成",
     broadcast: "ラジオ",
     continueLogin: "ログインするとライブラリとウォレットを続けて確認できます。",
+    collapse: "閉じる",
     dashboard: "ダッシュボード",
     dashboardValue: "活動を見る",
     emptyMusic: "音源はまだありません。",
@@ -163,6 +166,7 @@ const MOBILE_COPY = {
     aiCreate: "AI 生成",
     broadcast: "电台",
     continueLogin: "登录后可继续查看资料库和钱包。",
+    collapse: "收起",
     dashboard: "仪表盘",
     dashboardValue: "查看活动",
     emptyMusic: "还没有音乐。",
@@ -425,7 +429,7 @@ export default function MobileHome() {
                   className="flex shrink-0 items-center gap-1 rounded-full bg-black/45 px-3 py-2 text-xs font-black text-white"
                   aria-expanded={quickMenuOpen}
                 >
-                  {copy.expand}
+                  {quickMenuOpen ? copy.collapse : copy.expand}
                   <ChevronDown className={`h-3.5 w-3.5 transition-transform ${quickMenuOpen ? "rotate-180" : ""}`} />
                 </button>
               </div>
