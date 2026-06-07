@@ -97,13 +97,11 @@ import {
   computeDisplayedSubscriptionFromEntitlements,
   subscriptionRowNeedsSync,
   buildEntitlementsView,
+  mergeEntitlementExpiry,
+  getActivePaidTierIds,
+  pruneExpiredEntitlements,
   parseIsoDate,
 } from "@shared/subscription-entitlements";
-import {
-  appendAiWalletGrant,
-  parseAiWallet,
-  pruneAiWallet,
-} from "@shared/subscription-ai-wallet";
 import {
   syncSubscriptionAiWalletForPaidUser,
   deductSubscriptionAiWallet,
@@ -178,16 +176,15 @@ function isActivePaidSubscription(
 
 /** 결제 직전 기준: 해당 tier가 이미 유효하면 갱신, 아니면 신규 구독 완료로 본다 */
 function subscriptionPaymentEmailKind(
-  user: {
-    subscriptionEntitlements?: unknown;
-    subscriptionTier?: string | null;
-    subscriptionExpiresAt?: Date | null;
-    subscriptionAiWallet?: unknown;
-  },
+  user: { subscriptionEntitlements?: unknown; subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null },
   now: Date,
   paidTier: PaidSubscriptionTierId,
 ): "started" | "renewed" {
-  return isUserPaidSubscriptionActive(user, now) && user.subscriptionTier === paidTier ? "renewed" : "started";
+  const view = pruneExpiredEntitlements(
+    buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now),
+    now,
+  );
+  return getActivePaidTierIds(view, now).includes(paidTier) ? "renewed" : "started";
 }
 
 /** 구독 결제 완료 시 마이페이지·/notifications 에 표시되는 인앱 알림 (이메일과 별도) */
@@ -230,7 +227,6 @@ async function notifyUserSubscriptionPaidInApp(input: {
 }
 
 const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
-type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
@@ -242,41 +238,64 @@ async function applyBankTransferSubscriptionToUserFromPayment(
     plan: string | null;
     billingPeriod: string | null;
   },
-  opts?: { subscriptionExpiresAtOverride?: Date; tx?: DbExecutor },
+  opts?: { subscriptionExpiresAtOverride?: Date },
 ): Promise<{
   computed: ReturnType<typeof computeDisplayedSubscriptionFromEntitlements>;
   payUser: (typeof users.$inferSelect) | undefined;
   tierPaid: PaidSubscriptionTierId;
-  expiresAt: Date | null;
+  expiresAt: Date;
 }> {
   const planNorm = String(payment.plan ?? "").trim().toLowerCase();
   if (!isPaidSubscriptionTierId(planNorm)) {
     throw new Error("NOT_A_PAID_SUBSCRIPTION_PLAN");
   }
-  const cx = opts?.tx ?? db;
   const tierPaid = planNorm as PaidSubscriptionTierId;
   const now = new Date();
-  const expiresAt = null;
-  const [payUser] = await cx.select().from(users).where(eq(users.id, payment.userId));
+  let expiresAt: Date;
+  if (opts?.subscriptionExpiresAtOverride) {
+    expiresAt = new Date(opts.subscriptionExpiresAtOverride);
+    if (Number.isNaN(expiresAt.getTime())) {
+      expiresAt = new Date(now);
+      if (payment.billingPeriod === "monthly") {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      } else {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      }
+    }
+  } else {
+    expiresAt = new Date(now);
+    if (payment.billingPeriod === "monthly") {
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+    } else {
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    }
+  }
+  const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
   /** 무료·만료 후 재구독 시 이전 구독 AI 지갑이 남으면 sync 시 이월+월충전이 중복 누적될 수 있음 */
-  const walletGrantWon =
-    payment.billingPeriod === "yearly"
-      ? SUBSCRIPTION_PLAN_FALLBACK[tierPaid].yearly
-      : SUBSCRIPTION_PLAN_FALLBACK[tierPaid].monthly;
-  const nextWallet = appendAiWalletGrant(pruneAiWallet(parseAiWallet(payUser?.subscriptionAiWallet), now), walletGrantWon, now);
-  const nextConsumed = Math.max(0, Math.floor(Number(payUser?.subscriptionAiPeriodConsumedWon ?? 0)));
-  const computed = computeDisplayedSubscriptionFromEntitlements({}, tierPaid, null, now, nextWallet);
-  await cx
+  const hadActivePaid = payUser ? isUserPaidSubscriptionActive(payUser, now) : false;
+  const view = buildEntitlementsView(
+    payUser?.subscriptionEntitlements,
+    payUser?.subscriptionTier,
+    payUser?.subscriptionExpiresAt,
+    now,
+  );
+  const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
+  const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+  await db
     .update(users)
     .set({
-      subscriptionEntitlements: sql`'{}'::jsonb`,
-      subscriptionTier: tierPaid,
-      subscriptionExpiresAt: null,
+      subscriptionEntitlements: computed.subscriptionEntitlements,
+      subscriptionTier: computed.subscriptionTier,
+      subscriptionExpiresAt: computed.subscriptionExpiresAt,
       subscriptionPlan: payment.billingPeriod ?? null,
-      subscriptionAiWallet: nextWallet,
-      subscriptionAiPeriodKey: `wallet:${tierPaid}`,
-      subscriptionAiPeriodConsumedWon: nextConsumed,
       subscriptionAiBudgetExhaustionNoticeKey: null,
+      ...(hadActivePaid
+        ? {}
+        : {
+            subscriptionAiWallet: sql`'[]'::jsonb`,
+            subscriptionAiPeriodKey: null,
+            subscriptionAiPeriodConsumedWon: 0,
+          }),
       updatedAt: new Date(),
     })
     .where(eq(users.id, payment.userId));
@@ -356,7 +375,7 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   }
   const pg = await payupHttpReconcileTransactionCancelled(cred, tid);
   if (!pg.ok) return { ok: false, message: pg.message };
-  if ("skipped" in pg) {
+  if ("skipped" in pg && pg.skipped) {
     return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
   }
   if (pg.cancelledAtPg) {
@@ -378,51 +397,37 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   if (!amtChk.ok) return { ok: false, message: amtChk.message };
   const txnId = payupInquiryFlatPickTransactionId(flat, tid);
 
+  const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(fresh);
   const now = new Date();
   const meta =
     fresh.payupMeta && typeof fresh.payupMeta === "object"
       ? ({ ...(fresh.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
       : {};
-  const applied = await db.transaction(async (tx) => {
-    const updatedRows = await tx
-      .update(payments)
-      .set({
-        status: "paid",
-        paymentKey: `payup:${txnId.replace(/^payup:/i, "").trim()}`,
-        payupMeta: {
-          ...meta,
-          completedAt: now.toISOString(),
-          txnId,
-          finalizedFromPgInquiryAt: now.toISOString(),
-        },
-      })
-      .where(and(eq(payments.id, fresh.id), eq(payments.status, "pending")))
-      .returning({ id: payments.id });
-    if (!updatedRows.length) {
-      const [again] = await tx.select().from(payments).where(eq(payments.id, fresh.id));
-      if (String(again?.status ?? "").toLowerCase() === "paid") {
-        return { alreadyPaid: true as const };
-      }
-      return { failedToClaim: true as const };
+  const updatedRows = await db
+    .update(payments)
+    .set({
+      status: "paid",
+      paymentKey: `payup:${txnId.replace(/^payup:/i, "").trim()}`,
+      payupMeta: {
+        ...meta,
+        completedAt: now.toISOString(),
+        txnId,
+        finalizedFromPgInquiryAt: now.toISOString(),
+      },
+    })
+    .where(and(eq(payments.id, fresh.id), eq(payments.status, "pending")))
+    .returning({ id: payments.id });
+  if (!updatedRows.length) {
+    const [again] = await db.select().from(payments).where(eq(payments.id, fresh.id));
+    if (String(again?.status ?? "").toLowerCase() === "paid") {
+      return { ok: true, paymentId: again!.id, orderId: again!.orderId, alreadyPaid: true };
     }
-    const subscription = await applyBankTransferSubscriptionToUserFromPayment(fresh, { tx });
-    return { alreadyPaid: false as const, subscription };
-  });
-  if (applied.alreadyPaid) {
-    return { ok: true, paymentId: fresh.id, orderId: fresh.orderId, alreadyPaid: true };
-  }
-  if ("failedToClaim" in applied && applied.failedToClaim) {
     console.error("[payup] finalize-from-inquiry: subscription applied but payment not pending", fresh.id);
     return {
       ok: false,
       message: "구독은 반영했으나 결제 행을 paid 로 바꾸지 못했습니다. 관리자에게 문의해 주세요.",
     };
   }
-
-  if (!("subscription" in applied)) {
-    return { ok: false, message: "Payup payment apply failed." };
-  }
-  const { computed, payUser, tierPaid, expiresAt } = applied.subscription;
 
   console.log("[payup] pending finalized via PG inquiry", fresh.orderId, txnId.slice(0, 12));
 
@@ -8000,14 +8005,9 @@ export async function registerRoutes(
       }
 
       const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob.trim());
-      if (!payRes.ok) {
+      if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
         console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
-        redirectPricingPayupOutcome(res, "fail");
-        return;
-      }
-      if (!payRes.data || typeof payRes.data !== "object") {
-        console.error("[payup] payUrl approval response invalid", orderNumber, "http", payRes.status);
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8036,41 +8036,19 @@ export async function registerRoutes(
       }
 
       const now = new Date();
-      const applied = await db.transaction(async (tx) => {
-        const updatedRows = await tx
-          .update(payments)
-          .set({
-            status: "paid",
-            paymentKey: `payup:${txnId}`,
-            payupMeta: {
-              ...(meta && typeof meta === "object" ? meta : {}),
-              completedAt: now.toISOString(),
-              txnId,
-            },
-          })
-          .where(and(eq(payments.id, payment.id), eq(payments.status, "pending")))
-          .returning({ id: payments.id });
-        if (!updatedRows.length) {
-          const [again] = await tx.select().from(payments).where(eq(payments.id, payment.id));
-          if (String(again?.status ?? "").toLowerCase() === "paid") {
-            return { alreadyPaid: true as const };
-          }
-          return { failedToClaim: true as const };
-        }
-        const subscription = await applyBankTransferSubscriptionToUserFromPayment(payment, { tx });
-        return { alreadyPaid: false as const, subscription };
-      });
-      if (applied.alreadyPaid) {
-        redirectPricingPayupOutcome(res, "success");
-        return;
-      }
-      const subscription = "subscription" in applied ? applied.subscription : null;
-      if (!subscription) {
-        console.error("[payup] complete: payment claim failed", orderNumber);
-        redirectPricingPayupOutcome(res, "fail");
-        return;
-      }
-      const { computed, payUser, tierPaid, expiresAt } = subscription;
+      const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+      await db
+        .update(payments)
+        .set({
+          status: "paid",
+          paymentKey: `payup:${txnId}`,
+          payupMeta: {
+            ...(meta && typeof meta === "object" ? meta : {}),
+            completedAt: now.toISOString(),
+            txnId,
+          },
+        })
+        .where(eq(payments.id, payment.id));
 
       const bankSubKind = payUser ? subscriptionPaymentEmailKind(payUser, now, tierPaid) : "started";
       const bankBp =
@@ -8163,7 +8141,7 @@ export async function registerRoutes(
       let lastMsg = "";
       for (const row of rows) {
         const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(row);
-        if (out.ok) return res.json({ ...out, ok: true });
+        if (out.ok) return res.json({ ok: true, ...out });
         lastMsg = out.message;
       }
       return res.status(400).json({ ok: false, message: lastMsg || "PG 승인 반영에 실패했습니다." });
@@ -8191,10 +8169,7 @@ export async function registerRoutes(
 
   const payupWebhookSecretOk = (req: Request): boolean => {
     const secret = (process.env.PAYUP_WEBHOOK_SECRET ?? "").trim();
-    if (!secret) {
-      const allowUnsigned = String(process.env.PAYUP_WEBHOOK_ALLOW_UNSIGNED ?? "").trim().toLowerCase() === "true";
-      return process.env.NODE_ENV !== "production" || allowUnsigned;
-    }
+    if (!secret) return true;
     const auth = (req.get("authorization") ?? "").trim();
     if (auth === `Bearer ${secret}`) return true;
     if ((req.get("x-payup-webhook-secret") ?? "").trim() === secret) return true;
@@ -8329,7 +8304,7 @@ export async function registerRoutes(
       if (!pg.ok) {
         return res.json({ ok: true, action: "http_error" as const, message: pg.message });
       }
-      if ("skipped" in pg) {
+      if ("skipped" in pg && pg.skipped) {
         return res.json({ ok: true, action: "http_skipped" as const, reason: pg.reason });
       }
       if (!pg.cancelledAtPg) {

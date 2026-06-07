@@ -141,17 +141,21 @@ export function getWalletBackedPaidTierId(user: UserSubscriptionFields | undefin
 
 export function isUserPaidSubscriptionActive(user: UserSubscriptionFields | undefined, now: Date): boolean {
   if (!user) return false;
-  return getWalletBackedPaidTierId(user) != null;
+  const view = buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now);
+  const pruned = pruneExpiredEntitlements(view, now);
+  return getActivePaidTierIds(pruned, now).length > 0 || getWalletBackedPaidTierId(user) != null;
 }
 
 /** 활성 유료 플랜이 있으면 각 tier 월 AI 예산(원)을 합산 */
 export function sumActivePaidAiMusicMonthlyWonBudget(user: UserSubscriptionFields | undefined, now: Date): number {
-  const walletTier = getWalletBackedPaidTierId(user);
-  if (walletTier) return AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[walletTier];
-  const tier = String(user?.subscriptionTier ?? "free").trim().toLowerCase();
-  return isPaidSubscriptionTierId(tier)
-    ? AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[tier as PaidSubscriptionTierId]
-    : FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  const view = buildEntitlementsView(user?.subscriptionEntitlements, user?.subscriptionTier, user?.subscriptionExpiresAt, now);
+  const pruned = pruneExpiredEntitlements(view, now);
+  const active = getActivePaidTierIds(pruned, now);
+  if (active.length === 0) {
+    const walletTier = getWalletBackedPaidTierId(user);
+    return walletTier ? AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[walletTier] : FREE_AI_MUSIC_LIMIT_PER_MONTH;
+  }
+  return active.reduce((sum, t) => sum + AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[t], 0);
 }
 
 /** @deprecated sumActivePaidAiMusicMonthlyWonBudget */
@@ -196,7 +200,21 @@ export function getAiMusicUsagePeriodKey(
 
   const walletTier = getWalletBackedPaidTierId(user);
   if (walletTier) return `wallet:${walletTier}`;
-  return cal;
+
+  const billing = String(user?.subscriptionPlan ?? "").trim().toLowerCase();
+  if (billing === "yearly") {
+    return cal;
+  }
+
+  const computed = computeDisplayedSubscriptionFromEntitlements(
+    user?.subscriptionEntitlements,
+    user?.subscriptionTier,
+    user?.subscriptionExpiresAt,
+    now,
+  );
+  const exp = computed.subscriptionExpiresAt;
+  if (!exp || !(exp instanceof Date) || isNaN(exp.getTime())) return cal;
+  return `sub:${exp.getTime()}`;
 }
 
 /** UI·DB 레거시 컬럼용: 최고 tier + 활성 tier 중 가장 늦은 만료 */
@@ -211,11 +229,21 @@ export function computeDisplayedSubscriptionFromEntitlements(
   subscriptionTier: string;
   subscriptionExpiresAt: Date | null;
 } {
-  const walletTier = getWalletBackedPaidTierId({ subscriptionTier: legacyTier, subscriptionAiWallet });
-  if (walletTier) {
-    return { subscriptionEntitlements: {}, subscriptionTier: walletTier, subscriptionExpiresAt: null };
+  const view = buildEntitlementsView(stored, legacyTier, legacyExp, now);
+  const pruned = pruneExpiredEntitlements(view, now);
+  const active = getActivePaidTierIds(pruned, now);
+  if (active.length === 0) {
+    const walletTier = getWalletBackedPaidTierId({ subscriptionTier: legacyTier, subscriptionAiWallet });
+    if (walletTier) {
+      return { subscriptionEntitlements: pruned, subscriptionTier: walletTier, subscriptionExpiresAt: null };
+    }
+    return { subscriptionEntitlements: pruned, subscriptionTier: "free", subscriptionExpiresAt: null };
   }
-  return { subscriptionEntitlements: {}, subscriptionTier: "free", subscriptionExpiresAt: null };
+  return {
+    subscriptionEntitlements: pruned,
+    subscriptionTier: highestPaidTier(active),
+    subscriptionExpiresAt: maxExpiryAmongTiers(pruned, active),
+  };
 }
 
 export function subscriptionRowNeedsSync(
@@ -251,7 +279,9 @@ export function hasActivePremiumSubscription(
 ): boolean {
   if (!user) return false;
   if (user.role === "admin") return true;
-  return getWalletBackedPaidTierId(user) === "premium";
+  const view = buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now);
+  const pruned = pruneExpiredEntitlements(view, now);
+  return getActivePaidTierIds(pruned, now).includes("premium");
 }
 
 /** @deprecated AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER */
