@@ -60,7 +60,11 @@ const L = {
   quickChart: "\ubbf8\ub2c8 \ucc28\ud2b8",
   recommended: "\ucd94\ucc9c \ud50c\ub808\uc774\ub9ac\uc2a4\ud2b8",
   searchMusic: "\uc74c\uc6d0 \ud0d0\uc0c9",
+  serviceGuide: "\uc774\uc6a9 \uac00\uc774\ub4dc",
+  serviceGuideValue: "\uae30\ub2a5 \uc548\ub0b4",
   start: "\u0056\u0065\u006e\u0079\u0053\u006f\u0075\u006e\u0064 \uc2dc\uc791\ud558\uae30",
+  sunoGuide: "\uc74c\uc545 \uc0dd\uc131 \uac00\uc774\ub4dc",
+  sunoGuideValue: "\u0053\u0075\u006e\u006f \uac00\uc774\ub4dc",
   upload: "\uc5c5\ub85c\ub4dc",
   wallet: "\uc9c0\uac11",
   welcome: "\uc5b4\uc11c\uc624\uc138\uc694",
@@ -101,7 +105,11 @@ const MOBILE_COPY = {
     quickChart: "Mini Chart",
     recommended: "Recommended Playlists",
     searchMusic: "Explore",
+    serviceGuide: "Guide",
+    serviceGuideValue: "Service help",
     start: "Start VenySound",
+    sunoGuide: "Music Guide",
+    sunoGuideValue: "Suno guide",
     upload: "Upload",
     wallet: "Wallet",
     welcome: "Welcome",
@@ -139,7 +147,11 @@ const MOBILE_COPY = {
     quickChart: "ミニチャート",
     recommended: "おすすめプレイリスト",
     searchMusic: "音楽を探す",
+    serviceGuide: "利用ガイド",
+    serviceGuideValue: "機能案内",
     start: "VenySoundを始める",
+    sunoGuide: "音楽生成ガイド",
+    sunoGuideValue: "Sunoガイド",
     upload: "アップロード",
     wallet: "ウォレット",
     welcome: "ようこそ",
@@ -177,7 +189,11 @@ const MOBILE_COPY = {
     quickChart: "迷你榜单",
     recommended: "推荐播放列表",
     searchMusic: "探索音乐",
+    serviceGuide: "使用指南",
+    serviceGuideValue: "功能说明",
     start: "开始使用 VenySound",
+    sunoGuide: "音乐生成指南",
+    sunoGuideValue: "Suno 指南",
     upload: "上传",
     wallet: "钱包",
     welcome: "欢迎",
@@ -432,6 +448,8 @@ export default function MobileHome() {
                       />
                       <MobileActionLink href="/dashboard" icon={BarChart3} label={copy.dashboard} value={copy.dashboardValue} />
                       <MobileActionLink href="/credits" icon={Coins} label={copy.wallet} value={`${balanceWon.toLocaleString()}${copy.won}`} />
+                      <MobileActionLink href="/suno-guide" icon={Sparkles} label={copy.sunoGuide} value={copy.sunoGuideValue} />
+                      <MobileActionLink href="/guide" icon={Youtube} label={copy.serviceGuide} value={copy.serviceGuideValue} />
                     </div>
                   </motion.div>
                 ) : null}
