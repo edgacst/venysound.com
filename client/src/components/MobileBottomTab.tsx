@@ -27,7 +27,7 @@ export function MobileBottomTab() {
   const { t } = useTranslation();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-[60] flex h-14 items-center gap-0 border-t border-slate-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_-24px_rgba(15,23,42,0.55)] backdrop-blur-xl md:hidden">
+    <nav className="veny-mobile-bottom-tab fixed inset-x-0 bottom-0 z-[60] flex h-14 items-center gap-0 border-t border-slate-200/80 bg-white/95 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_30px_-24px_rgba(15,23,42,0.55)] backdrop-blur-xl md:hidden">
       <BottomTab href="/" icon={Home} label={t("nav.home", "홈")} />
       <BottomTab href="/music" icon={Search} label={t("nav.musicList", "탐색")} />
       <BottomTab href="/create-music" icon={Wand2} label={t("nav.createMusic", "AI")} />

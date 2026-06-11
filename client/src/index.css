@@ -59,8 +59,9 @@
   }
 }
 
-/* 모바일만: 가로 넘침 방지 (데스크톱 레이아웃에는 영향 없음) */
-@media (max-width: 767px) {
+/* 모바일만: 가로 넘침 방지 (데스크톱 레이아웃에는 영향 없음)
+   터치 기기 + layout viewport 980px(인앱/OAuth)도 포함 */
+@media (max-width: 767px), ((hover: none) and (pointer: coarse)) {
   :root {
     --background: 258 42% 11%;
     --foreground: 0 0% 98%;
@@ -286,6 +287,30 @@
 
 .glass-panel {
   @apply bg-background/80 backdrop-blur-md border border-white/5;
+}
+
+/* 터치 폰: layout viewport가 768+로 잡혀도 PC 네비·하단탭 분기 유지 */
+@media (hover: none), (pointer: coarse) {
+  .veny-nav-desktop {
+    display: none !important;
+  }
+  .veny-nav-mobile-toggle {
+    display: flex !important;
+  }
+  .veny-nav-mobile-menu-panel {
+    display: block !important;
+  }
+  .veny-mobile-bottom-tab {
+    display: flex !important;
+  }
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 768px) {
+  .veny-nav-mobile-toggle {
+    display: none !important;
+  }
+  .veny-mobile-bottom-tab {
+    display: none !important;
+  }
 }
 
 /* 예전: 모바일 가로 모드 차단 오버레이

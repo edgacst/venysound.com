@@ -179,7 +179,7 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="hidden md:flex items-center min-w-0 flex-1 justify-center">
+        <div className="veny-nav-desktop hidden md:flex items-center min-w-0 flex-1 justify-center">
           <div className="flex items-center gap-1 shrink-0 py-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
@@ -200,7 +200,7 @@ export function Navigation() {
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-2 flex-shrink-0 justify-end">
+        <div className="veny-nav-desktop hidden md:flex items-center gap-2 flex-shrink-0 justify-end">
           {user ? (
             <>
               <Link href={`/profile/${user.id}`} className="shrink-0" title={t('nav.myMusic', '나의 음악')}>
@@ -356,7 +356,7 @@ export function Navigation() {
         </div>
 
         <button 
-          className="md:hidden p-2 text-muted-foreground hover:text-foreground"
+          className="veny-nav-mobile-toggle md:hidden p-2 text-muted-foreground hover:text-foreground"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           data-testid="button-mobile-menu"
         >
@@ -370,7 +370,7 @@ export function Navigation() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "calc(100dvh - 4rem)" }}
             exit={{ opacity: 0, height: 0 }}
-            className="fixed inset-x-0 top-16 z-[69] md:hidden overflow-y-auto overscroll-contain border-t border-white/10 bg-[#101114] shadow-[0_18px_50px_-28px_rgba(0,0,0,0.8)]"
+            className="veny-nav-mobile-menu-panel fixed inset-x-0 top-16 z-[69] overflow-y-auto overscroll-contain border-t border-white/10 bg-[#101114] shadow-[0_18px_50px_-28px_rgba(0,0,0,0.8)] md:hidden"
           >
             <div className="flex flex-col p-3 gap-0.5">
               <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.menu', '메뉴')}</p>
