@@ -7,14 +7,14 @@ import { motion, AnimatePresence, useScroll, useTransform, useSpring } from "fra
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { resolveStorageUrl, cn } from "@/lib/utils";
 import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
-import { getIsMobileViewport, useIsLgUp, useIsMobile } from "@/hooks/use-mobile";
+import { useIsLgUp } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
@@ -91,21 +91,55 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
   );
 }
 
+/** 홈 전용 — OAuth 복귀 직후 폭이 768+로 잡혀도 터치 기기면 MobileHome */
+const HOME_MOBILE_WIDTH_MQ = "(max-width: 767px)";
+const HOME_TOUCH_PRIMARY_MQ = "(hover: none), (pointer: coarse)";
+
+function shouldShowMobileHome(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia(HOME_TOUCH_PRIMARY_MQ).matches) return true;
+  return window.matchMedia(HOME_MOBILE_WIDTH_MQ).matches;
+}
+
+function subscribeHomeLayout(onStoreChange: () => void) {
+  const widthMq = window.matchMedia(HOME_MOBILE_WIDTH_MQ);
+  const touchMq = window.matchMedia(HOME_TOUCH_PRIMARY_MQ);
+  widthMq.addEventListener("change", onStoreChange);
+  touchMq.addEventListener("change", onStoreChange);
+  window.addEventListener("orientationchange", onStoreChange);
+  window.visualViewport?.addEventListener("resize", onStoreChange);
+  const onPageShow = (e: PageTransitionEvent) => {
+    if (e.persisted) onStoreChange();
+  };
+  window.addEventListener("pageshow", onPageShow);
+  return () => {
+    widthMq.removeEventListener("change", onStoreChange);
+    touchMq.removeEventListener("change", onStoreChange);
+    window.removeEventListener("orientationchange", onStoreChange);
+    window.visualViewport?.removeEventListener("resize", onStoreChange);
+    window.removeEventListener("pageshow", onPageShow);
+  };
+}
+
+function useHomeLayoutMobile(): boolean {
+  return useSyncExternalStore(subscribeHomeLayout, shouldShowMobileHome, () => false);
+}
+
 export default function Home() {
-  const isMobile = useIsMobile();
+  const showMobileHome = useHomeLayoutMobile();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const layoutRecoveredRef = useRef(false);
 
+  /** 로그인 직후 터치 폰인데 PC 홈이 남으면 1회 새로고침 */
   useEffect(() => {
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (!e.persisted || !getIsMobileViewport()) return;
-      if (!document.querySelector('[data-testid="mobile-home-redesign"]')) {
-        window.location.reload();
-      }
-    };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
-  }, []);
+    if (layoutRecoveredRef.current || isAuthLoading) return;
+    if (!user?.id || !shouldShowMobileHome()) return;
+    if (document.querySelector('[data-testid="mobile-home-redesign"]')) return;
+    layoutRecoveredRef.current = true;
+    window.location.reload();
+  }, [user?.id, isAuthLoading, showMobileHome]);
 
-  return isMobile ? <MobileHome /> : <DesktopHome />;
+  return showMobileHome ? <MobileHome /> : <DesktopHome />;
 }
 
 function DesktopHome() {
