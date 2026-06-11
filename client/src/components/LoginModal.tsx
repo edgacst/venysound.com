@@ -64,7 +64,8 @@ export function LoginModal() {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
         close();
-        setTimeout(() => { window.location.href = "/"; }, 200);
+        if (window.location.pathname === "/" || window.location.pathname === "") window.location.reload();
+        else window.location.replace("/");
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc"), variant: "destructive" });
         setDevLoggingIn(false);
@@ -93,7 +94,8 @@ export function LoginModal() {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
         close();
-        setTimeout(() => { window.location.href = "/"; }, 200);
+        if (window.location.pathname === "/" || window.location.pathname === "") window.location.reload();
+        else window.location.replace("/");
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }

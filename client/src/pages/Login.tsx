@@ -1,6 +1,6 @@
 import { Music, CheckCircle, User, Eye, EyeOff, Lock } from "lucide-react";
 import { useAuth, refreshAuthSession } from "@/hooks/use-auth";
-import { useLocation, Link } from "wouter";
+import { Link } from "wouter";
 import { useEffect, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useQuery } from "@tanstack/react-query";
@@ -22,7 +22,6 @@ function readSafeNextPath(): string {
 export default function Login() {
   const { t } = useTranslation();
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const [localForm, setLocalForm] = useState({ username: "", password: "" });
@@ -42,8 +41,11 @@ export default function Login() {
     ((loginOptions as { allowDevLogin?: boolean }).allowDevLogin ?? !hasAnyOAuth);
 
   useEffect(() => {
-    if (!isLoading && user) setLocation(readSafeNextPath());
-  }, [isLoading, user, setLocation]);
+    if (isLoading || !user) return;
+    const next = readSafeNextPath();
+    const current = window.location.pathname + window.location.search;
+    if (current !== next) window.location.replace(next);
+  }, [isLoading, user]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -82,7 +84,10 @@ export default function Login() {
       if (res.ok && data.success) {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = readSafeNextPath(); }, 400);
+        const next = readSafeNextPath();
+        const current = window.location.pathname + window.location.search;
+        if (current !== next) window.location.replace(next);
+        else window.location.reload();
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error, variant: "destructive" });
         setDevLoggingIn(false);
@@ -110,7 +115,10 @@ export default function Login() {
       if (res.ok && data.success) {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        setTimeout(() => { window.location.href = readSafeNextPath(); }, 400);
+        const next = readSafeNextPath();
+        const current = window.location.pathname + window.location.search;
+        if (current !== next) window.location.replace(next);
+        else window.location.reload();
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }
