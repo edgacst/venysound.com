@@ -14,7 +14,7 @@ import { useMyLikes } from "@/hooks/use-music";
 import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
-import { useIsLgUp, useIsMobile } from "@/hooks/use-mobile";
+import { getIsMobileViewport, useIsLgUp, useIsMobile } from "@/hooks/use-mobile";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
@@ -93,6 +93,18 @@ function HomeMusicRowItem({ children }: { children: ReactNode }) {
 
 export default function Home() {
   const isMobile = useIsMobile();
+
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (!e.persisted || !getIsMobileViewport()) return;
+      if (!document.querySelector('[data-testid="mobile-home-redesign"]')) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   return isMobile ? <MobileHome /> : <DesktopHome />;
 }
 
