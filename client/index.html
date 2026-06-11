@@ -3,25 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <script>
-      (function () {
-        var touch = window.matchMedia("(hover: none), (pointer: coarse)").matches;
-        if (!touch) return;
-        document.documentElement.classList.add("veny-touch-device");
-        var meta = document.querySelector('meta[name="viewport"]');
-        if (!meta) return;
-        var layoutW = document.documentElement.clientWidth || window.innerWidth;
-        if (layoutW < 768) return;
-        var narrow = Math.min(window.screen.width, window.screen.height);
-        if (narrow < 768 && narrow > 0) {
-          meta.setAttribute("content", "width=" + narrow + ", initial-scale=1.0, viewport-fit=cover");
-          if (!sessionStorage.getItem("veny_vp_narrow")) {
-            sessionStorage.setItem("veny_vp_narrow", "1");
-            window.location.reload();
-          }
-        }
-      })();
-    </script>
+    <script src="/veny-mobile-bootstrap.js"></script>
     <meta name="theme-color" content="#0a0a0a" />
     <link rel="canonical" href="__VENYSOUND_CANONICAL__" />
     <title>베니사운드 VenySound · 음악공유·AI음악생성·라디오</title>

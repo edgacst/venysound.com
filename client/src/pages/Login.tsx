@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { LOGIN_PATH, REGISTER_PATH } from "@/lib/site-paths";
+import { isTouchLayoutDevice, withMobileLayoutRefresh } from "@/lib/mobile-layout-refresh";
 
 /** 로그인 후 이동할 내부 경로 (?next=). 오픈 리다이렉트 방지 */
 function readSafeNextPath(): string {
@@ -42,7 +43,7 @@ export default function Login() {
 
   useEffect(() => {
     if (isLoading || !user) return;
-    const next = readSafeNextPath();
+    const next = isTouchLayoutDevice() ? withMobileLayoutRefresh(readSafeNextPath()) : readSafeNextPath();
     const current = window.location.pathname + window.location.search;
     if (current !== next) window.location.replace(next);
   }, [isLoading, user]);
@@ -84,10 +85,7 @@ export default function Login() {
       if (res.ok && data.success) {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        const next = readSafeNextPath();
-        const current = window.location.pathname + window.location.search;
-        if (current !== next) window.location.replace(next);
-        else window.location.reload();
+        window.location.replace(isTouchLayoutDevice() ? withMobileLayoutRefresh(readSafeNextPath()) : readSafeNextPath());
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error, variant: "destructive" });
         setDevLoggingIn(false);
@@ -115,10 +113,7 @@ export default function Login() {
       if (res.ok && data.success) {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
-        const next = readSafeNextPath();
-        const current = window.location.pathname + window.location.search;
-        if (current !== next) window.location.replace(next);
-        else window.location.reload();
+        window.location.replace(isTouchLayoutDevice() ? withMobileLayoutRefresh(readSafeNextPath()) : readSafeNextPath());
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }

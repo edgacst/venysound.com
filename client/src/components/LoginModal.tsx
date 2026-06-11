@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { RegisterForm } from "@/components/RegisterForm";
 import { recordSignupPageViewDeduped } from "@/lib/analytics-conversion";
 import { cn } from "@/lib/utils";
+import { isTouchLayoutDevice, withMobileLayoutRefresh } from "@/lib/mobile-layout-refresh";
 
 export function LoginModal() {
   const { t } = useTranslation();
@@ -64,8 +65,7 @@ export function LoginModal() {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
         close();
-        if (window.location.pathname === "/" || window.location.pathname === "") window.location.reload();
-        else window.location.replace("/");
+        window.location.replace(isTouchLayoutDevice() ? withMobileLayoutRefresh("/") : "/");
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc"), variant: "destructive" });
         setDevLoggingIn(false);
@@ -94,8 +94,7 @@ export function LoginModal() {
         await refreshAuthSession();
         toast({ title: t("login.loginSuccess", "로그인되었습니다") });
         close();
-        if (window.location.pathname === "/" || window.location.pathname === "") window.location.reload();
-        else window.location.replace("/");
+        window.location.replace(isTouchLayoutDevice() ? withMobileLayoutRefresh("/") : "/");
       } else {
         toast({ title: t("login.loginFailed", "로그인 실패"), description: data.error || t("login.loginFailedDesc", "아이디 또는 비밀번호가 올바르지 않습니다."), variant: "destructive" });
       }

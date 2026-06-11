@@ -22,6 +22,9 @@ import {
   verifyAccountEmailBind,
 } from "../sensitiveOtp";
 import { getLoginPagePath } from "../site-paths";
+
+/** OAuth 성공 후 홈 — 모바일 터치 기기 레이아웃 1회 보정(veny-mobile-bootstrap.js) */
+const POST_LOGIN_HOME = "/?veny_layout=1";
 import { recordSignupSuccessAfterNewOauth } from "../oauthSignupAnalytics";
 import { storage } from "../storage";
 import { ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted } from "../subscription-ai-budget-exhaustion";
@@ -518,7 +521,7 @@ export async function setupAuth(app: Express) {
               console.error("[auth] Google session error:", loginErr);
               return res.redirect(`${getLoginPagePath()}?error=google`);
             }
-            respondAfterSessionSaved(req, res, () => res.redirect("/"), () =>
+            respondAfterSessionSaved(req, res, () => res.redirect(POST_LOGIN_HOME), () =>
               res.redirect(`${getLoginPagePath()}?error=session`)
             );
           });
@@ -529,17 +532,17 @@ export async function setupAuth(app: Express) {
 
   if (hasNaver) {
     app.get("/api/auth/naver", passport.authenticate("naver"));
-    app.get("/api/auth/naver/callback", passport.authenticate("naver", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
+    app.get("/api/auth/naver/callback", passport.authenticate("naver", { failureRedirect: getLoginPagePath(), successRedirect: POST_LOGIN_HOME }));
   }
 
   if (hasKakao) {
     app.get("/api/auth/kakao", passport.authenticate("kakao"));
-    app.get("/api/auth/kakao/callback", passport.authenticate("kakao", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
+    app.get("/api/auth/kakao/callback", passport.authenticate("kakao", { failureRedirect: getLoginPagePath(), successRedirect: POST_LOGIN_HOME }));
   }
 
   if (hasFacebook) {
     app.get("/api/auth/facebook", passport.authenticate("facebook", { scope: ["email", "public_profile"] }));
-    app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { failureRedirect: getLoginPagePath(), successRedirect: "/" }));
+    app.get("/api/auth/facebook/callback", passport.authenticate("facebook", { failureRedirect: getLoginPagePath(), successRedirect: POST_LOGIN_HOME }));
   }
 
   if (hasTikTok) {
@@ -646,7 +649,7 @@ export async function setupAuth(app: Express) {
             console.error("TikTok login session error:", err);
             return res.redirect(`${getLoginPagePath()}?error=session`);
           }
-          respondAfterSessionSaved(req, res, () => res.redirect("/"), () =>
+          respondAfterSessionSaved(req, res, () => res.redirect(POST_LOGIN_HOME), () =>
             res.redirect(`${getLoginPagePath()}?error=session`)
           );
         });

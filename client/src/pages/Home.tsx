@@ -15,6 +15,7 @@ import type { Music } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsLgUp } from "@/hooks/use-mobile";
+import { isTouchLayoutDevice, withMobileLayoutRefresh } from "@/lib/mobile-layout-refresh";
 import { REGISTER_PATH } from "@/lib/site-paths";
 import { useLoginModalStore } from "@/stores/login-modal";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
@@ -130,13 +131,17 @@ export default function Home() {
   const { user, isLoading: isAuthLoading } = useAuth();
   const layoutRecoveredRef = useRef(false);
 
-  /** 로그인 직후 터치 폰인데 PC 홈이 남으면 1회 새로고침 */
+  /** 로그인 직후 터치 폰 레이아웃이 PC 폭으로 남으면 bootstrap 1회 재실행 */
   useEffect(() => {
     if (layoutRecoveredRef.current || isAuthLoading) return;
-    if (!user?.id || !shouldShowMobileHome()) return;
-    if (document.querySelector('[data-testid="mobile-home-redesign"]')) return;
+    if (!user?.id || !isTouchLayoutDevice()) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("veny_r") === "1") return;
+    const layoutW = document.documentElement.clientWidth || window.innerWidth;
+    const hasMobileShell = document.querySelector('[data-testid="mobile-home-redesign"]');
+    if (hasMobileShell && layoutW < 768) return;
     layoutRecoveredRef.current = true;
-    window.location.reload();
+    window.location.replace(withMobileLayoutRefresh(window.location.pathname));
   }, [user?.id, isAuthLoading, showMobileHome]);
 
   return showMobileHome ? <MobileHome /> : <DesktopHome />;
