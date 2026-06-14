@@ -1942,7 +1942,7 @@ export async function registerRoutes(
       });
       const genData = await genRes.json().catch(() => ({}));
       const bizCode = (genData as { code?: number }).code;
-      if (!genRes.ok || bizCode !== 200) {
+      if (!genRes.ok || (typeof bizCode === "number" && bizCode !== 200)) {
         const msg = (genData as { msg?: string }).msg ?? "MP4 conversion failed to start.";
         return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
           message: String(msg),
