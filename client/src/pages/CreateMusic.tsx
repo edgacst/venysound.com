@@ -515,6 +515,8 @@ function normalizePastedLyricsText(text: string): string {
   let s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!s) return s;
   s = s.replace(/\s*(\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])\s*/gi, "\n\n$1\n");
+  s = s.replace(/(\])(?=[^\s\n])/g, "$1\n");
+  s = s.replace(/\)\s*(?=\()/g, ")\n");
   s = s.replace(/\)\s*(?=[^\s\[\(])/g, ")\n");
   s = s.replace(/([.!?。！？])\s*(?=\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])/gi, "$1\n\n");
   s = s.replace(/([.!?。！？])\s*(?=(?:Just|Let|Mmm|Um|Yeah|Oh|Woo|La)\b)/g, "$1\n");
@@ -3418,7 +3420,7 @@ export default function CreateMusic() {
                             if (mode !== "custom" || instrumentalOnly) return;
                             const htmlText = clipboardHtmlToText(e.clipboardData.getData("text/html"));
                             const plainText = e.clipboardData.getData("text");
-                            const pasted = htmlText && htmlText.length >= plainText.trim().length ? htmlText : plainText;
+                            const pasted = htmlText && htmlText.includes("\n") ? htmlText : plainText;
                             if (!pasted || !/\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro)/i.test(pasted)) return;
                             e.preventDefault();
                             const el = e.currentTarget;
