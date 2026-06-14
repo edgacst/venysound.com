@@ -1942,12 +1942,7 @@ export async function registerRoutes(
       });
       const genData = await genRes.json().catch(() => ({}));
       const bizCode = (genData as { code?: number }).code;
-      if (!genRes.ok || (typeof bizCode === "number" && bizCode !== 200)) {
-        const msg = (genData as { msg?: string }).msg ?? "MP4 conversion failed to start.";
-        return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
-          message: String(msg),
-        });
-      }
+      const genMsg = (genData as { msg?: string; message?: string }).msg ?? (genData as { message?: string }).message ?? "";
       const gd = (genData as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string }).data;
       const mp4TaskId =
         (typeof gd?.taskId === "string" ? gd.taskId : "") ||
@@ -1955,8 +1950,14 @@ export async function registerRoutes(
         (typeof (genData as { taskId?: string }).taskId === "string" ? (genData as { taskId: string }).taskId : "") ||
         (typeof (genData as { task_id?: string }).task_id === "string" ? (genData as { task_id: string }).task_id : "") ||
         "";
+      if ((!genRes.ok || (typeof bizCode === "number" && bizCode !== 200)) && !/already exists/i.test(genMsg)) {
+        const msg = genMsg || "MP4 conversion failed to start.";
+        return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
+          message: String(msg),
+        });
+      }
       if (!mp4TaskId) {
-        return res.status(502).json({ message: "MP4 task id was not returned." });
+        return res.status(502).json({ message: genMsg || "MP4 task id was not returned." });
       }
       for (let i = 0; i < MP4_POLL_MAX_ATTEMPTS; i++) {
         if (i > 0) {
