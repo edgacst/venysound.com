@@ -1948,9 +1948,13 @@ export async function registerRoutes(
           message: String(msg),
         });
       }
-      const gd = (genData as { data?: { taskId?: string; task_id?: string } }).data;
+      const gd = (genData as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string }).data;
       const mp4TaskId =
-        (typeof gd?.taskId === "string" ? gd.taskId : "") || (typeof gd?.task_id === "string" ? gd.task_id : "") || "";
+        (typeof gd?.taskId === "string" ? gd.taskId : "") ||
+        (typeof gd?.task_id === "string" ? gd.task_id : "") ||
+        (typeof (genData as { taskId?: string }).taskId === "string" ? (genData as { taskId: string }).taskId : "") ||
+        (typeof (genData as { task_id?: string }).task_id === "string" ? (genData as { task_id: string }).task_id : "") ||
+        "";
       if (!mp4TaskId) {
         return res.status(502).json({ message: "MP4 task id was not returned." });
       }
@@ -1962,10 +1966,40 @@ export async function registerRoutes(
           headers: { Authorization: `Bearer ${mp4Upstream.key}` },
         });
         const infoData = await infoRes.json().catch(() => ({}));
-        if ((infoData as { code?: number }).code !== 200) continue;
-        const d = (infoData as { data?: { successFlag?: string; response?: { videoUrl?: string; video_url?: string }; errorMessage?: string } }).data;
-        const flag = d?.successFlag;
-        const videoUrl = d?.response?.videoUrl ?? d?.response?.video_url;
+        if (!infoRes.ok) {
+          const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+          return res.status(infoRes.status >= 400 && infoRes.status < 500 ? infoRes.status : 502).json({
+            message: String(msg || "MP4 status lookup failed."),
+          });
+        }
+        const infoCode = (infoData as { code?: number }).code;
+        if (typeof infoCode === "number" && infoCode !== 200) {
+          const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+          return res.status(502).json({ message: String(msg || `MP4 status lookup failed (${infoCode}).`) });
+        }
+        const d = (infoData as {
+          data?: {
+            successFlag?: string;
+            success_flag?: string;
+            status?: string;
+            response?: { videoUrl?: string; video_url?: string; mp4Url?: string; mp4_url?: string };
+            videoUrl?: string;
+            video_url?: string;
+            mp4Url?: string;
+            mp4_url?: string;
+            errorMessage?: string;
+          };
+        }).data;
+        const flag = String(d?.successFlag ?? d?.success_flag ?? d?.status ?? "").trim().toUpperCase();
+        const videoUrl =
+          d?.response?.videoUrl ??
+          d?.response?.video_url ??
+          d?.response?.mp4Url ??
+          d?.response?.mp4_url ??
+          d?.videoUrl ??
+          d?.video_url ??
+          d?.mp4Url ??
+          d?.mp4_url;
         if (flag === "SUCCESS" && typeof videoUrl === "string" && videoUrl.trim()) {
           return res.json({ mp4_url: videoUrl.trim() });
         }
