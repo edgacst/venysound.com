@@ -2547,7 +2547,7 @@ export default function CreateMusic() {
     if (!user) return;
     sessionStorage.removeItem(GUEST_CREATE_DRAFT_SESSION_KEY);
     const customMode = mode === "custom";
-    const promptTrim = customMode && !instrumentalOnly ? normalizePastedLyricsText(prompt).trim() : prompt.trim();
+    const promptTrim = prompt.trim();
     if (mode === "custom" && !promptTrim && !instrumentalOnly) {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
@@ -3416,19 +3416,6 @@ export default function CreateMusic() {
                         <textarea
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          onPaste={(e) => {
-                            if (mode !== "custom" || instrumentalOnly) return;
-                            const htmlText = clipboardHtmlToText(e.clipboardData.getData("text/html"));
-                            const plainText = e.clipboardData.getData("text");
-                            const pasted = htmlText && htmlText.includes("\n") ? htmlText : plainText;
-                            if (!pasted || !/\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro)/i.test(pasted)) return;
-                            e.preventDefault();
-                            const el = e.currentTarget;
-                            const start = el.selectionStart ?? prompt.length;
-                            const end = el.selectionEnd ?? prompt.length;
-                            const next = `${prompt.slice(0, start)}${pasted}${prompt.slice(end)}`;
-                            setPrompt(normalizePastedLyricsText(next));
-                          }}
                           className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
                           placeholder={
                             mode === "custom"
