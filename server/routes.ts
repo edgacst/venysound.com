@@ -1411,6 +1411,10 @@ export async function registerRoutes(
     return undefined;
   }
 
+  function normalizeAiTitleForMatch(value: unknown): string {
+    return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
+  }
+
   /** Suno/AIMusic 클립 재생 길이(초) — API 필드명 제각각 */
   function pickClipDurationSec(o: Record<string, unknown>): number | undefined {
     const v = o.duration ?? o.duration_seconds ?? o.durationSeconds;
@@ -1889,7 +1893,7 @@ export async function registerRoutes(
 
   /** 생성된 클립의 MP4 비디오 URL 조회 (Suno/KIE: 변환 작업 시작 후 폴링) */
   app.post("/api/ai-music/mp4-url", isAuthenticated, async (req, res) => {
-    const body = req.body as { clip_id?: string; generation_task_id?: string; provider?: string };
+    const body = req.body as { clip_id?: string; generation_task_id?: string; provider?: string; title?: string };
     const clipId = typeof body.clip_id === "string" ? body.clip_id.trim() : "";
     if (!clipId) {
       return res.status(400).json({ message: "clip_id is required." });
@@ -1928,13 +1932,32 @@ export async function registerRoutes(
       if (!genTaskId) {
         return res.status(400).json({ message: "generation_task_id is required for MP4 conversion." });
       }
+      let resolvedClipId = clipId;
+      const requestedTitle = normalizeAiTitleForMatch(body.title);
+      if (requestedTitle) {
+        try {
+          const originalInfoRes = await fetch(`${mp4Upstream.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(genTaskId)}`, {
+            headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+          });
+          const originalInfo = await originalInfoRes.json().catch(() => ({}));
+          const resp = (originalInfo as { data?: { response?: { sunoData?: unknown[]; suno_data?: unknown[] } } }).data?.response;
+          const raws = (Array.isArray(resp?.sunoData) ? resp?.sunoData : Array.isArray(resp?.suno_data) ? resp?.suno_data : []) as Record<string, unknown>[];
+          const matched = raws.find((r) => normalizeAiTitleForMatch(r.title) === requestedTitle);
+          const matchedId = matched?.id;
+          if (typeof matchedId === "string" && matchedId.trim()) {
+            resolvedClipId = matchedId.trim();
+          }
+        } catch (matchErr) {
+          console.warn("[ai-music mp4-url] title/audioId match skipped:", matchErr instanceof Error ? matchErr.message : String(matchErr));
+        }
+      }
 
       const genRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/generate`, {
         method: "POST",
         headers: { Authorization: `Bearer ${mp4Upstream.key}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           taskId: genTaskId,
-          audioId: clipId,
+          audioId: resolvedClipId,
           callBackUrl: `${siteBase}/api/ai-music/suno-mp4-callback`,
           author: "VenySound",
           domainName: "venysound.com",

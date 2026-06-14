@@ -1956,6 +1956,7 @@ export default function CreateMusic() {
           clip_id: clipId,
           generation_task_id: generationTaskId,
           provider: track.generationProvider || taskProvider || undefined,
+          title: track.title || undefined,
         }),
       });
       const raw = await res.text().catch(() => "");
