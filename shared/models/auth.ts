@@ -167,3 +167,23 @@ export const aiMusicSavedTracks = pgTable(
     index("idx_ai_music_saved_user_created").on(table.userId, table.createdAt),
   ]
 );
+
+export const musicVideos = pgTable(
+  "music_videos",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    description: text("description"),
+    videoUrl: text("video_url").notNull(),
+    originalFilename: varchar("original_filename", { length: 260 }),
+    durationSec: integer("duration_sec"),
+    fileSize: integer("file_size"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_music_videos_created").on(table.createdAt),
+    index("idx_music_videos_user_created").on(table.userId, table.createdAt),
+  ]
+);

@@ -432,6 +432,7 @@ import GlobalDistributionGuide from "@/pages/GlobalDistributionGuide";
 import May2026Event from "@/pages/May2026Event";
 import PlaylistStudio from "@/pages/PlaylistStudio";
 import AiSingerGuide from "@/pages/AiSingerGuide";
+import MusicVideos from "@/pages/MusicVideos";
 
 function Routes() {
   return (
@@ -443,6 +444,7 @@ function Routes() {
       <Route path="/radio/:slug" component={RadioChannel} />
       <Route path="/radio" component={Radio} />
       <Route path="/music/:id" component={MusicDetail} />
+      <Route path="/music-videos" component={MusicVideos} />
       <Route path="/music" component={Explore} />
       <Route path="/curated/:slug" component={CuratedPlaylist} />
       <Route path="/explore" component={Explore} />

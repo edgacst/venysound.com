@@ -54,6 +54,7 @@ import {
   aiMusicGenerationLogs,
   aiMusicSavedTracks,
   aiMusicUserVoices,
+  musicVideos,
 } from "../shared/models/auth";
 import { db } from "./db";
 import {
@@ -4925,6 +4926,88 @@ export async function registerRoutes(
       res.json({ limited: count >= 10, current: count, limit: 10 });
     } catch (error) {
       res.json({ limited: false, current: 0, limit: 10 });
+    }
+  });
+
+  app.get("/api/music-videos", async (_req, res) => {
+    try {
+      const rows = await db
+        .select({
+          id: musicVideos.id,
+          userId: musicVideos.userId,
+          title: musicVideos.title,
+          description: musicVideos.description,
+          videoUrl: musicVideos.videoUrl,
+          originalFilename: musicVideos.originalFilename,
+          durationSec: musicVideos.durationSec,
+          fileSize: musicVideos.fileSize,
+          createdAt: musicVideos.createdAt,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        })
+        .from(musicVideos)
+        .leftJoin(users, eq(musicVideos.userId, users.id))
+        .orderBy(desc(musicVideos.createdAt))
+        .limit(80);
+      res.json(
+        rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          videoUrl: row.videoUrl,
+          originalFilename: row.originalFilename,
+          durationSec: row.durationSec,
+          fileSize: row.fileSize,
+          createdAt: row.createdAt,
+          creator: {
+            id: row.userId,
+            name: row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
+            profileImageUrl: row.profileImageUrl,
+          },
+        })),
+      );
+    } catch (e) {
+      console.error("[music-videos GET]", e);
+      res.status(500).json({ message: "뮤직비디오 목록을 불러오지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos", isAuthenticated, async (req, res) => {
+    try {
+      const body = req.body as {
+        title?: string;
+        description?: string;
+        videoUrl?: string;
+        originalFilename?: string;
+        durationSec?: number;
+        fileSize?: number;
+      };
+      const title = String(body.title || "").trim().slice(0, 180);
+      const videoUrl = String(body.videoUrl || "").trim();
+      if (!title) return res.status(400).json({ message: "제목을 입력해 주세요." });
+      if (!videoUrl || !/^\/objects\/uploads\/[^/?#]+/i.test(videoUrl)) {
+        return res.status(400).json({ message: "업로드된 MP4 파일 경로가 필요합니다." });
+      }
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const [row] = await db
+        .insert(musicVideos)
+        .values({
+          userId,
+          title,
+          description: String(body.description || "").trim().slice(0, 1200) || null,
+          videoUrl,
+          originalFilename: String(body.originalFilename || "").trim().slice(0, 260) || null,
+          durationSec: Number.isFinite(body.durationSec) ? Math.max(0, Math.floor(Number(body.durationSec))) : null,
+          fileSize: Number.isFinite(body.fileSize) ? Math.max(0, Math.floor(Number(body.fileSize))) : null,
+        })
+        .returning();
+      res.status(201).json(row);
+    } catch (e) {
+      console.error("[music-videos POST]", e);
+      res.status(500).json({ message: "뮤직비디오를 등록하지 못했습니다." });
     }
   });
 

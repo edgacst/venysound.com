@@ -27,6 +27,7 @@ import {
   Download,
   Megaphone,
   Wand2,
+  Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -183,6 +184,7 @@ export function Navigation() {
           <div className="flex items-center gap-1 shrink-0 py-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
+            <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
             <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
             <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
             <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
@@ -376,6 +378,7 @@ export function Navigation() {
               <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.menu', '메뉴')}</p>
               <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
               <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
+              <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>

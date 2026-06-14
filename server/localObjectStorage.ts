@@ -8,7 +8,7 @@ import type { Express, Response } from "express";
 const LOCAL_UPLOADS_DIR = path.resolve(process.cwd(), "local-uploads");
 const UPLOADS_SUBDIR = path.join(LOCAL_UPLOADS_DIR, "uploads");
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 /** 확장자가 없거나 비표준이어도 mimetype으로 올바른 확장자를 쓰면 커버 이미지가 깨지지 않습니다. */
 function storedExtensionForUpload(file: Express.Multer.File): string {
@@ -17,6 +17,9 @@ function storedExtensionForUpload(file: Express.Multer.File): string {
     ".mp3": ".mp3",
     ".wav": ".wav",
     ".ogg": ".ogg",
+    ".mp4": ".mp4",
+    ".webm": ".webm",
+    ".mov": ".mov",
     ".jpg": ".jpg",
     ".jpeg": ".jpg",
     ".png": ".png",
@@ -35,6 +38,9 @@ function storedExtensionForUpload(file: Express.Multer.File): string {
     "audio/wav": ".wav",
     "audio/x-wav": ".wav",
     "audio/ogg": ".ogg",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/quicktime": ".mov",
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
     "image/pjpeg": ".jpg",
@@ -47,6 +53,7 @@ function storedExtensionForUpload(file: Express.Multer.File): string {
   };
   if (mimeMap[mt]) return mimeMap[mt];
   if (mt.startsWith("audio/")) return ".mp3";
+  if (mt.startsWith("video/")) return ".mp4";
   if (mt.startsWith("image/")) return ".jpg";
   return ".mp3";
 }
@@ -125,6 +132,9 @@ export function registerObjectStorageRoutes(app: Express): void {
       path.join(baseDir, `${id}.mp3`),
       path.join(baseDir, `${id}.wav`),
       path.join(baseDir, `${id}.ogg`),
+      path.join(baseDir, `${id}.mp4`),
+      path.join(baseDir, `${id}.webm`),
+      path.join(baseDir, `${id}.mov`),
     ];
     const localPath = candidates.find((p) => existsSync(p));
     if (localPath) {
@@ -134,6 +144,9 @@ export function registerObjectStorageRoutes(app: Express): void {
           ".mp3": "audio/mpeg",
           ".wav": "audio/wav",
           ".ogg": "audio/ogg",
+          ".mp4": "video/mp4",
+          ".webm": "video/webm",
+          ".mov": "video/quicktime",
           ".jpg": "image/jpeg",
           ".jpeg": "image/jpeg",
           ".png": "image/png",

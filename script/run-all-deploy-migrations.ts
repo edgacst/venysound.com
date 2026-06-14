@@ -59,6 +59,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "music-free-ai-site-restrictions.sql", name: "music.free_ai_site_restrictions" },
   { file: "may-2026-event.sql", name: "may_2026_event + users.promo_ai_credits_*" },
   { file: "may-2026-promo-won-to-free-tracks.sql", name: "may_2026 promo_ai_credits_won → 무료 트랙 수 환산" },
+  { file: "music-videos.sql", name: "music_videos" },
 ];
 
 async function main() {
