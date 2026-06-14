@@ -1766,8 +1766,14 @@ export async function registerRoutes(
     res.status(200).json({ received: true });
   });
 
+  app.post("/api/ai-music/suno-mp4-callback", (_req, res) => {
+    res.status(200).json({ received: true });
+  });
+
   const WAV_POLL_MAX_ATTEMPTS = 75;
   const WAV_POLL_INTERVAL_MS = 2000;
+  const MP4_POLL_MAX_ATTEMPTS = 90;
+  const MP4_POLL_INTERVAL_MS = 2000;
 
   /** 생성된 클립의 고품질 WAV 다운로드 URL 조회 (AIMusicAPI: 즉시, Suno: 변환 작업 시작 후 폴링) */
   app.post("/api/ai-music/wav-url", isAuthenticated, async (req, res) => {
@@ -1878,6 +1884,99 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[ai-music wav-url]", e);
       return res.status(500).json({ message: "WAV 변환 중 오류가 발생했습니다." });
+    }
+  });
+
+  /** 생성된 클립의 MP4 비디오 URL 조회 (Suno/KIE: 변환 작업 시작 후 폴링) */
+  app.post("/api/ai-music/mp4-url", isAuthenticated, async (req, res) => {
+    const body = req.body as { clip_id?: string; generation_task_id?: string; provider?: string };
+    const clipId = typeof body.clip_id === "string" ? body.clip_id.trim() : "";
+    if (!clipId) {
+      return res.status(400).json({ message: "clip_id is required." });
+    }
+    const provider = ((body.provider as string) || AI_MUSIC_PROVIDER || "").trim();
+    const genTaskId = typeof body.generation_task_id === "string" ? body.generation_task_id.trim() : "";
+
+    try {
+      // @ts-ignore Replit auth
+      const mp4UserId = req.user?.claims?.sub as string;
+      const [mp4UserRow] = await db.select().from(users).where(eq(users.id, mp4UserId));
+      const mp4Now = new Date();
+      const mp4PaidTier = mp4UserRow?.role === "admin" || isActivePaidSubscription(mp4UserRow, mp4Now);
+      if (!mp4PaidTier) {
+        const mp4LibWhere = and(
+          eq(aiMusicSavedTracks.userId, mp4UserId),
+          eq(aiMusicSavedTracks.clipId, clipId),
+          ...(genTaskId ? [eq(aiMusicSavedTracks.generationTaskId, genTaskId)] : []),
+        );
+        const mp4LibRows = await db
+          .select({ publishedToSite: aiMusicSavedTracks.publishedToSite })
+          .from(aiMusicSavedTracks)
+          .where(mp4LibWhere)
+          .limit(8);
+        if (mp4LibRows.length === 0 || !mp4LibRows.some((r) => r.publishedToSite)) {
+          return res.status(403).json({
+            message: "Free users can create MP4 only after publishing the generated track to the site.",
+          });
+        }
+      }
+
+      const mp4Upstream = provider === "kie" || provider === "suno" ? sunoStyleUpstream(provider) : null;
+      if (!mp4Upstream) {
+        return res.status(503).json({ message: "MP4 conversion is not supported by the current provider." });
+      }
+      if (!genTaskId) {
+        return res.status(400).json({ message: "generation_task_id is required for MP4 conversion." });
+      }
+
+      const genRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/generate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${mp4Upstream.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: genTaskId,
+          audioId: clipId,
+          callBackUrl: `${siteBase}/api/ai-music/suno-mp4-callback`,
+          author: "VenySound",
+          domainName: "venysound.com",
+        }),
+      });
+      const genData = await genRes.json().catch(() => ({}));
+      const bizCode = (genData as { code?: number }).code;
+      if (!genRes.ok || bizCode !== 200) {
+        const msg = (genData as { msg?: string }).msg ?? "MP4 conversion failed to start.";
+        return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
+          message: String(msg),
+        });
+      }
+      const gd = (genData as { data?: { taskId?: string; task_id?: string } }).data;
+      const mp4TaskId =
+        (typeof gd?.taskId === "string" ? gd.taskId : "") || (typeof gd?.task_id === "string" ? gd.task_id : "") || "";
+      if (!mp4TaskId) {
+        return res.status(502).json({ message: "MP4 task id was not returned." });
+      }
+      for (let i = 0; i < MP4_POLL_MAX_ATTEMPTS; i++) {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, MP4_POLL_INTERVAL_MS));
+        }
+        const infoRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/record-info?taskId=${encodeURIComponent(mp4TaskId)}`, {
+          headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+        });
+        const infoData = await infoRes.json().catch(() => ({}));
+        if ((infoData as { code?: number }).code !== 200) continue;
+        const d = (infoData as { data?: { successFlag?: string; response?: { videoUrl?: string; video_url?: string }; errorMessage?: string } }).data;
+        const flag = d?.successFlag;
+        const videoUrl = d?.response?.videoUrl ?? d?.response?.video_url;
+        if (flag === "SUCCESS" && typeof videoUrl === "string" && videoUrl.trim()) {
+          return res.json({ mp4_url: videoUrl.trim() });
+        }
+        if (flag && ["CREATE_TASK_FAILED", "GENERATE_MP4_FAILED", "CALLBACK_EXCEPTION"].includes(flag)) {
+          return res.status(502).json({ message: d?.errorMessage ?? "MP4 conversion failed." });
+        }
+      }
+      return res.status(504).json({ message: "MP4 conversion timed out. Please try again shortly." });
+    } catch (e) {
+      console.error("[ai-music mp4-url]", e);
+      return res.status(500).json({ message: "An error occurred during MP4 conversion." });
     }
   });
 
