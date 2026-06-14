@@ -545,6 +545,25 @@ function downloadUrlInBrowser(url: string, fileName: string) {
   a.remove();
 }
 
+async function downloadResponseBlob(res: Response, fallbackName: string): Promise<void> {
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    let message = raw.replace(/\s+/g, " ").slice(0, 300);
+    try {
+      const json = JSON.parse(raw) as { message?: string; error?: string; msg?: string };
+      message = json.message || json.error || json.msg || message;
+    } catch {}
+    throw new Error(message || `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i.exec(cd);
+  const fileName = decodeURIComponent((m?.[1] || m?.[2] || fallbackName).trim()) || fallbackName;
+  const url = URL.createObjectURL(blob);
+  downloadUrlInBrowser(url, fileName);
+  URL.revokeObjectURL(url);
+}
+
 function isLikelyBadAiMusicAudioUrl(u: string): boolean {
   const s = u.trim();
   if (s.length < 12) return true;
@@ -2000,7 +2019,12 @@ export default function CreateMusic() {
       try {
         const url = await requestGeneratedMediaUrl(effective, kind);
         const baseName = sanitizeFilename(effective.title || t("createMusic.untitled", "제목 없음"));
-        downloadUrlInBrowser(url, `${baseName}.${kind}`);
+        const proxyUrl =
+          `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
+          `&filename=${encodeURIComponent(baseName)}` +
+          `&url=${encodeURIComponent(url)}`;
+        const downloadRes = await fetch(proxyUrl, { credentials: "include" });
+        await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
         toast({
           title: kind === "wav" ? t("createMusic.wavReady", "WAV 준비 완료") : t("createMusic.mp4Ready", "MP4 준비 완료"),
           description: t("createMusic.generatedMediaReadyBody", "브라우저에서 파일 다운로드를 시작했습니다."),

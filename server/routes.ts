@@ -1415,6 +1415,17 @@ export async function registerRoutes(
     return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
   }
 
+  function resolveAiCreatorDisplayName(userRow: typeof users.$inferSelect | undefined | null): string {
+    const fullName = [userRow?.firstName, userRow?.lastName].filter(Boolean).join(" ").trim();
+    const emailName = typeof userRow?.email === "string" ? userRow.email.split("@")[0]?.trim() : "";
+    return (userRow?.username?.trim() || fullName || emailName || "VenySound").slice(0, 50);
+  }
+
+  function sanitizeDownloadFileName(name: unknown, fallback: string): string {
+    const raw = typeof name === "string" && name.trim() ? name.trim() : fallback;
+    return raw.replace(/[/\\:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || fallback;
+  }
+
   /** Suno/AIMusic 클립 재생 길이(초) — API 필드명 제각각 */
   function pickClipDurationSec(o: Record<string, unknown>): number | undefined {
     const v = o.duration ?? o.duration_seconds ?? o.durationSeconds;
@@ -1766,6 +1777,60 @@ export async function registerRoutes(
   });
 
   /** Suno WAV 변환 완료 콜백 URL용 (본 서버는 폴링으로 결과를 받지만 API 스펙상 필수) */
+  app.get("/api/ai-music/generated-file-proxy", isAuthenticated, async (req, res) => {
+    const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
+    const kind = typeof req.query.kind === "string" ? req.query.kind.trim().toLowerCase() : "";
+    if (!rawUrl || (kind !== "wav" && kind !== "mp4")) {
+      return res.status(400).json({ message: "url and kind are required." });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ message: "Invalid file URL." });
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return res.status(400).json({ message: "Only http(s) URLs are supported." });
+    }
+    const fileBase = sanitizeDownloadFileName(req.query.filename, kind === "wav" ? "audio" : "video");
+    const contentTypeFallback = kind === "wav" ? "audio/wav" : "video/mp4";
+    const maxBytes = kind === "wav" ? 120 * 1024 * 1024 : 260 * 1024 * 1024;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
+      const fileRes = await fetch(rawUrl, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: kind === "wav" ? "audio/*,*/*;q=0.8" : "video/*,*/*;q=0.8",
+          Referer: parsed.origin + "/",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!fileRes.ok) {
+        return res.status(502).json({ message: `${kind.toUpperCase()} file could not be fetched.` });
+      }
+      const contentLength = fileRes.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+        return res.status(413).json({ message: `${kind.toUpperCase()} file is too large.` });
+      }
+      const buf = Buffer.from(await fileRes.arrayBuffer());
+      if (buf.byteLength > maxBytes) {
+        return res.status(413).json({ message: `${kind.toUpperCase()} file is too large.` });
+      }
+      const upstreamType = fileRes.headers.get("content-type") || contentTypeFallback;
+      const safeName = `${fileBase}.${kind}`;
+      res.setHeader("Content-Type", upstreamType);
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.send(buf);
+    } catch (e) {
+      console.error("[ai-music generated-file-proxy]", e);
+      return res.status(502).json({ message: `${kind.toUpperCase()} file download failed.` });
+    }
+  });
+
   app.post("/api/ai-music/suno-wav-callback", (_req, res) => {
     res.status(200).json({ received: true });
   });
@@ -1907,6 +1972,7 @@ export async function registerRoutes(
       const [mp4UserRow] = await db.select().from(users).where(eq(users.id, mp4UserId));
       const mp4Now = new Date();
       const mp4PaidTier = mp4UserRow?.role === "admin" || isActivePaidSubscription(mp4UserRow, mp4Now);
+      const mp4Author = resolveAiCreatorDisplayName(mp4UserRow);
       if (!mp4PaidTier) {
         const mp4LibWhere = and(
           eq(aiMusicSavedTracks.userId, mp4UserId),
@@ -1959,7 +2025,7 @@ export async function registerRoutes(
           taskId: genTaskId,
           audioId: resolvedClipId,
           callBackUrl: `${siteBase}/api/ai-music/suno-mp4-callback`,
-          author: "VenySound",
+          author: mp4Author,
           domainName: "venysound.com",
         }),
       });
