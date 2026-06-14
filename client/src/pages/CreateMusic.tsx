@@ -3449,7 +3449,19 @@ export default function CreateMusic() {
                         <textarea
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
+                          onPaste={(e) => {
+                            if (mode !== "custom" || instrumentalOnly) return;
+                            const htmlText = clipboardHtmlToText(e.clipboardData.getData("text/html"));
+                            const plainText = e.clipboardData.getData("text");
+                            const pasted = htmlText.includes("\n") ? htmlText : plainText.includes("\n") ? plainText : "";
+                            if (!pasted) return;
+                            e.preventDefault();
+                            const el = e.currentTarget;
+                            const start = el.selectionStart ?? prompt.length;
+                            const end = el.selectionEnd ?? prompt.length;
+                            setPrompt(`${prompt.slice(0, start)}${pasted}${prompt.slice(end)}`);
+                          }}
+                          className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y whitespace-pre-wrap"
                           placeholder={
                             mode === "custom"
                               ? instrumentalOnly
