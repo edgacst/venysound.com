@@ -2,8 +2,9 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
-import { execSync } from "child_process";
-import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import { execSync, spawn } from "child_process";
+import { tmpdir } from "os";
+import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync, mkdtempSync, rmSync } from "fs";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
 import { parseAdminRevenueRangeQuery } from "./admin-revenue-range";
@@ -1828,6 +1829,173 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[ai-music generated-file-proxy]", e);
       return res.status(502).json({ message: `${kind.toUpperCase()} file download failed.` });
+    }
+  });
+
+  const MP4_RENDER_MAX_AUDIO_BYTES = 160 * 1024 * 1024;
+  const MP4_RENDER_MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+  const MP4_RENDER_TIMEOUT_MS = 4 * 60 * 1000;
+  const FFMPEG_BIN = (process.env.FFMPEG_PATH || "ffmpeg").trim() || "ffmpeg";
+
+  async function fetchAiMusicRenderAsset(rawUrl: unknown, maxBytes: number, accept: string): Promise<Buffer> {
+    const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
+    if (!url) throw new Error("asset url is required.");
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      throw new Error("Only http(s) asset URLs are supported.");
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    try {
+      const upstream = await fetch(url, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: accept,
+          Referer: parsed.origin + "/",
+        },
+        signal: controller.signal,
+      });
+      if (!upstream.ok) throw new Error(`asset fetch failed (${upstream.status})`);
+      const contentLength = upstream.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > maxBytes) throw new Error("asset is too large.");
+      const buf = Buffer.from(await upstream.arrayBuffer());
+      if (buf.byteLength > maxBytes) throw new Error("asset is too large.");
+      if (buf.byteLength < 128) throw new Error("asset response is empty.");
+      return buf;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  function escapeFfmpegDrawText(value: string): string {
+    return value
+      .replace(/\\/g, "\\\\")
+      .replace(/:/g, "\\:")
+      .replace(/'/g, "\\'")
+      .replace(/\r?\n/g, " ")
+      .trim()
+      .slice(0, 80);
+  }
+
+  function resolveFfmpegFontFile(): string | null {
+    const configured = (process.env.MP4_RENDER_FONT || "").trim();
+    const candidates = [
+      configured,
+      "C:\\Windows\\Fonts\\malgun.ttf",
+      "C:\\Windows\\Fonts\\malgunbd.ttf",
+      "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+      "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+      "/usr/share/fonts/truetype/noto/NotoSansKR-Regular.otf",
+      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ].filter(Boolean);
+    return candidates.find((p) => existsSync(p)) ?? null;
+  }
+
+  function runFfmpegRender(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(FFMPEG_BIN, args, { windowsHide: true });
+      let stderr = "";
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(new Error("MP4 render timed out."));
+      }, MP4_RENDER_TIMEOUT_MS);
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+        if (stderr.length > 4000) stderr = stderr.slice(-4000);
+      });
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0) resolve();
+        else reject(new Error(`ffmpeg exit ${code}: ${stderr.slice(-1200)}`));
+      });
+    });
+  }
+
+  app.post("/api/ai-music/mp4-render", isAuthenticated, async (req, res) => {
+    const body = req.body as { audio_url?: string; image_url?: string; title?: string; author?: string; filename?: string };
+    let workDir = "";
+    try {
+      const audioUrl = typeof body.audio_url === "string" ? body.audio_url.trim() : "";
+      const imageUrl = typeof body.image_url === "string" ? body.image_url.trim() : "";
+      if (!audioUrl || !imageUrl) {
+        return res.status(400).json({ message: "audio_url and image_url are required." });
+      }
+      // @ts-ignore Replit auth
+      const renderUserId = req.user?.claims?.sub as string;
+      const [renderUserRow] = await db.select().from(users).where(eq(users.id, renderUserId));
+      const title = sanitizeDownloadFileName(body.title, "VenySound");
+      const author = sanitizeDownloadFileName(body.author, resolveAiCreatorDisplayName(renderUserRow));
+      const audioBuf = await fetchAiMusicRenderAsset(audioUrl, MP4_RENDER_MAX_AUDIO_BYTES, "audio/*,*/*;q=0.8");
+      const imageBuf = await fetchAiMusicRenderAsset(imageUrl, MP4_RENDER_MAX_IMAGE_BYTES, "image/*,*/*;q=0.8");
+      workDir = mkdtempSync(path.join(tmpdir(), "veny-ai-mp4-"));
+      const audioPath = path.join(workDir, "audio.bin");
+      const imagePath = path.join(workDir, "cover.img");
+      const outPath = path.join(workDir, "output.mp4");
+      writeFileSync(audioPath, audioBuf);
+      writeFileSync(imagePath, imageBuf);
+      const fontFile = resolveFfmpegFontFile();
+      const drawTitle = escapeFfmpegDrawText(title);
+      const drawAuthor = escapeFfmpegDrawText(author);
+      const fontOpt = fontFile ? `fontfile='${fontFile.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\'")}':` : "";
+      const filter =
+        `[0:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,boxblur=18:2,eq=brightness=-0.28:saturation=0.85[bg];` +
+        `[0:v]scale=620:620:force_original_aspect_ratio=decrease,pad=620:620:(ow-iw)/2:(oh-ih)/2:color=0x111111,setsar=1[cover];` +
+        `[bg][cover]overlay=(W-w)/2:110[v0];` +
+        `[v0]drawtext=${fontOpt}text='${drawTitle}':x=(w-text_w)/2:y=790:fontsize=66:fontcolor=white:shadowcolor=black@0.65:shadowx=3:shadowy=3[v1];` +
+        `[v1]drawtext=${fontOpt}text='${drawAuthor}':x=(w-text_w)/2:y=880:fontsize=38:fontcolor=white@0.88:shadowcolor=black@0.6:shadowx=2:shadowy=2[v]`;
+      await runFfmpegRender([
+        "-y",
+        "-loop",
+        "1",
+        "-i",
+        imagePath,
+        "-i",
+        audioPath,
+        "-filter_complex",
+        filter,
+        "-map",
+        "[v]",
+        "-map",
+        "1:a",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-shortest",
+        "-movflags",
+        "+faststart",
+        outPath,
+      ]);
+      const mp4 = readFileSync(outPath);
+      const safeName = `${sanitizeDownloadFileName(body.filename || title, "venysound")}.mp4`;
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      return res.send(mp4);
+    } catch (e) {
+      console.error("[ai-music mp4-render]", e);
+      return res.status(502).json({ message: "고화질 MP4 파일을 만들지 못했습니다." });
+    } finally {
+      if (workDir) {
+        try {
+          rmSync(workDir, { recursive: true, force: true });
+        } catch {
+          // ignore cleanup errors
+        }
+      }
     }
   });
 

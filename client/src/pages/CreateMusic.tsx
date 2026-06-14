@@ -2017,13 +2017,33 @@ export default function CreateMusic() {
       const setLoading = kind === "wav" ? setWavExportTrackId : setMp4ExportTrackId;
       setLoading(effective.id);
       try {
-        const url = await requestGeneratedMediaUrl(effective, kind);
         const baseName = sanitizeFilename(effective.title || t("createMusic.untitled", "제목 없음"));
-        const proxyUrl =
-          `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
-          `&filename=${encodeURIComponent(baseName)}` +
-          `&url=${encodeURIComponent(url)}`;
-        const downloadRes = await fetch(proxyUrl, { credentials: "include" });
+        let downloadRes: Response;
+        if (kind === "mp4") {
+          const audioUrl = (effective.audio_url ?? "").trim();
+          const imageUrl = (effective.image_url ?? "").trim();
+          if (!audioUrl || !imageUrl) {
+            throw new Error(t("createMusic.generatedMediaMissingUrl", "Generated file URL was not returned."));
+          }
+          downloadRes = await fetch("/api/ai-music/mp4-render", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              audio_url: audioUrl,
+              image_url: imageUrl,
+              title: effective.title || undefined,
+              filename: baseName,
+            }),
+          });
+        } else {
+          const url = await requestGeneratedMediaUrl(effective, kind);
+          const proxyUrl =
+            `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
+            `&filename=${encodeURIComponent(baseName)}` +
+            `&url=${encodeURIComponent(url)}`;
+          downloadRes = await fetch(proxyUrl, { credentials: "include" });
+        }
         await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
         toast({
           title: kind === "wav" ? t("createMusic.wavReady", "WAV 준비 완료") : t("createMusic.mp4Ready", "MP4 준비 완료"),
