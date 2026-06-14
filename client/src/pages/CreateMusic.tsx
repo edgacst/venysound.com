@@ -1958,9 +1958,17 @@ export default function CreateMusic() {
           provider: track.generationProvider || taskProvider || undefined,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { wav_url?: string; mp4_url?: string; message?: string };
+      const raw = await res.text().catch(() => "");
+      let data: { wav_url?: string; mp4_url?: string; message?: string; error?: string; msg?: string } = {};
+      if (raw.trim()) {
+        try {
+          data = JSON.parse(raw) as typeof data;
+        } catch {
+          data = { message: raw.replace(/\s+/g, " ").slice(0, 300) };
+        }
+      }
       if (!res.ok) {
-        throw new Error(data.message || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
+        throw new Error(data.message || data.error || data.msg || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
       }
       const url = kind === "wav" ? data.wav_url : data.mp4_url;
       if (!url || typeof url !== "string") {

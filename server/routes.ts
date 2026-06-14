@@ -1949,6 +1949,7 @@ export async function registerRoutes(
         (typeof gd?.task_id === "string" ? gd.task_id : "") ||
         (typeof (genData as { taskId?: string }).taskId === "string" ? (genData as { taskId: string }).taskId : "") ||
         (typeof (genData as { task_id?: string }).task_id === "string" ? (genData as { task_id: string }).task_id : "") ||
+        (/already exists/i.test(genMsg) ? genTaskId : "") ||
         "";
       if ((!genRes.ok || (typeof bizCode === "number" && bizCode !== 200)) && !/already exists/i.test(genMsg)) {
         const msg = genMsg || "MP4 conversion failed to start.";
