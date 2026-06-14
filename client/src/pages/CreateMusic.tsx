@@ -511,6 +511,17 @@ function sanitizeFilename(name: string): string {
   return s || "audio";
 }
 
+function normalizePastedLyricsText(text: string): string {
+  let s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  if (!s) return s;
+  s = s.replace(/\s*(\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])\s*/gi, "\n\n$1\n");
+  s = s.replace(/\)\s*(?=[^\s\[\(])/g, ")\n");
+  s = s.replace(/([.!?。！？])\s*(?=\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])/gi, "$1\n\n");
+  s = s.replace(/([.!?。！？])\s*(?=(?:Just|Let|Mmm|Um|Yeah|Oh|Woo|La)\b)/g, "$1\n");
+  s = s.replace(/\n{3,}/g, "\n\n");
+  return s.trim();
+}
+
 function downloadUrlInBrowser(url: string, fileName: string) {
   const a = document.createElement("a");
   a.href = url;
@@ -2523,8 +2534,8 @@ export default function CreateMusic() {
     e.preventDefault();
     if (!user) return;
     sessionStorage.removeItem(GUEST_CREATE_DRAFT_SESSION_KEY);
-    const promptTrim = prompt.trim();
     const customMode = mode === "custom";
+    const promptTrim = customMode && !instrumentalOnly ? normalizePastedLyricsText(prompt).trim() : prompt.trim();
     if (mode === "custom" && !promptTrim && !instrumentalOnly) {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
@@ -3392,7 +3403,18 @@ export default function CreateMusic() {
 
                         <textarea
                           value={prompt}
-                          onChange={(e) => setPrompt(e.target.value)}
+                          onChange={(e) => setPrompt(mode === "custom" && !instrumentalOnly ? normalizePastedLyricsText(e.target.value) : e.target.value)}
+                          onPaste={(e) => {
+                            if (mode !== "custom" || instrumentalOnly) return;
+                            const pasted = e.clipboardData.getData("text");
+                            if (!pasted || !/\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro)/i.test(pasted)) return;
+                            e.preventDefault();
+                            const el = e.currentTarget;
+                            const start = el.selectionStart ?? prompt.length;
+                            const end = el.selectionEnd ?? prompt.length;
+                            const next = `${prompt.slice(0, start)}${pasted}${prompt.slice(end)}`;
+                            setPrompt(normalizePastedLyricsText(next));
+                          }}
                           className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
                           placeholder={
                             mode === "custom"
