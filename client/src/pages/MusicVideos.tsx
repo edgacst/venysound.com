@@ -40,6 +40,9 @@ function formatDate(value: string): string {
   return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
+/** 업로드 UI — 다시 켤 때 true */
+const SHOW_MUSIC_VIDEO_UPLOAD = false;
+
 async function fetchMusicVideos(): Promise<MusicVideo[]> {
   const res = await fetch("/api/music-videos", { credentials: "include" });
   if (!res.ok) throw new Error("뮤직비디오 목록을 불러오지 못했습니다.");
@@ -156,7 +159,7 @@ export default function MusicVideos() {
                 MP4 영상을 업로드하고, 모바일에서는 위아래 스와이프로 다음 영상을 이어 볼 수 있습니다.
               </p>
             </div>
-            {user ? (
+            {user && SHOW_MUSIC_VIDEO_UPLOAD ? (
               <Button onClick={() => fileInputRef.current?.click()} className="gap-2 bg-teal-500 text-slate-950 hover:bg-teal-400">
                 <UploadCloud className="h-4 w-4" />
                 MP4 업로드
@@ -165,7 +168,7 @@ export default function MusicVideos() {
           </div>
         </section>
 
-        {user ? (
+        {user && SHOW_MUSIC_VIDEO_UPLOAD ? (
           <section className="border-b border-white/10 bg-slate-900/80 px-4 py-5">
             <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
               <div className="space-y-3">
