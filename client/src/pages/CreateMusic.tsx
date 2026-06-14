@@ -549,10 +549,14 @@ async function downloadResponseBlob(res: Response, fallbackName: string): Promis
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
     let message = raw.replace(/\s+/g, " ").slice(0, 300);
-    try {
-      const json = JSON.parse(raw) as { message?: string; error?: string; msg?: string };
-      message = json.message || json.error || json.msg || message;
-    } catch {}
+    if (res.status === 504 || /504\s+Gateway\s+Time-?out/i.test(raw)) {
+      message = "서버 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.";
+    } else {
+      try {
+        const json = JSON.parse(raw) as { message?: string; error?: string; msg?: string };
+        message = json.message || json.error || json.msg || message;
+      } catch {}
+    }
     throw new Error(message || `Download failed (${res.status})`);
   }
   const blob = await res.blob();
