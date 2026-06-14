@@ -783,7 +783,7 @@ function TrackCard({
                       disabled={!libraryDownloadAllowed}
                       title={
                         libraryDownloadAllowed
-                          ? t("createMusic.download", "다운로드")
+                          ? t("createMusic.downloadMp3", "MP3 다운로드")
                           : t(
                               "createMusic.libraryDownloadAfterPublishTitle",
                               "무료 플랜: 사이트에 신곡 공개 후 다운로드할 수 있습니다.",
@@ -794,7 +794,7 @@ function TrackCard({
                       }`}
                     >
                       <Download className="w-3 h-3 flex-shrink-0" />
-                      {t("createMusic.download", "다운로드")}
+                      {t("createMusic.downloadMp3", "MP3 다운로드")}
                       {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
                         <span className={countBadgeClass}>{track.downloadCount}</span>
                       )}
@@ -896,11 +896,11 @@ function TrackCard({
                         <button
                           type="button"
                           onClick={() => onDownload()}
-                          title={t("createMusic.download", "다운로드")}
+                          title={t("createMusic.downloadMp3", "MP3 다운로드")}
                           className={`inline-flex items-center gap-0.5 hover:underline ${hasDownloaded ? doneActionClass : actionLinkClass}`}
                         >
                           <Download className="w-3 h-3 flex-shrink-0" />
-                          {t("createMusic.download", "다운로드")}
+                          {t("createMusic.downloadMp3", "MP3 다운로드")}
                           {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
                             <span className={countBadgeClass}>{track.downloadCount}</span>
                           )}
@@ -955,7 +955,7 @@ function TrackCard({
                         <Globe className="w-3 h-3" />
                       )}
                       {may2026EventFreeUi || combinePublishAndDownload
-                        ? t("createMusic.download", "다운로드")
+                        ? t("createMusic.downloadMp3", "MP3 다운로드")
                         : t("createMusic.publishToSite", "신곡으로 공개")}
                     </button>
                   )}
