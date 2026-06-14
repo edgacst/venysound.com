@@ -522,6 +522,16 @@ function normalizePastedLyricsText(text: string): string {
   return s.trim();
 }
 
+function clipboardHtmlToText(html: string): string {
+  if (!html.trim()) return "";
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h[1-6]|blockquote)\s*>/gi, "\n")
+    .replace(/<\s*(p|div|li|h[1-6]|blockquote)(?:\s[^>]*)?>/gi, "\n");
+  const doc = new DOMParser().parseFromString(withBreaks, "text/html");
+  return (doc.body.textContent ?? "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 function downloadUrlInBrowser(url: string, fileName: string) {
   const a = document.createElement("a");
   a.href = url;
@@ -3403,10 +3413,12 @@ export default function CreateMusic() {
 
                         <textarea
                           value={prompt}
-                          onChange={(e) => setPrompt(mode === "custom" && !instrumentalOnly ? normalizePastedLyricsText(e.target.value) : e.target.value)}
+                          onChange={(e) => setPrompt(e.target.value)}
                           onPaste={(e) => {
                             if (mode !== "custom" || instrumentalOnly) return;
-                            const pasted = e.clipboardData.getData("text");
+                            const htmlText = clipboardHtmlToText(e.clipboardData.getData("text/html"));
+                            const plainText = e.clipboardData.getData("text");
+                            const pasted = htmlText && htmlText.length >= plainText.trim().length ? htmlText : plainText;
                             if (!pasted || !/\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro)/i.test(pasted)) return;
                             e.preventDefault();
                             const el = e.currentTarget;
