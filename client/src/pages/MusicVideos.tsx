@@ -100,6 +100,7 @@ export default function MusicVideos() {
   const mobileVideoIndexRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
   const touchLockRef = useRef(false);
+  const shouldAutoPlayMobileRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -274,6 +275,7 @@ export default function MusicVideos() {
 
   const handleVideoPlay = (videoId: number, el: HTMLVideoElement) => {
     closePlayer();
+    shouldAutoPlayMobileRef.current = true;
     setShouldAutoPlayMobile(true);
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== el && !videoEl.paused) videoEl.pause();
@@ -333,13 +335,14 @@ export default function MusicVideos() {
     if (slides.length === 0) return;
     const nextIndex = Math.max(0, Math.min(slides.length - 1, index));
     mobileVideoIndexRef.current = nextIndex;
-    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
     const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
-    if (!shouldAutoPlayMobile) return;
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
+    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
+    if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
+    best.muted = false;
     void best.play().catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
@@ -355,10 +358,11 @@ export default function MusicVideos() {
     mobileVideoIndexRef.current = index;
     const best = slides[index]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
-    if (!shouldAutoPlayMobile) return;
+    if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
+    best.muted = false;
     void best.play().catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
@@ -376,10 +380,7 @@ export default function MusicVideos() {
     if (startY == null) return;
     const endY = e.changedTouches[0]?.clientY ?? startY;
     const deltaY = startY - endY;
-    if (Math.abs(deltaY) < 48) {
-      playCenteredMobileVideo();
-      return;
-    }
+    if (Math.abs(deltaY) < 48) return;
     touchLockRef.current = true;
     const direction = deltaY > 0 ? 1 : -1;
     playMobileVideoAt(mobileVideoIndexRef.current + direction);
