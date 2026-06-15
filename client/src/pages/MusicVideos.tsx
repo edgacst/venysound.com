@@ -1,4 +1,5 @@
 import { Navigation } from "@/components/Navigation";
+import { usePlayerStore } from "@/components/AudioPlayer";
 import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 
 type MusicVideo = {
   id: number;
@@ -92,9 +93,13 @@ export default function MusicVideos() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const closePlayer = usePlayerStore((s) => s.closePlayer);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const countedPlayIdsRef = useRef<Set<number>>(new Set());
   const mobileScrollerRef = useRef<HTMLDivElement | null>(null);
+  const mobileVideoIndexRef = useRef(0);
+  const touchStartYRef = useRef<number | null>(null);
+  const touchLockRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -268,6 +273,7 @@ export default function MusicVideos() {
   };
 
   const handleVideoPlay = (videoId: number, el: HTMLVideoElement) => {
+    closePlayer();
     setShouldAutoPlayMobile(true);
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== el && !videoEl.paused) videoEl.pause();
@@ -319,6 +325,27 @@ export default function MusicVideos() {
     }
   };
 
+  const playMobileVideoAt = (index: number) => {
+    const root = mobileScrollerRef.current;
+    if (!root || !shouldAutoPlayMobile) return;
+    const rootRect = root.getBoundingClientRect();
+    const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
+    if (slides.length === 0) return;
+    const nextIndex = Math.max(0, Math.min(slides.length - 1, index));
+    mobileVideoIndexRef.current = nextIndex;
+    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
+    const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
+    if (!best) return;
+    window.setTimeout(() => {
+      document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+        if (videoEl !== best && !videoEl.paused) videoEl.pause();
+      });
+      void best.play().catch(() => {
+        // The visible play button still works if the browser blocks programmatic playback.
+      });
+    }, 180);
+  };
+
   const playCenteredMobileVideo = () => {
     const root = mobileScrollerRef.current;
     if (!root || !shouldAutoPlayMobile) return;
@@ -326,6 +353,7 @@ export default function MusicVideos() {
     const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
     if (slides.length === 0) return;
     const index = Math.max(0, Math.min(slides.length - 1, Math.round(root.scrollTop / Math.max(1, rootRect.height))));
+    mobileVideoIndexRef.current = index;
     const best = slides[index]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
@@ -334,6 +362,30 @@ export default function MusicVideos() {
     void best.play().catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
+  };
+
+  const handleMobileTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    if (commentsVideo) return;
+    touchStartYRef.current = e.touches[0]?.clientY ?? null;
+  };
+
+  const handleMobileTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
+    if (commentsVideo || touchLockRef.current) return;
+    const startY = touchStartYRef.current;
+    touchStartYRef.current = null;
+    if (startY == null) return;
+    const endY = e.changedTouches[0]?.clientY ?? startY;
+    const deltaY = startY - endY;
+    if (Math.abs(deltaY) < 48) {
+      playCenteredMobileVideo();
+      return;
+    }
+    touchLockRef.current = true;
+    const direction = deltaY > 0 ? 1 : -1;
+    playMobileVideoAt(mobileVideoIndexRef.current + direction);
+    window.setTimeout(() => {
+      touchLockRef.current = false;
+    }, 420);
   };
 
   const handleDownload = async (video: MusicVideo) => {
@@ -553,8 +605,9 @@ export default function MusicVideos() {
               <div className="fixed inset-0 z-40 bg-black md:hidden">
                 <div
                   ref={mobileScrollerRef}
-                  className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black"
-                  onTouchEnd={() => window.setTimeout(playCenteredMobileVideo, 220)}
+                  className="h-dvh snap-y snap-mandatory overflow-y-hidden bg-black"
+                  onTouchStart={handleMobileTouchStart}
+                  onTouchEnd={handleMobileTouchEnd}
                 >
                   {videos.map((video) => (
                     <article key={video.id} data-music-video-slide className="relative h-dvh snap-start bg-black">
@@ -632,7 +685,9 @@ export default function MusicVideos() {
                           {String(user?.id || "") === String(comment.user.id) ? (
                             <button
                               type="button"
-                              onClick={() => deleteCommentMutation.mutate(comment)}
+                              onClick={() => {
+                                if (window.confirm("댓글을 삭제할까요?")) deleteCommentMutation.mutate(comment);
+                              }}
                               disabled={deleteCommentMutation.isPending}
                               className="inline-flex items-center gap-1 hover:text-red-600 disabled:opacity-60"
                             >
@@ -659,7 +714,9 @@ export default function MusicVideos() {
                                 {String(user?.id || "") === String(reply.user.id) ? (
                                   <button
                                     type="button"
-                                    onClick={() => deleteCommentMutation.mutate(reply)}
+                                    onClick={() => {
+                                      if (window.confirm("댓글을 삭제할까요?")) deleteCommentMutation.mutate(reply);
+                                    }}
                                     disabled={deleteCommentMutation.isPending}
                                     className="inline-flex items-center gap-1 hover:text-red-600 disabled:opacity-60"
                                   >
