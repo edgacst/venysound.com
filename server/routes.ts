@@ -54,6 +54,9 @@ import {
   aiMusicSavedTracks,
   aiMusicUserVoices,
   musicVideos,
+  musicVideoComments,
+  musicVideoLikes,
+  musicVideoPurchases,
 } from "../shared/models/auth";
 import { db } from "./db";
 import {
@@ -4767,8 +4770,26 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/music-videos", async (_req, res) => {
+  const MUSIC_VIDEO_DOWNLOAD_PRICE_WON = 300;
+
+  function resolveUploadedVideoPath(videoUrl: string): { localPath: string | null; safeId: string } {
+    const raw = String(videoUrl || "").trim();
+    const match = raw.match(/\/objects\/uploads\/([^/?#]+)/i);
+    const safeId = decodeURIComponent(match?.[1] || raw.split("/").pop() || "").replace(/^\//, "");
+    if (!safeId) return { localPath: null, safeId: "" };
+    const baseId = safeId.replace(/\.(mp4|webm|mov)$/i, "");
+    const candidates = [
+      path.join(uploadsDir, safeId),
+      path.join(uploadsDir, `${baseId}.mp4`),
+      path.join(uploadsDir, `${baseId}.webm`),
+      path.join(uploadsDir, `${baseId}.mov`),
+    ];
+    return { localPath: candidates.find((p) => existsSync(p)) ?? null, safeId };
+  }
+
+  app.get("/api/music-videos", async (req, res) => {
     try {
+      const viewerId = (req as any).user?.claims?.sub ? String((req as any).user.claims.sub) : "";
       const rows = await db
         .select({
           id: musicVideos.id,
@@ -4785,6 +4806,22 @@ export async function registerRoutes(
           firstName: users.firstName,
           lastName: users.lastName,
           profileImageUrl: users.profileImageUrl,
+          likeCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_likes mvl WHERE mvl.video_id = ${musicVideos.id}
+          )`,
+          commentCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_comments mvc WHERE mvc.video_id = ${musicVideos.id}
+          )`,
+          likedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_likes mvl WHERE mvl.video_id = ${musicVideos.id} AND mvl.user_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
+          purchasedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_purchases mvp WHERE mvp.video_id = ${musicVideos.id} AND mvp.buyer_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
         })
         .from(musicVideos)
         .leftJoin(users, eq(musicVideos.userId, users.id))
@@ -4800,6 +4837,11 @@ export async function registerRoutes(
           durationSec: row.durationSec,
           fileSize: row.fileSize,
           playCount: row.playCount,
+          likeCount: row.likeCount ?? 0,
+          commentCount: row.commentCount ?? 0,
+          likedByMe: Boolean(row.likedByMe),
+          purchasedByMe: Boolean(row.purchasedByMe),
+          downloadPrice: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
           createdAt: row.createdAt,
           creator: {
             id: row.userId,
@@ -4833,6 +4875,157 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[music-videos play]", e);
       res.status(500).json({ message: "뮤직비디오 재생 수를 반영하지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/like", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select({ id: musicVideos.id }).from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const [existing] = await db
+        .select({ id: musicVideoLikes.id })
+        .from(musicVideoLikes)
+        .where(and(eq(musicVideoLikes.videoId, id), eq(musicVideoLikes.userId, userId)))
+        .limit(1);
+      let liked = false;
+      if (existing) {
+        await db.delete(musicVideoLikes).where(eq(musicVideoLikes.id, existing.id));
+      } else {
+        await db.insert(musicVideoLikes).values({ videoId: id, userId }).onConflictDoNothing();
+        liked = true;
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoLikes)
+        .where(eq(musicVideoLikes.videoId, id));
+      res.json({ liked, likeCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos like]", e);
+      res.status(500).json({ message: "좋아요 반영에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/comments", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const rows = await db
+        .select({
+          id: musicVideoComments.id,
+          content: musicVideoComments.content,
+          createdAt: musicVideoComments.createdAt,
+          userId: musicVideoComments.userId,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+        })
+        .from(musicVideoComments)
+        .leftJoin(users, eq(musicVideoComments.userId, users.id))
+        .where(eq(musicVideoComments.videoId, id))
+        .orderBy(asc(musicVideoComments.createdAt))
+        .limit(200);
+      res.json(
+        rows.map((row) => ({
+          id: row.id,
+          content: row.content,
+          createdAt: row.createdAt,
+          user: {
+            id: row.userId,
+            name: row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
+            profileImageUrl: row.profileImageUrl,
+          },
+        })),
+      );
+    } catch (e) {
+      console.error("[music-videos comments GET]", e);
+      res.status(500).json({ message: "댓글을 불러오지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/comments", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const content = String((req.body as { content?: string })?.content || "").trim().slice(0, 1000);
+      if (!content) return res.status(400).json({ message: "댓글을 입력해 주세요." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select({ id: musicVideos.id }).from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const [comment] = await db.insert(musicVideoComments).values({ videoId: id, userId, content }).returning();
+      res.status(201).json(comment);
+    } catch (e) {
+      console.error("[music-videos comments POST]", e);
+      res.status(500).json({ message: "댓글 작성에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/download", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select().from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const isOwnerDownload = String(video.userId) === userId;
+      if (!isOwnerDownload) {
+        const [purchased] = await db
+          .select({ id: musicVideoPurchases.id })
+          .from(musicVideoPurchases)
+          .where(and(eq(musicVideoPurchases.videoId, id), eq(musicVideoPurchases.buyerId, userId)))
+          .limit(1);
+        if (!purchased) {
+          const deducted = await storage.deductCredits(userId, MUSIC_VIDEO_DOWNLOAD_PRICE_WON);
+          if (!deducted) {
+            return res.status(402).json({
+              message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.",
+              insufficientCredits: true,
+            });
+          }
+          const [purchase] = await db
+            .insert(musicVideoPurchases)
+            .values({
+              buyerId: userId,
+              videoId: id,
+              sellerId: video.userId,
+              amount: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+            })
+            .onConflictDoNothing()
+            .returning({ id: musicVideoPurchases.id });
+          if (purchase) {
+            await storage.addToBalance(video.userId, MUSIC_VIDEO_DOWNLOAD_PRICE_WON);
+            await storage.createCreditTransaction({
+              userId,
+              type: "music_video_purchase",
+              amount: -MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+              description: `"${video.title}" MP4 다운로드`,
+              relatedId: purchase.id,
+            });
+            await storage.createCreditTransaction({
+              userId: video.userId,
+              type: "music_video_sale",
+              amount: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+              description: `"${video.title}" MP4 다운로드 수익`,
+              relatedId: purchase.id,
+            });
+          }
+        }
+      }
+      const { localPath, safeId } = resolveUploadedVideoPath(video.videoUrl);
+      if (!localPath) return res.status(404).json({ message: "MP4 파일을 찾을 수 없습니다." });
+      const ext = path.extname(localPath).toLowerCase() || ".mp4";
+      const mime: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };
+      const safeTitle = sanitizeDownloadFileName(video.title, safeId.replace(/\.[^.]+$/, "") || "music-video");
+      res.set("Content-Type", mime[ext] || "video/mp4");
+      res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeTitle + ext)}`);
+      res.set("Content-Length", String(statSync(localPath).size));
+      createReadStream(localPath).pipe(res);
+    } catch (e) {
+      console.error("[music-videos download]", e);
+      res.status(500).json({ message: "MP4 다운로드에 실패했습니다." });
     }
   });
 

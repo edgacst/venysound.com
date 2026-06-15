@@ -60,6 +60,7 @@ const MIGRATIONS: { file: string; name: string }[] = [
   { file: "may-2026-event.sql", name: "may_2026_event + users.promo_ai_credits_*" },
   { file: "may-2026-promo-won-to-free-tracks.sql", name: "may_2026 promo_ai_credits_won → 무료 트랙 수 환산" },
   { file: "music-videos.sql", name: "music_videos" },
+  { file: "music-video-actions.sql", name: "music_video_likes/comments/purchases" },
 ];
 
 async function main() {

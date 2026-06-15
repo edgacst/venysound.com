@@ -190,3 +190,54 @@ export const musicVideos = pgTable(
     index("idx_music_videos_user_created").on(table.userId, table.createdAt),
   ]
 );
+
+export const musicVideoLikes = pgTable(
+  "music_video_likes",
+  {
+    id: serial("id").primaryKey(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_likes_video_user_unique").on(table.videoId, table.userId),
+    index("idx_music_video_likes_video").on(table.videoId),
+  ]
+);
+
+export const musicVideoComments = pgTable(
+  "music_video_comments",
+  {
+    id: serial("id").primaryKey(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_music_video_comments_video_created").on(table.videoId, table.createdAt),
+  ]
+);
+
+export const musicVideoPurchases = pgTable(
+  "music_video_purchases",
+  {
+    id: serial("id").primaryKey(),
+    buyerId: varchar("buyer_id", { length: 128 }).notNull(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    sellerId: varchar("seller_id", { length: 128 }).notNull(),
+    amount: integer("amount").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_purchases_buyer_video_unique").on(table.buyerId, table.videoId),
+    index("idx_music_video_purchases_buyer").on(table.buyerId),
+    index("idx_music_video_purchases_seller").on(table.sellerId),
+  ]
+);
