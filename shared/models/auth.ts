@@ -160,6 +160,8 @@ export const aiMusicSavedTracks = pgTable(
     generationProvider: varchar("generation_provider", { length: 32 }),
     uploadCount: integer("upload_count").default(0).notNull(),
     downloadCount: integer("download_count").default(0).notNull(),
+    wavDownloadCount: integer("wav_download_count").default(0).notNull(),
+    mp4DownloadCount: integer("mp4_download_count").default(0).notNull(),
     publishedToSite: boolean("published_to_site").default(false).notNull(),
   },
   (table) => [

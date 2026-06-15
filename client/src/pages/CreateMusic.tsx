@@ -545,7 +545,7 @@ function downloadUrlInBrowser(url: string, fileName: string) {
   a.remove();
 }
 
-async function downloadResponseBlob(res: Response, fallbackName: string): Promise<void> {
+async function downloadResponseBlob(res: Response, fallbackName: string): Promise<{ blob: Blob; fileName: string }> {
   if (!res.ok) {
     const raw = await res.text().catch(() => "");
     let message = raw.replace(/\s+/g, " ").slice(0, 300);
@@ -566,6 +566,7 @@ async function downloadResponseBlob(res: Response, fallbackName: string): Promis
   const url = URL.createObjectURL(blob);
   downloadUrlInBrowser(url, fileName);
   URL.revokeObjectURL(url);
+  return { blob, fileName };
 }
 
 function isLikelyBadAiMusicAudioUrl(u: string): boolean {
@@ -675,6 +676,8 @@ function TrackCard({
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
   const hasDownloaded = (track.downloadCount ?? 0) > 0;
+  const wavDownloadCount = track.wavDownloadCount ?? 0;
+  const mp4DownloadCount = track.mp4DownloadCount ?? 0;
   const doneActionClass = "text-emerald-700 font-medium";
   const actionLinkClass = "text-cyan-700 hover:text-cyan-800 transition-colors";
   const publishLinkClass = "text-amber-700 hover:text-amber-800 transition-colors";
@@ -823,6 +826,7 @@ function TrackCard({
                   >
                     {wavExportLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
                     {t("createMusic.downloadWavShort", "WAV")}
+                    <span className={countBadgeClass}>{wavDownloadCount}</span>
                   </button>
                   <button
                     type="button"
@@ -843,7 +847,13 @@ function TrackCard({
                   >
                     {mp4ExportLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileVideo className="w-3 h-3" />}
                     {t("createMusic.downloadMp4Short", "MP4")}
+                    <span className={countBadgeClass}>{mp4DownloadCount}</span>
                   </button>
+                  {!libraryDownloadAllowed ? (
+                    <span className="basis-full text-[10px] leading-snug text-amber-700">
+                      {t("createMusic.generatedDownloadAfterUploadHint", "회원 다운로드는 사이트 업로드 후 가능합니다.")}
+                    </span>
+                  ) : null}
                   {scorePdfEnabled && (
                     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                       <span className="inline-flex items-center gap-0.5 text-cyan-600 dark:text-cyan-400 shrink-0" aria-hidden>
@@ -1026,6 +1036,8 @@ type SavedTrack = GeneratedTrack & {
   createdAt: number;
   uploadCount?: number;
   downloadCount?: number;
+  wavDownloadCount?: number;
+  mp4DownloadCount?: number;
   /** 사이트에 신곡 공개 완료 여부 (localStorage 유지) */
   publishedToSite?: boolean;
   /** `/api/ai-music/publish` 성공 시 발급된 사이트 음원 ID — 공개 후 다운로드는 로컬 업로드 파일로 받는 게 안전 */
@@ -1083,6 +1095,8 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       typeof t.createdAt === "number" ? t.createdAt : typeof t.created_at === "number" ? t.created_at : Date.now();
     const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
     const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
+    const wavDownloadCount = typeof t.wavDownloadCount === "number" ? t.wavDownloadCount : typeof t.wav_download_count === "number" ? t.wav_download_count : 0;
+    const mp4DownloadCount = typeof t.mp4DownloadCount === "number" ? t.mp4DownloadCount : typeof t.mp4_download_count === "number" ? t.mp4_download_count : 0;
     const siteMusicIdRaw = t.siteMusicId ?? t.site_music_id;
     const siteMusicId =
       typeof siteMusicIdRaw === "number" && Number.isFinite(siteMusicIdRaw)
@@ -1103,6 +1117,8 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       createdAt,
       uploadCount,
       downloadCount,
+      wavDownloadCount,
+      mp4DownloadCount,
       duration,
       generationTaskId:
         typeof t.generationTaskId === "string"
@@ -1245,6 +1261,8 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
         image_url: preferNonEmptyMediaUrl(existing.image_url, t.image_url),
         uploadCount: Math.max(existing.uploadCount ?? 0, t.uploadCount ?? 0),
         downloadCount: Math.max(existing.downloadCount ?? 0, t.downloadCount ?? 0),
+        wavDownloadCount: Math.max(existing.wavDownloadCount ?? 0, t.wavDownloadCount ?? 0),
+        mp4DownloadCount: Math.max(existing.mp4DownloadCount ?? 0, t.mp4DownloadCount ?? 0),
         publishedToSite: Boolean(existing.publishedToSite) || Boolean(t.publishedToSite),
         generationTaskId: genTask,
         generationProvider: genProv,
@@ -1277,6 +1295,8 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
     generationProvider: t.generationProvider,
     uploadCount: t.uploadCount,
     downloadCount: t.downloadCount,
+    wavDownloadCount: t.wavDownloadCount,
+    mp4DownloadCount: t.mp4DownloadCount,
     publishedToSite: t.publishedToSite,
     ...(typeof t.duration === "number" && Number.isFinite(t.duration) && t.duration > 0 ? { duration: t.duration } : {}),
   }));
@@ -2048,10 +2068,63 @@ export default function CreateMusic() {
             `&url=${encodeURIComponent(url)}`;
           downloadRes = await fetch(proxyUrl, { credentials: "include" });
         }
-        await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
+        const downloaded = await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
+        if (kind === "mp4") {
+          const file = new File([downloaded.blob], downloaded.fileName || `${baseName}.mp4`, {
+            type: downloaded.blob.type || "video/mp4",
+          });
+          const formData = new FormData();
+          formData.append("file", file);
+          const uploadRes = await fetch("/api/uploads/local", {
+            method: "POST",
+            credentials: "include",
+            body: formData,
+          });
+          if (!uploadRes.ok) {
+            const uploadErr = await uploadRes.json().catch(() => ({}));
+            throw new Error(uploadErr.error || t("createMusic.mp4VideoUploadFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 업로드에 실패했습니다."));
+          }
+          const uploaded = (await uploadRes.json()) as { objectPath?: string; metadata?: { name?: string } };
+          if (!uploaded.objectPath) {
+            throw new Error(t("createMusic.mp4VideoUploadFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 업로드에 실패했습니다."));
+          }
+          const registerRes = await fetch("/api/music-videos", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: effective.title || baseName,
+              description: effective.prompt || effective.tags || "",
+              videoUrl: uploaded.objectPath,
+              originalFilename: uploaded.metadata?.name || downloaded.fileName || `${baseName}.mp4`,
+              durationSec: typeof effective.duration === "number" ? Math.round(effective.duration) : undefined,
+              fileSize: downloaded.blob.size,
+            }),
+          });
+          if (!registerRes.ok) {
+            const registerErr = await registerRes.json().catch(() => ({}));
+            throw new Error(registerErr.message || t("createMusic.mp4VideoRegisterFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 등록에 실패했습니다."));
+          }
+        }
+        setSavedTracks((prev) => {
+          const next = prev.map((t) =>
+            t.id === effective.id
+              ? {
+                  ...t,
+                  wavDownloadCount: kind === "wav" ? (t.wavDownloadCount ?? 0) + 1 : t.wavDownloadCount,
+                  mp4DownloadCount: kind === "mp4" ? (t.mp4DownloadCount ?? 0) + 1 : t.mp4DownloadCount,
+                }
+              : t,
+          );
+          persistTracks(next, { immediate: true });
+          return next;
+        });
         toast({
           title: kind === "wav" ? t("createMusic.wavReady", "WAV 준비 완료") : t("createMusic.mp4Ready", "MP4 준비 완료"),
-          description: t("createMusic.generatedMediaReadyBody", "브라우저에서 파일 다운로드를 시작했습니다."),
+          description:
+            kind === "mp4"
+              ? t("createMusic.mp4ReadyAndUploadedBody", "브라우저 다운로드를 시작했고 뮤직비디오에도 업로드했습니다.")
+              : t("createMusic.generatedMediaReadyBody", "브라우저에서 파일 다운로드를 시작했습니다."),
         });
       } catch (e) {
         toast({
@@ -2063,7 +2136,7 @@ export default function CreateMusic() {
         setLoading(null);
       }
     },
-    [aiUsage?.isPaidTier, requestGeneratedMediaUrl, t, toast],
+    [aiUsage?.isPaidTier, persistTracks, requestGeneratedMediaUrl, t, toast],
   );
 
   useEffect(() => {

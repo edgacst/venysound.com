@@ -2877,6 +2877,8 @@ export async function registerRoutes(
         generationProvider: r.generationProvider ?? undefined,
         uploadCount: r.uploadCount ?? 0,
         downloadCount: r.downloadCount ?? 0,
+        wavDownloadCount: r.wavDownloadCount ?? 0,
+        mp4DownloadCount: r.mp4DownloadCount ?? 0,
         publishedToSite: Boolean(r.publishedToSite),
       }));
       res.json({ tracks });
@@ -2935,6 +2937,8 @@ export async function registerRoutes(
           generationProvider: clipStr(o.generationProvider ?? o.generation_provider, 32),
           uploadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.uploadCount) || 0))),
           downloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.downloadCount) || 0))),
+          wavDownloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.wavDownloadCount ?? o.wav_download_count) || 0))),
+          mp4DownloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.mp4DownloadCount ?? o.mp4_download_count) || 0))),
           publishedToSite: Boolean(o.publishedToSite ?? o.published_to_site),
         });
       }
@@ -2969,6 +2973,8 @@ export async function registerRoutes(
                 /** 이전 PUT/기기 동기화로 0이 오면 기존 진행도가 사라지지 않게 보존 */
                 uploadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.uploadCount}, 0), COALESCE(excluded.upload_count, 0))`,
                 downloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.downloadCount}, 0), COALESCE(excluded.download_count, 0))`,
+                wavDownloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.wavDownloadCount}, 0), COALESCE(excluded.wav_download_count, 0))`,
+                mp4DownloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.mp4DownloadCount}, 0), COALESCE(excluded.mp4_download_count, 0))`,
                 publishedToSite: sql`COALESCE(${aiMusicSavedTracks.publishedToSite}, false) OR COALESCE(excluded.published_to_site, false)`,
               },
             });
