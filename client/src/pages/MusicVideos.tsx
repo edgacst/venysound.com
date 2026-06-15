@@ -271,17 +271,8 @@ export default function MusicVideos() {
         entries.forEach((entry) => {
           const video = entry.target.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
           if (!video) return;
-          if (entry.intersectionRatio < 0.65) {
+          if (entry.intersectionRatio < 0.55) {
             if (!video.paused) video.pause();
-            return;
-          }
-          if (shouldAutoPlayMobile && video.paused) {
-            document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
-              if (videoEl !== video && !videoEl.paused) videoEl.pause();
-            });
-            void video.play().catch(() => {
-              // Mobile browsers may block autoplay until the next direct user gesture.
-            });
           }
         });
       },
@@ -309,17 +300,10 @@ export default function MusicVideos() {
     const root = mobileScrollerRef.current;
     if (!root || !shouldAutoPlayMobile) return;
     const rootRect = root.getBoundingClientRect();
-    const centerY = rootRect.top + rootRect.height / 2;
-    let best: HTMLVideoElement | null = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    root.querySelectorAll<HTMLElement>("[data-music-video-slide]").forEach((slide) => {
-      const rect = slide.getBoundingClientRect();
-      const distance = Math.abs(rect.top + rect.height / 2 - centerY);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = slide.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
-      }
-    });
+    const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
+    if (slides.length === 0) return;
+    const index = Math.max(0, Math.min(slides.length - 1, Math.round(root.scrollTop / Math.max(1, rootRect.height))));
+    const best = slides[index]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
@@ -547,8 +531,7 @@ export default function MusicVideos() {
                 <div
                   ref={mobileScrollerRef}
                   className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black"
-                  onTouchEnd={() => window.setTimeout(playCenteredMobileVideo, 120)}
-                  onPointerUp={() => window.setTimeout(playCenteredMobileVideo, 120)}
+                  onTouchEnd={() => window.setTimeout(playCenteredMobileVideo, 220)}
                 >
                   {videos.map((video) => (
                     <article key={video.id} data-music-video-slide className="relative h-dvh snap-start bg-black">
@@ -589,11 +572,11 @@ export default function MusicVideos() {
           }
         }}
       >
-        <DialogContent className="z-[90] max-h-[88vh] overflow-hidden border-0 bg-white p-0 text-slate-950 sm:max-w-xl">
+        <DialogContent className="left-0 top-auto bottom-[calc(env(safe-area-inset-bottom)+56px)] z-[90] max-h-[62dvh] w-full max-w-none translate-x-0 translate-y-0 overflow-hidden rounded-t-2xl border-0 bg-white p-0 text-slate-950 shadow-2xl sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:max-h-[88vh] sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg">
           <DialogHeader className="border-b border-slate-200 px-4 py-3 text-left">
             <DialogTitle>댓글</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[58vh] space-y-3 overflow-y-auto bg-white px-4 py-3 pb-4">
+          <div className="max-h-[calc(62dvh-148px)] space-y-3 overflow-y-auto bg-white px-4 py-3 pb-4 sm:max-h-[58vh]">
             {commentsLoading ? (
               <div className="flex items-center justify-center py-10 text-sm text-slate-500">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -656,7 +639,7 @@ export default function MusicVideos() {
             ) : null}
             <div className="mb-2 flex items-center gap-2">
               <Smile className="h-4 w-4 text-slate-500" />
-              {["😀", "🔥", "👏", "❤️", "🎵"].map((emoji) => (
+              {["😀","🔥","👏","❤️","🎵"].map((emoji) => (
                 <button key={emoji} type="button" onClick={() => setCommentText((prev) => prev + emoji)} className="rounded-full bg-slate-100 px-2 py-1 text-sm hover:bg-slate-200">
                   {emoji}
                 </button>
