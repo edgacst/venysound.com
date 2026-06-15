@@ -950,7 +950,6 @@ export function GlobalAudioPlayer() {
     if (!audio) return;
     if (audio.paused) {
       setPauseRequested(false);
-      audio.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
     } else {
       setPauseRequested(true);
       audio.pause();

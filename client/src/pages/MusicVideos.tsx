@@ -99,7 +99,9 @@ export default function MusicVideos() {
   const mobileScrollerRef = useRef<HTMLDivElement | null>(null);
   const mobileVideoIndexRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
+  const touchStartXRef = useRef<number | null>(null);
   const touchLockRef = useRef(false);
+  const mobilePlayLockRef = useRef(false);
   const shouldAutoPlayMobileRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -380,28 +382,34 @@ export default function MusicVideos() {
   const handleMobileTouchStart = (e: TouchEvent<HTMLDivElement>) => {
     if (commentsVideo) return;
     touchStartYRef.current = e.touches[0]?.clientY ?? null;
+    touchStartXRef.current = e.touches[0]?.clientX ?? null;
   };
 
   const handleMobileTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
     if (commentsVideo || touchLockRef.current) return;
     const startY = touchStartYRef.current;
+    const startX = touchStartXRef.current;
     touchStartYRef.current = null;
-    if (startY == null) return;
+    touchStartXRef.current = null;
+    if (startY == null || startX == null) return;
     const endY = e.changedTouches[0]?.clientY ?? startY;
+    const endX = e.changedTouches[0]?.clientX ?? startX;
     const deltaY = startY - endY;
-    if (Math.abs(deltaY) < 110) return;
+    const deltaX = startX - endX;
+    if (Math.abs(deltaY) < 160 || Math.abs(deltaY) < Math.abs(deltaX) * 1.4) return;
     e.preventDefault();
     touchLockRef.current = true;
     const direction = deltaY > 0 ? 1 : -1;
     playMobileVideoAt(mobileVideoIndexRef.current + direction);
     window.setTimeout(() => {
       touchLockRef.current = false;
-    }, 950);
+    }, 1300);
   };
 
   const toggleMobileVideo = (videoId: number, el: HTMLVideoElement | null) => {
-    if (!el) return;
+    if (!el || mobilePlayLockRef.current) return;
     if (el.paused) {
+      mobilePlayLockRef.current = true;
       closePlayer();
       shouldAutoPlayMobileRef.current = true;
       setShouldAutoPlayMobile(true);
@@ -410,9 +418,16 @@ export default function MusicVideos() {
       });
       el.muted = false;
       el.playsInline = true;
-      void el.play().catch(() => {
-        // The button remains available if the browser requires a second tap.
-      });
+      void el
+        .play()
+        .catch(() => {
+          // The button remains available if the browser requires a second tap.
+        })
+        .finally(() => {
+          window.setTimeout(() => {
+            mobilePlayLockRef.current = false;
+          }, 350);
+        });
     } else {
       el.pause();
       handleVideoPause(videoId);
@@ -673,13 +688,6 @@ export default function MusicVideos() {
                       </button>
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
-                      </div>
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pr-24 pb-[calc(env(safe-area-inset-bottom)+6rem)]">
-                        <h2 className="line-clamp-1 text-lg font-semibold">{video.title}</h2>
-                        <p className="mt-1 text-sm text-slate-300">
-                          <span>{video.creator.name}</span>
-                        </p>
-                        {video.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-400">{video.description}</p> : null}
                       </div>
                     </article>
                   ))}
