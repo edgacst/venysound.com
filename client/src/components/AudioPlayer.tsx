@@ -775,20 +775,7 @@ export function GlobalAudioPlayer() {
           }
         })
         .catch(() => {
-          if (cancelled) return;
-          audio.muted = true;
-          void audio
-            .play()
-            .then(() => {
-              if (!cancelled) {
-                audio.muted = false;
-                setIsMuted(false);
-                setNeedsTap(false);
-              }
-            })
-            .catch(() => {
-              if (!cancelled) setNeedsTap(true);
-            });
+          if (!cancelled) setNeedsTap(true);
         });
     };
 
@@ -849,18 +836,7 @@ export function GlobalAudioPlayer() {
           setNeedsTap(false);
         })
         .catch(() => {
-          audio.muted = true;
-          void audio
-            .play()
-            .then(() => {
-              audio.muted = false;
-              setIsPlaying(true);
-              setIsMuted(false);
-              setNeedsTap(false);
-            })
-            .catch(() => {
-              setNeedsTap(true);
-            });
+          setNeedsTap(true);
         });
     }
   }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
