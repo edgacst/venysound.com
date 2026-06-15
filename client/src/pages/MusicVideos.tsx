@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Reply, Share2, Smile, UploadCloud } from "lucide-react";
+import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -179,6 +179,29 @@ export default function MusicVideos() {
     },
     onError: (err) => {
       toast({ title: "댓글 좋아요 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (comment: MusicVideoComment) => {
+      if (!user) throw new Error("로그인이 필요합니다.");
+      const res = await fetch(`/api/music-videos/comments/${comment.id}`, { method: "DELETE", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "댓글 삭제에 실패했습니다.");
+      return { comment, commentCount: Number(body.commentCount ?? 0) };
+    },
+    onSuccess: ({ comment, commentCount }) => {
+      if (!commentsVideo) return;
+      queryClient.setQueryData<MusicVideoComment[]>(["/api/music-videos", commentsVideo.id, "comments"], (prev) =>
+        prev?.filter((item) => item.id !== comment.id && item.parentId !== comment.id),
+      );
+      queryClient.setQueryData<MusicVideo[]>(["/api/music-videos"], (prev) =>
+        prev?.map((video) => (video.id === commentsVideo.id ? { ...video, commentCount } : video)),
+      );
+      if (replyToComment?.id === comment.id) setReplyToComment(null);
+    },
+    onError: (err) => {
+      toast({ title: "댓글 삭제 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
     },
   });
 
@@ -606,6 +629,17 @@ export default function MusicVideos() {
                             <Reply className="h-3.5 w-3.5" />
                             답글
                           </button>
+                          {String(user?.id || "") === String(comment.user.id) ? (
+                            <button
+                              type="button"
+                              onClick={() => deleteCommentMutation.mutate(comment)}
+                              disabled={deleteCommentMutation.isPending}
+                              className="inline-flex items-center gap-1 hover:text-red-600 disabled:opacity-60"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              삭제
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                       {replies.length > 0 ? (
@@ -617,10 +651,23 @@ export default function MusicVideos() {
                                 <span>{formatDate(reply.createdAt)}</span>
                               </div>
                               <p className="whitespace-pre-wrap text-sm text-slate-800">{reply.content}</p>
-                              <button type="button" onClick={() => commentLikeMutation.mutate(reply)} className="mt-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-500">
-                                <Heart className={reply.likedByMe ? "h-3.5 w-3.5 fill-rose-500 text-rose-500" : "h-3.5 w-3.5"} />
-                                {(reply.likeCount ?? 0).toLocaleString()}
-                              </button>
+                              <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+                                <button type="button" onClick={() => commentLikeMutation.mutate(reply)} className="inline-flex items-center gap-1 hover:text-rose-500">
+                                  <Heart className={reply.likedByMe ? "h-3.5 w-3.5 fill-rose-500 text-rose-500" : "h-3.5 w-3.5"} />
+                                  {(reply.likeCount ?? 0).toLocaleString()}
+                                </button>
+                                {String(user?.id || "") === String(reply.user.id) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteCommentMutation.mutate(reply)}
+                                    disabled={deleteCommentMutation.isPending}
+                                    className="inline-flex items-center gap-1 hover:text-red-600 disabled:opacity-60"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    삭제
+                                  </button>
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>

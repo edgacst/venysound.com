@@ -5020,6 +5020,34 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/music-videos/comments/:commentId", isAuthenticated, async (req, res) => {
+    try {
+      const commentId = Number(req.params.commentId);
+      if (!Number.isInteger(commentId) || commentId <= 0) return res.status(400).json({ message: "Invalid comment id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [comment] = await db
+        .select({ id: musicVideoComments.id, userId: musicVideoComments.userId, videoId: musicVideoComments.videoId, parentId: musicVideoComments.parentId })
+        .from(musicVideoComments)
+        .where(eq(musicVideoComments.id, commentId))
+        .limit(1);
+      if (!comment) return res.status(404).json({ message: "Comment not found." });
+      if (String(comment.userId) !== userId) return res.status(403).json({ message: "본인이 작성한 댓글만 삭제할 수 있습니다." });
+      if (comment.parentId == null) {
+        await db.delete(musicVideoComments).where(or(eq(musicVideoComments.id, commentId), eq(musicVideoComments.parentId, commentId)));
+      } else {
+        await db.delete(musicVideoComments).where(eq(musicVideoComments.id, commentId));
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoComments)
+        .where(eq(musicVideoComments.videoId, comment.videoId));
+      res.json({ deleted: true, commentCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos comments DELETE]", e);
+      res.status(500).json({ message: "댓글 삭제에 실패했습니다." });
+    }
+  });
+
   app.get("/api/music-videos/:id/download", isAuthenticated, async (req, res) => {
     try {
       const id = Number(req.params.id);
