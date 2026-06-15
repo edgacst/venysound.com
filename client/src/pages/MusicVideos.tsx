@@ -519,7 +519,7 @@ export default function MusicVideos() {
                 ))}
               </div>
 
-              <div className="fixed inset-0 z-[80] bg-black md:hidden">
+              <div className="fixed inset-0 z-40 bg-black md:hidden">
                 <div
                   ref={mobileScrollerRef}
                   className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black"
@@ -537,7 +537,7 @@ export default function MusicVideos() {
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="h-full w-full bg-black object-cover"
                       />
-                      <div className="absolute right-3 top-1/2 z-10 -translate-y-1/2 pointer-events-auto">
+                      <div className="absolute right-3 top-[60%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
@@ -556,7 +556,7 @@ export default function MusicVideos() {
         </section>
       </main>
       <Dialog open={Boolean(commentsVideo)} onOpenChange={(open) => { if (!open) setCommentsVideo(null); }}>
-        <DialogContent className="max-h-[85vh] overflow-hidden bg-slate-950 text-white">
+        <DialogContent className="z-[90] max-h-[85vh] overflow-hidden bg-slate-950 text-white">
           <DialogHeader>
             <DialogTitle>댓글</DialogTitle>
           </DialogHeader>
