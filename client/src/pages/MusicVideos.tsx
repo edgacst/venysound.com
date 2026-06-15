@@ -389,14 +389,14 @@ export default function MusicVideos() {
     if (startY == null) return;
     const endY = e.changedTouches[0]?.clientY ?? startY;
     const deltaY = startY - endY;
-    if (Math.abs(deltaY) < 48) return;
+    if (Math.abs(deltaY) < 110) return;
     e.preventDefault();
     touchLockRef.current = true;
     const direction = deltaY > 0 ? 1 : -1;
     playMobileVideoAt(mobileVideoIndexRef.current + direction);
     window.setTimeout(() => {
       touchLockRef.current = false;
-    }, 420);
+    }, 950);
   };
 
   const toggleMobileVideo = (videoId: number, el: HTMLVideoElement | null) => {

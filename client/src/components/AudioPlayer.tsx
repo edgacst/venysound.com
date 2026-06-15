@@ -534,6 +534,7 @@ export function GlobalAudioPlayer() {
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
+  const prevPauseRequestedRef = useRef(pauseRequested);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -812,6 +813,7 @@ export function GlobalAudioPlayer() {
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio) return;
     if (!hasTrack) {
+      prevPauseRequestedRef.current = pauseRequested;
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
@@ -822,10 +824,13 @@ export function GlobalAudioPlayer() {
       return;
     }
     if (pauseRequested) {
+      prevPauseRequestedRef.current = true;
       audio.pause();
       setIsPlaying(false);
       return;
     }
+    if (!prevPauseRequestedRef.current) return;
+    prevPauseRequestedRef.current = false;
     if (audio.src && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       audio.muted = false;
       audio.volume = volume;
