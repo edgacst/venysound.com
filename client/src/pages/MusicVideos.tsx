@@ -98,6 +98,7 @@ export default function MusicVideos() {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [commentsVideo, setCommentsVideo] = useState<MusicVideo | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
   const { uploadFile, isUploading, progress } = useUpload();
   const { data: videos = [], isLoading } = useQuery({
     queryKey: ["/api/music-videos"],
@@ -220,6 +221,7 @@ export default function MusicVideos() {
   };
 
   const handleVideoPlay = (videoId: number, el: HTMLVideoElement) => {
+    setShouldAutoPlayMobile(true);
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== el && !videoEl.paused) videoEl.pause();
     });
@@ -245,14 +247,25 @@ export default function MusicVideos() {
         entries.forEach((entry) => {
           const video = entry.target.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
           if (!video) return;
-          if (entry.intersectionRatio < 0.65 && !video.paused) video.pause();
+          if (entry.intersectionRatio < 0.65) {
+            if (!video.paused) video.pause();
+            return;
+          }
+          if (shouldAutoPlayMobile && video.paused) {
+            document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+              if (videoEl !== video && !videoEl.paused) videoEl.pause();
+            });
+            void video.play().catch(() => {
+              // Mobile browsers may block autoplay until the next direct user gesture.
+            });
+          }
         });
       },
       { root, threshold: [0, 0.35, 0.65, 0.9] },
     );
     root.querySelectorAll<HTMLElement>("[data-music-video-slide]").forEach((slide) => observer.observe(slide));
     return () => observer.disconnect();
-  }, [videos.length]);
+  }, [shouldAutoPlayMobile, videos.length]);
 
   const handleShare = async (video: MusicVideo) => {
     const url = `${window.location.origin}/music-videos?video=${video.id}`;
@@ -266,6 +279,30 @@ export default function MusicVideos() {
     } catch {
       // user canceled native share
     }
+  };
+
+  const playCenteredMobileVideo = () => {
+    const root = mobileScrollerRef.current;
+    if (!root || !shouldAutoPlayMobile) return;
+    const rootRect = root.getBoundingClientRect();
+    const centerY = rootRect.top + rootRect.height / 2;
+    let best: HTMLVideoElement | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    root.querySelectorAll<HTMLElement>("[data-music-video-slide]").forEach((slide) => {
+      const rect = slide.getBoundingClientRect();
+      const distance = Math.abs(rect.top + rect.height / 2 - centerY);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = slide.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
+      }
+    });
+    if (!best) return;
+    document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+      if (videoEl !== best && !videoEl.paused) videoEl.pause();
+    });
+    void best.play().catch(() => {
+      // The visible play button still works if the browser blocks programmatic playback.
+    });
   };
 
   const handleDownload = async (video: MusicVideo) => {
@@ -322,6 +359,10 @@ export default function MusicVideos() {
 
   const renderActionRail = (video: MusicVideo, compact = false) => (
     <div className={compact ? "flex flex-col items-center gap-4" : "flex items-center gap-2"}>
+      <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white"}>
+        <Eye className="h-5 w-5" />
+        <span className="text-xs">{(video.playCount ?? 0).toLocaleString()}</span>
+      </div>
       <button
         type="button"
         onClick={() => likeMutation.mutate(video)}
@@ -470,13 +511,7 @@ export default function MusicVideos() {
                       <div className="space-y-1 p-4">
                         <h2 className="line-clamp-1 text-base font-semibold">{video.title}</h2>
                         <p className="text-sm text-slate-300">{video.creator.name}</p>
-                        <p className="flex items-center gap-2 text-xs text-slate-500">
-                          <span>{formatDate(video.createdAt)} {formatSize(video.fileSize)}</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Eye className="h-3 w-3" />
-                            {(video.playCount ?? 0).toLocaleString()}
-                          </span>
-                        </p>
+                        <p className="text-xs text-slate-500">{formatDate(video.createdAt)} {formatSize(video.fileSize)}</p>
                         <div className="pt-2">{renderActionRail(video)}</div>
                       </div>
                     </CardContent>
@@ -485,7 +520,12 @@ export default function MusicVideos() {
               </div>
 
               <div className="fixed inset-0 z-[80] bg-black md:hidden">
-                <div ref={mobileScrollerRef} className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black">
+                <div
+                  ref={mobileScrollerRef}
+                  className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black"
+                  onTouchEnd={() => window.setTimeout(playCenteredMobileVideo, 120)}
+                  onPointerUp={() => window.setTimeout(playCenteredMobileVideo, 120)}
+                >
                   {videos.map((video) => (
                     <article key={video.id} data-music-video-slide className="relative h-dvh snap-start bg-black">
                       <video
@@ -497,17 +537,13 @@ export default function MusicVideos() {
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="h-full w-full bg-black object-cover"
                       />
-                      <div className="absolute right-3 top-1/2 z-10 -translate-y-1/2">
+                      <div className="absolute right-3 top-1/2 z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
                         <h2 className="line-clamp-1 text-lg font-semibold">{video.title}</h2>
-                        <p className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                        <p className="mt-1 text-sm text-slate-300">
                           <span>{video.creator.name}</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Eye className="h-3.5 w-3.5" />
-                            {(video.playCount ?? 0).toLocaleString()}
-                          </span>
                         </p>
                         {video.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-400">{video.description}</p> : null}
                       </div>
