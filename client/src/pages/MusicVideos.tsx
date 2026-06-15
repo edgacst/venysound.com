@@ -334,6 +334,7 @@ export default function MusicVideos() {
     const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
     if (slides.length === 0) return;
     const nextIndex = Math.max(0, Math.min(slides.length - 1, index));
+    if (nextIndex === mobileVideoIndexRef.current) return;
     mobileVideoIndexRef.current = nextIndex;
     const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
@@ -343,6 +344,8 @@ export default function MusicVideos() {
     root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
     if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
     best.muted = false;
+    best.playsInline = true;
+    if (best.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) best.load();
     void best.play().catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
@@ -381,6 +384,7 @@ export default function MusicVideos() {
     const endY = e.changedTouches[0]?.clientY ?? startY;
     const deltaY = startY - endY;
     if (Math.abs(deltaY) < 48) return;
+    e.preventDefault();
     touchLockRef.current = true;
     const direction = deltaY > 0 ? 1 : -1;
     playMobileVideoAt(mobileVideoIndexRef.current + direction);
@@ -609,8 +613,6 @@ export default function MusicVideos() {
                 <div
                   ref={mobileScrollerRef}
                   className="h-dvh snap-y snap-mandatory overflow-y-hidden bg-black"
-                  onTouchStart={handleMobileTouchStart}
-                  onTouchEnd={handleMobileTouchEnd}
                 >
                   {videos.map((video) => (
                     <article key={video.id} data-music-video-slide className="relative h-dvh snap-start bg-black">
@@ -621,9 +623,12 @@ export default function MusicVideos() {
                         preload="metadata"
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        className="h-full w-full bg-black object-cover"
+                      />
+                      <div
+                        className="absolute inset-x-0 top-0 bottom-[42%] z-[5] touch-none"
                         onTouchStart={handleMobileTouchStart}
                         onTouchEnd={handleMobileTouchEnd}
-                        className="h-full w-full bg-black object-cover"
                       />
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
