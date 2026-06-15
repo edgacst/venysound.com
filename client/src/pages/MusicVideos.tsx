@@ -615,7 +615,13 @@ export default function MusicVideos() {
                   className="h-dvh snap-y snap-mandatory overflow-y-hidden bg-black"
                 >
                   {videos.map((video) => (
-                    <article key={video.id} data-music-video-slide className="relative h-dvh snap-start bg-black">
+                    <article
+                      key={video.id}
+                      data-music-video-slide
+                      className="relative h-dvh snap-start bg-black"
+                      onTouchStart={handleMobileTouchStart}
+                      onTouchEnd={handleMobileTouchEnd}
+                    >
                       <video
                         src={video.videoUrl}
                         controls
@@ -624,11 +630,6 @@ export default function MusicVideos() {
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="h-full w-full bg-black object-cover"
-                      />
-                      <div
-                        className="absolute inset-x-0 top-0 bottom-[42%] z-[5] touch-none"
-                        onTouchStart={handleMobileTouchStart}
-                        onTouchEnd={handleMobileTouchEnd}
                       />
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
