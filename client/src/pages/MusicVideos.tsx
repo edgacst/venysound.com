@@ -327,7 +327,7 @@ export default function MusicVideos() {
 
   const playMobileVideoAt = (index: number) => {
     const root = mobileScrollerRef.current;
-    if (!root || !shouldAutoPlayMobile) return;
+    if (!root) return;
     const rootRect = root.getBoundingClientRect();
     const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
     if (slides.length === 0) return;
@@ -336,6 +336,7 @@ export default function MusicVideos() {
     root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
     const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
+    if (!shouldAutoPlayMobile) return;
     window.setTimeout(() => {
       document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
         if (videoEl !== best && !videoEl.paused) videoEl.pause();
@@ -348,7 +349,7 @@ export default function MusicVideos() {
 
   const playCenteredMobileVideo = () => {
     const root = mobileScrollerRef.current;
-    if (!root || !shouldAutoPlayMobile) return;
+    if (!root) return;
     const rootRect = root.getBoundingClientRect();
     const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
     if (slides.length === 0) return;
@@ -356,6 +357,7 @@ export default function MusicVideos() {
     mobileVideoIndexRef.current = index;
     const best = slides[index]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
+    if (!shouldAutoPlayMobile) return;
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
@@ -621,6 +623,11 @@ export default function MusicVideos() {
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="h-full w-full bg-black object-cover"
+                      />
+                      <div
+                        className="absolute inset-x-0 top-0 bottom-36 z-[5] touch-none"
+                        onTouchStart={handleMobileTouchStart}
+                        onTouchEnd={handleMobileTouchEnd}
                       />
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
