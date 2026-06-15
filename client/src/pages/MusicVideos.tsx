@@ -470,15 +470,17 @@ export default function MusicVideos() {
         <Share2 className="h-5 w-5" />
         <span className="text-xs">공유</span>
       </button>
-      <button
-        type="button"
-        onClick={() => void handleDownload(video)}
-        disabled={downloadingId === video.id}
-        className={compact ? "flex flex-col items-center gap-1 text-white disabled:opacity-60" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15 disabled:opacity-60"}
-      >
-        {downloadingId === video.id ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
-        <span className="text-xs">MP4</span>
-      </button>
+      {String(user?.id || "") === String(video.creator.id) ? (
+        <button
+          type="button"
+          onClick={() => void handleDownload(video)}
+          disabled={downloadingId === video.id}
+          className={compact ? "flex flex-col items-center gap-1 text-white disabled:opacity-60" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15 disabled:opacity-60"}
+        >
+          {downloadingId === video.id ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+          <span className="text-xs">MP4</span>
+        </button>
+      ) : null}
     </div>
   );
 
@@ -623,7 +625,7 @@ export default function MusicVideos() {
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pr-24 pb-[calc(env(safe-area-inset-bottom)+6rem)]">
                         <h2 className="line-clamp-1 text-lg font-semibold">{video.title}</h2>
                         <p className="mt-1 text-sm text-slate-300">
                           <span>{video.creator.name}</span>
