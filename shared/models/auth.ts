@@ -179,6 +179,7 @@ export const musicVideos = pgTable(
     originalFilename: varchar("original_filename", { length: 260 }),
     durationSec: integer("duration_sec"),
     fileSize: integer("file_size"),
+    playCount: integer("play_count").default(0).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },

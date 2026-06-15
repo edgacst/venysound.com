@@ -4945,6 +4945,7 @@ export async function registerRoutes(
           originalFilename: musicVideos.originalFilename,
           durationSec: musicVideos.durationSec,
           fileSize: musicVideos.fileSize,
+          playCount: musicVideos.playCount,
           createdAt: musicVideos.createdAt,
           username: users.username,
           firstName: users.firstName,
@@ -4964,6 +4965,7 @@ export async function registerRoutes(
           originalFilename: row.originalFilename,
           durationSec: row.durationSec,
           fileSize: row.fileSize,
+          playCount: row.playCount,
           createdAt: row.createdAt,
           creator: {
             id: row.userId,
@@ -4975,6 +4977,28 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[music-videos GET]", e);
       res.status(500).json({ message: "뮤직비디오 목록을 불러오지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/play", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid music video id." });
+      }
+      const [row] = await db
+        .update(musicVideos)
+        .set({
+          playCount: sql`${musicVideos.playCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(musicVideos.id, id))
+        .returning({ playCount: musicVideos.playCount });
+      if (!row) return res.status(404).json({ message: "Music video not found." });
+      res.json({ playCount: row.playCount });
+    } catch (e) {
+      console.error("[music-videos play]", e);
+      res.status(500).json({ message: "뮤직비디오 재생 수를 반영하지 못했습니다." });
     }
   });
 

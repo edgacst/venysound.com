@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Film, Loader2, Play, UploadCloud } from "lucide-react";
+import { Eye, Film, Loader2, Play, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -20,6 +20,7 @@ type MusicVideo = {
   originalFilename?: string | null;
   durationSec?: number | null;
   fileSize?: number | null;
+  playCount?: number | null;
   createdAt: string;
   creator: {
     id: string;
@@ -72,6 +73,7 @@ export default function MusicVideos() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const countedPlayIdsRef = useRef<Set<number>>(new Set());
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -141,6 +143,24 @@ export default function MusicVideos() {
     }
     setSelectedFile(file);
     if (!title.trim()) setTitle(file.name.replace(/\.[^.]+$/, ""));
+  };
+
+  const handleVideoPlay = (videoId: number, el: HTMLVideoElement) => {
+    document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+      if (videoEl !== el && !videoEl.paused) videoEl.pause();
+    });
+    if (countedPlayIdsRef.current.has(videoId)) return;
+    countedPlayIdsRef.current.add(videoId);
+    void fetch(`/api/music-videos/${videoId}/play`, { method: "POST", credentials: "include" })
+      .then((res) => res.json().catch(() => ({})))
+      .then((body: { playCount?: number }) => {
+        queryClient.setQueryData<MusicVideo[]>(["/api/music-videos"], (prev) =>
+          prev?.map((v) => (v.id === videoId ? { ...v, playCount: Number(body.playCount ?? (v.playCount ?? 0) + 1) } : v)),
+        );
+      })
+      .catch(() => {
+        countedPlayIdsRef.current.delete(videoId);
+      });
   };
 
   return (
@@ -244,25 +264,52 @@ export default function MusicVideos() {
                 {videos.map((video) => (
                   <Card key={video.id} className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
-                      <video src={video.videoUrl} controls preload="metadata" className="aspect-video w-full bg-black object-contain" />
+                      <video
+                        src={video.videoUrl}
+                        controls
+                        preload="metadata"
+                        data-music-video-id={video.id}
+                        onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        className="aspect-video w-full bg-black object-contain"
+                      />
                       <div className="space-y-1 p-4">
                         <h2 className="line-clamp-1 text-base font-semibold">{video.title}</h2>
                         <p className="text-sm text-slate-300">{video.creator.name}</p>
-                        <p className="text-xs text-slate-500">{formatDate(video.createdAt)} {formatSize(video.fileSize)}</p>
+                        <p className="flex items-center gap-2 text-xs text-slate-500">
+                          <span>{formatDate(video.createdAt)} {formatSize(video.fileSize)}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Eye className="h-3 w-3" />
+                            {(video.playCount ?? 0).toLocaleString()}
+                          </span>
+                        </p>
                       </div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
 
-              <div className="md:hidden">
-                <div className="h-[calc(100dvh-8rem)] snap-y snap-mandatory overflow-y-auto rounded-lg border border-white/10 bg-black">
+              <div className="fixed inset-0 z-[80] bg-black md:hidden">
+                <div className="h-dvh snap-y snap-mandatory overflow-y-auto bg-black">
                   {videos.map((video) => (
-                    <article key={video.id} className="relative flex h-[calc(100dvh-8rem)] snap-start flex-col bg-black">
-                      <video src={video.videoUrl} controls playsInline preload="metadata" className="min-h-0 flex-1 bg-black object-contain" />
-                      <div className="border-t border-white/10 bg-slate-950/95 p-4">
+                    <article key={video.id} className="relative h-dvh snap-start bg-black">
+                      <video
+                        src={video.videoUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        data-music-video-id={video.id}
+                        onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        className="h-full w-full bg-black object-cover"
+                      />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
                         <h2 className="line-clamp-1 text-lg font-semibold">{video.title}</h2>
-                        <p className="mt-1 text-sm text-slate-300">{video.creator.name}</p>
+                        <p className="mt-1 flex items-center gap-3 text-sm text-slate-300">
+                          <span>{video.creator.name}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <Eye className="h-3.5 w-3.5" />
+                            {(video.playCount ?? 0).toLocaleString()}
+                          </span>
+                        </p>
                         {video.description ? <p className="mt-2 line-clamp-2 text-sm text-slate-400">{video.description}</p> : null}
                       </div>
                     </article>
