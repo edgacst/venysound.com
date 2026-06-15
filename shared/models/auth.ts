@@ -214,12 +214,30 @@ export const musicVideoComments = pgTable(
     videoId: integer("video_id")
       .notNull()
       .references(() => musicVideos.id, { onDelete: "cascade" }),
+    parentId: integer("parent_id"),
     userId: varchar("user_id", { length: 128 }).notNull(),
     content: text("content").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     index("idx_music_video_comments_video_created").on(table.videoId, table.createdAt),
+    index("idx_music_video_comments_parent").on(table.parentId),
+  ]
+);
+
+export const musicVideoCommentLikes = pgTable(
+  "music_video_comment_likes",
+  {
+    id: serial("id").primaryKey(),
+    commentId: integer("comment_id")
+      .notNull()
+      .references(() => musicVideoComments.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_comment_likes_comment_user_unique").on(table.commentId, table.userId),
+    index("idx_music_video_comment_likes_comment").on(table.commentId),
   ]
 );
 

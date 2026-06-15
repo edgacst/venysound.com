@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Share2, UploadCloud } from "lucide-react";
+import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Reply, Share2, Smile, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -37,8 +37,11 @@ type MusicVideo = {
 
 type MusicVideoComment = {
   id: number;
+  parentId?: number | null;
   content: string;
   createdAt: string;
+  likeCount?: number;
+  likedByMe?: boolean;
   user: {
     id: string;
     name: string;
@@ -98,6 +101,7 @@ export default function MusicVideos() {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [commentsVideo, setCommentsVideo] = useState<MusicVideo | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [replyToComment, setReplyToComment] = useState<MusicVideoComment | null>(null);
   const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
   const { uploadFile, isUploading, progress } = useUpload();
   const { data: videos = [], isLoading } = useQuery({
@@ -134,13 +138,13 @@ export default function MusicVideos() {
   });
 
   const commentMutation = useMutation({
-    mutationFn: async ({ videoId, content }: { videoId: number; content: string }) => {
+    mutationFn: async ({ videoId, content, parentId }: { videoId: number; content: string; parentId?: number | null }) => {
       if (!user) throw new Error("로그인이 필요합니다.");
       const res = await fetch(`/api/music-videos/${videoId}/comments`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, parentId }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message || "댓글 작성에 실패했습니다.");
@@ -148,6 +152,7 @@ export default function MusicVideos() {
     },
     onSuccess: (videoId) => {
       setCommentText("");
+      setReplyToComment(null);
       void queryClient.invalidateQueries({ queryKey: ["/api/music-videos", videoId, "comments"] });
       queryClient.setQueryData<MusicVideo[]>(["/api/music-videos"], (prev) =>
         prev?.map((v) => (v.id === videoId ? { ...v, commentCount: (v.commentCount ?? 0) + 1 } : v)),
@@ -155,6 +160,25 @@ export default function MusicVideos() {
     },
     onError: (err) => {
       toast({ title: "댓글 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
+    },
+  });
+
+  const commentLikeMutation = useMutation({
+    mutationFn: async (comment: MusicVideoComment) => {
+      if (!user) throw new Error("로그인이 필요합니다.");
+      const res = await fetch(`/api/music-videos/comments/${comment.id}/like`, { method: "POST", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "댓글 좋아요 반영에 실패했습니다.");
+      return { commentId: comment.id, liked: Boolean(body.liked), likeCount: Number(body.likeCount ?? 0) };
+    },
+    onSuccess: ({ commentId, liked, likeCount }) => {
+      if (!commentsVideo) return;
+      queryClient.setQueryData<MusicVideoComment[]>(["/api/music-videos", commentsVideo.id, "comments"], (prev) =>
+        prev?.map((comment) => (comment.id === commentId ? { ...comment, likedByMe: liked, likeCount } : comment)),
+      );
+    },
+    onError: (err) => {
+      toast({ title: "댓글 좋아요 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
     },
   });
 
@@ -555,53 +579,112 @@ export default function MusicVideos() {
           )}
         </section>
       </main>
-      <Dialog open={Boolean(commentsVideo)} onOpenChange={(open) => { if (!open) setCommentsVideo(null); }}>
-        <DialogContent className="z-[90] max-h-[85vh] overflow-hidden bg-slate-950 text-white">
-          <DialogHeader>
+      <Dialog
+        open={Boolean(commentsVideo)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCommentsVideo(null);
+            setReplyToComment(null);
+            setCommentText("");
+          }
+        }}
+      >
+        <DialogContent className="z-[90] max-h-[88vh] overflow-hidden border-0 bg-white p-0 text-slate-950 sm:max-w-xl">
+          <DialogHeader className="border-b border-slate-200 px-4 py-3 text-left">
             <DialogTitle>댓글</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[52vh] space-y-3 overflow-y-auto pr-1">
+          <div className="max-h-[58vh] space-y-3 overflow-y-auto bg-white px-4 py-3 pb-4">
             {commentsLoading ? (
-              <div className="flex items-center justify-center py-10 text-sm text-slate-400">
+              <div className="flex items-center justify-center py-10 text-sm text-slate-500">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 불러오는 중
               </div>
             ) : comments.length === 0 ? (
-              <div className="py-10 text-center text-sm text-slate-400">첫 댓글을 남겨보세요.</div>
+              <div className="py-10 text-center text-sm text-slate-500">첫 댓글을 남겨보세요.</div>
             ) : (
-              comments.map((comment) => (
-                <div key={comment.id} className="rounded-lg bg-white/5 p-3">
-                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-400">
-                    <span className="font-medium text-slate-200">{comment.user.name}</span>
-                    <span>{formatDate(comment.createdAt)}</span>
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm text-slate-100">{comment.content}</p>
-                </div>
-              ))
+              comments
+                .filter((comment) => !comment.parentId)
+                .map((comment) => {
+                  const replies = comments.filter((reply) => reply.parentId === comment.id);
+                  return (
+                    <div key={comment.id} className="space-y-2">
+                      <div className="rounded-lg bg-slate-50 p-3">
+                        <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                          <span className="font-semibold text-slate-900">{comment.user.name}</span>
+                          <span>{formatDate(comment.createdAt)}</span>
+                        </div>
+                        <p className="whitespace-pre-wrap text-sm text-slate-800">{comment.content}</p>
+                        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+                          <button type="button" onClick={() => commentLikeMutation.mutate(comment)} className="inline-flex items-center gap-1 hover:text-rose-500">
+                            <Heart className={comment.likedByMe ? "h-3.5 w-3.5 fill-rose-500 text-rose-500" : "h-3.5 w-3.5"} />
+                            {(comment.likeCount ?? 0).toLocaleString()}
+                          </button>
+                          <button type="button" onClick={() => setReplyToComment(comment)} className="inline-flex items-center gap-1 hover:text-slate-900">
+                            <Reply className="h-3.5 w-3.5" />
+                            답글
+                          </button>
+                        </div>
+                      </div>
+                      {replies.length > 0 ? (
+                        <div className="ml-5 space-y-2 border-l border-slate-200 pl-3">
+                          {replies.map((reply) => (
+                            <div key={reply.id} className="rounded-lg bg-slate-50 p-3">
+                              <div className="mb-1 flex items-center justify-between gap-3 text-xs text-slate-500">
+                                <span className="font-semibold text-slate-900">{reply.user.name}</span>
+                                <span>{formatDate(reply.createdAt)}</span>
+                              </div>
+                              <p className="whitespace-pre-wrap text-sm text-slate-800">{reply.content}</p>
+                              <button type="button" onClick={() => commentLikeMutation.mutate(reply)} className="mt-2 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-500">
+                                <Heart className={reply.likedByMe ? "h-3.5 w-3.5 fill-rose-500 text-rose-500" : "h-3.5 w-3.5"} />
+                                {(reply.likeCount ?? 0).toLocaleString()}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
             )}
           </div>
-          <div className="flex gap-2">
-            <Input
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              placeholder="댓글을 입력하세요"
-              className="border-white/10 bg-white text-slate-950"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing && commentsVideo && commentText.trim()) {
-                  commentMutation.mutate({ videoId: commentsVideo.id, content: commentText.trim() });
-                }
-              }}
-            />
-            <Button
-              type="button"
-              disabled={!commentsVideo || !commentText.trim() || commentMutation.isPending}
-              onClick={() => {
-                if (!commentsVideo || !commentText.trim()) return;
-                commentMutation.mutate({ videoId: commentsVideo.id, content: commentText.trim() });
-              }}
-            >
-              {commentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "등록"}
-            </Button>
+          <div className="sticky bottom-0 border-t border-slate-200 bg-white px-4 py-3">
+            {replyToComment ? (
+              <div className="mb-2 flex items-center justify-between rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                <span>{replyToComment.user.name}님에게 답글 작성 중</span>
+                <button type="button" onClick={() => setReplyToComment(null)} className="font-medium text-slate-900">취소</button>
+              </div>
+            ) : null}
+            <div className="mb-2 flex items-center gap-2">
+              <Smile className="h-4 w-4 text-slate-500" />
+              {["😀", "🔥", "👏", "❤️", "🎵"].map((emoji) => (
+                <button key={emoji} type="button" onClick={() => setCommentText((prev) => prev + emoji)} className="rounded-full bg-slate-100 px-2 py-1 text-sm hover:bg-slate-200">
+                  {emoji}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                placeholder={replyToComment ? "답글을 입력하세요" : "댓글을 입력하세요"}
+                className="border-slate-200 bg-white text-slate-950"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing && commentsVideo && commentText.trim()) {
+                    commentMutation.mutate({ videoId: commentsVideo.id, content: commentText.trim(), parentId: replyToComment?.id ?? null });
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                disabled={!commentsVideo || !commentText.trim() || commentMutation.isPending}
+                onClick={() => {
+                  if (!commentsVideo || !commentText.trim()) return;
+                  commentMutation.mutate({ videoId: commentsVideo.id, content: commentText.trim(), parentId: replyToComment?.id ?? null });
+                }}
+              >
+                {commentMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "등록"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

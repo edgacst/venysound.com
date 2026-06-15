@@ -54,6 +54,7 @@ import {
   aiMusicSavedTracks,
   aiMusicUserVoices,
   musicVideos,
+  musicVideoCommentLikes,
   musicVideoComments,
   musicVideoLikes,
   musicVideoPurchases,
@@ -4912,9 +4913,11 @@ export async function registerRoutes(
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const viewerId = (req as any).user?.claims?.sub ? String((req as any).user.claims.sub) : "";
       const rows = await db
         .select({
           id: musicVideoComments.id,
+          parentId: musicVideoComments.parentId,
           content: musicVideoComments.content,
           createdAt: musicVideoComments.createdAt,
           userId: musicVideoComments.userId,
@@ -4922,6 +4925,14 @@ export async function registerRoutes(
           firstName: users.firstName,
           lastName: users.lastName,
           profileImageUrl: users.profileImageUrl,
+          likeCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_comment_likes mvcl WHERE mvcl.comment_id = ${musicVideoComments.id}
+          )`,
+          likedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_comment_likes mvcl WHERE mvcl.comment_id = ${musicVideoComments.id} AND mvcl.user_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
         })
         .from(musicVideoComments)
         .leftJoin(users, eq(musicVideoComments.userId, users.id))
@@ -4931,8 +4942,11 @@ export async function registerRoutes(
       res.json(
         rows.map((row) => ({
           id: row.id,
+          parentId: row.parentId,
           content: row.content,
           createdAt: row.createdAt,
+          likeCount: row.likeCount ?? 0,
+          likedByMe: Boolean(row.likedByMe),
           user: {
             id: row.userId,
             name: row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
@@ -4950,16 +4964,59 @@ export async function registerRoutes(
     try {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
-      const content = String((req.body as { content?: string })?.content || "").trim().slice(0, 1000);
+      const body = req.body as { content?: string; parentId?: number | null };
+      const content = String(body?.content || "").trim().slice(0, 1000);
       if (!content) return res.status(400).json({ message: "댓글을 입력해 주세요." });
+      const parentId = body.parentId == null || body.parentId === 0 ? null : Number(body.parentId);
+      if (parentId != null && (!Number.isInteger(parentId) || parentId <= 0)) {
+        return res.status(400).json({ message: "Invalid parent comment id." });
+      }
       const userId = String((req as any).user?.claims?.sub || "");
       const [video] = await db.select({ id: musicVideos.id }).from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
       if (!video) return res.status(404).json({ message: "Music video not found." });
-      const [comment] = await db.insert(musicVideoComments).values({ videoId: id, userId, content }).returning();
+      if (parentId != null) {
+        const [parent] = await db
+          .select({ id: musicVideoComments.id })
+          .from(musicVideoComments)
+          .where(and(eq(musicVideoComments.id, parentId), eq(musicVideoComments.videoId, id)))
+          .limit(1);
+        if (!parent) return res.status(404).json({ message: "Parent comment not found." });
+      }
+      const [comment] = await db.insert(musicVideoComments).values({ videoId: id, parentId, userId, content }).returning();
       res.status(201).json(comment);
     } catch (e) {
       console.error("[music-videos comments POST]", e);
       res.status(500).json({ message: "댓글 작성에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/comments/:commentId/like", isAuthenticated, async (req, res) => {
+    try {
+      const commentId = Number(req.params.commentId);
+      if (!Number.isInteger(commentId) || commentId <= 0) return res.status(400).json({ message: "Invalid comment id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [comment] = await db.select({ id: musicVideoComments.id }).from(musicVideoComments).where(eq(musicVideoComments.id, commentId)).limit(1);
+      if (!comment) return res.status(404).json({ message: "Comment not found." });
+      const [existing] = await db
+        .select({ id: musicVideoCommentLikes.id })
+        .from(musicVideoCommentLikes)
+        .where(and(eq(musicVideoCommentLikes.commentId, commentId), eq(musicVideoCommentLikes.userId, userId)))
+        .limit(1);
+      let liked = false;
+      if (existing) {
+        await db.delete(musicVideoCommentLikes).where(eq(musicVideoCommentLikes.id, existing.id));
+      } else {
+        await db.insert(musicVideoCommentLikes).values({ commentId, userId }).onConflictDoNothing();
+        liked = true;
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoCommentLikes)
+        .where(eq(musicVideoCommentLikes.commentId, commentId));
+      res.json({ liked, likeCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos comment like]", e);
+      res.status(500).json({ message: "댓글 좋아요 반영에 실패했습니다." });
     }
   });
 
