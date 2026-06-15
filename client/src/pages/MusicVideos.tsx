@@ -442,33 +442,33 @@ export default function MusicVideos() {
   };
 
   const renderActionRail = (video: MusicVideo, compact = false) => (
-    <div className={compact ? "flex flex-col items-center gap-4" : "flex items-center gap-2"}>
-      <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white"}>
-        <Eye className="h-5 w-5" />
+    <div className={compact ? "flex flex-col items-center gap-4" : "flex flex-wrap items-center gap-1"}>
+      <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-1 text-xs text-white"}>
+        <Eye className={compact ? "h-5 w-5" : "h-4 w-4"} />
         <span className="text-xs">{(video.playCount ?? 0).toLocaleString()}</span>
       </div>
       <button
         type="button"
         onClick={() => likeMutation.mutate(video)}
-        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15"}
+        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/15"}
       >
-        <Heart className={`h-5 w-5 ${video.likedByMe ? "fill-rose-500 text-rose-500" : ""}`} />
+        <Heart className={`${compact ? "h-5 w-5" : "h-4 w-4"} ${video.likedByMe ? "fill-rose-500 text-rose-500" : ""}`} />
         <span className="text-xs">{(video.likeCount ?? 0).toLocaleString()}</span>
       </button>
       <button
         type="button"
         onClick={() => setCommentsVideo(video)}
-        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15"}
+        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/15"}
       >
-        <MessageCircle className="h-5 w-5" />
+        <MessageCircle className={compact ? "h-5 w-5" : "h-4 w-4"} />
         <span className="text-xs">{(video.commentCount ?? 0).toLocaleString()}</span>
       </button>
       <button
         type="button"
         onClick={() => void handleShare(video)}
-        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15"}
+        className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/15"}
       >
-        <Share2 className="h-5 w-5" />
+        <Share2 className={compact ? "h-5 w-5" : "h-4 w-4"} />
         <span className="text-xs">공유</span>
       </button>
       {String(user?.id || "") === String(video.creator.id) ? (
@@ -476,9 +476,9 @@ export default function MusicVideos() {
           type="button"
           onClick={() => void handleDownload(video)}
           disabled={downloadingId === video.id}
-          className={compact ? "flex flex-col items-center gap-1 text-white disabled:opacity-60" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs text-white hover:bg-white/15 disabled:opacity-60"}
+          className={compact ? "flex flex-col items-center gap-1 text-white disabled:opacity-60" : "inline-flex items-center gap-1 rounded-md bg-white/10 px-1.5 py-1 text-xs text-white hover:bg-white/15 disabled:opacity-60"}
         >
-          {downloadingId === video.id ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+          {downloadingId === video.id ? <Loader2 className={compact ? "h-5 w-5 animate-spin" : "h-4 w-4 animate-spin"} /> : <Download className={compact ? "h-5 w-5" : "h-4 w-4"} />}
           <span className="text-xs">MP4</span>
         </button>
       ) : null}
@@ -582,7 +582,7 @@ export default function MusicVideos() {
             </div>
           ) : (
             <>
-              <div className="hidden grid-cols-3 gap-4 md:grid">
+              <div className="hidden gap-3 md:grid md:grid-cols-5">
                 {videos.map((video) => (
                   <Card key={video.id} className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
@@ -594,9 +594,9 @@ export default function MusicVideos() {
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="aspect-video w-full bg-black object-contain"
                       />
-                      <div className="space-y-1 p-4">
-                        <h2 className="line-clamp-1 text-base font-semibold">{video.title}</h2>
-                        <p className="text-sm text-slate-300">{video.creator.name}</p>
+                      <div className="space-y-1 p-3">
+                        <h2 className="line-clamp-1 text-sm font-semibold">{video.title}</h2>
+                        <p className="text-xs text-slate-300">{video.creator.name}</p>
                         <p className="text-xs text-slate-500">{formatDate(video.createdAt)} {formatSize(video.fileSize)}</p>
                         <div className="pt-2">{renderActionRail(video)}</div>
                       </div>
