@@ -2042,32 +2042,12 @@ export default function CreateMusic() {
       setLoading(effective.id);
       try {
         const baseName = sanitizeFilename(effective.title || t("createMusic.untitled", "제목 없음"));
-        let downloadRes: Response;
-        if (kind === "mp4") {
-          const audioUrl = (effective.audio_url ?? "").trim();
-          const imageUrl = (effective.image_url ?? "").trim();
-          if (!audioUrl || !imageUrl) {
-            throw new Error(t("createMusic.generatedMediaMissingUrl", "Generated file URL was not returned."));
-          }
-          downloadRes = await fetch("/api/ai-music/mp4-render", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              audio_url: audioUrl,
-              image_url: imageUrl,
-              title: effective.title || undefined,
-              filename: baseName,
-            }),
-          });
-        } else {
-          const url = await requestGeneratedMediaUrl(effective, kind);
-          const proxyUrl =
-            `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
-            `&filename=${encodeURIComponent(baseName)}` +
-            `&url=${encodeURIComponent(url)}`;
-          downloadRes = await fetch(proxyUrl, { credentials: "include" });
-        }
+        const url = await requestGeneratedMediaUrl(effective, kind);
+        const proxyUrl =
+          `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
+          `&filename=${encodeURIComponent(baseName)}` +
+          `&url=${encodeURIComponent(url)}`;
+        const downloadRes = await fetch(proxyUrl, { credentials: "include" });
         const downloaded = await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
         if (kind === "mp4") {
           const file = new File([downloaded.blob], downloaded.fileName || `${baseName}.mp4`, {
