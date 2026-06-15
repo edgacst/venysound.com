@@ -567,7 +567,7 @@ export default function MusicVideos() {
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
                         className="h-full w-full bg-black object-cover"
                       />
-                      <div className="absolute right-3 top-[60%] z-10 -translate-y-1/2 pointer-events-auto">
+                      <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
                       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
