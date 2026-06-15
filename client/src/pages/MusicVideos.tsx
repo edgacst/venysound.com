@@ -11,7 +11,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Film, Heart, Loader2, MessageCircle, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
+import { Download, Eye, Film, Heart, Loader2, MessageCircle, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
 
 type MusicVideo = {
@@ -109,6 +109,7 @@ export default function MusicVideos() {
   const [commentText, setCommentText] = useState("");
   const [replyToComment, setReplyToComment] = useState<MusicVideoComment | null>(null);
   const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
+  const [mobilePlayingId, setMobilePlayingId] = useState<number | null>(null);
   const { uploadFile, isUploading, progress } = useUpload();
   const { data: videos = [], isLoading } = useQuery({
     queryKey: ["/api/music-videos"],
@@ -277,6 +278,7 @@ export default function MusicVideos() {
     closePlayer();
     shouldAutoPlayMobileRef.current = true;
     setShouldAutoPlayMobile(true);
+    setMobilePlayingId(videoId);
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== el && !videoEl.paused) videoEl.pause();
     });
@@ -292,6 +294,10 @@ export default function MusicVideos() {
       .catch(() => {
         countedPlayIdsRef.current.delete(videoId);
       });
+  };
+
+  const handleVideoPause = (videoId: number) => {
+    setMobilePlayingId((current) => (current === videoId ? null : current));
   };
 
   useEffect(() => {
@@ -341,7 +347,7 @@ export default function MusicVideos() {
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
-    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
+    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "auto" });
     if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
     best.muted = false;
     best.playsInline = true;
@@ -391,6 +397,26 @@ export default function MusicVideos() {
     window.setTimeout(() => {
       touchLockRef.current = false;
     }, 420);
+  };
+
+  const toggleMobileVideo = (videoId: number, el: HTMLVideoElement | null) => {
+    if (!el) return;
+    if (el.paused) {
+      closePlayer();
+      shouldAutoPlayMobileRef.current = true;
+      setShouldAutoPlayMobile(true);
+      document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+        if (videoEl !== el && !videoEl.paused) videoEl.pause();
+      });
+      el.muted = false;
+      el.playsInline = true;
+      void el.play().catch(() => {
+        // The button remains available if the browser requires a second tap.
+      });
+    } else {
+      el.pause();
+      handleVideoPause(videoId);
+    }
   };
 
   const handleDownload = async (video: MusicVideo) => {
@@ -624,13 +650,27 @@ export default function MusicVideos() {
                     >
                       <video
                         src={video.videoUrl}
-                        controls
                         playsInline
                         preload="metadata"
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        onPause={() => handleVideoPause(video.id)}
                         className="h-full w-full bg-black object-cover"
                       />
+                      <button
+                        type="button"
+                        className={`absolute left-1/2 top-1/2 z-10 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity ${mobilePlayingId === video.id ? "opacity-70" : "opacity-100"}`}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onTouchEnd={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const videoEl = e.currentTarget.parentElement?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
+                          toggleMobileVideo(video.id, videoEl);
+                        }}
+                        aria-label={mobilePlayingId === video.id ? "일시정지" : "재생"}
+                      >
+                        {mobilePlayingId === video.id ? <Pause className="h-8 w-8 fill-white" /> : <Play className="ml-1 h-8 w-8 fill-white" />}
+                      </button>
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
