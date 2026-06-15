@@ -337,14 +337,12 @@ export default function MusicVideos() {
     const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
     if (!best) return;
     if (!shouldAutoPlayMobile) return;
-    window.setTimeout(() => {
-      document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
-        if (videoEl !== best && !videoEl.paused) videoEl.pause();
-      });
-      void best.play().catch(() => {
-        // The visible play button still works if the browser blocks programmatic playback.
-      });
-    }, 180);
+    document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+      if (videoEl !== best && !videoEl.paused) videoEl.pause();
+    });
+    void best.play().catch(() => {
+      // The visible play button still works if the browser blocks programmatic playback.
+    });
   };
 
   const playCenteredMobileVideo = () => {
@@ -622,12 +620,9 @@ export default function MusicVideos() {
                         preload="metadata"
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
-                        className="h-full w-full bg-black object-cover"
-                      />
-                      <div
-                        className="absolute inset-x-0 top-0 bottom-36 z-[5] touch-none"
                         onTouchStart={handleMobileTouchStart}
                         onTouchEnd={handleMobileTouchEnd}
+                        className="h-full w-full bg-black object-cover"
                       />
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
