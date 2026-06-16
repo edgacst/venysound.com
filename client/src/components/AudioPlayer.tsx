@@ -18,6 +18,32 @@ import { useRadioPlayerStore } from "@/stores/radio-player";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
+function playWithSoftStart(el: HTMLMediaElement, targetVolume = 1): Promise<void> {
+  const volume = Math.max(0, Math.min(1, targetVolume));
+  el.muted = false;
+  el.volume = 0;
+  return el.play().then(
+    () =>
+      new Promise<void>((resolve) => {
+        const startedAt = performance.now();
+        const tick = () => {
+          const ratio = Math.min(1, (performance.now() - startedAt) / 90);
+          el.volume = volume * ratio;
+          if (ratio < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            resolve();
+          }
+        };
+        requestAnimationFrame(tick);
+      }),
+    (err) => {
+      el.volume = volume;
+      throw err;
+    },
+  );
+}
+
 export interface ExternalTrack {
   url: string;
   title: string;
@@ -586,8 +612,7 @@ export function GlobalAudioPlayer() {
       audio.volume = volume;
       audio.src = `/api/music/${nextId}/stream`;
       audio.load();
-      void audio
-        .play()
+      void playWithSoftStart(audio, volume)
         .then(() => {
           setIsPlaying(true);
           setIsMuted(false);
@@ -772,8 +797,7 @@ export function GlobalAudioPlayer() {
       playAttemptKeyRef.current = playKey;
       audio.muted = false;
       audio.volume = volume;
-      void audio
-        .play()
+      void playWithSoftStart(audio, volume)
         .then(() => {
           if (!cancelled) {
             audio.muted = false;
@@ -842,8 +866,7 @@ export function GlobalAudioPlayer() {
     if (audio.src && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       audio.muted = false;
       audio.volume = volume;
-      void audio
-        .play()
+      void playWithSoftStart(audio, volume)
         .then(() => {
           setIsPlaying(true);
           setNeedsTap(false);
@@ -885,7 +908,7 @@ export function GlobalAudioPlayer() {
       if (a.paused) {
         a.muted = false;
         a.volume = volume;
-        void a.play()
+        void playWithSoftStart(a, volume)
           .then(() => setNeedsTap(false))
           .catch(() => {
             setIsPlaying(false);
@@ -1151,7 +1174,7 @@ export function GlobalAudioPlayer() {
               if (!a) return;
               a.muted = false;
               a.volume = volume;
-              void a.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+              void playWithSoftStart(a, volume).then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
             }}
           >
             {t("player.tapToContinue", "탭해서 계속 듣기")}

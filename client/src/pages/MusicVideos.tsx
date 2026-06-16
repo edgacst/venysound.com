@@ -50,6 +50,32 @@ type MusicVideoComment = {
   };
 };
 
+function playVideoWithSoftStart(el: HTMLVideoElement): Promise<void> {
+  const targetVolume = Number.isFinite(el.volume) ? Math.max(0, Math.min(1, el.volume || 1)) : 1;
+  el.muted = false;
+  el.volume = 0;
+  return el.play().then(
+    () =>
+      new Promise<void>((resolve) => {
+        const startedAt = performance.now();
+        const tick = () => {
+          const ratio = Math.min(1, (performance.now() - startedAt) / 90);
+          el.volume = targetVolume * ratio;
+          if (ratio < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            resolve();
+          }
+        };
+        requestAnimationFrame(tick);
+      }),
+    (err) => {
+      el.volume = targetVolume;
+      throw err;
+    },
+  );
+}
+
 function formatSize(bytes?: number | null): string {
   if (!bytes || bytes <= 0) return "";
   const mb = bytes / (1024 * 1024);
@@ -354,7 +380,7 @@ export default function MusicVideos() {
     best.muted = false;
     best.playsInline = true;
     if (best.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) best.load();
-    void best.play().catch(() => {
+    void playVideoWithSoftStart(best).catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
   };
@@ -374,7 +400,7 @@ export default function MusicVideos() {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
     best.muted = false;
-    void best.play().catch(() => {
+    void playVideoWithSoftStart(best).catch(() => {
       // The visible play button still works if the browser blocks programmatic playback.
     });
   };
@@ -418,8 +444,7 @@ export default function MusicVideos() {
       });
       el.muted = false;
       el.playsInline = true;
-      void el
-        .play()
+      void playVideoWithSoftStart(el)
         .catch(() => {
           // The button remains available if the browser requires a second tap.
         })
