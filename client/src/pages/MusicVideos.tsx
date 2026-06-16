@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, Film, Heart, Loader2, MessageCircle, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type TouchEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
   id: number;
@@ -122,10 +122,8 @@ export default function MusicVideos() {
   const countedPlayIdsRef = useRef<Set<number>>(new Set());
   const mobileScrollerRef = useRef<HTMLDivElement | null>(null);
   const mobileVideoIndexRef = useRef(0);
-  const touchStartYRef = useRef<number | null>(null);
-  const touchStartXRef = useRef<number | null>(null);
-  const touchLockRef = useRef(false);
   const mobilePlayLockRef = useRef(false);
+  const mobileScrollTimerRef = useRef<number | null>(null);
   const mobileTransitionVideoIdRef = useRef<string | null>(null);
   const shouldAutoPlayMobileRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -361,36 +359,6 @@ export default function MusicVideos() {
     }
   };
 
-  const playMobileVideoAt = (index: number) => {
-    const root = mobileScrollerRef.current;
-    if (!root) return;
-    const rootRect = root.getBoundingClientRect();
-    const slides = Array.from(root.querySelectorAll<HTMLElement>("[data-music-video-slide]"));
-    if (slides.length === 0) return;
-    const nextIndex = Math.max(0, Math.min(slides.length - 1, index));
-    if (nextIndex === mobileVideoIndexRef.current) return;
-    mobileVideoIndexRef.current = nextIndex;
-    const best = slides[nextIndex]?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
-    if (!best) return;
-    document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
-      if (videoEl !== best && !videoEl.paused) videoEl.pause();
-    });
-    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
-    if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
-    best.muted = false;
-    best.playsInline = true;
-    if (best.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) best.load();
-    mobileTransitionVideoIdRef.current = best.dataset.musicVideoId ?? null;
-    void playVideoWithSoftStart(best).catch(() => {
-      // The visible play button still works if the browser blocks programmatic playback.
-    });
-    window.setTimeout(() => {
-      if (mobileTransitionVideoIdRef.current === best.dataset.musicVideoId) {
-        mobileTransitionVideoIdRef.current = null;
-      }
-    }, 700);
-  };
-
   const playCenteredMobileVideo = () => {
     const root = mobileScrollerRef.current;
     if (!root) return;
@@ -411,31 +379,12 @@ export default function MusicVideos() {
     });
   };
 
-  const handleMobileTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+  const handleMobileScroll = () => {
     if (commentsVideo) return;
-    touchStartYRef.current = e.touches[0]?.clientY ?? null;
-    touchStartXRef.current = e.touches[0]?.clientX ?? null;
-  };
-
-  const handleMobileTouchEnd = (e: TouchEvent<HTMLDivElement>) => {
-    if (commentsVideo || touchLockRef.current) return;
-    const startY = touchStartYRef.current;
-    const startX = touchStartXRef.current;
-    touchStartYRef.current = null;
-    touchStartXRef.current = null;
-    if (startY == null || startX == null) return;
-    const endY = e.changedTouches[0]?.clientY ?? startY;
-    const endX = e.changedTouches[0]?.clientX ?? startX;
-    const deltaY = startY - endY;
-    const deltaX = startX - endX;
-    if (Math.abs(deltaY) < 160 || Math.abs(deltaY) < Math.abs(deltaX) * 1.4) return;
-    e.preventDefault();
-    touchLockRef.current = true;
-    const direction = deltaY > 0 ? 1 : -1;
-    playMobileVideoAt(mobileVideoIndexRef.current + direction);
-    window.setTimeout(() => {
-      touchLockRef.current = false;
-    }, 1300);
+    if (mobileScrollTimerRef.current) window.clearTimeout(mobileScrollTimerRef.current);
+    mobileScrollTimerRef.current = window.setTimeout(() => {
+      playCenteredMobileVideo();
+    }, 140);
   };
 
   const toggleMobileVideo = (videoId: number, el: HTMLVideoElement | null) => {
@@ -685,15 +634,14 @@ export default function MusicVideos() {
               <div className="fixed inset-0 z-40 bg-black md:hidden">
                 <div
                   ref={mobileScrollerRef}
-                  className="h-dvh snap-y snap-mandatory overflow-y-hidden bg-black"
+                  onScroll={handleMobileScroll}
+                  className="h-dvh snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {videos.map((video) => (
                     <article
                       key={video.id}
                       data-music-video-slide
-                      className="relative h-dvh snap-start bg-black"
-                      onTouchStart={handleMobileTouchStart}
-                      onTouchEnd={handleMobileTouchEnd}
+                      className="relative h-dvh snap-start snap-always bg-black"
                     >
                       <video
                         src={video.videoUrl}
