@@ -607,7 +607,7 @@ export function GlobalAudioPlayer() {
 
   const tryStartNextTrackImmediately = useCallback((nextId: number) => {
     const audio = audioRef.current;
-    if (!audio || pauseRequested) return;
+    if (!audio || usePlayerStore.getState().pauseRequested) return;
     try {
       audio.muted = false;
       audio.volume = volume;
@@ -724,7 +724,8 @@ export function GlobalAudioPlayer() {
 
   const playNext = useCallback(() => {
     tracker.onEnded();
-    if (activeExternalTrack) {
+    const playerState = usePlayerStore.getState();
+    if (playerState.activeExternalTrack) {
       if (repeatMode === 'one') {
         const audio = audioRef.current;
         if (audio) {
@@ -734,15 +735,28 @@ export function GlobalAudioPlayer() {
       }
       return;
     }
-    if (queue.length > 0) {
-      const nextId = queue[0];
-      removeFromQueue(0);
-      playMusic(nextId);
+    if (playerState.queue.length > 0) {
+      const nextId = playerState.queue[0];
+      if (blockGuestPlaybackIfNeeded()) return;
+      clearGlobalRadioForOnDemandPlayback();
+      usePlayerStore.setState({
+        activeMusicId: nextId,
+        activeExternalTrack: null,
+        pauseRequested: false,
+        lyricsRequested: false,
+        queue: playerState.queue.slice(1),
+      });
       tryStartNextTrackImmediately(nextId);
       return;
     }
-    const nextList = currentListRef.current.length > 0 ? currentListRef.current : currentList;
-    const nextCurrentIndex = activeMusicId ? nextList.indexOf(activeMusicId) : -1;
+    const nextList = playerState.shuffleEnabled && playerState.shuffledOrder.length > 0
+      ? playerState.shuffledOrder
+      : playerState.playlist.length > 0
+        ? playerState.playlist
+        : currentListRef.current.length > 0
+          ? currentListRef.current
+          : currentList;
+    const nextCurrentIndex = playerState.activeMusicId ? nextList.indexOf(playerState.activeMusicId) : -1;
     if (nextList.length === 0) return;
     if (repeatMode === 'one') {
       const audio = audioRef.current;
@@ -756,15 +770,19 @@ export function GlobalAudioPlayer() {
     if (nextIndex >= nextList.length) {
       if (repeatMode === 'all') {
         const nextId = nextList[0];
-        playMusic(nextId);
+        if (blockGuestPlaybackIfNeeded()) return;
+        clearGlobalRadioForOnDemandPlayback();
+        usePlayerStore.setState({ activeMusicId: nextId, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
         tryStartNextTrackImmediately(nextId);
       }
     } else {
       const nextId = nextList[nextIndex];
-      playMusic(nextId);
+      if (blockGuestPlaybackIfNeeded()) return;
+      clearGlobalRadioForOnDemandPlayback();
+      usePlayerStore.setState({ activeMusicId: nextId, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
       tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, activeExternalTrack, activeMusicId, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
+  }, [tracker, currentList, repeatMode, tryStartNextTrackImmediately]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
