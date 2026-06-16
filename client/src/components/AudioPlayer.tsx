@@ -577,6 +577,7 @@ export function GlobalAudioPlayer() {
   const [showEqPanel, setShowEqPanel] = useState(false);
   const [eqGains, setEqGains] = useState<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const [eqPreset, setEqPreset] = useState('flat');
+  const currentListRef = useRef<number[]>([]);
 
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
@@ -639,6 +640,9 @@ export function GlobalAudioPlayer() {
   }, [baseList.length, shuffleEnabled]);
 
   const currentList = shuffleEnabled && shuffledOrder.length > 0 ? shuffledOrder : baseList;
+  useEffect(() => {
+    if (currentList.length > 0) currentListRef.current = currentList;
+  }, [currentList]);
 
   const initEqualizer = useCallback(() => {
     const audio = audioRef.current;
@@ -737,7 +741,9 @@ export function GlobalAudioPlayer() {
       tryStartNextTrackImmediately(nextId);
       return;
     }
-    if (currentList.length === 0) return;
+    const nextList = currentListRef.current.length > 0 ? currentListRef.current : currentList;
+    const nextCurrentIndex = activeMusicId ? nextList.indexOf(activeMusicId) : -1;
+    if (nextList.length === 0) return;
     if (repeatMode === 'one') {
       const audio = audioRef.current;
       if (audio) {
@@ -746,19 +752,19 @@ export function GlobalAudioPlayer() {
       }
       return;
     }
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= currentList.length) {
+    const nextIndex = nextCurrentIndex + 1;
+    if (nextIndex >= nextList.length) {
       if (repeatMode === 'all') {
-        const nextId = currentList[0];
+        const nextId = nextList[0];
         playMusic(nextId);
         tryStartNextTrackImmediately(nextId);
       }
     } else {
-      const nextId = currentList[nextIndex];
+      const nextId = nextList[nextIndex];
       playMusic(nextId);
       tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, activeExternalTrack, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
+  }, [tracker, activeExternalTrack, activeMusicId, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
