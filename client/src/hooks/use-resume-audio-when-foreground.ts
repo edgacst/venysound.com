@@ -24,8 +24,8 @@ export function useResumeAudioWhenForeground(
     };
 
     const attemptPlay = (el: HTMLAudioElement) => {
+      if (!el.paused) return;
       el.muted = false;
-      el.volume = Math.max(el.volume, 1);
       void el.play().catch(() => {});
     };
 
