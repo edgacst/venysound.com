@@ -9,6 +9,8 @@
     "restart": "node script/kill-port-5000.cjs && npm run dev",
     "build": "tsx script/build.ts",
     "deploy:check": "node script/deploy-safety-check.cjs",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "start": "cross-env NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
@@ -124,6 +126,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/archiver": "^7.0.0",

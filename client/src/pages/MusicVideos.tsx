@@ -467,7 +467,7 @@ export default function MusicVideos() {
   };
 
   const renderActionRail = (video: MusicVideo, compact = false) => (
-    <div className={compact ? "flex flex-col items-center gap-4" : "flex flex-nowrap items-center gap-0.5 overflow-hidden"}>
+    <div data-testid={compact ? "music-video-mobile-actions" : "music-video-card-actions"} className={compact ? "flex flex-col items-center gap-4" : "flex flex-nowrap items-center gap-0.5 overflow-hidden"}>
       <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-white/10 px-1 text-[11px] leading-none text-white"}>
         <Eye className={compact ? "h-5 w-5" : "h-3.5 w-3.5"} />
         <span className={compact ? "text-xs" : "text-[11px] leading-none"}>{(video.playCount ?? 0).toLocaleString()}</span>
@@ -606,9 +606,9 @@ export default function MusicVideos() {
             </div>
           ) : (
             <>
-              <div className="hidden gap-3 md:grid md:grid-cols-5">
+              <div data-testid="music-video-desktop-grid" className="hidden gap-3 md:grid md:grid-cols-5">
                 {videos.map((video) => (
-                  <Card key={video.id} className="overflow-hidden border-white/10 bg-white/5 text-white">
+                  <Card key={video.id} data-testid="music-video-card" className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
                       <video
                         src={video.videoUrl}
@@ -620,7 +620,7 @@ export default function MusicVideos() {
                       />
                       <div className="space-y-1 p-3">
                         <h2 className="line-clamp-1 text-sm font-semibold">{video.title}</h2>
-                        <p className="line-clamp-1 text-xs text-slate-400">
+                        <p data-testid="music-video-card-meta" className="line-clamp-1 text-xs text-slate-400">
                           <span className="text-slate-300">{video.creator.name}</span>
                           <span className="ml-1">{formatDate(video.createdAt)} {formatSize(video.fileSize)}</span>
                         </p>
@@ -635,12 +635,14 @@ export default function MusicVideos() {
                 <div
                   ref={mobileScrollerRef}
                   onScroll={handleMobileScroll}
+                  data-testid="music-video-mobile-scroller"
                   className="h-dvh snap-y snap-mandatory overflow-y-auto overscroll-y-contain bg-black [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {videos.map((video) => (
                     <article
                       key={video.id}
                       data-music-video-slide
+                      data-testid="music-video-mobile-slide"
                       className="relative h-dvh snap-start snap-always bg-black"
                     >
                       <video
