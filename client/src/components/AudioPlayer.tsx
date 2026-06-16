@@ -579,6 +579,29 @@ export function GlobalAudioPlayer() {
   const [eqPreset, setEqPreset] = useState('flat');
   const currentListRef = useRef<number[]>([]);
 
+  useEffect(() => {
+    const keepAudioContextRunning = () => {
+      const st = usePlayerStore.getState();
+      if (st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+      const ctx = audioContextRef.current;
+      if (ctx?.state === "suspended") {
+        void ctx.resume().catch(() => {});
+      }
+    };
+
+    keepAudioContextRunning();
+    const interval = window.setInterval(keepAudioContextRunning, 1000);
+    document.addEventListener("visibilitychange", keepAudioContextRunning);
+    window.addEventListener("focus", keepAudioContextRunning);
+    window.addEventListener("pageshow", keepAudioContextRunning);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", keepAudioContextRunning);
+      window.removeEventListener("focus", keepAudioContextRunning);
+      window.removeEventListener("pageshow", keepAudioContextRunning);
+    };
+  }, []);
+
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
