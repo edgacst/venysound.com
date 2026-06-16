@@ -373,7 +373,7 @@ export default function MusicVideos() {
     document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
       if (videoEl !== best && !videoEl.paused) videoEl.pause();
     });
-    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "auto" });
+    root.scrollTo({ top: nextIndex * rootRect.height, behavior: "smooth" });
     if (!shouldAutoPlayMobileRef.current && !shouldAutoPlayMobile) return;
     best.muted = false;
     best.playsInline = true;
