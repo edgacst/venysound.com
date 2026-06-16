@@ -21,12 +21,21 @@ type RepeatMode = 'none' | 'all' | 'one';
 function playWithSoftStart(el: HTMLMediaElement, targetVolume = 1): Promise<void> {
   const volume = Math.max(0, Math.min(1, targetVolume));
   el.muted = false;
+  if (document.visibilityState !== "visible") {
+    el.volume = volume;
+    return el.play();
+  }
   el.volume = 0;
   return el.play().then(
     () =>
       new Promise<void>((resolve) => {
         const startedAt = performance.now();
         const tick = () => {
+          if (document.visibilityState !== "visible") {
+            el.volume = volume;
+            resolve();
+            return;
+          }
           const ratio = Math.min(1, (performance.now() - startedAt) / 90);
           el.volume = volume * ratio;
           if (ratio < 1) {
