@@ -126,6 +126,7 @@ export default function MusicVideos() {
   const touchStartXRef = useRef<number | null>(null);
   const touchLockRef = useRef(false);
   const mobilePlayLockRef = useRef(false);
+  const mobileTransitionVideoIdRef = useRef<string | null>(null);
   const shouldAutoPlayMobileRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -334,6 +335,7 @@ export default function MusicVideos() {
         entries.forEach((entry) => {
           const video = entry.target.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
           if (!video) return;
+          if (mobileTransitionVideoIdRef.current === video.dataset.musicVideoId) return;
           if (entry.intersectionRatio < 0.55) {
             if (!video.paused) video.pause();
           }
@@ -378,14 +380,15 @@ export default function MusicVideos() {
     best.muted = false;
     best.playsInline = true;
     if (best.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) best.load();
+    mobileTransitionVideoIdRef.current = best.dataset.musicVideoId ?? null;
+    void playVideoWithSoftStart(best).catch(() => {
+      // The visible play button still works if the browser blocks programmatic playback.
+    });
     window.setTimeout(() => {
-      document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
-        if (videoEl !== best && !videoEl.paused) videoEl.pause();
-      });
-      void playVideoWithSoftStart(best).catch(() => {
-        // The visible play button still works if the browser blocks programmatic playback.
-      });
-    }, 260);
+      if (mobileTransitionVideoIdRef.current === best.dataset.musicVideoId) {
+        mobileTransitionVideoIdRef.current = null;
+      }
+    }, 700);
   };
 
   const playCenteredMobileVideo = () => {
