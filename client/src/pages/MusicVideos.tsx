@@ -1,6 +1,4 @@
-import { Navigation } from "@/components/Navigation";
 import { usePlayerStore } from "@/components/AudioPlayer";
-import { Footer } from "@/components/Footer";
 import { PageTransition } from "@/components/PageTransition";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -557,7 +555,6 @@ export default function MusicVideos() {
 
   return (
     <PageTransition>
-      <Navigation />
       <main className="min-h-screen bg-slate-950 text-white">
         <section className="border-b border-white/10 bg-slate-950 px-4 py-6 md:py-8">
           <div className="mx-auto flex max-w-6xl flex-col gap-5 md:flex-row md:items-end md:justify-between">
@@ -850,7 +847,6 @@ export default function MusicVideos() {
           </div>
         </DialogContent>
       </Dialog>
-      <Footer />
     </PageTransition>
   );
 }
