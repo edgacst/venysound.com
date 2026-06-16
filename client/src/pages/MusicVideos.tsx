@@ -684,11 +684,6 @@ export default function MusicVideos() {
                       className="relative h-dvh snap-start bg-black"
                       onTouchStart={handleMobileTouchStart}
                       onTouchEnd={handleMobileTouchEnd}
-                      onClick={(e) => {
-                        if (touchLockRef.current) return;
-                        const videoEl = e.currentTarget.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
-                        toggleMobileVideo(video.id, videoEl);
-                      }}
                     >
                       <video
                         src={video.videoUrl}
@@ -699,6 +694,22 @@ export default function MusicVideos() {
                         onPause={() => handleVideoPause(video.id)}
                         className="h-full w-full bg-black object-cover"
                       />
+                      {mobilePlayingId !== video.id ? (
+                        <button
+                          type="button"
+                          className="absolute left-1/2 top-1/2 z-10 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm"
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onTouchEnd={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const videoEl = e.currentTarget.parentElement?.querySelector("video[data-music-video-id]") as HTMLVideoElement | null;
+                            toggleMobileVideo(video.id, videoEl);
+                          }}
+                          aria-label="재생"
+                        >
+                          <Play className="ml-1 h-8 w-8 fill-white" />
+                        </button>
+                      ) : null}
                       <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
                         {renderActionRail(video, true)}
                       </div>
