@@ -535,6 +535,7 @@ export function GlobalAudioPlayer() {
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
   const prevPauseRequestedRef = useRef(pauseRequested);
+  const playAttemptKeyRef = useRef<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -762,9 +763,13 @@ export function GlobalAudioPlayer() {
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !audioUrl || !hasTrack) return;
     let cancelled = false;
+    const playKey = `${audioUrl}:${activeMusicId ?? ""}:${activeExternalTrack?.url ?? ""}`;
+    playAttemptKeyRef.current = null;
 
     const tryPlay = () => {
       if (cancelled || usePlayerStore.getState().pauseRequested) return;
+      if (playAttemptKeyRef.current === playKey) return;
+      playAttemptKeyRef.current = playKey;
       audio.muted = false;
       audio.volume = volume;
       void audio
@@ -777,6 +782,11 @@ export function GlobalAudioPlayer() {
         })
         .catch(() => {
           if (!cancelled) setNeedsTap(true);
+        })
+        .finally(() => {
+          window.setTimeout(() => {
+            if (playAttemptKeyRef.current === playKey) playAttemptKeyRef.current = null;
+          }, 500);
         });
     };
 
@@ -791,7 +801,6 @@ export function GlobalAudioPlayer() {
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       tryPlay();
     } else {
-      audio.addEventListener("canplaythrough", onReadyOnce, { once: true });
       audio.addEventListener("canplay", onReadyOnce, { once: true });
     }
 
@@ -803,7 +812,6 @@ export function GlobalAudioPlayer() {
     return () => {
       cancelled = true;
       window.clearTimeout(retryTimer);
-      audio.removeEventListener("canplaythrough", onReadyOnce);
       audio.removeEventListener("canplay", onReadyOnce);
     };
   }, [audioUrl, activeMusicId, activeExternalTrack, volume]);
