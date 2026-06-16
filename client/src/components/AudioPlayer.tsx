@@ -734,7 +734,7 @@ export function GlobalAudioPlayer() {
       const nextId = queue[0];
       removeFromQueue(0);
       playMusic(nextId);
-      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+      tryStartNextTrackImmediately(nextId);
       return;
     }
     if (currentList.length === 0) return;
@@ -751,12 +751,12 @@ export function GlobalAudioPlayer() {
       if (repeatMode === 'all') {
         const nextId = currentList[0];
         playMusic(nextId);
-        if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+        tryStartNextTrackImmediately(nextId);
       }
     } else {
       const nextId = currentList[nextIndex];
       playMusic(nextId);
-      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+      tryStartNextTrackImmediately(nextId);
     }
   }, [tracker, activeExternalTrack, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
 
