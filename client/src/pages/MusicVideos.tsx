@@ -677,6 +677,9 @@ export default function MusicVideos() {
                         onPause={() => handleVideoPause(video.id)}
                         className="h-full w-full bg-black object-cover"
                       />
+                      <div className="absolute right-3 top-[68%] z-10 -translate-y-1/2 pointer-events-auto">
+                        {renderActionRail(video, true)}
+                      </div>
                     </article>
                   ))}
                 </div>
