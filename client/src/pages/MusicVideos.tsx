@@ -378,9 +378,14 @@ export default function MusicVideos() {
     best.muted = false;
     best.playsInline = true;
     if (best.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) best.load();
-    void playVideoWithSoftStart(best).catch(() => {
-      // The visible play button still works if the browser blocks programmatic playback.
-    });
+    window.setTimeout(() => {
+      document.querySelectorAll<HTMLVideoElement>("video[data-music-video-id]").forEach((videoEl) => {
+        if (videoEl !== best && !videoEl.paused) videoEl.pause();
+      });
+      void playVideoWithSoftStart(best).catch(() => {
+        // The visible play button still works if the browser blocks programmatic playback.
+      });
+    }, 260);
   };
 
   const playCenteredMobileVideo = () => {
