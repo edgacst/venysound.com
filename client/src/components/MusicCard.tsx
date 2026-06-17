@@ -1278,7 +1278,7 @@ export function MusicCard({ music, chartRank, variant = "card", playlistIds }: M
       )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-h-[calc(100vh-4rem)]">
           <DialogHeader>
             <DialogTitle>
               {isAdminSpotifyOnly
