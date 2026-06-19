@@ -26,6 +26,7 @@ sudo git clone https://github.com/edgacst/mp3mastering.git mp3mastering
 sudo chown -R $USER:$USER /var/www/mp3mastering
 cd /var/www/mp3mastering
 npm install
+npm --prefix frontend install --include=dev
 npm run build
 npm --prefix backend install --omit=dev
 ```
@@ -43,7 +44,7 @@ curl -sI http://127.0.0.1:3001/ | head -5
 재배포:
 
 ```bash
-cd /var/www/mp3mastering && git pull && npm install && npm run build && npm --prefix backend install --omit=dev && pm2 restart mastering-app
+cd /var/www/mp3mastering && git pull && npm install && npm --prefix frontend install --include=dev && npm run build && npm --prefix backend install --omit=dev && pm2 restart mastering-app
 ```
 
 ---
