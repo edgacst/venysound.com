@@ -177,8 +177,8 @@ export function Navigation() {
 
   return (
     <nav className="fixed top-0 z-[70] w-full border-b border-white/10 bg-[#07080b] text-white shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] md:sticky md:bg-[#07080b]/95 md:backdrop-blur-xl">
-      <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
-        <Link href="/" className="flex-shrink-0 min-w-0" title="Veny Sound">
+      <div className="w-full max-w-[1400px] mx-auto grid h-16 items-center gap-x-3 px-4 grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-4">
+        <Link href="/" className="relative z-20 shrink-0 min-w-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
             <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap" title="Veny Sound">
@@ -191,7 +191,7 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="veny-nav-desktop hidden md:flex items-center min-w-0 flex-1 justify-center">
+        <div className="veny-nav-desktop hidden md:flex items-center min-w-0 justify-center overflow-x-auto overscroll-x-contain px-1">
           <div className="flex items-center gap-1 shrink-0 py-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
@@ -214,7 +214,7 @@ export function Navigation() {
           </div>
         </div>
 
-        <div className="veny-nav-desktop hidden md:flex items-center gap-2 flex-shrink-0 justify-end">
+        <div className="veny-nav-desktop hidden md:flex items-center gap-2 shrink-0 justify-end relative z-20">
           {user ? (
             <>
               <Link href={`/profile/${user.id}`} className="shrink-0" title={t('nav.myMusic', '나의 음악')}>
