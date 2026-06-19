@@ -20,6 +20,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerPayupRoutes } from "./payup/routes";
 import { serveStatic } from "./static";
+import { registerMasteringProxy } from "./mastering-proxy";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { pool } from "./db";
@@ -374,6 +375,8 @@ app.use((req, res, next) => {
 
     return res.status(status).json({ message });
   });
+
+  registerMasteringProxy(app);
 
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);

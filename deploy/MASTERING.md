@@ -83,6 +83,11 @@ sudo ufw enable
 ## 4. HTTPS 동작 확인
 
 ```bash
+# Nginx에 mastering 블록이 있는지 (없으면 5000으로 가서 SPA 404)
+sudo grep -n mastering /etc/nginx/sites-enabled/*
+
+# 마스터링 앱 직접 확인
+curl -sI http://127.0.0.1:3001/ | head -5
 curl -sI https://venysound.com/mastering/ | head -5
 ```
 
@@ -90,6 +95,12 @@ curl -sI https://venysound.com/mastering/ | head -5
 
 1. https://venysound.com/mastering/ 접속
 2. MP3 업로드 → 마스터링 시작 → 다운로드
+
+**404가 나올 때**
+
+- `curl -sI http://127.0.0.1:3001/` → 200이 아니면: `bash deploy/run-on-server.sh` 로 빌드·PM2 재시작
+- 3001은 정상인데 브라우저만 404: Nginx가 `/mastering/` 을 5000으로 보내는 상태 → 아래 블록 반영 후 `sudo nginx -t && sudo systemctl reload nginx`
+- VenySound 최신 코드에는 `/mastering` Express 프록시 폴백이 있음 — `pm2 restart venysound` 후에도 Nginx 수정 권장
 
 ---
 
