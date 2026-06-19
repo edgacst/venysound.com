@@ -28,6 +28,7 @@ import {
   Megaphone,
   Wand2,
   Film,
+  AudioLines,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -164,6 +165,16 @@ export function Navigation() {
     </Link>
   );
 
+  /** SPA 외부 경로(프록시) — 전체 페이지 이동 */
+  const ExternalNavLink = ({ href, icon: Icon, children }: { href: string; icon: any; children: React.ReactNode }) => (
+    <a href={href} data-testid={`nav-link-${href.replace(/\//g, '') || 'external'}`}>
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-muted-foreground hover:bg-secondary hover:text-foreground">
+        <Icon size={18} className="flex-shrink-0" />
+        <span className="whitespace-nowrap">{children}</span>
+      </div>
+    </a>
+  );
+
   return (
     <nav className="fixed top-0 z-[70] w-full border-b border-white/10 bg-[#07080b] text-white shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] md:sticky md:bg-[#07080b]/95 md:backdrop-blur-xl">
       <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
@@ -185,6 +196,7 @@ export function Navigation() {
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
             <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
+            <ExternalNavLink href="/mastering/" icon={AudioLines}>{t('nav.mp3Master', 'mp3마스터')}</ExternalNavLink>
             <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
             <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
             <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
@@ -379,6 +391,7 @@ export function Navigation() {
               <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
               <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
               <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
+              <ExternalNavLink href="/mastering/" icon={AudioLines}>{t('nav.mp3Master', 'mp3마스터')}</ExternalNavLink>
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
