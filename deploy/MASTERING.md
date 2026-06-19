@@ -62,7 +62,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 - `location ^~ /mastering/` → `http://127.0.0.1:3001/` (경로 접두사 제거)
 - `client_max_body_size 100M` (업로드)
-- `proxy_read_timeout 600s` (ffmpeg 처리 시간)
+- `proxy_request_buffering on` (업로드 중 연결 끊김 방지)
+- `client_body_timeout 600s`
 - `location = /mastering` → `/mastering/` 리다이렉트
 
 ---
