@@ -314,17 +314,12 @@
 }
 
 .veny-nav-center-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .veny-nav-center-scroll::-webkit-scrollbar {
-  height: 4px;
-}
-
-.veny-nav-center-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.45);
-  border-radius: 999px;
+  display: none;
 }
 
 /* 예전: 모바일 가로 모드 차단 오버레이

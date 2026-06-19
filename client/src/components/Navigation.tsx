@@ -153,13 +153,14 @@ export function Navigation() {
       <div
         data-testid={`nav-link-${href.replace(/\//g, '') || 'home'}`}
         className={`
-        flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0
+        flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-[13px] lg:gap-1.5 lg:px-3 lg:py-1.5 lg:text-sm
         ${isActive(href) 
           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold" 
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
         }
       `}>
-        <Icon size={18} className="flex-shrink-0" />
+        <Icon size={16} className="flex-shrink-0 lg:hidden" />
+        <Icon size={18} className="flex-shrink-0 hidden lg:block" />
         <span className="whitespace-nowrap">{children}</span>
       </div>
     </Link>
@@ -168,8 +169,9 @@ export function Navigation() {
   /** SPA 외부 경로(프록시) — 전체 페이지 이동 */
   const ExternalNavLink = ({ href, icon: Icon, children }: { href: string; icon: any; children: React.ReactNode }) => (
     <a href={href} data-testid={`nav-link-${href.replace(/\//g, '') || 'external'}`}>
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-muted-foreground hover:bg-secondary hover:text-foreground">
-        <Icon size={18} className="flex-shrink-0" />
+      <div className="flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-[13px] lg:gap-1.5 lg:px-3 lg:py-1.5 lg:text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+        <Icon size={16} className="flex-shrink-0 lg:hidden" />
+        <Icon size={18} className="flex-shrink-0 hidden lg:block" />
         <span className="whitespace-nowrap">{children}</span>
       </div>
     </a>
@@ -192,7 +194,7 @@ export function Navigation() {
         </Link>
 
         <div className="veny-nav-desktop hidden md:block flex-1 min-w-0 overflow-hidden isolate">
-          <div className="veny-nav-center-scroll flex items-center gap-1 shrink-0 py-1 overflow-x-auto overscroll-x-contain pl-1 pr-1">
+          <div className="veny-nav-center-scroll flex items-center gap-0.5 lg:gap-1 shrink-0 py-0 overflow-x-hidden pl-1 pr-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
             <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
