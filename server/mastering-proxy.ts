@@ -12,9 +12,10 @@ function masteringUpstream(): URL {
 export function registerMasteringProxy(app: Express): void {
   if (process.env.MASTERING_PROXY_ENABLED === "0") return;
 
-  app.get("/mastering", (req: Request, res: Response) => {
+  // 슬래시 없는 /mastering 만 1회 리다이렉트 (Express 기본 라우팅은 /mastering 과 /mastering/ 을 동일 취급 → 루프 방지)
+  app.get(/^\/mastering$/, (req: Request, res: Response) => {
     const q = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
-    res.redirect(301, `/mastering/${q ? q : ""}`);
+    res.redirect(301, `/mastering/${q}`);
   });
 
   app.use("/mastering", (req: Request, res: Response) => {
@@ -35,7 +36,21 @@ export function registerMasteringProxy(app: Express): void {
         },
       },
       (proxyRes) => {
-        res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+        const headers = { ...proxyRes.headers };
+        const status = proxyRes.statusCode ?? 502;
+
+        // upstream 3xx Location 이 /mastering/ 이면 브라우저 무한 리다이렉트 — 헤더 제거 후 본문 전달
+        if (status >= 300 && status < 400 && headers.location) {
+          const loc = String(headers.location);
+          if (/^\/mastering\/?(\?|$)/i.test(loc) || loc.includes("/mastering/")) {
+            delete headers.location;
+            res.writeHead(200, headers);
+            proxyRes.pipe(res);
+            return;
+          }
+        }
+
+        res.writeHead(status, headers);
         proxyRes.pipe(res);
       },
     );
