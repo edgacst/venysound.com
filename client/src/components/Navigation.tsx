@@ -177,7 +177,7 @@ export function Navigation() {
 
   return (
     <nav className="fixed top-0 z-[70] w-full border-b border-white/10 bg-[#07080b] text-white shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] md:sticky md:bg-[#07080b]/95 md:backdrop-blur-xl">
-      <div className="w-full max-w-[1400px] mx-auto grid h-16 items-center gap-x-3 px-4 grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-4">
+      <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center gap-x-2 px-4 md:gap-x-3">
         <Link href="/" className="relative z-20 shrink-0 min-w-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
@@ -191,7 +191,7 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="veny-nav-desktop hidden md:flex items-center min-w-0 justify-center overflow-x-auto overscroll-x-contain px-1">
+        <div className="veny-nav-desktop hidden md:flex flex-1 min-w-0 items-center justify-center overflow-x-auto overscroll-x-contain px-1">
           <div className="flex items-center gap-1 shrink-0 py-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
@@ -214,13 +214,13 @@ export function Navigation() {
           </div>
         </div>
 
-        <div className="veny-nav-desktop hidden md:flex items-center gap-2 shrink-0 justify-end relative z-20">
+        <div className="veny-nav-desktop hidden md:flex items-center gap-1.5 shrink-0 relative z-20">
           {user ? (
             <>
               <Link href={`/profile/${user.id}`} className="shrink-0" title={t('nav.myMusic', '나의 음악')}>
-                <Button size="sm" variant="ghost" className="gap-2 text-foreground shrink-0" data-testid="button-my-music">
+                <Button size="sm" variant="ghost" className="gap-2 text-foreground shrink-0 px-2 xl:px-3" data-testid="button-my-music">
                   <User size={16} />
-                  <span className="whitespace-nowrap">{t('nav.myMusic', '나의 음악')}</span>
+                  <span className="whitespace-nowrap hidden xl:inline">{t('nav.myMusic', '나의 음악')}</span>
                 </Button>
               </Link>
               <Link href="/upload" title={t('nav.upload')}>
@@ -370,7 +370,7 @@ export function Navigation() {
         </div>
 
         <button 
-          className="veny-nav-mobile-toggle md:hidden p-2 text-muted-foreground hover:text-foreground"
+          className="veny-nav-mobile-toggle md:hidden ml-auto p-2 text-muted-foreground hover:text-foreground shrink-0"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           data-testid="button-mobile-menu"
         >
