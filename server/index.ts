@@ -254,6 +254,9 @@ async function runAutoMigrations() {
 const app = express();
 const httpServer = createServer(app);
 
+/** /mastering/* 는 body parser 이전에 프록시 (JSON·multipart 원본 body 전달) */
+registerMasteringProxy(app);
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));
 
@@ -375,8 +378,6 @@ app.use((req, res, next) => {
 
     return res.status(status).json({ message });
   });
-
-  registerMasteringProxy(app);
 
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
