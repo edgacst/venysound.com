@@ -9,7 +9,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useUpload } from "@/hooks/use-upload";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, Film, Heart, Loader2, MessageCircle, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Download, Eye, Film, Heart, Loader2, MessageCircle, MoreVertical, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -136,6 +142,7 @@ export default function MusicVideos() {
   const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
   const [mobilePlayingId, setMobilePlayingId] = useState<number | null>(null);
   const { uploadFile, isUploading, progress } = useUpload();
+  const isAdmin = user?.role === "admin";
   const { data: videos = [], isLoading } = useQuery({
     queryKey: ["/api/music-videos"],
     queryFn: fetchMusicVideos,
@@ -234,6 +241,28 @@ export default function MusicVideos() {
     },
     onError: (err) => {
       toast({ title: "댓글 삭제 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
+    },
+  });
+
+  const deleteVideoMutation = useMutation({
+    mutationFn: async (video: MusicVideo) => {
+      if (!isAdmin) throw new Error("관리자 권한이 필요합니다.");
+      const res = await fetch(`/api/music-videos/${video.id}`, { method: "DELETE", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "뮤직비디오 삭제에 실패했습니다.");
+      return video.id;
+    },
+    onSuccess: (videoId) => {
+      queryClient.setQueryData<MusicVideo[]>(["/api/music-videos"], (prev) => prev?.filter((video) => video.id !== videoId));
+      if (commentsVideo?.id === videoId) setCommentsVideo(null);
+      toast({ title: "뮤직비디오가 삭제되었습니다." });
+    },
+    onError: (err) => {
+      toast({
+        title: "뮤직비디오 삭제 실패",
+        description: err instanceof Error ? err.message : "다시 시도해 주세요.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -506,6 +535,32 @@ export default function MusicVideos() {
           {downloadingId === video.id ? <Loader2 className={compact ? "h-5 w-5 animate-spin" : "h-3.5 w-3.5 animate-spin"} /> : <Download className={compact ? "h-5 w-5" : "h-3.5 w-3.5"} />}
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
+      ) : null}
+      {isAdmin ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex h-6 shrink-0 items-center justify-center rounded-md bg-white/10 px-1 text-white hover:bg-white/15"}
+              aria-label="뮤직비디오 관리"
+            >
+              <MoreVertical className={compact ? "h-5 w-5" : "h-3.5 w-3.5"} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-red-500 focus:text-red-500"
+              disabled={deleteVideoMutation.isPending}
+              onClick={() => {
+                if (window.confirm("뮤직비디오를 삭제할까요?")) deleteVideoMutation.mutate(video);
+              }}
+              data-testid={`button-delete-music-video-${video.id}`}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              삭제
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
     </div>
   );

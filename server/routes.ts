@@ -5114,6 +5114,25 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/music-videos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const role = await storage.getUserRole(userId);
+      if (role !== "admin") return res.status(403).json({ message: "관리자 권한이 필요합니다." });
+      const [deleted] = await db
+        .delete(musicVideos)
+        .where(eq(musicVideos.id, id))
+        .returning({ id: musicVideos.id });
+      if (!deleted) return res.status(404).json({ message: "Music video not found." });
+      res.json({ deleted: true, id: deleted.id });
+    } catch (e) {
+      console.error("[music-videos DELETE]", e);
+      res.status(500).json({ message: "뮤직비디오 삭제에 실패했습니다." });
+    }
+  });
+
   app.post("/api/music-videos", isAuthenticated, async (req, res) => {
     try {
       const body = req.body as {
