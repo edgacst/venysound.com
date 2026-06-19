@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Download, Eye, Film, Heart, Loader2, MessageCircle, MoreVertical, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
+import { ArrowLeft, Download, Eye, Film, Heart, Loader2, MessageCircle, MoreVertical, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -536,7 +536,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {isAdmin ? (
+      {isAdmin && !compact ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -571,6 +571,15 @@ export default function MusicVideos() {
         <section className="border-b border-white/10 bg-slate-950 px-4 py-6 md:py-8">
           <div className="mx-auto flex max-w-6xl flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => window.history.back()}
+                className="mb-3 gap-2 px-0 text-slate-300 hover:bg-transparent hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                뒤로가기
+              </Button>
               <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-slate-300">
                 <Film className="h-4 w-4" />
                 Music Video
