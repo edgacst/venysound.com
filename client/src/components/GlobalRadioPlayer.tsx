@@ -55,18 +55,29 @@ function shouldDeferHandoffToNewRadioTrack(
   const newId = musicIdFromSiteMusicStreamUrl(newStreamUrl);
   const curId = musicIdFromSiteMusicStreamUrl(currentStreamUrl);
   if (newId == null || curId == null || newId === curId) return false;
-  if (!el || el.paused || el.ended) return false;
-  try {
-    if (el.buffered?.length) {
-      const bufEnd = el.buffered.end(el.buffered.length - 1);
-      // 재생 버퍼에 아직 여유가 있으면 서버·WS가 다음 곡으로 바뀌어도 갈아타기 미룸(곡 중간 끊김 완화)
-      if (bufEnd - el.currentTime > 2) return true;
-    }
-  } catch {
-    /* ignore */
-  }
+  if (!el || el.ended) return false;
+  // 재생 중에는 ended 전까지 폴링·WS 갈아타기 금지 (일부 곡 duration 메타가 짧아 중간에 잘리는 문제)
+  if (!el.paused) return true;
+  return false;
+}
+
+/** hidden·LTE에서 ended 미발화 보조 — 메타 duration이 짧은 곡은 ended만 신뢰 */
+function isRadioTrackPlaybackNaturallyComplete(el: HTMLAudioElement): boolean {
+  if (el.ended) return true;
   const d = el.duration;
-  return Number.isFinite(d) && d >= 2 && el.currentTime < d - 0.2;
+  if (!Number.isFinite(d) || d < 2) return false;
+  // VBR 등: reported duration을 넘어 재생 중이면 아직 끝나지 않음
+  if (el.currentTime > d + 0.45) return false;
+  try {
+    if (!el.buffered?.length) return false;
+    const bufEnd = el.buffered.end(el.buffered.length - 1);
+    if (bufEnd - el.currentTime > 0.22) return false;
+    // duration이 실제보다 짧게 잡힌 경우 버퍼 끝이 metadata 끝보다 앞서 있음
+    if (bufEnd < d - 0.65) return false;
+    return el.currentTime >= Math.min(d, bufEnd) - 0.12;
+  } catch {
+    return false;
+  }
 }
 
 function streamPathname(url: string): string {
@@ -735,13 +746,20 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         : [],
     });
     navigator.mediaSession.setActionHandler("play", () => {
+      setUserStopped(false);
+      setNeedsTap(false);
       const el = getActiveAudio();
-      if (el) el.play().catch(() => {});
+      if (el) {
+        el.muted = false;
+        el.volume = 1;
+        el.play().catch(() => setNeedsTap(true));
+      }
     });
+    // 통화 등 OS 일시정지는 userStopped로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler("pause", () => {
-      setUserStopped(true);
       const el = getActiveAudio();
       if (el) el.pause();
+      setPlaying(false);
     });
     navigator.mediaSession.setActionHandler("stop", () => {
       handleStop();
@@ -1002,26 +1020,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el !== getActiveAudio()) return;
       useRadioPlayerStore.getState().currentTimeRef.current = el.currentTime;
       if (trackEndLockRef.current) return;
+      // 포그라운드·백그라운드 공통: ended 이벤트만 즉시 신뢰
       if (el.ended) {
         processActiveTrackEnded(el);
         return;
       }
-      // 포그라운드에서는 ended만 신뢰(조기 넘김 방지). 화면 꺼짐·LTE에서 ended 누락 시에만 말미 보조.
+      // 화면 꺼짐·LTE에서 ended 누락 시에만 버퍼·duration 교차 검증 후 보조
       if (typeof document !== "undefined" && document.visibilityState === "visible") return;
-      const d = el.duration;
-      if (!Number.isFinite(d) || d < 2) return;
-      // ended 미발화 보조용: 과도한 조기 진행 방지 — (1) reported duration 끝 근처 (2) 버퍼도 거의 소진
-      // duration이 실제보다 짧게 잡힌 경우, 버퍼 끝이 아직 metadata 끝보다 짧으면 조기 종료하지 않음
-      try {
-        if (el.buffered?.length) {
-          const bufEnd = el.buffered.end(el.buffered.length - 1);
-          if (bufEnd - el.currentTime > 0.55) return;
-          if (Number.isFinite(d) && bufEnd < d - 0.75 && d - el.currentTime > 0.9) return;
-        }
-      } catch {
-        /* ignore */
-      }
-      if (el.currentTime < d - 0.18) return;
+      if (!isRadioTrackPlaybackNaturallyComplete(el)) return;
       processActiveTrackEnded(el);
     },
     [getActiveAudio, processActiveTrackEnded],

@@ -1140,9 +1140,10 @@ export function GlobalAudioPlayer() {
       setPauseRequested(false);
       audioRef.current?.play().catch(() => {});
     });
+    // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler('pause', () => {
-      setPauseRequested(true);
       audioRef.current?.pause();
+      setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
