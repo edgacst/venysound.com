@@ -499,6 +499,36 @@ export default function MusicVideos() {
     }
   };
 
+  const renderAdminDeleteMenu = (video: MusicVideo, variant: "compact" | "desktop-overlay") => {
+    if (!isAdmin) return null;
+    const buttonClassName =
+      variant === "compact"
+        ? "flex flex-col items-center gap-1 text-white"
+        : "inline-flex h-7 w-7 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm hover:bg-black/75";
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={buttonClassName} aria-label="뮤직비디오 관리">
+            <MoreVertical className={variant === "compact" ? "h-5 w-5" : "h-4 w-4"} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            className="text-red-500 focus:text-red-500"
+            disabled={deleteVideoMutation.isPending}
+            onClick={() => {
+              if (window.confirm("뮤직비디오를 삭제할까요?")) deleteVideoMutation.mutate(video);
+            }}
+            data-testid={`button-delete-music-video-${video.id}`}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            삭제
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const renderActionRail = (video: MusicVideo, compact = false) => (
     <div data-testid={compact ? "music-video-mobile-actions" : "music-video-card-actions"} className={compact ? "flex flex-col items-center gap-4" : "flex flex-nowrap items-center gap-0.5"}>
       <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-white/10 px-1 text-[11px] leading-none text-white"}>
@@ -540,32 +570,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {isAdmin ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex h-6 shrink-0 items-center justify-center rounded-md bg-white/10 px-1 text-white hover:bg-white/15"}
-              aria-label="뮤직비디오 관리"
-            >
-              <MoreVertical className={compact ? "h-5 w-5" : "h-3.5 w-3.5"} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-red-500 focus:text-red-500"
-              disabled={deleteVideoMutation.isPending}
-              onClick={() => {
-                if (window.confirm("뮤직비디오를 삭제할까요?")) deleteVideoMutation.mutate(video);
-              }}
-              data-testid={`button-delete-music-video-${video.id}`}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              삭제
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
+      {isAdmin && compact ? renderAdminDeleteMenu(video, "compact") : null}
     </div>
   );
 
@@ -678,14 +683,19 @@ export default function MusicVideos() {
                 {videos.map((video) => (
                   <Card key={video.id} data-testid="music-video-card" className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
-                      <video
-                        src={video.videoUrl}
-                        controls
-                        preload="metadata"
-                        data-music-video-id={video.id}
-                        onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
-                        className="aspect-video w-full bg-black object-contain"
-                      />
+                      <div className="relative">
+                        <video
+                          src={video.videoUrl}
+                          controls
+                          preload="metadata"
+                          data-music-video-id={video.id}
+                          onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                          className="aspect-video w-full bg-black object-contain"
+                        />
+                        <div className="pointer-events-none absolute inset-0">
+                          <div className="pointer-events-auto absolute right-2 top-2">{renderAdminDeleteMenu(video, "desktop-overlay")}</div>
+                        </div>
+                      </div>
                       <div className="space-y-1 p-3">
                         <h2 className="line-clamp-1 text-sm font-semibold">{video.title}</h2>
                         <p data-testid="music-video-card-meta" className="line-clamp-1 text-xs text-slate-400">
