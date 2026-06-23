@@ -142,7 +142,11 @@ export default function MusicVideos() {
   const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
   const [mobilePlayingId, setMobilePlayingId] = useState<number | null>(null);
   const { uploadFile, isUploading, progress } = useUpload();
-  const isAdmin = user?.role === "admin";
+  const { data: adminCheck } = useQuery<{ isAdmin: boolean }>({
+    queryKey: ["/api/admin/check"],
+    enabled: !!user,
+  });
+  const isAdmin = adminCheck?.isAdmin === true;
   const { data: videos = [], isLoading } = useQuery({
     queryKey: ["/api/music-videos"],
     queryFn: fetchMusicVideos,
@@ -496,7 +500,7 @@ export default function MusicVideos() {
   };
 
   const renderActionRail = (video: MusicVideo, compact = false) => (
-    <div data-testid={compact ? "music-video-mobile-actions" : "music-video-card-actions"} className={compact ? "flex flex-col items-center gap-4" : "flex flex-nowrap items-center gap-0.5 overflow-hidden"}>
+    <div data-testid={compact ? "music-video-mobile-actions" : "music-video-card-actions"} className={compact ? "flex flex-col items-center gap-4" : "flex flex-nowrap items-center gap-0.5"}>
       <div className={compact ? "flex flex-col items-center gap-1 text-white" : "inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-white/10 px-1 text-[11px] leading-none text-white"}>
         <Eye className={compact ? "h-5 w-5" : "h-3.5 w-3.5"} />
         <span className={compact ? "text-xs" : "text-[11px] leading-none"}>{(video.playCount ?? 0).toLocaleString()}</span>
@@ -536,7 +540,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {isAdmin && !compact ? (
+      {isAdmin ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
