@@ -499,17 +499,13 @@ export default function MusicVideos() {
     }
   };
 
-  const renderAdminDeleteMenu = (video: MusicVideo, variant: "compact" | "desktop-overlay") => {
+  const renderAdminDeleteMenu = (video: MusicVideo) => {
     if (!isAdmin) return null;
-    const buttonClassName =
-      variant === "compact"
-        ? "flex flex-col items-center gap-1 text-white"
-        : "inline-flex h-7 w-7 items-center justify-center rounded-md bg-black/55 text-white backdrop-blur-sm hover:bg-black/75";
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button type="button" className={buttonClassName} aria-label="뮤직비디오 관리">
-            <MoreVertical className={variant === "compact" ? "h-5 w-5" : "h-4 w-4"} />
+          <button type="button" className="flex flex-col items-center gap-1 text-white" aria-label="뮤직비디오 관리">
+            <MoreVertical className="h-5 w-5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -570,7 +566,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {isAdmin && compact ? renderAdminDeleteMenu(video, "compact") : null}
+      {isAdmin && compact ? renderAdminDeleteMenu(video) : null}
     </div>
   );
 
@@ -683,19 +679,14 @@ export default function MusicVideos() {
                 {videos.map((video) => (
                   <Card key={video.id} data-testid="music-video-card" className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
-                      <div className="relative">
-                        <video
-                          src={video.videoUrl}
-                          controls
-                          preload="metadata"
-                          data-music-video-id={video.id}
-                          onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
-                          className="aspect-video w-full bg-black object-contain"
-                        />
-                        <div className="pointer-events-none absolute inset-0">
-                          <div className="pointer-events-auto absolute right-2 top-2">{renderAdminDeleteMenu(video, "desktop-overlay")}</div>
-                        </div>
-                      </div>
+                      <video
+                        src={video.videoUrl}
+                        controls
+                        preload="metadata"
+                        data-music-video-id={video.id}
+                        onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        className="aspect-video w-full bg-black object-contain"
+                      />
                       <div className="space-y-1 p-3">
                         <h2 className="line-clamp-1 text-sm font-semibold">{video.title}</h2>
                         <p data-testid="music-video-card-meta" className="line-clamp-1 text-xs text-slate-400">
