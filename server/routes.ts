@@ -4788,6 +4788,71 @@ export async function registerRoutes(
     return { localPath: candidates.find((p) => existsSync(p)) ?? null, safeId };
   }
 
+  function serveMusicVideoInlineStream(localPath: string, req: any, res: any): void {
+    const ext = path.extname(localPath).toLowerCase() || ".mp4";
+    const mime: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };
+    const contentType = mime[ext] || "video/mp4";
+    const stat = statSync(localPath);
+    const fileSize = stat.size;
+    const rangeHeader = req.headers.range;
+
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Type", contentType);
+    res.set("Content-Disposition", "inline");
+    res.set("Cache-Control", "private, no-store");
+
+    if (rangeHeader) {
+      const m = /^bytes=(\d*)-(\d*)$/i.exec(String(rangeHeader).trim());
+      if (!m) {
+        res.status(416);
+        res.set("Content-Range", `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+      const startStr = m[1];
+      const endStr = m[2];
+      let start: number | null = startStr ? parseInt(startStr, 10) : null;
+      let end: number | null = endStr ? parseInt(endStr, 10) : null;
+      if (start != null && Number.isNaN(start)) start = null;
+      if (end != null && Number.isNaN(end)) end = null;
+      if (start == null && end != null) {
+        const suffixLen = Math.max(0, end);
+        start = Math.max(0, fileSize - suffixLen);
+        end = fileSize - 1;
+      } else {
+        if (start == null) start = 0;
+        if (end == null || end >= fileSize) end = fileSize - 1;
+      }
+      if (start >= fileSize || start < 0 || end < 0 || start > end) {
+        res.status(416);
+        res.set("Content-Range", `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+      res.set("Content-Length", String(chunkSize));
+      const stream = createReadStream(localPath, { start, end });
+      res.on("close", () => stream.destroy());
+      stream.on("error", () => {
+        if (!res.headersSent) res.status(500).end();
+        else res.destroy();
+      });
+      stream.pipe(res);
+      return;
+    }
+
+    res.set("Content-Length", String(fileSize));
+    const stream = createReadStream(localPath);
+    res.on("close", () => stream.destroy());
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    stream.pipe(res);
+  }
+
   app.get("/api/music-videos", async (req, res) => {
     try {
       const viewerId = (req as any).user?.claims?.sub ? String((req as any).user.claims.sub) : "";
@@ -5045,6 +5110,25 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[music-videos comments DELETE]", e);
       res.status(500).json({ message: "댓글 삭제에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/stream", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const [video] = await db
+        .select({ videoUrl: musicVideos.videoUrl })
+        .from(musicVideos)
+        .where(eq(musicVideos.id, id))
+        .limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const { localPath } = resolveUploadedVideoPath(video.videoUrl);
+      if (!localPath) return res.status(404).json({ message: "MP4 파일을 찾을 수 없습니다." });
+      serveMusicVideoInlineStream(localPath, req, res);
+    } catch (e) {
+      console.error("[music-videos stream]", e);
+      if (!res.headersSent) res.status(500).json({ message: "뮤직비디오 스트림에 실패했습니다." });
     }
   });
 

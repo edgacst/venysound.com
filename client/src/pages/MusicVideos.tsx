@@ -92,6 +92,10 @@ function formatDate(value: string): string {
   return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
+function musicVideoPlaybackUrl(videoId: number): string {
+  return `/api/music-videos/${videoId}/stream`;
+}
+
 /** 업로드 UI — 다시 켤 때 true */
 const SHOW_MUSIC_VIDEO_UPLOAD = false;
 
@@ -676,15 +680,19 @@ export default function MusicVideos() {
           ) : (
             <>
               <div data-testid="music-video-desktop-grid" className="hidden gap-3 md:grid md:grid-cols-5">
-                {videos.map((video) => (
+                {videos.map((video) => {
+                  const isVideoOwner = String(user?.id || "") === String(video.creator.id);
+                  return (
                   <Card key={video.id} data-testid="music-video-card" className="overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
                       <video
-                        src={video.videoUrl}
+                        src={musicVideoPlaybackUrl(video.id)}
                         controls
+                        controlsList="nodownload"
                         preload="metadata"
                         data-music-video-id={video.id}
                         onPlay={(e) => handleVideoPlay(video.id, e.currentTarget)}
+                        onContextMenu={isVideoOwner ? undefined : (e) => e.preventDefault()}
                         className="aspect-video w-full bg-black object-contain"
                       />
                       <div className="space-y-1 p-3">
@@ -697,7 +705,8 @@ export default function MusicVideos() {
                       </div>
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
 
               <div className="fixed inset-0 z-40 bg-black md:hidden">

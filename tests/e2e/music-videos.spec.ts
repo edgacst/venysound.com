@@ -112,6 +112,18 @@ async function mockVenySoundApi(page: Page) {
       await route.fulfill({ json: { playCount: (video?.playCount ?? 0) + 1 } });
       return;
     }
+    if (/^\/api\/music-videos\/\d+\/stream$/.test(path)) {
+      await route.fulfill({
+        status: 206,
+        headers: {
+          "content-type": "video/mp4",
+          "content-range": "bytes 0-0/1",
+          "accept-ranges": "bytes",
+        },
+        body: Buffer.from([0]),
+      });
+      return;
+    }
     await route.fulfill({ json: {} });
   });
 
