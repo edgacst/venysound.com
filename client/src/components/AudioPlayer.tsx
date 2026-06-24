@@ -557,6 +557,7 @@ export function GlobalAudioPlayer() {
   }, [user, toast, t]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   useResumeAudioWhenForeground(
     () => audioRef.current,
@@ -564,8 +565,13 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       return !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
     },
+    {
+      prepareResume: () => {
+        const ctx = audioContextRef.current;
+        if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
+      },
+    },
   );
-  const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
