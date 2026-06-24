@@ -33,7 +33,7 @@
     var meta = document.querySelector('meta[name="viewport"]');
     var narrow = Math.min(window.screen.width, window.screen.height);
     if (meta && narrow > 0 && narrow < 768) {
-      meta.setAttribute("content", "width=" + narrow + ", initial-scale=1.0, viewport-fit=cover");
+      meta.setAttribute("content", "width=" + narrow + ", initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover");
     }
     params.set("veny_r", "1");
     params.delete("veny_layout");
