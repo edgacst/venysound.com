@@ -577,6 +577,8 @@ export function GlobalAudioPlayer() {
   const progressRef = useRef<HTMLDivElement>(null);
   const prevPauseRequestedRef = useRef(pauseRequested);
   const playAttemptKeyRef = useRef<string | null>(null);
+  const resumeAfterSystemPauseRef = useRef(false);
+  const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -616,6 +618,67 @@ export function GlobalAudioPlayer() {
       window.removeEventListener("pageshow", keepAudioContextRunning);
     };
   }, []);
+
+  const scheduleResumeAfterSystemPause = useCallback(() => {
+    const audio = audioRef.current;
+    const st = usePlayerStore.getState();
+    if (!audio || st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+    resumeAfterSystemPauseRef.current = true;
+
+    if (resumeAfterSystemPauseTimerRef.current) {
+      window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+    }
+
+    const tryResume = () => {
+      const currentAudio = audioRef.current;
+      const currentState = usePlayerStore.getState();
+      if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
+        resumeAfterSystemPauseRef.current = false;
+        return;
+      }
+      if (!resumeAfterSystemPauseRef.current) return;
+
+      const ctx = audioContextRef.current;
+      if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
+      currentAudio.muted = false;
+      currentAudio.volume = volume;
+      if (!currentAudio.paused) {
+        resumeAfterSystemPauseRef.current = false;
+        setIsPlaying(true);
+        setNeedsTap(false);
+        return;
+      }
+
+      void playWithSoftStart(currentAudio, volume)
+        .then(() => {
+          resumeAfterSystemPauseRef.current = false;
+          setIsPlaying(true);
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 1200);
+        });
+    };
+
+    resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 350);
+  }, [volume]);
+
+  useEffect(() => {
+    const onResumeSignal = () => {
+      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause();
+    };
+    window.addEventListener("focus", onResumeSignal);
+    window.addEventListener("pageshow", onResumeSignal);
+    document.addEventListener("visibilitychange", onResumeSignal);
+    return () => {
+      window.removeEventListener("focus", onResumeSignal);
+      window.removeEventListener("pageshow", onResumeSignal);
+      document.removeEventListener("visibilitychange", onResumeSignal);
+      if (resumeAfterSystemPauseTimerRef.current) {
+        window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+      }
+    };
+  }, [scheduleResumeAfterSystemPause]);
 
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
@@ -996,8 +1059,19 @@ export function GlobalAudioPlayer() {
       setCurrentTime(0);
     };
     const onDurationChange = () => setDuration(audio.duration);
-    const onPlay = () => { setIsPlaying(true); tracker.onPlay(); };
-    const onPause = () => { setIsPlaying(false); tracker.onPause(); };
+    const onPlay = () => {
+      resumeAfterSystemPauseRef.current = false;
+      setIsPlaying(true);
+      tracker.onPlay();
+    };
+    const onPause = () => {
+      const st = usePlayerStore.getState();
+      if (!st.pauseRequested && (st.activeMusicId || st.activeExternalTrack) && !audio.ended) {
+        scheduleResumeAfterSystemPause();
+      }
+      setIsPlaying(false);
+      tracker.onPause();
+    };
     const onEnded = () => {
       setIsPlaying(false);
       // 연속 재생 여부는 playMusic 내부의 guest quota 차단(blockGuestPlaybackIfNeeded)에서 결정한다.
@@ -1148,6 +1222,7 @@ export function GlobalAudioPlayer() {
     });
     // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler('pause', () => {
+      resumeAfterSystemPauseRef.current = true;
       audioRef.current?.pause();
       setIsPlaying(false);
     });
