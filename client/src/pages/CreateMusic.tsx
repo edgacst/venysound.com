@@ -277,7 +277,7 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 const MAX_STYLE_PRESETS = 6;
 
 /** 스튜디오 스타일 칩 빠른 선택 (Mureka형 UI) */
-const STUDIO_QUICK_STYLE_IDS: (typeof STYLE_PRESET_IDS)[number][] = [
+const STUDIO_QUICK_STYLE_IDS: string[] = [
   "edm",
   "ambient",
   "piano",

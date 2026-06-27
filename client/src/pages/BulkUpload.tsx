@@ -210,7 +210,7 @@ export default function BulkUpload() {
 
     const invalidTracks = pendingTracks.filter((t) => !t.title.trim() || !t.artist.trim());
     if (invalidTracks.length > 0) {
-      invalidTracks.forEach((t) => updateTrack(t.id, { status: "error", errorMsg: t('bulkUpload.titleArtistRequired', '제목과 아티스트를 입력해주세요') }));
+      invalidTracks.forEach((track) => updateTrack(track.id, { status: "error", errorMsg: t('bulkUpload.titleArtistRequired', '제목과 아티스트를 입력해주세요') }));
       toast({ title: `${invalidTracks.length}${t('bulkUpload.tracksMissingInfo', '곡의 정보가 누락되었습니다')}`, variant: "destructive" });
       return;
     }

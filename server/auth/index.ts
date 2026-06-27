@@ -240,13 +240,13 @@ export async function setupAuth(app: Express) {
       ? `${process.env.SITE_URL.replace(/\/$/, "")}/api/auth/naver/callback`
       : "/api/auth/naver/callback";
     passport.use(
-      new NaverStrategy(
-        {
+      new (NaverStrategy as any)(
+        ({
           clientID: process.env.NAVER_CLIENT_ID!,
           clientSecret: process.env.NAVER_CLIENT_SECRET!,
           callbackURL: naverCallback,
           passReqToCallback: true,
-        },
+        } as any),
         async (req: Request, accessToken: string, refreshToken: string, profile: any, done: any) => {
           try {
             const email = profile.email || null;
@@ -422,7 +422,7 @@ export async function setupAuth(app: Express) {
         normalizeOutgoingEmailAddress(email) ?? normalizeOutgoingEmailAddress(user.email);
       if (welcomeTo) {
         const locale = typeof req.body?.locale === "string" ? req.body.locale : undefined;
-        sendWelcomeEmail(welcomeTo, { username: user.username, locale }).catch((e) =>
+        sendWelcomeEmail(welcomeTo, { username: user.username ?? username, locale }).catch((e) =>
           console.error("[auth] welcome email failed:", e)
         );
       }
@@ -516,7 +516,7 @@ export async function setupAuth(app: Express) {
             return res.redirect(`${getLoginPagePath()}?error=google`);
           }
           if (!user) return res.redirect(`${getLoginPagePath()}?error=google`);
-          req.login(user, (loginErr) => {
+          req.login(user as Express.User, (loginErr) => {
             if (loginErr) {
               console.error("[auth] Google session error:", loginErr);
               return res.redirect(`${getLoginPagePath()}?error=google`);

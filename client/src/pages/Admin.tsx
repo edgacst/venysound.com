@@ -103,6 +103,7 @@ type AdminUserWalletResponse = {
   creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
   aiMusicMonthly?: {
     periodMonth: string;
+    usagePeriodKey?: string;
     limit: number;
     used: number;
     unit: "songs" | "credits" | "won" | "unlimited";

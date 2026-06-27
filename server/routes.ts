@@ -173,6 +173,15 @@ function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | 
 }
 
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
+function saveBufferToLocalUploads(buffer: Buffer, extension: string): string {
+  const ext = extension.startsWith(".") ? extension : `.${extension}`;
+  const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+  mkdirSync(uploadsDir, { recursive: true });
+  const filename = `${crypto.randomUUID()}${ext}`;
+  writeFileSync(path.join(uploadsDir, filename), buffer);
+  return `/objects/uploads/${filename}`;
+}
+
 function isActivePaidSubscription(
   user:
     | { subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null; subscriptionEntitlements?: unknown }
@@ -363,10 +372,10 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   if ("skipped" in pg && pg.skipped) {
     return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
   }
-  if (pg.cancelledAtPg) {
+  if ("cancelledAtPg" in pg && pg.cancelledAtPg) {
     return { ok: false, message: "PG 조회상 이 거래는 취소·환불 상태입니다." };
   }
-  const flat = pg.flat ?? {};
+  const flat = "flat" in pg ? (pg.flat ?? {}) : {};
   if (!payupInquiryFlatIndicatesSuccessfulAuth0000(flat)) {
     return {
       ok: false,
@@ -1003,7 +1012,7 @@ export async function registerRoutes(
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "auth" && msg.userId) {
-          wsUserId = msg.userId;
+          wsUserId = String(msg.userId);
           wsToUserId.set(ws, wsUserId);
           if (!userSockets.has(wsUserId!)) {
             userSockets.set(wsUserId!, new Set());
@@ -2184,6 +2193,7 @@ export async function registerRoutes(
       tags?: string;
       prompt?: string;
       gpt_description_prompt?: string;
+      voice_record?: boolean;
     };
     /** 5월 이벤트 전용 잔액(promo)으로 생성 시, 성공 과금에 필요한 최소 무료 트랙 슬롯(보통 2, instrumental 1) */
     promoMinTracksForBilling?: number;
@@ -3201,7 +3211,7 @@ export async function registerRoutes(
           userId,
           user: row,
           taskId,
-          provider: createProvider,
+          provider: createProvider as "kie" | "suno" | "aimusicapi",
           walletCreditsCharged: 0,
           chargeStatus: "pending",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
@@ -3792,8 +3802,8 @@ export async function registerRoutes(
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
     }
-    const taskId = req.params.taskId;
-    const provider = (req.query.provider as string) || AI_MUSIC_PROVIDER;
+    const taskId = String(req.params.taskId ?? "").trim();
+    const provider = typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER;
     if (!taskId) return res.status(400).json({ message: "task_id가 필요합니다." });
     // @ts-ignore
     const pollUserId = req.user?.claims?.sub as string | undefined;
@@ -3822,7 +3832,7 @@ export async function registerRoutes(
         }
         const upstreamCtrl = new AbortController();
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-        let apiRes: Response;
+        let apiRes: globalThis.Response;
         try {
           apiRes = await fetch(`${taskSunoStyle.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
             headers: { Authorization: `Bearer ${taskSunoStyle.key}` },
@@ -3952,7 +3962,7 @@ export async function registerRoutes(
     try {
       const upstreamCtrl = new AbortController();
       const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-      let apiRes: Response;
+      let apiRes: globalThis.Response;
       try {
         apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
           headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
@@ -4081,7 +4091,7 @@ export async function registerRoutes(
       const audioFilename = `${audioId}.mp3`;
       const audioLocalPath = path.join(localUploadsDir, audioFilename);
 
-      let audioRes: Response;
+      let audioRes: globalThis.Response;
       try {
         audioRes = await fetch(audioUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
       } catch (e) {
@@ -6597,7 +6607,7 @@ export async function registerRoutes(
   // === Distribution package export (metadata.json + metadata.csv + zip) ===
   app.get("/api/distribution/releases/:id/package-download", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const distributorRaw = typeof req.query?.distributor === "string" ? req.query.distributor : "generic";
@@ -7802,7 +7812,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const adminUserId = req.user.claims.sub as string;
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const updated = await storage.runDistributionQc({ adminUserId, releaseId });
@@ -7821,7 +7831,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const adminUserId = req.user.claims.sub as string;
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const externalReleaseRefRaw = typeof req.body?.externalReleaseRef === "string" ? req.body.externalReleaseRef : "";
@@ -8744,7 +8754,8 @@ export async function registerRoutes(
       const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob.trim());
       if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
-        console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
+        const payResMessage = "message" in payRes ? payRes.message : undefined;
+        console.error("[payup] payUrl 승인 실패", payResMessage, orderNumber, "http", payRes.status, bt.slice(0, 500));
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8878,7 +8889,7 @@ export async function registerRoutes(
       let lastMsg = "";
       for (const row of rows) {
         const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(row);
-        if (out.ok) return res.json({ ok: true, ...out });
+        if (out.ok) return res.json({ ...out, ok: true });
         lastMsg = out.message;
       }
       return res.status(400).json({ ok: false, message: lastMsg || "PG 승인 반영에 실패했습니다." });
@@ -9044,7 +9055,7 @@ export async function registerRoutes(
       if ("skipped" in pg && pg.skipped) {
         return res.json({ ok: true, action: "http_skipped" as const, reason: pg.reason });
       }
-      if (!pg.cancelledAtPg) {
+      if (!("cancelledAtPg" in pg) || !pg.cancelledAtPg) {
         return res.json({ ok: true, action: "still_paid_at_pg" as const });
       }
       const out = await revertPayupCardSubscriptionPaymentById(latest.id);
@@ -10297,7 +10308,7 @@ export async function registerRoutes(
   app.delete("/api/radio/channels/:slug/staff/:userId", isAuthenticated, async (req, res) => {
     try {
       const slug = String(req.params.slug || "").trim().toLowerCase();
-      const targetUserId = req.params.userId;
+      const targetUserId = String(req.params.userId ?? "");
       if (!slug || !targetUserId) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
@@ -10997,7 +11008,8 @@ export async function registerRoutes(
 
   app.patch("/api/radio/channels/:slug/requests/:id", isAuthenticated, async (req, res) => {
     try {
-      const { slug, id } = req.params;
+      const slug = String(req.params.slug ?? "");
+      const id = String(req.params.id ?? "");
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       // @ts-ignore
@@ -11884,7 +11896,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const blockerId = req.user.claims.sub;
-      const blockedId = req.params.userId;
+      const blockedId = String(req.params.userId ?? "");
       if (!blockedId || blockedId === blockerId) {
         return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       }
@@ -11899,7 +11911,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const blockerId = req.user.claims.sub;
-      const blockedId = req.params.userId;
+      const blockedId = String(req.params.userId ?? "");
       if (!blockedId) return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       await storage.unblockUser(blockerId, blockedId);
       res.json({ success: true });
