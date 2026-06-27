@@ -24,6 +24,7 @@ import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   getAiMusicMonthlyUsageLimit,
   getAiMusicUsagePeriodKey,
+  isSubscriptionAiWalletDepleted,
   isUserPaidSubscriptionActive,
 } from "@shared/subscription-entitlements";
 import { syncSubscriptionAiWalletForPaidUser } from "./subscription-ai-wallet";
@@ -3457,6 +3458,8 @@ export class DatabaseStorage implements IStorage {
         subscriptionExpiresAt: users.subscriptionExpiresAt,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionEntitlements: users.subscriptionEntitlements,
+        subscriptionAiWallet: users.subscriptionAiWallet,
+        subscriptionAiPeriodKey: users.subscriptionAiPeriodKey,
         promoAiCreditsWon: users.promoAiCreditsWon,
         promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
       })
@@ -3472,6 +3475,47 @@ export class DatabaseStorage implements IStorage {
     let planGrantWon: number | null = null;
     let walletRemainingWon: number | null = null;
     if (user.role !== "admin" && isUserPaidSubscriptionActive(user, now)) {
+      if (isSubscriptionAiWalletDepleted(user)) {
+        await db
+          .update(users)
+          .set({
+            subscriptionEntitlements: sql`'{}'::jsonb`,
+            subscriptionTier: "free",
+            subscriptionExpiresAt: null,
+            subscriptionPlan: null,
+            tossBillingKey: null,
+            tossCustomerKey: null,
+            subscriptionAiWallet: sql`'[]'::jsonb`,
+            subscriptionAiPeriodKey: null,
+            subscriptionAiPeriodConsumedWon: 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+        const [freshAfterDepleted] = await db
+          .select({
+            subscriptionTier: users.subscriptionTier,
+            subscriptionExpiresAt: users.subscriptionExpiresAt,
+            subscriptionPlan: users.subscriptionPlan,
+            subscriptionEntitlements: users.subscriptionEntitlements,
+            subscriptionAiWallet: users.subscriptionAiWallet,
+            subscriptionAiPeriodKey: users.subscriptionAiPeriodKey,
+            promoAiCreditsWon: users.promoAiCreditsWon,
+            promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        if (freshAfterDepleted) {
+          user.subscriptionTier = freshAfterDepleted.subscriptionTier;
+          user.subscriptionExpiresAt = freshAfterDepleted.subscriptionExpiresAt;
+          user.subscriptionPlan = freshAfterDepleted.subscriptionPlan;
+          user.subscriptionEntitlements = freshAfterDepleted.subscriptionEntitlements;
+          user.subscriptionAiWallet = freshAfterDepleted.subscriptionAiWallet;
+          user.subscriptionAiPeriodKey = freshAfterDepleted.subscriptionAiPeriodKey;
+          user.promoAiCreditsWon = freshAfterDepleted.promoAiCreditsWon;
+          user.promoAiCreditsExpiresAt = freshAfterDepleted.promoAiCreditsExpiresAt;
+        }
+      }
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (w) {
         usagePeriodKey = w.periodKey;

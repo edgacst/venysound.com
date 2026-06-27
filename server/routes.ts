@@ -96,6 +96,8 @@ import {
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   AI_MUSIC_WON_PER_TRACK,
+  AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER,
+  isSubscriptionAiWalletDepleted,
   isUserPaidSubscriptionActive,
   getAiMusicMonthlyUsageLimit,
   getAiMusicUsagePeriodKey,
@@ -113,6 +115,7 @@ import {
   adminSetSubscriptionAiPeriodConsumedWon,
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
+import { appendAiWalletGrant, parseAiWallet, pruneAiWallet } from "@shared/subscription-ai-wallet";
 import {
   runSubscriptionAiBudgetExhaustionIfNeeded,
   ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted,
@@ -248,7 +251,7 @@ async function applyBankTransferSubscriptionToUserFromPayment(
   computed: ReturnType<typeof computeDisplayedSubscriptionFromEntitlements>;
   payUser: (typeof users.$inferSelect) | undefined;
   tierPaid: PaidSubscriptionTierId;
-  expiresAt: Date;
+  expiresAt: Date | null;
 }> {
   const planNorm = String(payment.plan ?? "").trim().toLowerCase();
   if (!isPaidSubscriptionTierId(planNorm)) {
@@ -256,36 +259,17 @@ async function applyBankTransferSubscriptionToUserFromPayment(
   }
   const tierPaid = planNorm as PaidSubscriptionTierId;
   const now = new Date();
-  let expiresAt: Date;
-  if (opts?.subscriptionExpiresAtOverride) {
-    expiresAt = new Date(opts.subscriptionExpiresAtOverride);
-    if (Number.isNaN(expiresAt.getTime())) {
-      expiresAt = new Date(now);
-      if (payment.billingPeriod === "monthly") {
-        expiresAt.setMonth(expiresAt.getMonth() + 1);
-      } else {
-        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-      }
-    }
-  } else {
-    expiresAt = new Date(now);
-    if (payment.billingPeriod === "monthly") {
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
-    } else {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-    }
-  }
+  const expiresAt = null;
   const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
   /** 무료·만료 후 재구독 시 이전 구독 AI 지갑이 남으면 sync 시 이월+월충전이 중복 누적될 수 있음 */
   const hadActivePaid = payUser ? isUserPaidSubscriptionActive(payUser, now) : false;
-  const view = buildEntitlementsView(
-    payUser?.subscriptionEntitlements,
-    payUser?.subscriptionTier,
-    payUser?.subscriptionExpiresAt,
-    now,
-  );
-  const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
-  const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+  const grantWon = AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[tierPaid];
+  const nextWallet = appendAiWalletGrant(pruneAiWallet(parseAiWallet(payUser?.subscriptionAiWallet), now), grantWon, now);
+  const computed = {
+    subscriptionEntitlements: {},
+    subscriptionTier: tierPaid,
+    subscriptionExpiresAt: null,
+  };
   await db
     .update(users)
     .set({
@@ -294,13 +278,9 @@ async function applyBankTransferSubscriptionToUserFromPayment(
       subscriptionExpiresAt: computed.subscriptionExpiresAt,
       subscriptionPlan: payment.billingPeriod ?? null,
       subscriptionAiBudgetExhaustionNoticeKey: null,
-      ...(hadActivePaid
-        ? {}
-        : {
-            subscriptionAiWallet: sql`'[]'::jsonb`,
-            subscriptionAiPeriodKey: null,
-            subscriptionAiPeriodConsumedWon: 0,
-          }),
+      subscriptionAiWallet: nextWallet,
+      subscriptionAiPeriodKey: `wallet:${tierPaid}`,
+      subscriptionAiPeriodConsumedWon: hadActivePaid ? Math.max(0, payUser?.subscriptionAiPeriodConsumedWon ?? 0) : 0,
       updatedAt: new Date(),
     })
     .where(eq(users.id, payment.userId));
@@ -2325,6 +2305,10 @@ export async function registerRoutes(
     const tier = displayed.subscriptionTier ?? "free";
 
     if (isUserPaidSubscriptionActive(r, now) && tier !== "free") {
+      if (isSubscriptionAiWalletDepleted(r)) {
+        await runSubscriptionAiBudgetExhaustionIfNeeded(userIdForBill, now);
+        throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
+      }
       const ok = await deductSubscriptionAiWallet(userIdForBill, AI_MUSIC_WON_PER_TRACK, now);
       if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
       try {
@@ -2582,6 +2566,15 @@ export async function registerRoutes(
       const now = new Date();
       /** 활성 유료 + 구독 AI 지갑: 동기화 후 잔액이 1곡 미만이면 소진 처리(과금 직후 호출 누락·탭만 열어둔 경우 보정) 후 행 재조회. */
       if (row?.role !== "admin" && isUserPaidSubscriptionActive(row, now)) {
+        if (isSubscriptionAiWalletDepleted(row)) {
+          try {
+            await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+          } catch (e) {
+            console.error("[ai-music usage] subscription ai wallet depleted", e);
+          }
+          const [rowAfterDepleted] = await db.select().from(users).where(eq(users.id, userId));
+          if (rowAfterDepleted) row = rowAfterDepleted;
+        }
         let wSub = await syncSubscriptionAiWalletForPaidUser(userId, now);
         if (wSub && wSub.walletSum <= 0) {
           try {
@@ -3045,6 +3038,19 @@ export async function registerRoutes(
       used = usage?.count ?? 0;
       usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
     } else if (isSubWallet) {
+      if (isSubscriptionAiWalletDepleted(row)) {
+        try {
+          await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+        } catch (e) {
+          console.error("[ai-music create] budget exhaustion (depleted wallet)", e);
+        }
+        return res.status(403).json({
+          message: "구독 AI 생성 금액을 모두 사용했습니다. Free 플랜으로 전환되었습니다.",
+          code: "AI_MUSIC_LIMIT_REACHED",
+          limit: 0,
+          usedThisMonth: 0,
+        });
+      }
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (!w) {
         return res.status(403).json({
@@ -3656,6 +3662,19 @@ export async function registerRoutes(
         used = usage?.count ?? 0;
         usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
       } else if (isSubWallet) {
+        if (isSubscriptionAiWalletDepleted(row)) {
+          try {
+            await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+          } catch (e) {
+            console.error("[ai-music voice create] budget exhaustion (depleted wallet)", e);
+          }
+          return res.status(403).json({
+            message: "구독 AI 생성 금액을 모두 사용했습니다. Free 플랜으로 전환되었습니다.",
+            code: "AI_MUSIC_LIMIT_REACHED",
+            limit: 0,
+            usedThisMonth: 0,
+          });
+        }
         const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
         if (!w) {
           return res.status(403).json({
