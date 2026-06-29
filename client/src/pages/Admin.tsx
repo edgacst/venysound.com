@@ -1534,11 +1534,11 @@ export default function Admin() {
 
   /** 카드사·PG에만 승인돼 있고 DB가 pending 인 건 — 거래조회(0000) 후 paid+구독 반영 */
   const finalizePayupPendingInquiryMutation = useMutation({
-    mutationFn: async (paymentId: string) => {
+    mutationFn: async (input: { paymentId: string; transactionId?: string }) => {
       const res = await apiRequest(
         "POST",
-        `/api/admin/payments/${encodeURIComponent(paymentId)}/finalize-payup-pending-inquiry`,
-        {},
+        `/api/admin/payments/${encodeURIComponent(input.paymentId)}/finalize-payup-pending-inquiry`,
+        input.transactionId ? { transactionId: input.transactionId } : {},
       );
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { message?: string };
@@ -1686,7 +1686,18 @@ export default function Admin() {
                                 ) {
                                   return;
                                 }
-                                finalizePayupPendingInquiryMutation.mutate(String(p.id));
+                                const tid = window.prompt(
+                                  t(
+                                    "admin.payupFinalizeTidPrompt",
+                                    "페이업 관리자에 보이는 거래번호(TID)가 있으면 입력하세요. 없으면 비우고 확인(주문번호로 조회 시도).",
+                                  ),
+                                  "",
+                                );
+                                if (tid === null) return;
+                                finalizePayupPendingInquiryMutation.mutate({
+                                  paymentId: String(p.id),
+                                  transactionId: tid.trim() || undefined,
+                                });
                               }}
                             >
                               {t("admin.payupFinalizeButton", "PG승인→DB반영")}

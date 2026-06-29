@@ -138,7 +138,7 @@ import {
   payupInquiryFlatPickTransactionId,
   payupFlatIndicatesSuccessfulCancelOrRefund,
 } from "./payup/payup-webhook-notify";
-import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
+import { payupHttpReconcileTransactionCancelled, payupHttpInquireWithLookupIds, payupCollectInquiryLookupIds } from "./payup/txn-reconcile-http";
 import {
   voidExpiredPromoAiCreditsForUser,
   isUserCreatedInMay2026CampaignWindow,
@@ -763,6 +763,7 @@ async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
  */
 async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   payment: typeof payments.$inferSelect,
+  opts?: { extraLookupIds?: string[] },
 ): Promise<
   | { ok: true; paymentId: string; orderId: string; alreadyPaid?: boolean }
   | { ok: false; message: string }
@@ -792,12 +793,20 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   }
   const cred = getPayupCredentials();
   if (!cred.ok) return { ok: false, message: "페이업 자격 정보가 올바르지 않습니다." };
-  const tid = payupMetaTransactionIdFromPayupMeta(fresh.payupMeta);
-  if (!tid) {
-    return { ok: false, message: "주문에 저장된 PG 거래번호(pgTransactionId·pgTid·txnId)가 없습니다." };
+  const orderIdUpper = String(fresh.orderId ?? "").trim().toUpperCase();
+  const lookupIds = payupCollectInquiryLookupIds(fresh.payupMeta, orderIdUpper, opts?.extraLookupIds ?? []);
+  if (!lookupIds.length) {
+    return {
+      ok: false,
+      message:
+        "PG 거래조회에 쓸 거래번호·주문번호가 없습니다. 페이업 관리자에서 TID를 확인해「PG승인→DB반영」요청 시 transactionId 를 함께 보내 주세요.",
+    };
   }
-  const pg = await payupHttpReconcileTransactionCancelled(cred, tid);
-  if (!pg.ok) return { ok: false, message: pg.message };
+  const pg = await payupHttpInquireWithLookupIds(cred, lookupIds, { merchantOrderId: orderIdUpper });
+  if (!pg.ok) {
+    const tried = pg.tried.length ? ` (시도: ${pg.tried.join(", ")})` : "";
+    return { ok: false, message: `${pg.message}${tried}` };
+  }
   if ("skipped" in pg && pg.skipped) {
     return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
   }
@@ -818,7 +827,7 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   }
   const amtChk = payupInquiryFlatAmountMatchesIfPresent(flat, fresh.amount);
   if (!amtChk.ok) return { ok: false, message: amtChk.message };
-  const txnId = payupInquiryFlatPickTransactionId(flat, tid);
+  const txnId = payupInquiryFlatPickTransactionId(flat, ("lookupId" in pg ? pg.lookupId : "") || lookupIds[0] || "");
 
   const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(fresh);
   const now = new Date();
@@ -9214,6 +9223,60 @@ export async function registerRoutes(
   });
 
   /** 규격서 3.3·3.4 — auth_return 수신 후 payUrl 로 RETURNPARAMS(JSON) 승인. 일부 PG는 브라우저 GET 리다이렉트로 복귀 → GET·POST 모두 수신 */
+  function pickPayupQueryFlat(src: Record<string, unknown>, k: string): string {
+    const v = src[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+    return "";
+  }
+
+  async function persistPayupAuthReturnRefsToPayment(
+    paymentId: string,
+    metaIn: Record<string, unknown> | null | undefined,
+    q: Record<string, unknown>,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const pgRef =
+      pickPayupQueryFlat(q, "transactionId") ||
+      pickPayupQueryFlat(q, "TRANSACTIONID") ||
+      pickPayupQueryFlat(q, "TID") ||
+      pickPayupQueryFlat(q, "tid") ||
+      pickPayupQueryFlat(body, "transactionId") ||
+      pickPayupQueryFlat(body, "TRANSACTIONID") ||
+      pickPayupQueryFlat(body, "TID") ||
+      pickPayupQueryFlat(body, "tid");
+    if (!pgRef || looksLikeVenysoundPayupMerchantOrderId(pgRef)) return;
+    const meta = metaIn && typeof metaIn === "object" ? ({ ...metaIn } as Record<string, unknown>) : {};
+    if (payupMetaTransactionIdFromPayupMeta(meta)) return;
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...meta,
+          pgTransactionId: pgRef,
+          authReturnPgRefAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(payments.id, paymentId));
+  }
+
+  async function tryCompletePayupPendingViaPgInquiry(
+    payment: typeof payments.$inferSelect,
+    res: Response,
+  ): Promise<boolean> {
+    const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+    if (!pathSet) return false;
+    const [fresh] = await db.select().from(payments).where(eq(payments.id, payment.id));
+    if (!fresh) return false;
+    const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(fresh);
+    if (!out.ok) {
+      console.warn("[payup] complete: PG inquiry finalize fallback failed", fresh.orderId, out.message);
+      return false;
+    }
+    redirectPricingPayupOutcome(res, "success");
+    return true;
+  }
+
   const handlePayupSubscriptionComplete = async (req: Request, res: Response): Promise<void> => {
     try {
       const cred = getPayupCredentials();
@@ -9314,9 +9377,17 @@ export async function registerRoutes(
       }
 
       const meta = payment.payupMeta as Record<string, unknown> | null | undefined;
-      const payUrlRaw = meta && typeof meta.payUrl === "string" ? meta.payUrl.trim() : "";
+      await persistPayupAuthReturnRefsToPayment(payment.id, meta, q, body);
+      const [paymentLiveRow] = await db.select().from(payments).where(eq(payments.id, payment.id));
+      const paymentLive = paymentLiveRow ?? payment;
+      const metaLive =
+        paymentLive.payupMeta && typeof paymentLive.payupMeta === "object"
+          ? (paymentLive.payupMeta as Record<string, unknown>)
+          : meta;
+      const payUrlRaw = metaLive && typeof metaLive.payUrl === "string" ? metaLive.payUrl.trim() : "";
       if (!payUrlRaw || !blob.trim()) {
         console.error("[payup] complete: payUrl 또는 RETURNPARAMS 없음", orderNumber);
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -9326,6 +9397,7 @@ export async function registerRoutes(
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
         const payResMessage = "message" in payRes ? payRes.message : undefined;
         console.error("[payup] payUrl 승인 실패", payResMessage, orderNumber, "http", payRes.status, bt.slice(0, 500));
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -9337,6 +9409,7 @@ export async function registerRoutes(
           pickPayupStr(payData, "responseCode", "RESPONSECODE"),
           pickPayupStr(payData, "responseMsg", "RESPONSEMSG"),
         );
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -9477,7 +9550,27 @@ export async function registerRoutes(
       if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
       const [p] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!p) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
-      const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(p);
+      const manualTid = String((req.body as { transactionId?: unknown })?.transactionId ?? "").trim();
+      if (manualTid) {
+        const prevMeta =
+          p.payupMeta && typeof p.payupMeta === "object"
+            ? ({ ...(p.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+            : {};
+        await db
+          .update(payments)
+          .set({
+            payupMeta: {
+              ...prevMeta,
+              pgTransactionId: manualTid.replace(/^payup:/i, "").trim(),
+              adminInquiryTidAt: new Date().toISOString(),
+            },
+          })
+          .where(eq(payments.id, paymentId));
+      }
+      const [fresh] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(fresh ?? p, {
+        extraLookupIds: manualTid ? [manualTid] : undefined,
+      });
       if (!out.ok) return res.status(400).json({ message: out.message });
       res.json({ success: true, orderId: out.orderId, alreadyPaid: out.alreadyPaid === true });
     } catch (err) {

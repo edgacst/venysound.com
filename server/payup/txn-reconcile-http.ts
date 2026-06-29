@@ -1,6 +1,7 @@
 import { type PayupCredentials, getPayupBaseUrl } from "./config";
 import { signPayupCancel2 } from "./signing";
 import { payupPostJson } from "./http";
+import { payupMetaTransactionIdFromPayupMeta } from "./revert-payup-subscription";
 import {
   payupFlatIndicatesSuccessfulCancelOrRefund,
   payupFlatLooksLikeApprovalOnly,
@@ -8,6 +9,25 @@ import {
 } from "./payup-webhook-notify";
 
 type Cred = Extract<PayupCredentials, { ok: true }>;
+
+/** PG 거래조회 시 transactionId 후보 — meta TID·가맹점 주문번호(S…) 순 (페이업 조회 API가 주문번호를 받는 경우 대비) */
+export function payupCollectInquiryLookupIds(
+  payupMeta: unknown,
+  orderId: string,
+  extra: string[] = [],
+): string[] {
+  const ids: string[] = [];
+  const add = (raw: string) => {
+    const t = raw.trim().replace(/^payup:/i, "");
+    if (t.length < 4) return;
+    if (!ids.some((x) => x.toLowerCase() === t.toLowerCase())) ids.push(t);
+  };
+  for (const e of extra) add(e);
+  const fromMeta = payupMetaTransactionIdFromPayupMeta(payupMeta);
+  if (fromMeta) add(fromMeta);
+  add(orderId);
+  return ids;
+}
 
 /** 페이업 응답이 `{ data: { … } }` 형태일 때 한 단계 펼침 (routes 의 payupOrderResponseAsFlatRecord 와 동일) */
 function payupMergeApiResponseFlat(d: Record<string, unknown>): Record<string, unknown> {
@@ -27,6 +47,7 @@ function payupMergeApiResponseFlat(d: Record<string, unknown>): Record<string, u
 export async function payupHttpReconcileTransactionCancelled(
   cred: Cred,
   transactionId: string,
+  opts?: { merchantOrderId?: string },
 ): Promise<
   | { ok: true; skipped: true; reason: string }
   | { ok: true; cancelledAtPg: boolean; flat?: Record<string, string> }
@@ -44,10 +65,15 @@ export async function payupHttpReconcileTransactionCancelled(
     .replace(/\{merchantId\}/g, encodeURIComponent(cred.merchantId))
     .replace(/\{transactionId\}/g, encodeURIComponent(transactionId));
   const signature = signPayupCancel2(cred.merchantId, transactionId, cred.apiCertKey);
-  const out = await payupPostJson<Record<string, unknown>>(cred, path, {
-    transactionId,
-    signature,
-  });
+  const body: Record<string, string> = { transactionId, signature };
+  const inclOrder =
+    String(process.env.PAYUP_TXN_RECONCILE_INCLUDE_ORDER_NUMBER ?? "true").trim().toLowerCase() !== "false";
+  const moid = (opts?.merchantOrderId ?? "").trim();
+  if (inclOrder && moid) {
+    body.orderNumber = moid;
+    body.moid = moid;
+  }
+  const out = await payupPostJson<Record<string, unknown>>(cred, path, body);
   if (!out.ok) {
     const base = getPayupBaseUrl().replace(/\/$/, "");
     const suffix =
@@ -70,4 +96,42 @@ export async function payupHttpReconcileTransactionCancelled(
     return { ok: true, cancelledAtPg: true, flat: merged };
   }
   return { ok: true, cancelledAtPg: false, flat: merged };
+}
+
+/** 여러 lookupId(transactionId·가맹점 주문번호 등)로 조회 — 첫 성공 응답 사용 */
+export async function payupHttpInquireWithLookupIds(
+  cred: Cred,
+  lookupIds: string[],
+  opts?: { merchantOrderId?: string },
+): Promise<
+  | { ok: true; skipped: true; reason: string }
+  | { ok: true; lookupId: string; cancelledAtPg: boolean; flat?: Record<string, string> }
+  | { ok: false; message: string; tried: string[] }
+> {
+  const pathTpl = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim();
+  if (!pathTpl) {
+    return { ok: true, skipped: true, reason: "PAYUP_TXN_RECONCILE_PATH unset" };
+  }
+  const tried: string[] = [];
+  let lastMsg = "PG 거래조회에 실패했습니다.";
+  for (const lookupId of lookupIds) {
+    const id = lookupId.trim().replace(/^payup:/i, "");
+    if (!id) continue;
+    tried.push(id);
+    const pg = await payupHttpReconcileTransactionCancelled(cred, id, opts);
+    if (!pg.ok) {
+      lastMsg = pg.message;
+      continue;
+    }
+    if ("skipped" in pg && pg.skipped) {
+      return { ok: true, skipped: true, reason: pg.reason };
+    }
+    return {
+      ok: true,
+      lookupId: id,
+      cancelledAtPg: "cancelledAtPg" in pg && pg.cancelledAtPg === true,
+      flat: "flat" in pg ? pg.flat : undefined,
+    };
+  }
+  return { ok: false, message: lastMsg, tried };
 }
