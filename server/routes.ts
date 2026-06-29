@@ -132,7 +132,6 @@ import { revertPayupCardSubscriptionPaymentById, payupMetaTransactionIdFromPayup
 import {
   flattenPayupWebhookPayload,
   tryRevertPaidPayupSubscriptionFromNotifyFlat,
-  payupFlatIndicatesSuccessfulCancelOrRefund,
   payupInquiryFlatIndicatesSuccessfulAuth0000,
   payupInquiryFlatExpectOrderMatch,
   payupInquiryFlatAmountMatchesIfPresent,
@@ -640,6 +639,106 @@ function pickPayupStr(obj: Record<string, unknown> | null | undefined, ...keys: 
     if (typeof v === "number" && Number.isFinite(v)) return String(v);
   }
   return undefined;
+}
+
+function pickPayupFlatStr(flat: Record<string, string>, ...keys: string[]): string {
+  const entries = Object.entries(flat);
+  for (const key of keys) {
+    const want = key.toLowerCase();
+    const direct = flat[key] ?? flat[want];
+    if (direct != null && String(direct).trim()) return String(direct).trim();
+    for (const [k, v] of entries) {
+      const lower = k.toLowerCase();
+      if ((lower === want || lower.endsWith(`.${want}`)) && String(v).trim()) {
+        return String(v).trim();
+      }
+    }
+  }
+  return "";
+}
+
+function payupJsonPreview(input: unknown, max = 800): string {
+  try {
+    return JSON.stringify(input, (key, value) => {
+      if (/signature|apikey|apiCertKey|secret|token|password/i.test(key)) return "[redacted]";
+      return value;
+    }).slice(0, max);
+  } catch {
+    return "";
+  }
+}
+
+function payupCancelApiResponseResult(data: unknown): {
+  ok: boolean;
+  responseCode: string;
+  responseMsg: string;
+  flat: Record<string, string>;
+} {
+  const flat = flattenPayupWebhookPayload(data);
+  const responseCode = pickPayupFlatStr(
+    flat,
+    "responseCode",
+    "RESPONSECODE",
+    "resultCode",
+    "RESULT_CODE",
+    "returnCode",
+    "RETURNCODE",
+    "code",
+    "CODE",
+    "resCode",
+    "RESCODE",
+  );
+  const responseMsg = pickPayupFlatStr(
+    flat,
+    "responseMsg",
+    "RESPONSEMSG",
+    "resultMsg",
+    "RESULT_MSG",
+    "returnMsg",
+    "RETURNMSG",
+    "message",
+    "MESSAGE",
+    "msg",
+    "MSG",
+  );
+  const cancelDateTime = pickPayupFlatStr(
+    flat,
+    "cancelDateTime",
+    "cancelDatetime",
+    "CANCELDATETIME",
+    "cancel_date_time",
+    "cancelAt",
+    "cancelledAt",
+    "canceledAt",
+  );
+  const statusText = [
+    responseMsg,
+    pickPayupFlatStr(flat, "dealStatus", "DEALSTATUS", "status", "STATUS", "transactionStatus", "transaction_status"),
+    pickPayupFlatStr(flat, "msgType", "MSGTYPE", "event", "EVENT", "type", "TYPE", "notificationType"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const blob = `${responseCode} ${statusText}`;
+  const hasFailureSignal = /실패|오류|에러|거절|불가|불능|FAIL|FAILED|ERROR|INVALID|DENIED|REJECT/i.test(blob);
+  const successCode = /^(?:0000|000|00|0|SUCCESS|SUCCEEDED|OK)$/i.test(responseCode);
+  const successFlag =
+    /^(?:true|1|y|yes)$/i.test(pickPayupFlatStr(flat, "success", "isSuccess", "succeeded", "SUCCESS")) ||
+    /^(?:SUCCESS|SUCCEEDED|OK|DONE)$/i.test(pickPayupFlatStr(flat, "result", "RESULT", "status", "STATUS"));
+  const alreadyCancelled =
+    /이미\s*(?:취소|환불)|기\s*(?:취소|환불)|(?:취소|환불)\s*(?:완료|됨|된)|(?:취소|환불)\s*처리\s*(?:완료|됨|된)|already\s+(?:cancelled|canceled|refunded|voided)/i.test(
+      statusText,
+    );
+  const cancelledStatus =
+    /(?:^|\b)(?:CANCELLED|CANCELED|REFUNDED|VOIDED|CANCEL_SUCCESS|REFUND_SUCCESS)(?:\b|$)|취소완료|환불완료|망취소/i.test(
+      statusText,
+    );
+  const ok =
+    (cancelDateTime.length >= 8 && !hasFailureSignal) ||
+    (successCode && !hasFailureSignal) ||
+    (successFlag && !hasFailureSignal) ||
+    alreadyCancelled ||
+    (cancelledStatus && !hasFailureSignal);
+  return { ok, responseCode, responseMsg, flat };
 }
 
 /** 인증결제 다이렉트 주문 응답 (규격서 3.1 응답 전문) */
@@ -9373,19 +9472,22 @@ export async function registerRoutes(
       if (!cancelRes.ok) {
         return res.status(502).json({ message: cancelRes.message, detail: cancelRes.bodyText });
       }
-      const flat = flattenPayupWebhookPayload(cancelRes.data);
-      const responseCode = flat.responseCode ?? flat.RESPONSECODE ?? flat.resultCode ?? flat.RESULT_CODE ?? "";
-      const cancelOk = responseCode === "0000" || payupFlatIndicatesSuccessfulCancelOrRefund(flat);
-      if (!cancelOk) {
-        let preview = "";
-        try {
-          preview = JSON.stringify(cancelRes.data).slice(0, 800);
-        } catch {
-          /* ignore */
-        }
+      const cancelResult = payupCancelApiResponseResult(cancelRes.data);
+      if (!cancelResult.ok) {
+        const preview = payupJsonPreview(cancelRes.data);
+        console.error("[admin cancel-payup-subscription] unrecognized cancel response", {
+          paymentId: payment.id,
+          orderId: payment.orderId,
+          transactionId: `${transactionId.slice(0, 8)}...`,
+          responseCode: cancelResult.responseCode || null,
+          responseMsg: cancelResult.responseMsg || null,
+          keys: Object.keys(cancelResult.flat).slice(0, 40),
+          preview,
+        });
         return res.status(502).json({
           message: "페이업 취소 API 응답에서 취소 성공을 확인하지 못했습니다.",
-          responseCode: responseCode || undefined,
+          responseCode: cancelResult.responseCode || undefined,
+          responseMsg: cancelResult.responseMsg || undefined,
           detail: preview || undefined,
         });
       }
@@ -9400,7 +9502,8 @@ export async function registerRoutes(
           payupMeta: {
             ...meta,
             pgCancelApiCalledAt: new Date().toISOString(),
-            pgCancelApiResponseCode: responseCode || null,
+            pgCancelApiResponseCode: cancelResult.responseCode || null,
+            pgCancelApiResponseMsg: cancelResult.responseMsg || null,
           },
         })
         .where(eq(payments.id, payment.id));
