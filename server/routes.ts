@@ -8733,6 +8733,11 @@ export async function registerRoutes(
       } catch (e) {
         console.error("[subscription/me] subscription AI budget exhaustion check", e);
       }
+      try {
+        await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+      } catch (e) {
+        console.error("[subscription/me] payup PG reconcile", e);
+      }
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) {
         return res.json({ subscription: null, tier: "free" });
@@ -8805,6 +8810,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "현재 이용 중인 유료 구독이 없습니다." });
       }
 
+      try {
+        const pgCancelled = await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+        if (pgCancelled) {
+          return res.json({
+            success: true,
+            pgPaymentReverted: true,
+            message:
+              "카드 결제가 페이업·PG에서 취소·환불된 것으로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+          });
+        }
+      } catch (e) {
+        console.error("[subscription/cancel] payup PG reconcile", e);
+      }
+
       const displayed = computeDisplayedSubscriptionFromEntitlements(
         user.subscriptionEntitlements,
         user.subscriptionTier,
@@ -8844,7 +8863,7 @@ export async function registerRoutes(
       res.json({
         success: true,
         message:
-          "다음 결제(갱신)는 중지되었습니다. 표시된 만료일까지는 유료 혜택(음악 생성 한도 등)이 그대로 유지됩니다.",
+          "다음 자동 결제(갱신)만 중지되었습니다. 지갑 잔액이 남아 있는 동안 유료 혜택이 계속됩니다. 카드사에서 결제를 취소하셨다면 요금 페이지를 새로고침하거나 고객센터로 문의해 주세요.",
       });
     } catch (err) {
       console.error("Cancel subscription error:", err);
