@@ -133,6 +133,8 @@ export default function Pricing() {
   }>({
     queryKey: ["/api/subscription/me"],
     enabled: !!user,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: bankInfo } = useQuery<{
@@ -189,20 +191,22 @@ export default function Pricing() {
       } catch {
         /* ignore */
       }
-      if (user && pendingOrder) {
-        void fetch("/api/subscription/payup/client-outcome", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderNumber: pendingOrder, outcome: p === "cancel" ? "cancel" : "fail" }),
-        })
-          .then(() => {
-            void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-          })
-          .catch(() => {
-            /* 알림 실패는 요금/토스트와 무관 */
+      const outcome = p === "cancel" ? "cancel" : "fail";
+      void (async () => {
+        if (!user) return;
+        try {
+          await apiRequest("POST", "/api/subscription/payup/align-after-abandon", {
+            orderNumber: pendingOrder || undefined,
+            outcome,
           });
-      }
+        } catch {
+          /* 보정 실패는 토스트와 무관 */
+        }
+        await queryClient.refetchQueries({ queryKey: ["/api/subscription/me"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/ai-music/usage"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      })();
       clearPayupCheckoutClientState();
       if (p === "cancel") {
         toast({
@@ -218,9 +222,6 @@ export default function Pricing() {
         });
       }
       /** 음악 생성 등 다른 탭·캐시에 남은 유료 한도 표시 제거 (취소해도 서버는 free 인데 클라만 오래된 경우) */
-      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       window.history.replaceState(null, "", "/pricing");
     }
   }, [searchString, toast, t, queryClient, user, clearPayupCheckoutClientState]);
@@ -519,9 +520,9 @@ export default function Pricing() {
     },
     onSuccess: (data) => {
       toast({ title: t("pricing.cancelSuccess", "구독 해지"), description: data.message });
-      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/ai-music/usage"] });
     },
     onError: (error: Error) => {
       toast({ title: t("pricing.cancelFailed", "해지 실패"), description: error.message, variant: "destructive" });
