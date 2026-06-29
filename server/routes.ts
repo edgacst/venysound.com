@@ -8489,6 +8489,31 @@ export async function registerRoutes(
       }
       const [fresh] = await db.select().from(users).where(eq(users.id, userId));
       const row = fresh ?? user;
+      if (isPaidSubscriptionTierId(String(row.subscriptionTier ?? "").trim().toLowerCase())) {
+        const [latestSubPayment] = await db
+          .select({ id: payments.id, status: payments.status })
+          .from(payments)
+          .where(and(eq(payments.userId, userId), inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS)))
+          .orderBy(desc(payments.createdAt))
+          .limit(1);
+        if (String(latestSubPayment?.status ?? "").trim().toLowerCase() === "refunded") {
+          await db
+            .update(users)
+            .set({
+              subscriptionEntitlements: sql`'{}'::jsonb`,
+              subscriptionTier: "free",
+              subscriptionExpiresAt: null,
+              subscriptionPlan: null,
+              subscriptionAiBudgetExhaustionNoticeKey: null,
+              subscriptionAiWallet: sql`'[]'::jsonb`,
+              subscriptionAiPeriodKey: null,
+              subscriptionAiPeriodConsumedWon: 0,
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, userId));
+          return res.json({ tier: "free" });
+        }
+      }
       const paid = isUserPaidSubscriptionActive(row, now);
       if (paid && row.subscriptionTier && row.subscriptionTier !== "free") {
         return res.json({
@@ -9452,7 +9477,23 @@ export async function registerRoutes(
 
       const status = String(payment.status ?? "").trim().toLowerCase();
       if (status === "refunded") {
-        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false });
+        const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+        if (!out.ok) return res.status(400).json({ message: out.message });
+        if (out.downgradedUser) {
+          try {
+            await storage.createNotification({
+              userId: out.userId,
+              type: "system",
+              message:
+                "援щ룆 移대뱶 寃곗젣媛 痍⑥냼 泥섎━?섏뼱 臾대즺 ?뚮옖?쇰줈 議곗젙?섏뿀?듬땲?? AI ?앹꽦 ?쒕룄媛 媛깆떊?⑸땲??",
+              payload: { subscriptionReverted: true, source: "payup_admin_cancel_api_already_refunded" },
+              url: "/create-music",
+            });
+          } catch (e) {
+            console.error("[admin cancel-payup-subscription] notify already-refunded", e);
+          }
+        }
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: out.downgradedUser });
       }
       if (status !== "paid") {
         return res.status(400).json({ message: `paid 상태의 페이업 카드 구독 건만 취소할 수 있습니다. (현재: ${payment.status ?? "?"})` });
