@@ -1618,6 +1618,7 @@ export default function Admin() {
                   const isRefunded =
                     String(p.paymentStatus ?? "").toLowerCase() === "refunded" ||
                     String(p.cardApprovalStatus ?? "").toLowerCase() === "refunded";
+                  const canRevokeApprovedPayup = !isPending && !isRefunded;
                   const pk = typeof p.paymentKey === "string" ? p.paymentKey : "";
                   return (
                     <tr
@@ -1713,6 +1714,33 @@ export default function Admin() {
                               {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
                             </Button>
                           </div>
+                        ) : canRevokeApprovedPayup ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-[10px] h-7 px-1.5"
+                            disabled={revokePayupPaidMutation.isPending}
+                            title={t(
+                              "admin.revokePayupButtonTitle",
+                              "페이업에서 이미 취소·환불한 카드 구독 건이면 눌러 DB를 맞춥니다.",
+                            )}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  t(
+                                    "admin.revokePayupConfirm",
+                                    "이 결제를 refunded 로 표시하고, 다른 유료 구독 결제가 없으면 회원을 무료로 되돌립니다. 페이업에서 실제 취소가 끝난 건만 진행하세요.",
+                                  ),
+                                )
+                              ) {
+                                return;
+                              }
+                              revokePayupPaidMutation.mutate(String(p.id));
+                            }}
+                          >
+                            {t("admin.revokePayupButton", "PG취소 반영")}
+                          </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -1737,6 +1765,8 @@ export default function Admin() {
       deletePendingPayupSubMutation.mutate,
       finalizePayupPendingInquiryMutation.isPending,
       finalizePayupPendingInquiryMutation.mutate,
+      revokePayupPaidMutation.isPending,
+      revokePayupPaidMutation.mutate,
       t,
       PAYUP_CARD_HISTORY_PAID_DAYS,
     ],
