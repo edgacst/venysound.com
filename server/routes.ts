@@ -8318,7 +8318,7 @@ export async function registerRoutes(
 
       /**
        * 회원「구독 해지」= **다음 자동 갱신(결제)만 중지**. 만료일·entitlements·구독 AI 지갑은 유지.
-       * 카드사/PG에서 결제가 취소·환불된 경우는 별도(웹훅·관리자 PG취소 반영)로 DB를 되돌려 즉시 무료화.
+       * 카드사/PG에서 결제가 취소·환불된 경우는 별도(웹훅·관리자 PG상태 확인)로 DB를 되돌려 즉시 무료화.
        */
       await db
         .update(users)
@@ -9379,6 +9379,111 @@ export async function registerRoutes(
       res.json({ success: true, downgradedUser: out.downgradedUser });
     } catch (err: any) {
       console.error("[admin revoke-payup-subscription]", err);
+      res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
+    }
+  });
+
+  /**
+   * 페이업 거래조회로 카드 구독 결제의 현재 PG 상태를 확인한다.
+   * 승인 상태면 DB를 유지하고, 취소·환불 상태가 확인될 때만 refunded + 필요 시 회원 무료화.
+   */
+  app.post("/api/admin/payments/:id/reconcile-payup-subscription-status", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = String(req.params.id ?? "").trim();
+      if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
+
+      const status = String(payment.status ?? "").trim().toLowerCase();
+      if (status === "refunded") {
+        return res.json({ success: true, action: "already_refunded" as const, alreadyRefunded: true, downgradedUser: false });
+      }
+      if (status !== "paid") {
+        return res.status(400).json({ message: `paid 상태의 페이업 카드 구독 건만 PG 상태를 확인할 수 있습니다. (현재: ${payment.status ?? "?"})` });
+      }
+      if (!isPayupPaidSubscriptionPayment(payment)) {
+        return res.status(400).json({ message: "페이업 카드 구독 결제만 PG 상태를 확인할 수 있습니다." });
+      }
+
+      const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+      if (!pathSet) {
+        return res.status(400).json({
+          message:
+            "서버에 PAYUP_TXN_RECONCILE_PATH(페이업 거래조회 URL)가 없어 PG 승인/취소 상태를 받아올 수 없습니다. 페이업에서 거래조회 API 경로를 확인해 .env 에 설정해야 합니다.",
+        });
+      }
+      const cred = getPayupCredentials();
+      if (!cred.ok) return res.status(400).json({ message: "페이업 자격 정보가 올바르지 않습니다." });
+
+      const paymentKey = String(payment.paymentKey ?? "").trim();
+      const txnFromKey = /^payup:(.+)$/i.exec(paymentKey)?.[1]?.trim() ?? "";
+      const txnId = txnFromKey || payupMetaTransactionIdFromPayupMeta(payment.payupMeta);
+      if (!txnId) {
+        return res.status(400).json({ message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." });
+      }
+
+      const pg = await payupHttpReconcileTransactionCancelled(cred, txnId);
+      const meta =
+        payment.payupMeta && typeof payment.payupMeta === "object"
+          ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+      const checkedAt = new Date().toISOString();
+      const mergedMeta: Record<string, unknown> = {
+        ...meta,
+        pgReconcileCheckedAt: checkedAt,
+      };
+      if (!pg.ok) {
+        mergedMeta.pgReconcileLastError = pg.message;
+        await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+        return res.status(400).json({ message: pg.message });
+      }
+      if ("skipped" in pg && pg.skipped) {
+        mergedMeta.pgReconcileLastError = pg.reason;
+        await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+        return res.status(400).json({ message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` });
+      }
+
+      const flat = "flat" in pg ? (pg.flat ?? {}) : {};
+      const oidWant = String(payment.orderId ?? "").trim().toUpperCase();
+      if (!payupInquiryFlatExpectOrderMatch(flat, oidWant)) {
+        return res.status(400).json({ message: "PG 응답의 주문번호와 이 DB 주문이 일치하지 않습니다." });
+      }
+      const amtChk = payupInquiryFlatAmountMatchesIfPresent(flat, payment.amount);
+      if (!amtChk.ok) return res.status(400).json({ message: amtChk.message });
+
+      const cancelledAtPg = "cancelledAtPg" in pg && pg.cancelledAtPg === true;
+      mergedMeta.pgReconcileLastError = null;
+      mergedMeta.pgReconcileCancelledAtPg = cancelledAtPg;
+      await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+
+      if (!cancelledAtPg) {
+        return res.json({ success: true, action: "still_paid" as const, checkedAt });
+      }
+
+      const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+      if (!out.ok) {
+        return res.status(400).json({ message: out.message });
+      }
+      if (out.noop === "already_refunded") {
+        return res.json({ success: true, action: "already_refunded" as const, alreadyRefunded: true, downgradedUser: false, checkedAt });
+      }
+      if (out.downgradedUser) {
+        try {
+          await storage.createNotification({
+            userId: out.userId,
+            type: "system",
+            message:
+              "구독 카드 결제가 페이업에서 취소·환불로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: "payup_admin_reconcile" },
+            url: "/create-music",
+          });
+        } catch (e) {
+          console.error("[admin reconcile-payup-subscription-status] notify", e);
+        }
+      }
+      res.json({ success: true, action: "refunded" as const, downgradedUser: out.downgradedUser, checkedAt });
+    } catch (err: any) {
+      console.error("[admin reconcile-payup-subscription-status]", err);
       res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
     }
   });

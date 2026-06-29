@@ -457,7 +457,7 @@ export default function Admin() {
     plan: string | null;
     billingPeriod: string | null;
     paymentKey: string | null;
-    /** 서버: payup_meta.txnId (payment_key 비정상 시 PG취소 반영 버튼용) */
+    /** 서버: payup_meta.txnId (payment_key 비정상 시 PG상태 확인 버튼용) */
     payupMetaTxnId?: string | null;
     createdAt: string;
     email: string | null;
@@ -467,7 +467,7 @@ export default function Admin() {
     paymentKind: "subscription" | "credit";
   };
 
-  const adminRowSupportsPayupPgRevert = (row: AdminRevenuePaymentRow): boolean => {
+  const adminRowSupportsPayupPgStatusCheck = (row: AdminRevenuePaymentRow): boolean => {
     if (row.paymentKind !== "subscription") return false;
     const pk = (row.paymentKey ?? "").trim().toLowerCase();
     /** `payup:{txn}` 또는 meta 의 txnId/pgTransactionId/pgTid(서버 payupMetaTxnId) */
@@ -1470,12 +1470,12 @@ export default function Admin() {
     },
   });
 
-  /** 페이업에서 PG 환불·취소 후 DB만 paid 인 카드 구독 건 — refunded + 필요 시 회원 무료화 */
-  const revokePayupPaidMutation = useMutation({
+  /** 페이업 거래조회로 승인/취소 상태를 확인하고, 취소·환불이면 refunded + 필요 시 회원 무료화 */
+  const reconcilePayupPaidMutation = useMutation({
     mutationFn: async (paymentId: string) => {
       const res = await apiRequest(
         "POST",
-        `/api/admin/payments/${encodeURIComponent(paymentId)}/revoke-payup-subscription`,
+        `/api/admin/payments/${encodeURIComponent(paymentId)}/reconcile-payup-subscription-status`,
         {},
       );
       if (!res.ok) {
@@ -1484,6 +1484,7 @@ export default function Admin() {
       }
       return res.json() as Promise<{
         success: boolean;
+        action?: "still_paid" | "refunded" | "already_refunded";
         downgradedUser?: boolean;
         alreadyRefunded?: boolean;
       }>;
@@ -1493,7 +1494,13 @@ export default function Admin() {
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
-      if (data.alreadyRefunded) {
+      if (data.action === "still_paid") {
+        toast({
+          title: t("admin.payupStillPaid", "PG 조회 결과 승인 상태입니다. DB 변경 없음."),
+        });
+        return;
+      }
+      if (data.alreadyRefunded || data.action === "already_refunded") {
         toast({
           title: t("admin.revokePayupAlreadyRefunded", "이미 refunded 처리된 결제입니다."),
         });
@@ -1501,8 +1508,8 @@ export default function Admin() {
       }
       toast({
         title: data.downgradedUser
-          ? t("admin.revokePayupDowngraded", "회원 구독을 무료로 되돌렸습니다.")
-          : t("admin.revokePayupRefundedOnly", "결제를 refunded 처리했습니다. (다른 유료 구독 건이 있어 티어는 유지)"),
+          ? t("admin.payupRefundConfirmedDowngraded", "PG 취소/환불을 확인해 회원 구독을 무료로 되돌렸습니다.")
+          : t("admin.payupRefundConfirmedOnly", "PG 취소/환불을 확인해 결제를 refunded 처리했습니다. (다른 유료 구독 건이 있어 티어는 유지)"),
       });
     },
     onError: (err: unknown) => {
@@ -1720,26 +1727,26 @@ export default function Admin() {
                             size="sm"
                             variant="outline"
                             className="text-[10px] h-7 px-1.5"
-                            disabled={revokePayupPaidMutation.isPending}
+                            disabled={reconcilePayupPaidMutation.isPending}
                             title={t(
-                              "admin.revokePayupButtonTitle",
-                              "페이업에서 이미 취소·환불한 카드 구독 건이면 눌러 DB를 맞춥니다.",
+                              "admin.payupStatusCheckButtonTitle",
+                              "페이업 거래조회로 현재 승인/취소 상태를 확인해 DB를 맞춥니다.",
                             )}
                             onClick={() => {
                               if (
                                 !window.confirm(
                                   t(
-                                    "admin.revokePayupConfirm",
-                                    "이 결제를 refunded 로 표시하고, 다른 유료 구독 결제가 없으면 회원을 무료로 되돌립니다. 페이업에서 실제 취소가 끝난 건만 진행하세요.",
+                                    "admin.payupStatusCheckConfirm",
+                                    "페이업 거래조회로 이 결제의 현재 상태를 확인합니다. 취소/환불이면 자동으로 refunded 처리하고, 승인 상태면 DB를 바꾸지 않습니다.",
                                   ),
                                 )
                               ) {
                                 return;
                               }
-                              revokePayupPaidMutation.mutate(String(p.id));
+                              reconcilePayupPaidMutation.mutate(String(p.id));
                             }}
                           >
-                            {t("admin.revokePayupButton", "PG취소 반영")}
+                            {t("admin.payupStatusCheckButton", "PG상태 확인")}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -1765,8 +1772,8 @@ export default function Admin() {
       deletePendingPayupSubMutation.mutate,
       finalizePayupPendingInquiryMutation.isPending,
       finalizePayupPendingInquiryMutation.mutate,
-      revokePayupPaidMutation.isPending,
-      revokePayupPaidMutation.mutate,
+      reconcilePayupPaidMutation.isPending,
+      reconcilePayupPaidMutation.mutate,
       t,
       PAYUP_CARD_HISTORY_PAID_DAYS,
     ],
@@ -2567,32 +2574,32 @@ export default function Admin() {
                                 {row.orderId}
                               </td>
                               <td className="p-2 whitespace-nowrap">
-                                {adminRowSupportsPayupPgRevert(row) ? (
+                                {adminRowSupportsPayupPgStatusCheck(row) ? (
                                   <Button
                                     type="button"
                                     size="sm"
                                     variant="outline"
                                     className="text-[10px] h-7 px-1.5"
-                                    disabled={revokePayupPaidMutation.isPending}
+                                    disabled={reconcilePayupPaidMutation.isPending}
                                     title={t(
-                                      "admin.revokePayupButtonTitle",
-                                      "페이업에서 이미 취소·환불한 카드 구독 건이면 눌러 DB를 맞춥니다.",
+                                      "admin.payupStatusCheckButtonTitle",
+                                      "페이업 거래조회로 현재 승인/취소 상태를 확인해 DB를 맞춥니다.",
                                     )}
                                     onClick={() => {
                                       if (
                                         !window.confirm(
                                           t(
-                                            "admin.revokePayupConfirm",
-                                            "이 결제를 refunded 로 표시하고, 다른 유료 구독 결제가 없으면 회원을 무료로 되돌립니다. 페이업에서 실제 취소가 끝난 건만 진행하세요.",
+                                            "admin.payupStatusCheckConfirm",
+                                            "페이업 거래조회로 이 결제의 현재 상태를 확인합니다. 취소/환불이면 자동으로 refunded 처리하고, 승인 상태면 DB를 바꾸지 않습니다.",
                                           ),
                                         )
                                       ) {
                                         return;
                                       }
-                                      revokePayupPaidMutation.mutate(row.id);
+                                      reconcilePayupPaidMutation.mutate(row.id);
                                     }}
                                   >
-                                    {t("admin.revokePayupButton", "PG취소 반영")}
+                                    {t("admin.payupStatusCheckButton", "PG상태 확인")}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
@@ -5885,7 +5892,7 @@ export default function Admin() {
                         walletData.payments.rows.map((p) => {
                           const canRepairPaidSub =
                             isPaidSubscriptionTierId(p.plan) &&
-                            (p.paymentKey === "bank_transfer" || adminRowSupportsPayupPgRevert(p as AdminRevenuePaymentRow));
+                            (p.paymentKey === "bank_transfer" || adminRowSupportsPayupPgStatusCheck(p as AdminRevenuePaymentRow));
                           return (
                             <tr key={p.id} className="border-b border-border/60">
                               <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
