@@ -1491,6 +1491,7 @@ export default function Admin() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       if (data.alreadyRefunded) {
         toast({
@@ -1575,7 +1576,7 @@ export default function Admin() {
           <p>
             {t(
               "admin.payupCardHistoryBannerIntro",
-              "미승인(pending·주문만 생성) 건은 전부 표시됩니다. 승인 완료(paid) 건은 최근 {{days}}일 이내만 표시됩니다.",
+              "미승인(pending·주문만 생성) 건은 전부 표시됩니다. 승인 완료(paid)와 취소/환불(refunded) 건은 최근 {{days}}일 이내만 표시됩니다.",
               { days: PAYUP_CARD_HISTORY_PAID_DAYS },
             )}
           </p>
@@ -1614,6 +1615,9 @@ export default function Admin() {
               <tbody>
                 {pendingPayupSubPayments.map((p: any) => {
                   const isPending = String(p.paymentStatus ?? "").toLowerCase() === "pending";
+                  const isRefunded =
+                    String(p.paymentStatus ?? "").toLowerCase() === "refunded" ||
+                    String(p.cardApprovalStatus ?? "").toLowerCase() === "refunded";
                   const pk = typeof p.paymentKey === "string" ? p.paymentKey : "";
                   return (
                     <tr
@@ -1621,6 +1625,8 @@ export default function Admin() {
                       className={
                         isPending
                           ? "border-b border-amber-500/25 bg-amber-500/[0.07] last:border-0"
+                          : isRefunded
+                            ? "border-b border-rose-500/25 bg-rose-500/[0.06] last:border-0"
                           : "border-b border-border/50 last:border-0"
                       }
                     >
@@ -1628,6 +1634,10 @@ export default function Admin() {
                         {isPending ? (
                           <Badge variant="outline" className="text-amber-800 border-amber-600/50 bg-amber-500/10">
                             {t("admin.payupCardStatusPending", "미승인")}
+                          </Badge>
+                        ) : isRefunded ? (
+                          <Badge variant="outline" className="text-rose-800 border-rose-600/50 bg-rose-500/10 dark:text-rose-100">
+                            {t("admin.payupCardStatusRefunded", "취소/환불")}
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-emerald-900 dark:text-emerald-100">

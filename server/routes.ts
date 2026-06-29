@@ -9501,8 +9501,8 @@ export async function registerRoutes(
   });
 
   /**
-   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid — 최근 paidDays 일(기본 365).
-   * 승인 분은 **페이업 관리자 화면이 아니라 DB** 기준: `paid` 이고 (`payment_key` 가 payup: 로 시작하거나 `payup_meta.txnId` 가 있는 구독 건).
+   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid / 취소·환불 refunded — 최근 paidDays 일(기본 365).
+   * 승인·취소 분은 **페이업 관리자 화면이 아니라 DB** 기준: `paid/refunded` 이고 (`payment_key` 가 payup: 로 시작하거나 `payup_meta.txnId` 가 있는 구독 건).
    * 페이업에만 승인이 있고 DB가 아직 `pending`이면 미승인으로만 보이며, `/complete`·관리자「PG승인→DB반영」으로 맞춘 뒤 승인완료로 잡힌다.
    */
   app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (req, res) => {
@@ -9535,13 +9535,13 @@ export async function registerRoutes(
         .where(and(eq(payments.status, "pending"), eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY)))
         .orderBy(desc(payments.createdAt));
 
-      const paidList = await db
+      const finalizedList = await db
         .select(baseCols)
         .from(payments)
         .leftJoin(users, eq(payments.userId, users.id))
         .where(
           and(
-            sql`lower(trim(coalesce(${payments.status}, ''))) = 'paid'`,
+            sql`lower(trim(coalesce(${payments.status}, ''))) in ('paid', 'refunded')`,
             or(
               sql`${payments.paymentKey} ILIKE 'payup:%'`,
               and(
@@ -9557,22 +9557,26 @@ export async function registerRoutes(
         .limit(800);
 
       const seen = new Set<string>();
-      const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" }> = [];
+      const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" | "refunded" }> = [];
       for (const r of pendingList) {
         const id = String(r.id);
         if (seen.has(id)) continue;
         seen.add(id);
         rows.push({ ...r, cardApprovalStatus: "pending" });
       }
-      for (const r of paidList) {
+      for (const r of finalizedList) {
         const id = String(r.id);
         if (seen.has(id)) continue;
         seen.add(id);
-        rows.push({ ...r, cardApprovalStatus: "approved" });
+        rows.push({
+          ...r,
+          cardApprovalStatus: String(r.paymentStatus ?? "").trim().toLowerCase() === "refunded" ? "refunded" : "approved",
+        });
       }
       rows.sort((a, b) => {
         if (a.cardApprovalStatus !== b.cardApprovalStatus) {
-          return a.cardApprovalStatus === "pending" ? -1 : 1;
+          const rank = { pending: 0, approved: 1, refunded: 2 } as const;
+          return rank[a.cardApprovalStatus] - rank[b.cardApprovalStatus];
         }
         const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(String(a.createdAt)).getTime();
         const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(String(b.createdAt)).getTime();
