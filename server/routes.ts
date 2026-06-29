@@ -247,6 +247,83 @@ async function notifyUserSubscriptionPaidInApp(input: {
 
 const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
 
+async function userHasAnyPaidSubscriptionPayment(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: payments.id })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.userId, userId),
+        eq(payments.status, "paid"),
+        inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+async function resetUserSubscriptionToFree(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      subscriptionEntitlements: sql`'{}'::jsonb`,
+      subscriptionTier: "free",
+      subscriptionExpiresAt: null,
+      subscriptionPlan: null,
+      subscriptionAiBudgetExhaustionNoticeKey: null,
+      subscriptionAiWallet: sql`'[]'::jsonb`,
+      subscriptionAiPeriodKey: null,
+      subscriptionAiPeriodConsumedWon: 0,
+      tossBillingKey: null,
+      tossCustomerKey: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+}
+
+/** 유료 표시·지갑은 있는데 paid 구독 결제가 없으면 무료로 맞춤 (카드 취소·환불 후 DB 불일치) */
+async function ensureUserSubscriptionBackedByPaidPayment(
+  userId: string,
+  now: Date,
+): Promise<"downgraded" | "unchanged"> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user || !isUserPaidSubscriptionActive(user, now)) return "unchanged";
+  if (await userHasAnyPaidSubscriptionPayment(userId)) return "unchanged";
+  await resetUserSubscriptionToFree(userId);
+  return "downgraded";
+}
+
+/** 구독 해지·요금 조회 전 — 최신 페이업 paid 건이 PG에서 취소됐는지 조회해 되돌림 시도 */
+async function tryReconcileLatestPaidPayupSubscriptionForUser(userId: string): Promise<boolean> {
+  const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+  if (!pathSet) return false;
+  const [latestPaidPayup] = await db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        eq(payments.userId, userId),
+        eq(payments.status, "paid"),
+        inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+        or(
+          sql`${payments.paymentKey} ILIKE 'payup:%'`,
+          and(
+            sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+            sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(payments.createdAt))
+    .limit(1);
+  if (!latestPaidPayup || !isPayupPaidSubscriptionPayment(latestPaidPayup)) return false;
+  const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
+    latestPaidPayup,
+    "payup_admin_auto_reconcile",
+  );
+  return recon.ok && recon.action === "refunded" && recon.downgradedUser === true;
+}
+
 /**
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
  * plan 은 DB 대소문자 불일치를 허용하도록 정규화한다.
@@ -8496,31 +8573,27 @@ export async function registerRoutes(
           .where(and(eq(payments.userId, userId), inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS)))
           .orderBy(desc(payments.createdAt))
           .limit(1);
-        if (String(latestSubPayment?.status ?? "").trim().toLowerCase() === "refunded") {
-          await db
-            .update(users)
-            .set({
-              subscriptionEntitlements: sql`'{}'::jsonb`,
-              subscriptionTier: "free",
-              subscriptionExpiresAt: null,
-              subscriptionPlan: null,
-              subscriptionAiBudgetExhaustionNoticeKey: null,
-              subscriptionAiWallet: sql`'[]'::jsonb`,
-              subscriptionAiPeriodKey: null,
-              subscriptionAiPeriodConsumedWon: 0,
-              updatedAt: new Date(),
-            })
-            .where(eq(users.id, userId));
+        const latestSt = String(latestSubPayment?.status ?? "").trim().toLowerCase();
+        const hasPaid = await userHasAnyPaidSubscriptionPayment(userId);
+        if (latestSt === "refunded" || (isUserPaidSubscriptionActive(row, now) && !hasPaid)) {
+          await resetUserSubscriptionToFree(userId);
           return res.json({ tier: "free" });
         }
       }
-      const paid = isUserPaidSubscriptionActive(row, now);
-      if (paid && row.subscriptionTier && row.subscriptionTier !== "free") {
-        return res.json({
-          tier: row.subscriptionTier,
-          plan: row.subscriptionPlan,
-          expiresAt: row.subscriptionExpiresAt,
-        });
+      if (isUserPaidSubscriptionActive(row, now)) {
+        const aligned = await ensureUserSubscriptionBackedByPaidPayment(userId, now);
+        if (aligned === "downgraded") {
+          return res.json({ tier: "free" });
+        }
+        const [after] = await db.select().from(users).where(eq(users.id, userId));
+        const live = after ?? row;
+        if (isUserPaidSubscriptionActive(live, now) && live.subscriptionTier && live.subscriptionTier !== "free") {
+          return res.json({
+            tier: live.subscriptionTier,
+            plan: live.subscriptionPlan,
+            expiresAt: live.subscriptionExpiresAt,
+          });
+        }
       }
 
       res.json({ tier: "free" });
@@ -8534,12 +8607,24 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      let [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
       const now = new Date();
       if (!isUserPaidSubscriptionActive(user, now)) {
         return res.status(400).json({ message: "현재 이용 중인 유료 구독이 없습니다." });
+      }
+
+      await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+      const aligned = await ensureUserSubscriptionBackedByPaidPayment(userId, now);
+      [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user || aligned === "downgraded" || !isUserPaidSubscriptionActive(user, now)) {
+        return res.json({
+          success: true,
+          downgradedImmediately: true,
+          message:
+            "카드 결제가 취소·환불된 것으로 확인되어 무료 플랜으로 조정되었습니다. 요금 페이지가 갱신됩니다.",
+        });
       }
 
       const displayed = computeDisplayedSubscriptionFromEntitlements(
@@ -8580,6 +8665,7 @@ export async function registerRoutes(
 
       res.json({
         success: true,
+        downgradedImmediately: false,
         message:
           "다음 결제(갱신)는 중지되었습니다. 표시된 만료일까지는 유료 혜택(음악 생성 한도 등)이 그대로 유지됩니다.",
       });
@@ -9432,6 +9518,8 @@ export async function registerRoutes(
           },
         })
         .where(eq(payments.id, row.id));
+      await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+      await ensureUserSubscriptionBackedByPaidPayment(userId, new Date());
       return res.json({ ok: true as const });
     } catch (err) {
       console.error("[payup] client-outcome", err);
