@@ -1137,6 +1137,7 @@ export default function Admin() {
       setWalletTxPage(0);
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
       toast({ title: t("admin.walletCreditsAdjusted", "크레딧 잔액을 조정했습니다.") });
     },
     onError: (err: any) => {
@@ -1416,6 +1417,7 @@ export default function Admin() {
     () => (pendingPayupSubPayments ?? []).filter((p: any) => String(p.paymentStatus ?? "").toLowerCase() === "pending").length,
     [pendingPayupSubPayments],
   );
+  const payupCardHistoryCount = pendingPayupSubPayments?.length ?? 0;
 
   const confirmBankMutation = useMutation({
     mutationFn: async (paymentId: string) => {
@@ -2004,7 +2006,7 @@ export default function Admin() {
                 <CreditCard size={14} className="shrink-0" />
                 {t("admin.tabPayupCardHistoryShort", "카드승인내역")}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-payup-pending-count">
-                  {pendingPayupCardOnlyCount}
+                  {payupCardHistoryCount}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="credit-refunds" className="gap-1.5">
@@ -5841,8 +5843,9 @@ export default function Admin() {
                         </tr>
                       ) : (
                         walletData.payments.rows.map((p) => {
-                          const canRepairBankSub =
-                            p.paymentKey === "bank_transfer" && isPaidSubscriptionTierId(p.plan);
+                          const canRepairPaidSub =
+                            isPaidSubscriptionTierId(p.plan) &&
+                            (p.paymentKey === "bank_transfer" || adminRowSupportsPayupPgRevert(p as AdminRevenuePaymentRow));
                           return (
                             <tr key={p.id} className="border-b border-border/60">
                               <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
@@ -5853,7 +5856,7 @@ export default function Admin() {
                                 {p.orderId}
                               </td>
                               <td className="p-2 align-middle">
-                                {canRepairBankSub ? (
+                                {canRepairPaidSub ? (
                                   <Button
                                     type="button"
                                     size="sm"

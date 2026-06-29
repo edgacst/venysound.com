@@ -99,6 +99,7 @@ import {
   AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER,
   isSubscriptionAiWalletDepleted,
   isUserPaidSubscriptionActive,
+  sumRemainingSubscriptionAiWallet,
   getAiMusicMonthlyUsageLimit,
   getAiMusicUsagePeriodKey,
   computeDisplayedSubscriptionFromEntitlements,
@@ -299,6 +300,50 @@ async function applyBankTransferSubscriptionToUserFromPayment(
 /** [페이업] 인증결제 DANAL 다이렉트 — 주문(order) 후 결제창·auth_return·payUrl 승인 대기 */
 const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_direct";
 
+function isPayupPaidSubscriptionPayment(payment: {
+  paymentKey?: string | null;
+  payupMeta?: unknown;
+  plan?: string | null;
+}): boolean {
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(planNorm)) return false;
+  const key = String(payment.paymentKey ?? "").trim().toLowerCase();
+  if (key.startsWith("payup:")) return true;
+  return payupMetaTransactionIdFromPayupMeta(payment.payupMeta).length > 0 && key !== "bank_transfer";
+}
+
+async function paidSubscriptionPaymentAlreadyReflected(payment: {
+  userId: string;
+  plan: string | null;
+}): Promise<boolean> {
+  const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+  if (!payUser) return false;
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  const userTier = String(payUser.subscriptionTier ?? "free").trim().toLowerCase();
+  return (
+    userTier === planNorm &&
+    isUserPaidSubscriptionActive(payUser, new Date()) &&
+    sumRemainingSubscriptionAiWallet(payUser.subscriptionAiWallet) > 0
+  );
+}
+
+async function repairPaidSubscriptionPaymentReflectionIfNeeded(payment: typeof payments.$inferSelect): Promise<{
+  repaired: boolean;
+  alreadyApplied: boolean;
+  tier?: string;
+}> {
+  const status = String(payment.status ?? "").trim().toLowerCase();
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (status !== "paid" || !isPaidSubscriptionTierId(planNorm)) {
+    return { repaired: false, alreadyApplied: false };
+  }
+  if (await paidSubscriptionPaymentAlreadyReflected(payment)) {
+    return { repaired: false, alreadyApplied: true, tier: planNorm };
+  }
+  const { computed } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+  return { repaired: true, alreadyApplied: false, tier: computed.subscriptionTier };
+}
+
 /** auth_return 쿼리의 PG TID 등으로 pending 구독 카드 주문 역추적 (주문 응답에서 payup_meta.pgTransactionId 등 저장 필요) */
 async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
   const ref = pgRef.trim();
@@ -342,6 +387,7 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   const [fresh] = await db.select().from(payments).where(eq(payments.id, payment.id));
   if (!fresh) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
   if (String(fresh.status ?? "").trim().toLowerCase() === "paid") {
+    await repairPaidSubscriptionPaymentReflectionIfNeeded(fresh);
     return { ok: true, paymentId: fresh.id, orderId: fresh.orderId, alreadyPaid: true };
   }
   const pk = String(fresh.paymentKey ?? "").trim();
@@ -8845,7 +8891,8 @@ export async function registerRoutes(
         return res.json({ status: "none" as const });
       }
       if (row.status === "paid") {
-        return res.json({ status: "paid" as const });
+        const repair = await repairPaidSubscriptionPaymentReflectionIfNeeded(row);
+        return res.json({ status: "paid" as const, repaired: repair.repaired });
       }
       if (row.status === "pending" && row.paymentKey === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
         return res.json({ status: "pending" as const });
@@ -9253,8 +9300,11 @@ export async function registerRoutes(
       const paymentId = req.params.id as string;
       const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
-      if (payment.paymentKey !== "bank_transfer") {
-        return res.status(400).json({ message: "계좌이체 건만 처리할 수 있습니다" });
+      const paymentKey = String(payment.paymentKey ?? "").trim();
+      const canRepairSubscriptionPayment =
+        paymentKey === "bank_transfer" || isPayupPaidSubscriptionPayment(payment);
+      if (!canRepairSubscriptionPayment) {
+        return res.status(400).json({ message: "구독 결제 반영 복구가 가능한 건이 아닙니다" });
       }
       if (payment.status !== "paid") {
         return res.status(400).json({ message: "완료(paid)된 결제만 구독 반영 복구가 가능합니다" });
@@ -9283,6 +9333,10 @@ export async function registerRoutes(
         prevPaidExpiry && prevPaidExpiry > now && !Number.isNaN(prevPaidExpiry.getTime())
           ? { subscriptionExpiresAtOverride: prevPaidExpiry }
           : undefined;
+
+      if (await paidSubscriptionPaymentAlreadyReflected(payment)) {
+        return res.json({ success: true, alreadyApplied: true, tier: planNorm, expiresAt: null });
+      }
 
       const { computed, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment, applyOpts);
       // 복구 시에는 메일을 보내지 않음 (과거 입금 확인 메일과 중복 방지)
