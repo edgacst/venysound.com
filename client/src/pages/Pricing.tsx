@@ -194,13 +194,15 @@ export default function Pricing() {
       const outcome = p === "cancel" ? "cancel" : "fail";
       void (async () => {
         if (!user) return;
-        try {
-          await apiRequest("POST", "/api/subscription/payup/align-after-abandon", {
-            orderNumber: pendingOrder || undefined,
-            outcome,
-          });
-        } catch {
-          /* 보정 실패는 토스트와 무관 */
+        if (pendingOrder) {
+          try {
+            await apiRequest("POST", "/api/subscription/payup/client-outcome", {
+              orderNumber: pendingOrder,
+              outcome,
+            });
+          } catch {
+            /* 보정 실패는 토스트와 무관 */
+          }
         }
         await queryClient.refetchQueries({ queryKey: ["/api/subscription/me"] });
         await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });

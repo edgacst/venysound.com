@@ -136,6 +136,7 @@ import {
   payupInquiryFlatExpectOrderMatch,
   payupInquiryFlatAmountMatchesIfPresent,
   payupInquiryFlatPickTransactionId,
+  payupFlatIndicatesSuccessfulCancelOrRefund,
 } from "./payup/payup-webhook-notify";
 import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
 import {
@@ -296,16 +297,11 @@ async function ensureUserSubscriptionBackedByPaidPayment(
   return "downgraded";
 }
 
-/** 구독 해지·요금 조회 전 — 최신 페이업 paid 건이 PG에서 취소됐는지 조회해 되돌림 시도 */
+/** 구독 해지·요금 조회 전 — 페이업 paid 건 PG 거래조회(설정 시)로 취소·환불 동기화 */
 async function tryReconcileLatestPaidPayupSubscriptionForUser(userId: string): Promise<boolean> {
-  return tryReconcileAllPaidPayupSubscriptionsForUser(userId);
-}
-
-/** 로그인 사용자의 paid 페이업 구독 건을 PG 조회로 취소·환불 여부 동기화 */
-async function tryReconcileAllPaidPayupSubscriptionsForUser(userId: string): Promise<boolean> {
   const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
   if (!pathSet) return false;
-  const rows = await db
+  const [latestPaidPayup] = await db
     .select()
     .from(payments)
     .where(
@@ -323,19 +319,13 @@ async function tryReconcileAllPaidPayupSubscriptionsForUser(userId: string): Pro
       ),
     )
     .orderBy(desc(payments.createdAt))
-    .limit(8);
-  let downgraded = false;
-  for (const row of rows) {
-    if (!isPayupPaidSubscriptionPayment(row)) continue;
-    const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
-      row,
-      "payup_admin_auto_reconcile",
-    );
-    if (recon.ok && recon.action === "refunded" && recon.downgradedUser) {
-      downgraded = true;
-    }
-  }
-  return downgraded;
+    .limit(1);
+  if (!latestPaidPayup || !isPayupPaidSubscriptionPayment(latestPaidPayup)) return false;
+  const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
+    latestPaidPayup,
+    "payup_admin_auto_reconcile",
+  );
+  return recon.ok && recon.action === "refunded" && recon.downgradedUser === true;
 }
 
 async function subscriptionMeTierForUser(userId: string, now: Date): Promise<string> {
@@ -346,94 +336,184 @@ async function subscriptionMeTierForUser(userId: string, now: Date): Promise<str
 }
 
 /**
- * PG 결제창 취소·실패 복귀(?payup=cancel|fail) — 해당 주문 기준으로 pending 정리·PG 취소 동기화·구독 보정.
+ * 규격서 CANCELURL·fail 복귀 — 결제창 이탈 기록.
+ * 구독 부여는 /complete + payUrl 승인(0000) 때만. pending 은 상태만 메타에 남김.
+ * 이미 paid 인 건은 PG 거래조회(설정 시)로 취소·환불 여부만 동기화.
  */
-async function alignSubscriptionAfterPayupCheckoutAbandon(
+async function handlePayupCheckoutClientOutcome(
   userId: string,
   orderNumber: string,
   outcome: "cancel" | "fail",
-): Promise<{ tier: string; downgraded: boolean }> {
-  const now = new Date();
+): Promise<{ tier: string }> {
   const orderUpper = orderNumber.trim().toUpperCase();
   const [row] = await db.select().from(payments).where(eq(payments.orderId, orderUpper)).limit(1);
+  if (!row || row.userId !== userId) {
+    return { tier: await subscriptionMeTierForUser(userId, new Date()) };
+  }
 
-  if (row && row.userId === userId) {
-    const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
-    const st = String(row.status ?? "").trim().toLowerCase();
-    const pk = String(row.paymentKey ?? "").trim();
-    const alreadyNotified =
-      typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10;
-    if (!alreadyNotified) {
-      const message =
-        outcome === "cancel"
-          ? "카드 구독 결제를 취소하셨습니다. 청구·승인 여부는 카드사·페이업 내역에서 확인할 수 있습니다."
-          : "카드 구독 결제가 승인 단계에서 완료되지 않았습니다. 잠시 후 다시 시도하거나 계좌이체를 이용해 주세요.";
-      try {
-        await storage.createNotification({
-          userId,
-          type: "system",
-          message,
-          payload: { payupAbandon: true, orderId: orderUpper, outcome },
-          url: "/pricing",
-        });
-      } catch (e) {
-        console.error("[payup] align abandon notification", e);
-      }
-    }
+  const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
+  const st = String(row.status ?? "").trim().toLowerCase();
+  const pk = String(row.paymentKey ?? "").trim();
 
-    if (st === "pending" && pk === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
-      let markRefunded = false;
-      const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
-      const cred = pathSet ? getPayupCredentials() : null;
-      const tid = payupMetaTransactionIdFromPayupMeta(row.payupMeta);
-      if (pathSet && cred?.ok && tid) {
-        const pg = await payupHttpReconcileTransactionCancelled(cred, tid);
-        if (pg.ok && "cancelledAtPg" in pg && pg.cancelledAtPg === true) {
-          markRefunded = true;
-        } else if (pg.ok && "cancelledAtPg" in pg && pg.cancelledAtPg === false) {
-          markRefunded = false;
-        } else if (!pg.ok || ("skipped" in pg && pg.skipped)) {
-          /** PG 조회 불가 — 결제창에서 취소 복귀면 미승인 pending 으로 간주 */
-          markRefunded = outcome === "cancel";
-        }
-      } else {
-        /** txn·조회 URL 없음 — PG 취소 복귀 시 pending 은 결제 미완료로 정리 */
-        markRefunded = true;
-      }
-      if (markRefunded) {
-        await db
-          .update(payments)
-          .set({
-            status: "refunded",
-            payupMeta: {
-              ...meta,
-              checkoutAbandonedAt: now.toISOString(),
-              abandonOutcome: outcome,
-              abandonNotifiedAt: now.toISOString(),
-            },
-          })
-          .where(and(eq(payments.id, row.id), eq(payments.status, "pending")));
-      } else {
-        await db
-          .update(payments)
-          .set({
-            payupMeta: {
-              ...meta,
-              abandonOutcome: outcome,
-              abandonNotifiedAt: typeof meta.abandonNotifiedAt === "string" ? meta.abandonNotifiedAt : now.toISOString(),
-            },
-          })
-          .where(eq(payments.id, row.id));
-      }
-    } else if (st === "paid" && isPayupPaidSubscriptionPayment(row)) {
-      await reconcilePayupCardSubscriptionPaymentStatusFromPg(row, "payup_admin_auto_reconcile");
+  if (st === "pending" && pk === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+    const notifiedAt =
+      typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10
+        ? meta.abandonNotifiedAt
+        : new Date().toISOString();
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...meta,
+          abandonOutcome: outcome,
+          abandonNotifiedAt: notifiedAt,
+          checkoutAbandonedAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(payments.id, row.id));
+  } else if (st === "paid" && isPayupPaidSubscriptionPayment(row)) {
+    await reconcilePayupCardSubscriptionPaymentStatusFromPg(row, "payup_admin_auto_reconcile");
+  }
+
+  return { tier: await subscriptionMeTierForUser(userId, new Date()) };
+}
+
+/** 관리자: cancel2(규격서) → 실패·불명확 시 PG 거래조회 → 확인된 경우에만 DB refunded·구독 무료화 */
+async function adminSyncPayupPaidSubscriptionCancelWithPg(
+  payment: typeof payments.$inferSelect,
+): Promise<
+  | { ok: true; downgradedUser: boolean; alreadyRefunded: boolean; source: "cancel2" | "reconcile" | "db_only" }
+  | { ok: false; message: string; responseCode?: string; responseMsg?: string; detail?: string; hint?: string }
+> {
+  const status = String(payment.status ?? "").trim().toLowerCase();
+  if (status === "refunded") {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false, message: out.message };
+    return { ok: true, alreadyRefunded: true, downgradedUser: out.downgradedUser, source: "db_only" };
+  }
+  if (status !== "paid") {
+    return { ok: false, message: `paid 상태의 페이업 카드 구독 건만 취소할 수 있습니다. (현재: ${payment.status ?? "?"})` };
+  }
+  if (!isPayupPaidSubscriptionPayment(payment)) {
+    return { ok: false, message: "페이업 카드 구독 결제만 취소할 수 있습니다." };
+  }
+
+  const cred = getPayupCredentials();
+  if (!cred.ok) return { ok: false, message: cred.message };
+  const transactionId = payupTransactionIdFromPayment(payment);
+  if (!transactionId) {
+    return { ok: false, message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." };
+  }
+
+  const persistCancelApiMeta = async (flat: Record<string, string>, responseCode: string, responseMsg: string) => {
+    const prevMeta =
+      payment.payupMeta && typeof payment.payupMeta === "object"
+        ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+        : {};
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...prevMeta,
+          pgCancelApiCalledAt: new Date().toISOString(),
+          pgCancelApiResponseCode: responseCode || flat.responseCode || flat.RESPONSECODE || null,
+          pgCancelApiResponseMsg: responseMsg || flat.responseMsg || flat.RESPONSEMSG || null,
+        },
+      })
+      .where(eq(payments.id, payment.id));
+  };
+
+  const revertAfterPgCancelConfirmed = async (source: "cancel2" | "reconcile") => {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false as const, message: out.message };
+    return {
+      ok: true as const,
+      downgradedUser: out.downgradedUser,
+      alreadyRefunded: out.noop === "already_refunded",
+      source,
+    };
+  };
+
+  const cancelRes = await payupPostCancel2(cred, { transactionId });
+  if (cancelRes.ok && cancelRes.data) {
+    const cancelResult = payupCancelApiResponseResult(cancelRes.data);
+    if (cancelResult.ok) {
+      await persistCancelApiMeta(cancelResult.flat, cancelResult.responseCode, cancelResult.responseMsg);
+      return revertAfterPgCancelConfirmed("cancel2");
     }
   }
 
-  await tryReconcileAllPaidPayupSubscriptionsForUser(userId);
-  const downgraded = (await ensureUserSubscriptionBackedByPaidPayment(userId, now)) === "downgraded";
-  const tier = await subscriptionMeTierForUser(userId, now);
-  return { tier, downgraded };
+  let cancelBodyFlat: Record<string, string> = {};
+  if (cancelRes.ok && cancelRes.data) {
+    cancelBodyFlat = flattenPayupWebhookPayload(cancelRes.data);
+  } else if (!cancelRes.ok && cancelRes.bodyText) {
+    try {
+      cancelBodyFlat = flattenPayupWebhookPayload(JSON.parse(cancelRes.bodyText));
+    } catch {
+      cancelBodyFlat = {};
+    }
+  }
+  const cancelFailMsg = !cancelRes.ok ? cancelRes.message : "";
+  const cancelFailBody = !cancelRes.ok ? (cancelRes.bodyText ?? "") : "";
+  const cancelBlob = `${cancelFailMsg} ${cancelFailBody}`;
+  const alreadyCancelledAtPg =
+    payupFlatIndicatesSuccessfulCancelOrRefund(cancelBodyFlat) ||
+    /이미\s*(?:취소|환불)|already\s+(?:cancelled|canceled|refunded|voided)/i.test(cancelBlob);
+  if (alreadyCancelledAtPg) {
+    await persistCancelApiMeta(
+      cancelBodyFlat,
+      cancelBodyFlat.responseCode ?? cancelBodyFlat.RESPONSECODE ?? "",
+      cancelBodyFlat.responseMsg ?? cancelBodyFlat.RESPONSEMSG ?? "",
+    );
+    return revertAfterPgCancelConfirmed("cancel2");
+  }
+
+  const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
+    payment,
+    "payup_admin_auto_reconcile",
+  );
+  if (recon.ok && recon.action === "refunded") {
+    return {
+      ok: true,
+      downgradedUser: recon.downgradedUser,
+      alreadyRefunded: false,
+      source: "reconcile",
+    };
+  }
+  if (recon.ok && recon.action === "already_refunded") {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false, message: out.message };
+    return {
+      ok: true,
+      downgradedUser: out.downgradedUser,
+      alreadyRefunded: true,
+      source: "reconcile",
+    };
+  }
+  if (recon.ok && recon.action === "still_paid") {
+    return {
+      ok: false,
+      message:
+        "페이업·PG 조회상 이 거래는 아직 승인 상태입니다. 카드사·페이업 관리자에서 취소·환불이 완료됐는지 확인해 주세요.",
+      hint: "취소가 PG에 반영됐다면 PAYUP_TXN_RECONCILE_PATH 거래조회 URL이 올바른지 페이업 기술지원에 확인하세요.",
+    };
+  }
+
+  const preview = cancelRes.ok ? payupJsonPreview(cancelRes.data) : cancelFailBody.slice(0, 600);
+  const reconcileHint =
+    (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0
+      ? undefined
+      : "카드사에서 이미 취소된 건은 PAYUP_TXN_RECONCILE_PATH(거래조회) 설정 후 다시 시도하거나, 페이업 관리자에서 거래 상태를 확인하세요.";
+  return {
+    ok: false,
+    message: cancelRes.ok
+      ? "페이업 cancel2 응답에서 취소·환불 완료를 확인하지 못했습니다."
+      : cancelFailMsg || "페이업 cancel2 요청에 실패했습니다.",
+    responseCode: cancelBodyFlat.responseCode ?? cancelBodyFlat.RESPONSECODE,
+    responseMsg: cancelBodyFlat.responseMsg ?? cancelBodyFlat.RESPONSEMSG,
+    detail: preview || undefined,
+    hint: reconcileHint,
+  };
 }
 
 /**
@@ -919,6 +999,7 @@ function payupCancelApiResponseResult(data: unknown): {
       statusText,
     );
   const ok =
+    payupFlatIndicatesSuccessfulCancelOrRefund(flat) ||
     (cancelDateTime.length >= 8 && !hasFailureSignal) ||
     (successCode && !hasFailureSignal) ||
     (successFlag && !hasFailureSignal) ||
@@ -8716,41 +8797,12 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const userId = req.user.claims.sub;
-      let [user] = await db.select().from(users).where(eq(users.id, userId));
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) return res.status(404).json({ message: "사용자를 찾을 수 없습니다" });
 
       const now = new Date();
       if (!isUserPaidSubscriptionActive(user, now)) {
         return res.status(400).json({ message: "현재 이용 중인 유료 구독이 없습니다." });
-      }
-
-      const [latestPendingPayup] = await db
-        .select({ orderId: payments.orderId })
-        .from(payments)
-        .where(
-          and(
-            eq(payments.userId, userId),
-            eq(payments.status, "pending"),
-            eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY),
-            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
-          ),
-        )
-        .orderBy(desc(payments.createdAt))
-        .limit(1);
-      if (latestPendingPayup?.orderId) {
-        await alignSubscriptionAfterPayupCheckoutAbandon(userId, latestPendingPayup.orderId, "cancel");
-      }
-
-      await tryReconcileAllPaidPayupSubscriptionsForUser(userId);
-      const aligned = await ensureUserSubscriptionBackedByPaidPayment(userId, now);
-      [user] = await db.select().from(users).where(eq(users.id, userId));
-      if (!user || aligned === "downgraded" || !isUserPaidSubscriptionActive(user, now)) {
-        return res.json({
-          success: true,
-          downgradedImmediately: true,
-          message:
-            "카드 결제가 취소·환불된 것으로 확인되어 무료 플랜으로 조정되었습니다. 요금 페이지가 갱신됩니다.",
-        });
       }
 
       const displayed = computeDisplayedSubscriptionFromEntitlements(
@@ -8791,7 +8843,6 @@ export async function registerRoutes(
 
       res.json({
         success: true,
-        downgradedImmediately: false,
         message:
           "다음 결제(갱신)는 중지되었습니다. 표시된 만료일까지는 유료 혜택(음악 생성 한도 등)이 그대로 유지됩니다.",
       });
@@ -9590,49 +9641,6 @@ export async function registerRoutes(
     }
   });
 
-  /** PG 취소·실패 복귀 후 구독·결제 행 보정 (주문번호 없으면 최근 pending 페이업 주문) */
-  app.post("/api/subscription/payup/align-after-abandon", isAuthenticated, async (req, res) => {
-    try {
-      // @ts-ignore
-      const userId = req.user.claims.sub as string;
-      const outcomeRaw = String((req.body as { outcome?: unknown })?.outcome ?? "cancel").trim().toLowerCase();
-      const outcome: "cancel" | "fail" = outcomeRaw === "fail" ? "fail" : "cancel";
-      const orderRaw = String((req.body as { orderNumber?: unknown })?.orderNumber ?? "").trim().toUpperCase();
-
-      if (orderRaw && looksLikeVenysoundPayupMerchantOrderId(orderRaw)) {
-        const aligned = await alignSubscriptionAfterPayupCheckoutAbandon(userId, orderRaw, outcome);
-        return res.json({ ok: true as const, ...aligned });
-      }
-
-      const [latestPending] = await db
-        .select()
-        .from(payments)
-        .where(
-          and(
-            eq(payments.userId, userId),
-            eq(payments.status, "pending"),
-            eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY),
-            inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
-          ),
-        )
-        .orderBy(desc(payments.createdAt))
-        .limit(1);
-      if (latestPending?.orderId) {
-        const aligned = await alignSubscriptionAfterPayupCheckoutAbandon(userId, latestPending.orderId, outcome);
-        return res.json({ ok: true as const, ...aligned });
-      }
-
-      await tryReconcileAllPaidPayupSubscriptionsForUser(userId);
-      const now = new Date();
-      const downgraded = (await ensureUserSubscriptionBackedByPaidPayment(userId, now)) === "downgraded";
-      const tier = await subscriptionMeTierForUser(userId, now);
-      return res.json({ ok: true as const, tier, downgraded });
-    } catch (err) {
-      console.error("[payup] align-after-abandon", err);
-      return res.status(500).json({ message: "처리하지 못했습니다." });
-    }
-  });
-
   /**
    * PG 취소·승인 실패 후 브라우저가 `?payup=cancel|fail` 로만 복귀할 때 — 서버는 PG 취소를 직접 받지 못하므로
    * 클라이언트가 sessionStorage 의 주문번호와 함께 호출하면 인앱 알림 1회(중복 방지: payup_meta.abandonNotifiedAt).
@@ -9653,8 +9661,14 @@ export async function registerRoutes(
       const userId = req.user.claims.sub as string;
       const [row] = await db.select().from(payments).where(eq(payments.orderId, orderNumber)).limit(1);
       if (!row || row.userId !== userId) {
-        const tierOnly = await subscriptionMeTierForUser(userId, new Date());
-        return res.json({ ok: true as const, tier: tierOnly, downgraded: false });
+        return res.json({ ok: true as const, tier: await subscriptionMeTierForUser(userId, new Date()) });
+      }
+      const rowSt = String(row.status ?? "").trim().toLowerCase();
+      const rowPk = String(row.paymentKey ?? "").trim();
+      const isPendingPayupCheckout = rowSt === "pending" && rowPk === PAYUP_SUBSCRIPTION_PAYMENT_KEY;
+      const isPaidPayup = rowSt === "paid" && isPayupPaidSubscriptionPayment(row);
+      if (!isPendingPayupCheckout && !isPaidPayup) {
+        return res.json({ ok: true as const, tier: await subscriptionMeTierForUser(userId, new Date()) });
       }
 
       const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
@@ -9678,31 +9692,10 @@ export async function registerRoutes(
         }
       }
 
-      const aligned = await alignSubscriptionAfterPayupCheckoutAbandon(userId, orderNumber, outcome);
-      if (!alreadyNotified && row.status === "pending" && row.paymentKey === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
-        const [again] = await db.select().from(payments).where(eq(payments.id, row.id));
-        const m2 =
-          again?.payupMeta && typeof again.payupMeta === "object"
-            ? (again.payupMeta as Record<string, unknown>)
-            : meta;
-        if (typeof m2.abandonNotifiedAt !== "string" || m2.abandonNotifiedAt.length < 10) {
-          await db
-            .update(payments)
-            .set({
-              payupMeta: {
-                ...m2,
-                abandonNotifiedAt: new Date().toISOString(),
-                abandonOutcome: outcome,
-              },
-            })
-            .where(eq(payments.id, row.id));
-        }
-      }
-
+      const handled = await handlePayupCheckoutClientOutcome(userId, orderNumber, outcome);
       return res.json({
         ok: true as const,
-        tier: aligned.tier,
-        downgraded: aligned.downgraded,
+        tier: handled.tier,
         skipped: alreadyNotified ? (true as const) : undefined,
       });
     } catch (err) {
@@ -9739,7 +9732,7 @@ export async function registerRoutes(
     }
   });
 
-  /** 관리자: 우리 사이트에서 페이업 카드 구독 전액취소를 실행하고, 성공 응답을 받은 뒤 DB를 refunded 로 동기화 */
+  /** 관리자: cancel2(규격서) → 불명확 시 PG 거래조회 → 확인 시에만 DB refunded·구독 무료화 */
   app.post("/api/admin/payments/:id/cancel-payup-subscription", isAuthenticated, isAdmin, async (req, res) => {
     try {
       const paymentId = String(req.params.id ?? "").trim();
@@ -9747,100 +9740,40 @@ export async function registerRoutes(
       const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
 
-      const status = String(payment.status ?? "").trim().toLowerCase();
-      if (status === "refunded") {
-        const out = await revertPayupCardSubscriptionPaymentById(payment.id);
-        if (!out.ok) return res.status(400).json({ message: out.message });
-        if (out.downgradedUser) {
-          try {
-            await storage.createNotification({
-              userId: out.userId,
-              type: "system",
-              message:
-                "援щ룆 移대뱶 寃곗젣媛 痍⑥냼 泥섎━?섏뼱 臾대즺 ?뚮옖?쇰줈 議곗젙?섏뿀?듬땲?? AI ?앹꽦 ?쒕룄媛 媛깆떊?⑸땲??",
-              payload: { subscriptionReverted: true, source: "payup_admin_cancel_api_already_refunded" },
-              url: "/create-music",
-            });
-          } catch (e) {
-            console.error("[admin cancel-payup-subscription] notify already-refunded", e);
-          }
-        }
-        return res.json({ success: true, alreadyRefunded: true, downgradedUser: out.downgradedUser });
-      }
-      if (status !== "paid") {
-        return res.status(400).json({ message: `paid 상태의 페이업 카드 구독 건만 취소할 수 있습니다. (현재: ${payment.status ?? "?"})` });
-      }
-      if (!isPayupPaidSubscriptionPayment(payment)) {
-        return res.status(400).json({ message: "페이업 카드 구독 결제만 취소할 수 있습니다." });
-      }
-
-      const cred = getPayupCredentials();
-      if (!cred.ok) return res.status(503).json({ message: cred.message });
-      const transactionId = payupTransactionIdFromPayment(payment);
-      if (!transactionId) {
-        return res.status(400).json({ message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." });
-      }
-
-      const cancelRes = await payupPostCancel2(cred, { transactionId });
-      if (!cancelRes.ok) {
-        return res.status(502).json({ message: cancelRes.message, detail: cancelRes.bodyText });
-      }
-      const cancelResult = payupCancelApiResponseResult(cancelRes.data);
-      if (!cancelResult.ok) {
-        const preview = payupJsonPreview(cancelRes.data);
-        console.error("[admin cancel-payup-subscription] unrecognized cancel response", {
-          paymentId: payment.id,
-          orderId: payment.orderId,
-          transactionId: `${transactionId.slice(0, 8)}...`,
-          responseCode: cancelResult.responseCode || null,
-          responseMsg: cancelResult.responseMsg || null,
-          keys: Object.keys(cancelResult.flat).slice(0, 40),
-          preview,
-        });
+      const out = await adminSyncPayupPaidSubscriptionCancelWithPg(payment);
+      if (!out.ok) {
         return res.status(502).json({
-          message: "페이업 취소 API 응답에서 취소 성공을 확인하지 못했습니다.",
-          responseCode: cancelResult.responseCode || undefined,
-          responseMsg: cancelResult.responseMsg || undefined,
-          detail: preview || undefined,
+          message: out.message,
+          responseCode: out.responseCode,
+          responseMsg: out.responseMsg,
+          detail: out.detail,
+          hint: out.hint,
         });
       }
 
-      const meta =
-        payment.payupMeta && typeof payment.payupMeta === "object"
-          ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
-          : {};
-      await db
-        .update(payments)
-        .set({
-          payupMeta: {
-            ...meta,
-            pgCancelApiCalledAt: new Date().toISOString(),
-            pgCancelApiResponseCode: cancelResult.responseCode || null,
-            pgCancelApiResponseMsg: cancelResult.responseMsg || null,
-          },
-        })
-        .where(eq(payments.id, payment.id));
-
-      const out = await revertPayupCardSubscriptionPaymentById(payment.id);
-      if (!out.ok) return res.status(400).json({ message: out.message });
-      if (out.noop === "already_refunded") {
-        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false });
-      }
       if (out.downgradedUser) {
         try {
+          const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
           await storage.createNotification({
-            userId: out.userId,
+            userId: payment.userId,
             type: "system",
             message:
-              "구독 카드 결제가 취소 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
-            payload: { subscriptionReverted: true, source: "payup_admin_cancel_api" },
+              out.source === "reconcile"
+                ? "구독 카드 결제가 페이업에서 취소·환불로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다."
+                : "구독 카드 결제가 취소 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: `payup_admin_${out.source}` },
             url: "/create-music",
           });
+          void payUser;
         } catch (e) {
           console.error("[admin cancel-payup-subscription] notify", e);
         }
       }
-      res.json({ success: true, downgradedUser: out.downgradedUser });
+
+      if (out.alreadyRefunded) {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: out.downgradedUser, source: out.source });
+      }
+      res.json({ success: true, downgradedUser: out.downgradedUser, source: out.source });
     } catch (err: any) {
       console.error("[admin cancel-payup-subscription]", err);
       res.status(500).json({ message: err?.message || "페이업 취소 처리에 실패했습니다." });
