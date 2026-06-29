@@ -127,10 +127,12 @@ import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
 import { payupDirectPostPayUrl } from "./payup/direct-pay";
 import { payupPostPartCancel } from "./payup/part-cancel";
+import { payupPostCancel2 } from "./payup/cancel";
 import { revertPayupCardSubscriptionPaymentById, payupMetaTransactionIdFromPayupMeta } from "./payup/revert-payup-subscription";
 import {
   flattenPayupWebhookPayload,
   tryRevertPaidPayupSubscriptionFromNotifyFlat,
+  payupFlatIndicatesSuccessfulCancelOrRefund,
   payupInquiryFlatIndicatesSuccessfulAuth0000,
   payupInquiryFlatExpectOrderMatch,
   payupInquiryFlatAmountMatchesIfPresent,
@@ -310,6 +312,12 @@ function isPayupPaidSubscriptionPayment(payment: {
   const key = String(payment.paymentKey ?? "").trim().toLowerCase();
   if (key.startsWith("payup:")) return true;
   return payupMetaTransactionIdFromPayupMeta(payment.payupMeta).length > 0 && key !== "bank_transfer";
+}
+
+function payupTransactionIdFromPayment(payment: { paymentKey?: string | null; payupMeta?: unknown }): string {
+  const paymentKey = String(payment.paymentKey ?? "").trim();
+  const txnFromKey = /^payup:(.+)$/i.exec(paymentKey)?.[1]?.trim() ?? "";
+  return txnFromKey || payupMetaTransactionIdFromPayupMeta(payment.payupMeta);
 }
 
 async function paidSubscriptionPaymentAlreadyReflected(payment: {
@@ -9332,6 +9340,94 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("[admin payup part-cancel]", err);
       res.status(500).json({ message: err?.message || "부분취소 요청에 실패했습니다" });
+    }
+  });
+
+  /** 관리자: 우리 사이트에서 페이업 카드 구독 전액취소를 실행하고, 성공 응답을 받은 뒤 DB를 refunded 로 동기화 */
+  app.post("/api/admin/payments/:id/cancel-payup-subscription", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = String(req.params.id ?? "").trim();
+      if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
+
+      const status = String(payment.status ?? "").trim().toLowerCase();
+      if (status === "refunded") {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false });
+      }
+      if (status !== "paid") {
+        return res.status(400).json({ message: `paid 상태의 페이업 카드 구독 건만 취소할 수 있습니다. (현재: ${payment.status ?? "?"})` });
+      }
+      if (!isPayupPaidSubscriptionPayment(payment)) {
+        return res.status(400).json({ message: "페이업 카드 구독 결제만 취소할 수 있습니다." });
+      }
+
+      const cred = getPayupCredentials();
+      if (!cred.ok) return res.status(503).json({ message: cred.message });
+      const transactionId = payupTransactionIdFromPayment(payment);
+      if (!transactionId) {
+        return res.status(400).json({ message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." });
+      }
+
+      const cancelRes = await payupPostCancel2(cred, { transactionId });
+      if (!cancelRes.ok) {
+        return res.status(502).json({ message: cancelRes.message, detail: cancelRes.bodyText });
+      }
+      const flat = flattenPayupWebhookPayload(cancelRes.data);
+      const responseCode = flat.responseCode ?? flat.RESPONSECODE ?? flat.resultCode ?? flat.RESULT_CODE ?? "";
+      const cancelOk = responseCode === "0000" || payupFlatIndicatesSuccessfulCancelOrRefund(flat);
+      if (!cancelOk) {
+        let preview = "";
+        try {
+          preview = JSON.stringify(cancelRes.data).slice(0, 800);
+        } catch {
+          /* ignore */
+        }
+        return res.status(502).json({
+          message: "페이업 취소 API 응답에서 취소 성공을 확인하지 못했습니다.",
+          responseCode: responseCode || undefined,
+          detail: preview || undefined,
+        });
+      }
+
+      const meta =
+        payment.payupMeta && typeof payment.payupMeta === "object"
+          ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+      await db
+        .update(payments)
+        .set({
+          payupMeta: {
+            ...meta,
+            pgCancelApiCalledAt: new Date().toISOString(),
+            pgCancelApiResponseCode: responseCode || null,
+          },
+        })
+        .where(eq(payments.id, payment.id));
+
+      const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+      if (!out.ok) return res.status(400).json({ message: out.message });
+      if (out.noop === "already_refunded") {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: false });
+      }
+      if (out.downgradedUser) {
+        try {
+          await storage.createNotification({
+            userId: out.userId,
+            type: "system",
+            message:
+              "구독 카드 결제가 취소 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: "payup_admin_cancel_api" },
+            url: "/create-music",
+          });
+        } catch (e) {
+          console.error("[admin cancel-payup-subscription] notify", e);
+        }
+      }
+      res.json({ success: true, downgradedUser: out.downgradedUser });
+    } catch (err: any) {
+      console.error("[admin cancel-payup-subscription]", err);
+      res.status(500).json({ message: err?.message || "페이업 취소 처리에 실패했습니다." });
     }
   });
 
