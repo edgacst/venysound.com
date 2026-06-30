@@ -579,6 +579,7 @@ export function GlobalAudioPlayer() {
   const playAttemptKeyRef = useRef<string | null>(null);
   const resumeAfterSystemPauseRef = useRef(false);
   const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
+  const resumeAfterSystemPauseAttemptsRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -634,6 +635,7 @@ export function GlobalAudioPlayer() {
       const currentState = usePlayerStore.getState();
       if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
         resumeAfterSystemPauseRef.current = false;
+        resumeAfterSystemPauseAttemptsRef.current = 0;
         return;
       }
       if (!resumeAfterSystemPauseRef.current) return;
@@ -644,19 +646,47 @@ export function GlobalAudioPlayer() {
       currentAudio.volume = volume;
       if (!currentAudio.paused) {
         resumeAfterSystemPauseRef.current = false;
+        resumeAfterSystemPauseAttemptsRef.current = 0;
         setIsPlaying(true);
         setNeedsTap(false);
         return;
       }
 
+      resumeAfterSystemPauseAttemptsRef.current += 1;
+      if (resumeAfterSystemPauseAttemptsRef.current === 3) {
+        const resumeTime = currentAudio.currentTime;
+        const resumeSrc = currentAudio.currentSrc || currentAudio.src;
+        if (resumeSrc) {
+          const restoreTime = () => {
+            if (Number.isFinite(resumeTime) && resumeTime > 0) {
+              try {
+                currentAudio.currentTime = resumeTime;
+              } catch {
+                /* ignore */
+              }
+            }
+          };
+          currentAudio.pause();
+          currentAudio.src = resumeSrc;
+          currentAudio.load();
+          if (currentAudio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+            restoreTime();
+          } else {
+            currentAudio.addEventListener("loadedmetadata", restoreTime, { once: true });
+          }
+        }
+      }
+
       void playWithSoftStart(currentAudio, volume)
         .then(() => {
           resumeAfterSystemPauseRef.current = false;
+          resumeAfterSystemPauseAttemptsRef.current = 0;
           setIsPlaying(true);
           setNeedsTap(false);
         })
         .catch(() => {
-          resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 1200);
+          const delay = resumeAfterSystemPauseAttemptsRef.current >= 3 ? 1800 : 1200;
+          resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, delay);
         });
     };
 
@@ -1225,6 +1255,7 @@ export function GlobalAudioPlayer() {
       resumeAfterSystemPauseRef.current = true;
       audioRef.current?.pause();
       setIsPlaying(false);
+      window.setTimeout(scheduleResumeAfterSystemPause, 700);
     });
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
@@ -1244,7 +1275,7 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, playNext, playPrev, setPauseRequested]);
+  }, [displayMusic, imageUrl, playNext, playPrev, scheduleResumeAfterSystemPause, setPauseRequested]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
