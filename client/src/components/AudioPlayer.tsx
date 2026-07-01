@@ -704,10 +704,11 @@ export function GlobalAudioPlayer() {
       if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
         resumeAfterSystemPauseAttemptsRef.current += 1;
         await reloadAudioForSystemResume(currentAudio);
+        systemPauseNeedsReloadRef.current = false;
       }
       currentAudio.muted = false;
       currentAudio.volume = volume;
-      if (!currentAudio.paused) {
+      if (!currentAudio.paused && !systemPauseNeedsReloadRef.current) {
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
         systemPauseNeedsReloadRef.current = false;
@@ -717,8 +718,9 @@ export function GlobalAudioPlayer() {
       }
 
       resumeAfterSystemPauseAttemptsRef.current += 1;
-      if (resumeAfterSystemPauseAttemptsRef.current === 3) {
+      if (systemPauseNeedsReloadRef.current || resumeAfterSystemPauseAttemptsRef.current === 3) {
         await reloadAudioForSystemResume(currentAudio);
+        systemPauseNeedsReloadRef.current = false;
       }
 
       void playWithSoftStart(currentAudio, volume)
