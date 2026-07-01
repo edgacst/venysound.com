@@ -581,6 +581,7 @@ export function GlobalAudioPlayer() {
   const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
   const resumeAfterSystemPauseAttemptsRef = useRef(0);
   const systemPauseHiddenAtRef = useRef<number | null>(null);
+  const systemPauseSnapshotRef = useRef<{ src: string; time: number } | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -622,8 +623,11 @@ export function GlobalAudioPlayer() {
   }, []);
 
   const reloadAudioForSystemResume = useCallback((audio: HTMLAudioElement) => {
-    const resumeTime = audio.currentTime;
-    const resumeSrc = audio.currentSrc || audio.src;
+    const snapshot = systemPauseSnapshotRef.current;
+    const resumeTime = Number.isFinite(audio.currentTime) && audio.currentTime > 0
+      ? audio.currentTime
+      : snapshot?.time ?? 0;
+    const resumeSrc = audio.currentSrc || audio.src || snapshot?.src || "";
     if (!resumeSrc) return false;
 
     const restoreTime = () => {
@@ -704,23 +708,30 @@ export function GlobalAudioPlayer() {
     resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 350);
   }, [reloadAudioForSystemResume, volume]);
 
+  const markSystemAudioInterruption = useCallback(() => {
+    const st = usePlayerStore.getState();
+    const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
+    const audio = audioRef.current;
+    if (!st.pauseRequested && hasTrack && (isPlaying || !audio?.paused)) {
+      const src = audio?.currentSrc || audio?.src || "";
+      if (src) {
+        systemPauseSnapshotRef.current = {
+          src,
+          time: Number.isFinite(audio?.currentTime) ? audio?.currentTime ?? 0 : 0,
+        };
+      }
+      systemPauseHiddenAtRef.current = Date.now();
+      resumeAfterSystemPauseRef.current = true;
+    }
+  }, [isPlaying]);
+
   useEffect(() => {
     const onResumeSignal = () => {
       if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
     };
-    const markPossibleSystemPause = () => {
-      const st = usePlayerStore.getState();
-      const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
-      if (!st.pauseRequested && hasTrack && isPlaying) {
-        systemPauseHiddenAtRef.current = Date.now();
-        resumeAfterSystemPauseRef.current = true;
-      }
-    };
     const onVisibilityChange = () => {
-      const st = usePlayerStore.getState();
-      const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
       if (document.visibilityState === "hidden") {
-        markPossibleSystemPause();
+        markSystemAudioInterruption();
         return;
       }
       const hiddenAt = systemPauseHiddenAtRef.current;
@@ -729,19 +740,19 @@ export function GlobalAudioPlayer() {
       if (wasInterrupted || resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
     };
     window.addEventListener("focus", onResumeSignal);
-    window.addEventListener("blur", markPossibleSystemPause);
+    window.addEventListener("blur", markSystemAudioInterruption);
     window.addEventListener("pageshow", onResumeSignal);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onResumeSignal);
-      window.removeEventListener("blur", markPossibleSystemPause);
+      window.removeEventListener("blur", markSystemAudioInterruption);
       window.removeEventListener("pageshow", onResumeSignal);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       if (resumeAfterSystemPauseTimerRef.current) {
         window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
       }
     };
-  }, [isPlaying, scheduleResumeAfterSystemPause]);
+  }, [markSystemAudioInterruption, scheduleResumeAfterSystemPause]);
 
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
@@ -1136,6 +1147,10 @@ export function GlobalAudioPlayer() {
       tracker.onPause();
     };
     const onEnded = () => {
+      if (resumeAfterSystemPauseRef.current) {
+        scheduleResumeAfterSystemPause(true);
+        return;
+      }
       setIsPlaying(false);
       // 연속 재생 여부는 playMusic 내부의 guest quota 차단(blockGuestPlaybackIfNeeded)에서 결정한다.
       // (모바일에서 auth/user가 순간 null로 흔들리면 여기서 연속 재생이 끊기는 문제가 있어 ended에서는 항상 다음 곡을 시도)
@@ -1144,6 +1159,10 @@ export function GlobalAudioPlayer() {
     };
     const onError = () => {
       if (isClosingRef.current) return;
+      if (resumeAfterSystemPauseRef.current) {
+        scheduleResumeAfterSystemPause(true);
+        return;
+      }
       setIsPlaying(false);
       if (displayMusic?.title) {
         toast({
@@ -1285,6 +1304,7 @@ export function GlobalAudioPlayer() {
     });
     // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler('pause', () => {
+      markSystemAudioInterruption();
       resumeAfterSystemPauseRef.current = true;
       setIsPlaying(false);
       window.setTimeout(() => scheduleResumeAfterSystemPause(true), 700);
@@ -1307,7 +1327,7 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, playNext, playPrev, scheduleResumeAfterSystemPause, setPauseRequested]);
+  }, [displayMusic, imageUrl, markSystemAudioInterruption, playNext, playPrev, scheduleResumeAfterSystemPause, setPauseRequested]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
