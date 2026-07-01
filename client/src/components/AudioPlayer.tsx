@@ -712,7 +712,7 @@ export function GlobalAudioPlayer() {
     const st = usePlayerStore.getState();
     const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
     const audio = audioRef.current;
-    if (!st.pauseRequested && hasTrack && (isPlaying || !audio?.paused)) {
+    if (!st.pauseRequested && hasTrack) {
       const src = audio?.currentSrc || audio?.src || "";
       if (src) {
         systemPauseSnapshotRef.current = {
@@ -723,7 +723,7 @@ export function GlobalAudioPlayer() {
       systemPauseHiddenAtRef.current = Date.now();
       resumeAfterSystemPauseRef.current = true;
     }
-  }, [isPlaying]);
+  }, []);
 
   useEffect(() => {
     const onResumeSignal = () => {
@@ -741,11 +741,15 @@ export function GlobalAudioPlayer() {
     };
     window.addEventListener("focus", onResumeSignal);
     window.addEventListener("blur", markSystemAudioInterruption);
+    window.addEventListener("pagehide", markSystemAudioInterruption);
+    document.addEventListener("freeze", markSystemAudioInterruption);
     window.addEventListener("pageshow", onResumeSignal);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onResumeSignal);
       window.removeEventListener("blur", markSystemAudioInterruption);
+      window.removeEventListener("pagehide", markSystemAudioInterruption);
+      document.removeEventListener("freeze", markSystemAudioInterruption);
       window.removeEventListener("pageshow", onResumeSignal);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       if (resumeAfterSystemPauseTimerRef.current) {
@@ -1141,6 +1145,7 @@ export function GlobalAudioPlayer() {
     const onPause = () => {
       const st = usePlayerStore.getState();
       if (!st.pauseRequested && (st.activeMusicId || st.activeExternalTrack) && !audio.ended) {
+        markSystemAudioInterruption();
         scheduleResumeAfterSystemPause();
       }
       setIsPlaying(false);
