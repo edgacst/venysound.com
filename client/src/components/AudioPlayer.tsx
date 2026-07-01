@@ -708,14 +708,19 @@ export function GlobalAudioPlayer() {
     const onResumeSignal = () => {
       if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
     };
+    const markPossibleSystemPause = () => {
+      const st = usePlayerStore.getState();
+      const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
+      if (!st.pauseRequested && hasTrack && isPlaying) {
+        systemPauseHiddenAtRef.current = Date.now();
+        resumeAfterSystemPauseRef.current = true;
+      }
+    };
     const onVisibilityChange = () => {
       const st = usePlayerStore.getState();
       const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
       if (document.visibilityState === "hidden") {
-        if (!st.pauseRequested && hasTrack && isPlaying) {
-          systemPauseHiddenAtRef.current = Date.now();
-          resumeAfterSystemPauseRef.current = true;
-        }
+        markPossibleSystemPause();
         return;
       }
       const hiddenAt = systemPauseHiddenAtRef.current;
@@ -724,10 +729,12 @@ export function GlobalAudioPlayer() {
       if (wasInterrupted || resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
     };
     window.addEventListener("focus", onResumeSignal);
+    window.addEventListener("blur", markPossibleSystemPause);
     window.addEventListener("pageshow", onResumeSignal);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onResumeSignal);
+      window.removeEventListener("blur", markPossibleSystemPause);
       window.removeEventListener("pageshow", onResumeSignal);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       if (resumeAfterSystemPauseTimerRef.current) {
@@ -1279,7 +1286,6 @@ export function GlobalAudioPlayer() {
     // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler('pause', () => {
       resumeAfterSystemPauseRef.current = true;
-      audioRef.current?.pause();
       setIsPlaying(false);
       window.setTimeout(() => scheduleResumeAfterSystemPause(true), 700);
     });
