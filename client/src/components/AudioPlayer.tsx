@@ -580,6 +580,7 @@ export function GlobalAudioPlayer() {
   const resumeAfterSystemPauseRef = useRef(false);
   const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
   const resumeAfterSystemPauseAttemptsRef = useRef(0);
+  const systemPauseHiddenAtRef = useRef<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -620,7 +621,33 @@ export function GlobalAudioPlayer() {
     };
   }, []);
 
-  const scheduleResumeAfterSystemPause = useCallback(() => {
+  const reloadAudioForSystemResume = useCallback((audio: HTMLAudioElement) => {
+    const resumeTime = audio.currentTime;
+    const resumeSrc = audio.currentSrc || audio.src;
+    if (!resumeSrc) return false;
+
+    const restoreTime = () => {
+      if (Number.isFinite(resumeTime) && resumeTime > 0) {
+        try {
+          audio.currentTime = resumeTime;
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    audio.pause();
+    audio.src = resumeSrc;
+    audio.load();
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      restoreTime();
+    } else {
+      audio.addEventListener("loadedmetadata", restoreTime, { once: true });
+    }
+    return true;
+  }, []);
+
+  const scheduleResumeAfterSystemPause = useCallback((forceReload = false) => {
     const audio = audioRef.current;
     const st = usePlayerStore.getState();
     if (!audio || st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
@@ -644,6 +671,10 @@ export function GlobalAudioPlayer() {
       if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
       currentAudio.muted = false;
       currentAudio.volume = volume;
+      if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
+        resumeAfterSystemPauseAttemptsRef.current += 1;
+        reloadAudioForSystemResume(currentAudio);
+      }
       if (!currentAudio.paused) {
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
@@ -654,27 +685,7 @@ export function GlobalAudioPlayer() {
 
       resumeAfterSystemPauseAttemptsRef.current += 1;
       if (resumeAfterSystemPauseAttemptsRef.current === 3) {
-        const resumeTime = currentAudio.currentTime;
-        const resumeSrc = currentAudio.currentSrc || currentAudio.src;
-        if (resumeSrc) {
-          const restoreTime = () => {
-            if (Number.isFinite(resumeTime) && resumeTime > 0) {
-              try {
-                currentAudio.currentTime = resumeTime;
-              } catch {
-                /* ignore */
-              }
-            }
-          };
-          currentAudio.pause();
-          currentAudio.src = resumeSrc;
-          currentAudio.load();
-          if (currentAudio.readyState >= HTMLMediaElement.HAVE_METADATA) {
-            restoreTime();
-          } else {
-            currentAudio.addEventListener("loadedmetadata", restoreTime, { once: true });
-          }
-        }
+        reloadAudioForSystemResume(currentAudio);
       }
 
       void playWithSoftStart(currentAudio, volume)
@@ -691,24 +702,39 @@ export function GlobalAudioPlayer() {
     };
 
     resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 350);
-  }, [volume]);
+  }, [reloadAudioForSystemResume, volume]);
 
   useEffect(() => {
     const onResumeSignal = () => {
-      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause();
+      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
+    };
+    const onVisibilityChange = () => {
+      const st = usePlayerStore.getState();
+      const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
+      if (document.visibilityState === "hidden") {
+        if (!st.pauseRequested && hasTrack && isPlaying) {
+          systemPauseHiddenAtRef.current = Date.now();
+          resumeAfterSystemPauseRef.current = true;
+        }
+        return;
+      }
+      const hiddenAt = systemPauseHiddenAtRef.current;
+      const wasInterrupted = hiddenAt != null && Date.now() - hiddenAt > 1200;
+      systemPauseHiddenAtRef.current = null;
+      if (wasInterrupted || resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
     };
     window.addEventListener("focus", onResumeSignal);
     window.addEventListener("pageshow", onResumeSignal);
-    document.addEventListener("visibilitychange", onResumeSignal);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onResumeSignal);
       window.removeEventListener("pageshow", onResumeSignal);
-      document.removeEventListener("visibilitychange", onResumeSignal);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (resumeAfterSystemPauseTimerRef.current) {
         window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
       }
     };
-  }, [scheduleResumeAfterSystemPause]);
+  }, [isPlaying, scheduleResumeAfterSystemPause]);
 
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
@@ -1255,7 +1281,7 @@ export function GlobalAudioPlayer() {
       resumeAfterSystemPauseRef.current = true;
       audioRef.current?.pause();
       setIsPlaying(false);
-      window.setTimeout(scheduleResumeAfterSystemPause, 700);
+      window.setTimeout(() => scheduleResumeAfterSystemPause(true), 700);
     });
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
