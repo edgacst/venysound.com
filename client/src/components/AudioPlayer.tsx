@@ -582,6 +582,7 @@ export function GlobalAudioPlayer() {
   const resumeAfterSystemPauseAttemptsRef = useRef(0);
   const systemPauseHiddenAtRef = useRef<number | null>(null);
   const systemPauseSnapshotRef = useRef<{ src: string; time: number } | null>(null);
+  const systemPauseNeedsReloadRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -693,6 +694,7 @@ export function GlobalAudioPlayer() {
       if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
+        systemPauseNeedsReloadRef.current = false;
         return;
       }
       if (!resumeAfterSystemPauseRef.current) return;
@@ -708,6 +710,7 @@ export function GlobalAudioPlayer() {
       if (!currentAudio.paused) {
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
+        systemPauseNeedsReloadRef.current = false;
         setIsPlaying(true);
         setNeedsTap(false);
         return;
@@ -722,6 +725,7 @@ export function GlobalAudioPlayer() {
         .then(() => {
           resumeAfterSystemPauseRef.current = false;
           resumeAfterSystemPauseAttemptsRef.current = 0;
+          systemPauseNeedsReloadRef.current = false;
           setIsPlaying(true);
           setNeedsTap(false);
         })
@@ -754,7 +758,7 @@ export function GlobalAudioPlayer() {
 
   useEffect(() => {
     const onResumeSignal = () => {
-      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
+      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
@@ -764,7 +768,9 @@ export function GlobalAudioPlayer() {
       const hiddenAt = systemPauseHiddenAtRef.current;
       const wasInterrupted = hiddenAt != null && Date.now() - hiddenAt > 1200;
       systemPauseHiddenAtRef.current = null;
-      if (wasInterrupted || resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(true);
+      if (wasInterrupted || resumeAfterSystemPauseRef.current) {
+        scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
+      }
     };
     window.addEventListener("focus", onResumeSignal);
     window.addEventListener("blur", markSystemAudioInterruption);
@@ -1173,6 +1179,7 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       if (!st.pauseRequested && (st.activeMusicId || st.activeExternalTrack) && !audio.ended) {
         markSystemAudioInterruption();
+        systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause();
       }
       setIsPlaying(false);
@@ -1180,6 +1187,7 @@ export function GlobalAudioPlayer() {
     };
     const onEnded = () => {
       if (resumeAfterSystemPauseRef.current) {
+        systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause(true);
         return;
       }
@@ -1192,6 +1200,7 @@ export function GlobalAudioPlayer() {
     const onError = () => {
       if (isClosingRef.current) return;
       if (resumeAfterSystemPauseRef.current) {
+        systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause(true);
         return;
       }
@@ -1338,6 +1347,7 @@ export function GlobalAudioPlayer() {
     navigator.mediaSession.setActionHandler('pause', () => {
       markSystemAudioInterruption();
       resumeAfterSystemPauseRef.current = true;
+      systemPauseNeedsReloadRef.current = true;
       setIsPlaying(false);
       window.setTimeout(() => scheduleResumeAfterSystemPause(true), 700);
     });
