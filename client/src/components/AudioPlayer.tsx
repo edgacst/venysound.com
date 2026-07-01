@@ -628,27 +628,52 @@ export function GlobalAudioPlayer() {
       ? audio.currentTime
       : snapshot?.time ?? 0;
     const resumeSrc = audio.currentSrc || audio.src || snapshot?.src || "";
-    if (!resumeSrc) return false;
+    if (!resumeSrc) return Promise.resolve(false);
 
-    const restoreTime = () => {
-      if (Number.isFinite(resumeTime) && resumeTime > 0) {
-        try {
-          audio.currentTime = resumeTime;
-        } catch {
-          /* ignore */
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let settleTimer: number | null = null;
+      const cleanup = () => {
+        audio.removeEventListener("loadedmetadata", restoreTime);
+        audio.removeEventListener("seeked", onReady);
+        audio.removeEventListener("canplay", onReady);
+        audio.removeEventListener("error", onReady);
+        if (settleTimer != null) window.clearTimeout(settleTimer);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(true);
+      };
+      const onReady = () => finish();
+      const restoreTime = () => {
+        if (Number.isFinite(resumeTime) && resumeTime > 0) {
+          try {
+            audio.currentTime = resumeTime;
+            audio.addEventListener("seeked", onReady, { once: true });
+            settleTimer = window.setTimeout(finish, 450);
+            return;
+          } catch {
+            /* ignore */
+          }
         }
-      }
-    };
+        if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) finish();
+        else audio.addEventListener("canplay", onReady, { once: true });
+      };
 
-    audio.pause();
-    audio.src = resumeSrc;
-    audio.load();
-    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
-      restoreTime();
-    } else {
-      audio.addEventListener("loadedmetadata", restoreTime, { once: true });
-    }
-    return true;
+      audio.pause();
+      audio.muted = true;
+      audio.volume = 0;
+      audio.src = resumeSrc;
+      audio.load();
+      audio.addEventListener("error", onReady, { once: true });
+      if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        restoreTime();
+      } else {
+        audio.addEventListener("loadedmetadata", restoreTime, { once: true });
+      }
+    });
   }, []);
 
   const scheduleResumeAfterSystemPause = useCallback((forceReload = false) => {
@@ -662,6 +687,7 @@ export function GlobalAudioPlayer() {
     }
 
     const tryResume = () => {
+      void (async () => {
       const currentAudio = audioRef.current;
       const currentState = usePlayerStore.getState();
       if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
@@ -673,12 +699,12 @@ export function GlobalAudioPlayer() {
 
       const ctx = audioContextRef.current;
       if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
-      currentAudio.muted = false;
-      currentAudio.volume = volume;
       if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
         resumeAfterSystemPauseAttemptsRef.current += 1;
-        reloadAudioForSystemResume(currentAudio);
+        await reloadAudioForSystemResume(currentAudio);
       }
+      currentAudio.muted = false;
+      currentAudio.volume = volume;
       if (!currentAudio.paused) {
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
@@ -689,7 +715,7 @@ export function GlobalAudioPlayer() {
 
       resumeAfterSystemPauseAttemptsRef.current += 1;
       if (resumeAfterSystemPauseAttemptsRef.current === 3) {
-        reloadAudioForSystemResume(currentAudio);
+        await reloadAudioForSystemResume(currentAudio);
       }
 
       void playWithSoftStart(currentAudio, volume)
@@ -703,6 +729,7 @@ export function GlobalAudioPlayer() {
           const delay = resumeAfterSystemPauseAttemptsRef.current >= 3 ? 1800 : 1200;
           resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, delay);
         });
+      })();
     };
 
     resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 350);
