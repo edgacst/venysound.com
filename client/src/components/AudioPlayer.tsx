@@ -677,6 +677,17 @@ export function GlobalAudioPlayer() {
     });
   }, []);
 
+  const cancelSystemResume = useCallback(() => {
+    resumeAfterSystemPauseRef.current = false;
+    resumeAfterSystemPauseAttemptsRef.current = 0;
+    systemPauseNeedsReloadRef.current = false;
+    systemPauseHiddenAtRef.current = null;
+    if (resumeAfterSystemPauseTimerRef.current) {
+      window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+      resumeAfterSystemPauseTimerRef.current = null;
+    }
+  }, []);
+
   const scheduleResumeAfterSystemPause = useCallback((forceReload = false) => {
     const audio = audioRef.current;
     const st = usePlayerStore.getState();
@@ -1094,6 +1105,7 @@ export function GlobalAudioPlayer() {
       return;
     }
     if (pauseRequested) {
+      cancelSystemResume();
       prevPauseRequestedRef.current = true;
       audio.pause();
       setIsPlaying(false);
@@ -1113,7 +1125,7 @@ export function GlobalAudioPlayer() {
           setNeedsTap(true);
         });
     }
-  }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
+  }, [cancelSystemResume, pauseRequested, activeMusicId, activeExternalTrack, volume]);
 
   // 일부 모바일(특히 S24/LTE 백그라운드)에서 "조용히 paused" 되는 케이스 방지:
   // 재생해야 하는데 paused면 hidden 상태에서도 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
@@ -1243,10 +1255,11 @@ export function GlobalAudioPlayer() {
     if (audio.paused) {
       setPauseRequested(false);
     } else {
+      cancelSystemResume();
       setPauseRequested(true);
       audio.pause();
     }
-  }, [setPauseRequested]);
+  }, [cancelSystemResume, setPauseRequested]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
