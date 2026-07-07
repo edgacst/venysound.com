@@ -15,6 +15,7 @@ import { useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 import { useRadioPlayerStore } from "@/stores/radio-player";
+import { audioDebugLog } from "@/lib/audio-debug";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -630,6 +631,11 @@ export function GlobalAudioPlayer() {
       : snapshot?.time ?? 0;
     const resumeSrc = audio.currentSrc || audio.src || snapshot?.src || "";
     if (!resumeSrc) return Promise.resolve(false);
+    audioDebugLog("music", "reload-for-system-resume:start", audio, {
+      resumeSrc,
+      resumeTime,
+      snapshot,
+    });
 
     return new Promise<boolean>((resolve) => {
       let settled = false;
@@ -645,6 +651,7 @@ export function GlobalAudioPlayer() {
         if (settled) return;
         settled = true;
         cleanup();
+        audioDebugLog("music", "reload-for-system-resume:ready", audio, { resumeTime });
         resolve(true);
       };
       const onReady = () => finish();
@@ -678,6 +685,7 @@ export function GlobalAudioPlayer() {
   }, []);
 
   const cancelSystemResume = useCallback(() => {
+    audioDebugLog("music", "cancel-system-resume", audioRef.current);
     resumeAfterSystemPauseRef.current = false;
     resumeAfterSystemPauseAttemptsRef.current = 0;
     systemPauseNeedsReloadRef.current = false;
@@ -693,6 +701,14 @@ export function GlobalAudioPlayer() {
     const st = usePlayerStore.getState();
     if (!audio || st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
     resumeAfterSystemPauseRef.current = true;
+    audioDebugLog("music", "schedule-system-resume", audio, {
+      forceReload,
+      pauseRequested: st.pauseRequested,
+      activeMusicId: st.activeMusicId,
+      hasExternalTrack: !!st.activeExternalTrack,
+      needsReload: systemPauseNeedsReloadRef.current,
+      attempts: resumeAfterSystemPauseAttemptsRef.current,
+    });
 
     if (resumeAfterSystemPauseTimerRef.current) {
       window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
@@ -703,6 +719,11 @@ export function GlobalAudioPlayer() {
       const currentAudio = audioRef.current;
       const currentState = usePlayerStore.getState();
       if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
+        audioDebugLog("music", "system-resume:abort", currentAudio, {
+          pauseRequested: currentState.pauseRequested,
+          activeMusicId: currentState.activeMusicId,
+          hasExternalTrack: !!currentState.activeExternalTrack,
+        });
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
         systemPauseNeedsReloadRef.current = false;
@@ -711,6 +732,12 @@ export function GlobalAudioPlayer() {
       if (!resumeAfterSystemPauseRef.current) return;
 
       const ctx = audioContextRef.current;
+      audioDebugLog("music", "system-resume:attempt", currentAudio, {
+        forceReload,
+        needsReload: systemPauseNeedsReloadRef.current,
+        attempts: resumeAfterSystemPauseAttemptsRef.current,
+        audioContextState: ctx?.state ?? null,
+      });
       if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
       if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
         resumeAfterSystemPauseAttemptsRef.current += 1;
@@ -720,6 +747,7 @@ export function GlobalAudioPlayer() {
       currentAudio.muted = false;
       currentAudio.volume = volume;
       if (!currentAudio.paused && !systemPauseNeedsReloadRef.current) {
+        audioDebugLog("music", "system-resume:already-playing", currentAudio);
         resumeAfterSystemPauseRef.current = false;
         resumeAfterSystemPauseAttemptsRef.current = 0;
         systemPauseNeedsReloadRef.current = false;
@@ -736,6 +764,7 @@ export function GlobalAudioPlayer() {
 
       void playWithSoftStart(currentAudio, volume)
         .then(() => {
+          audioDebugLog("music", "system-resume:play-success", currentAudio);
           resumeAfterSystemPauseRef.current = false;
           resumeAfterSystemPauseAttemptsRef.current = 0;
           systemPauseNeedsReloadRef.current = false;
@@ -743,6 +772,9 @@ export function GlobalAudioPlayer() {
           setNeedsTap(false);
         })
         .catch(() => {
+          audioDebugLog("music", "system-resume:play-failed", currentAudio, {
+            attempts: resumeAfterSystemPauseAttemptsRef.current,
+          });
           const delay = resumeAfterSystemPauseAttemptsRef.current >= 3 ? 1800 : 1200;
           resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, delay);
         });
@@ -766,6 +798,11 @@ export function GlobalAudioPlayer() {
       }
       systemPauseHiddenAtRef.current = Date.now();
       resumeAfterSystemPauseRef.current = true;
+      audioDebugLog("music", "mark-system-interruption", audio, {
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+        snapshot: systemPauseSnapshotRef.current,
+      });
     }
   }, []);
 
@@ -774,6 +811,11 @@ export function GlobalAudioPlayer() {
       if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
     };
     const onVisibilityChange = () => {
+      audioDebugLog("music", "document-visibilitychange", audioRef.current, {
+        nextVisibility: document.visibilityState,
+        resumeFlag: resumeAfterSystemPauseRef.current,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
       if (document.visibilityState === "hidden") {
         markSystemAudioInterruption();
         return;
@@ -785,17 +827,29 @@ export function GlobalAudioPlayer() {
         scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
       }
     };
+    const onBlur = () => {
+      audioDebugLog("music", "window-blur", audioRef.current);
+      markSystemAudioInterruption();
+    };
+    const onPageHide = () => {
+      audioDebugLog("music", "window-pagehide", audioRef.current);
+      markSystemAudioInterruption();
+    };
+    const onFreeze = () => {
+      audioDebugLog("music", "document-freeze", audioRef.current);
+      markSystemAudioInterruption();
+    };
     window.addEventListener("focus", onResumeSignal);
-    window.addEventListener("blur", markSystemAudioInterruption);
-    window.addEventListener("pagehide", markSystemAudioInterruption);
-    document.addEventListener("freeze", markSystemAudioInterruption);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("freeze", onFreeze);
     window.addEventListener("pageshow", onResumeSignal);
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       window.removeEventListener("focus", onResumeSignal);
-      window.removeEventListener("blur", markSystemAudioInterruption);
-      window.removeEventListener("pagehide", markSystemAudioInterruption);
-      document.removeEventListener("freeze", markSystemAudioInterruption);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("freeze", onFreeze);
       window.removeEventListener("pageshow", onResumeSignal);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       if (resumeAfterSystemPauseTimerRef.current) {
@@ -1185,12 +1239,22 @@ export function GlobalAudioPlayer() {
     };
     const onDurationChange = () => setDuration(audio.duration);
     const onPlay = () => {
+      audioDebugLog("music", "audio-play", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
       resumeAfterSystemPauseRef.current = false;
       setIsPlaying(true);
       tracker.onPlay();
     };
     const onPause = () => {
       const st = usePlayerStore.getState();
+      audioDebugLog("music", "audio-pause", audio, {
+        pauseRequested: st.pauseRequested,
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+        resumeFlag: resumeAfterSystemPauseRef.current,
+      });
       if (!st.pauseRequested && (st.activeMusicId || st.activeExternalTrack) && !audio.ended) {
         markSystemAudioInterruption();
         systemPauseNeedsReloadRef.current = true;
@@ -1200,6 +1264,9 @@ export function GlobalAudioPlayer() {
       tracker.onPause();
     };
     const onEnded = () => {
+      audioDebugLog("music", "audio-ended", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+      });
       if (resumeAfterSystemPauseRef.current) {
         systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause(true);
@@ -1213,6 +1280,9 @@ export function GlobalAudioPlayer() {
     };
     const onError = () => {
       if (isClosingRef.current) return;
+      audioDebugLog("music", "audio-error", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+      });
       if (resumeAfterSystemPauseRef.current) {
         systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause(true);
@@ -1355,11 +1425,13 @@ export function GlobalAudioPlayer() {
     });
 
     navigator.mediaSession.setActionHandler('play', () => {
+      audioDebugLog("music", "media-session-play", audioRef.current);
       setPauseRequested(false);
       audioRef.current?.play().catch(() => {});
     });
     // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
     navigator.mediaSession.setActionHandler('pause', () => {
+      audioDebugLog("music", "media-session-pause", audioRef.current);
       markSystemAudioInterruption();
       resumeAfterSystemPauseRef.current = true;
       systemPauseNeedsReloadRef.current = true;
