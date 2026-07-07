@@ -433,6 +433,7 @@ import May2026Event from "@/pages/May2026Event";
 import PlaylistStudio from "@/pages/PlaylistStudio";
 import AiSingerGuide from "@/pages/AiSingerGuide";
 import MusicVideos from "@/pages/MusicVideos";
+import AudioDebug from "@/pages/AudioDebug";
 
 function Routes() {
   return (
@@ -493,6 +494,7 @@ function Routes() {
       <Route path="/create-music" component={CreateMusic} />
       <Route path="/playlist-studio" component={PlaylistStudio} />
       <Route path="/ai-singer-guide" component={AiSingerGuide} />
+      <Route path="/audio-debug" component={AudioDebug} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>

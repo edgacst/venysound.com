@@ -1,6 +1,8 @@
 type AudioDebugPayload = Record<string, unknown>;
 
 const AUDIO_DEBUG_KEY = "venyAudioDebug";
+const AUDIO_DEBUG_BUFFER_KEY = "venyAudioDebugBuffer";
+const MAX_AUDIO_DEBUG_LINES = 120;
 
 function isAudioDebugEnabled() {
   try {
@@ -52,7 +54,7 @@ export function audioDebugLog(
         error: mediaErrorSummary(el),
       }
     : {};
-  console.info("[veny-audio-debug]", {
+  const entry = {
     at: new Date().toISOString(),
     source,
     event,
@@ -61,5 +63,14 @@ export function audioDebugLog(
     mediaSessionState: "mediaSession" in navigator ? navigator.mediaSession.playbackState : "unsupported",
     ...state,
     ...payload,
-  });
+  };
+  try {
+    const prev = window.localStorage.getItem(AUDIO_DEBUG_BUFFER_KEY) || "";
+    const lines = prev ? prev.split("\n").filter(Boolean) : [];
+    lines.push(JSON.stringify(entry));
+    window.localStorage.setItem(AUDIO_DEBUG_BUFFER_KEY, lines.slice(-MAX_AUDIO_DEBUG_LINES).join("\n"));
+  } catch {
+    /* ignore */
+  }
+  console.info("[veny-audio-debug]", entry);
 }
