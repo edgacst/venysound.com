@@ -709,6 +709,14 @@ export function GlobalAudioPlayer() {
       needsReload: systemPauseNeedsReloadRef.current,
       attempts: resumeAfterSystemPauseAttemptsRef.current,
     });
+    if (document.visibilityState !== "visible") {
+      systemPauseNeedsReloadRef.current = systemPauseNeedsReloadRef.current || forceReload;
+      audioDebugLog("music", "system-resume:defer-hidden", audio, {
+        forceReload,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
+      return;
+    }
 
     if (resumeAfterSystemPauseTimerRef.current) {
       window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
