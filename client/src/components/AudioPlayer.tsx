@@ -866,6 +866,43 @@ export function GlobalAudioPlayer() {
     };
   }, [markSystemAudioInterruption, scheduleResumeAfterSystemPause]);
 
+  useEffect(() => {
+    const retryForegroundPlayback = () => {
+      if (document.visibilityState !== "visible") return;
+      const st = usePlayerStore.getState();
+      if (st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+      const audio = audioRef.current;
+      if (!audio || !audio.src || !audio.paused || audio.ended) return;
+      audioDebugLog("music", "foreground-paused-retry", audio, {
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+      });
+      audio.muted = false;
+      audio.volume = volume;
+      void playWithSoftStart(audio, volume)
+        .then(() => {
+          setIsPlaying(true);
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          setNeedsTap(true);
+        });
+    };
+    const delayedRetry = () => {
+      retryForegroundPlayback();
+      window.setTimeout(retryForegroundPlayback, 300);
+      window.setTimeout(retryForegroundPlayback, 1000);
+    };
+    window.addEventListener("focus", delayedRetry);
+    window.addEventListener("pageshow", delayedRetry);
+    document.addEventListener("visibilitychange", delayedRetry);
+    return () => {
+      window.removeEventListener("focus", delayedRetry);
+      window.removeEventListener("pageshow", delayedRetry);
+      document.removeEventListener("visibilitychange", delayedRetry);
+    };
+  }, [volume]);
+
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
