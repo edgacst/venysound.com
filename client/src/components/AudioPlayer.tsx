@@ -1309,10 +1309,13 @@ export function GlobalAudioPlayer() {
       tracker.onPause();
     };
     const onEnded = () => {
+      const d = audio.duration;
+      const isNaturalEnd = audio.ended || (Number.isFinite(d) && d > 0 && audio.currentTime >= d - 0.5);
       audioDebugLog("music", "audio-ended", audio, {
         resumeFlag: resumeAfterSystemPauseRef.current,
+        isNaturalEnd,
       });
-      if (resumeAfterSystemPauseRef.current) {
+      if (resumeAfterSystemPauseRef.current && !isNaturalEnd) {
         systemPauseNeedsReloadRef.current = true;
         scheduleResumeAfterSystemPause(true);
         return;
