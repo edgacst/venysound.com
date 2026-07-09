@@ -4361,12 +4361,16 @@ export async function registerRoutes(
       try {
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
+          const firstCompleted =
+            cached.state === "succeeded" && Array.isArray(cached.data)
+              ? { ...cached, data: cached.data.slice(0, 1) }
+              : cached;
           if (cached.state === "succeeded" && pollUserId) {
-            const clipN = Array.isArray(cached.data) ? cached.data.length : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
+            const clipN = 1;
             const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: clipN });
             sunoCallbackResults.delete(taskId);
             return res.json({
-              ...cached,
+              ...firstCompleted,
               billing: {
                 applied: billing.applied,
                 won_charged: billing.wonCharged,
@@ -4376,7 +4380,7 @@ export async function registerRoutes(
             });
           }
           sunoCallbackResults.delete(taskId);
-          return res.json(cached);
+          return res.json(firstCompleted);
         }
         const upstreamCtrl = new AbortController();
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
@@ -4439,7 +4443,7 @@ export async function registerRoutes(
           if (sunoList.length === 0) {
             return res.json({ state: "running", data: null });
           }
-          const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
+          const list = mapSunoRawsToClips((sunoList as Record<string, unknown>[]).slice(0, 1));
           let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
           if (pollUserId) {
             const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: list.length });
@@ -4458,13 +4462,13 @@ export async function registerRoutes(
          * 업스트림이 SUCCESS로 안 올리고 FIRST_SUCCESS에 머무는 경우(지연·버전 차이) 대비:
          * 기대 클립 수만큼 결과가 있고, 각각 재생 가능 오디오·최소 길이(초)가 있으면 완료로 간주.
          */
-        if (status === "FIRST_SUCCESS" && raws.length >= expectedClipCount) {
-          const listEarly = listFromRaws();
+        if (status === "FIRST_SUCCESS" && raws.length >= 1) {
+          const listEarly = mapSunoRawsToClips(raws.slice(0, 1));
           const minDur = 8;
           const ok =
-            listEarly.length >= expectedClipCount &&
+            listEarly.length === 1 &&
             listEarly.every((c) => (c.audio_url ?? "").trim().length > 12) &&
-            raws.every(
+            raws.slice(0, 1).every(
               (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
             );
           if (ok) {
