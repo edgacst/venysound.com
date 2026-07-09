@@ -619,7 +619,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {renderVideoMenu(video)}
+      {compact ? renderVideoMenu(video) : null}
     </div>
   );
 
@@ -732,8 +732,13 @@ export default function MusicVideos() {
                 {videos.map((video) => {
                   const isVideoOwner = String(user?.id || "") === String(video.creator.id);
                   return (
-                  <Card key={video.id} data-testid="music-video-card" className="overflow-hidden border-white/10 bg-white/5 text-white">
+                  <Card key={video.id} data-testid="music-video-card" className="relative overflow-hidden border-white/10 bg-white/5 text-white">
                     <CardContent className="p-0">
+                      {isVideoOwner || isAdmin ? (
+                        <div className="absolute right-2 top-2 z-10 rounded-md bg-black/65 p-1.5">
+                          {renderVideoMenu(video)}
+                        </div>
+                      ) : null}
                       <video
                         src={musicVideoPlaybackUrl(video.id)}
                         controls
