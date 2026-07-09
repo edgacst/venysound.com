@@ -2003,7 +2003,7 @@ export default function CreateMusic() {
         }),
       });
       const raw = await res.text().catch(() => "");
-      let data: { wav_url?: string; mp4_url?: string; message?: string; error?: string; msg?: string } = {};
+      let data: { wav_url?: string; mp4_url?: string; mp4_task_id?: string; message?: string; error?: string; msg?: string } = {};
       if (raw.trim()) {
         try {
           data = JSON.parse(raw) as typeof data;
@@ -2013,6 +2013,27 @@ export default function CreateMusic() {
       }
       if (!res.ok) {
         throw new Error(data.message || data.error || data.msg || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
+      }
+      if (kind === "mp4" && data.mp4_task_id) {
+        const provider = track.generationProvider || taskProvider || "";
+        for (let attempt = 0; attempt < 90; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+          const query = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+          const statusRes = await fetch(
+            `/api/ai-music/mp4-status/${encodeURIComponent(data.mp4_task_id)}${query}`,
+            { credentials: "include" },
+          );
+          const statusData = (await statusRes.json().catch(() => ({}))) as {
+            state?: string;
+            mp4_url?: string;
+            message?: string;
+          };
+          if (!statusRes.ok) {
+            throw new Error(statusData.message || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
+          }
+          if (statusData.state === "succeeded" && statusData.mp4_url) return statusData.mp4_url;
+        }
+        throw new Error(t("createMusic.generatedMediaTimeout", "MP4 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."));
       }
       const url = kind === "wav" ? data.wav_url : data.mp4_url;
       if (!url || typeof url !== "string") {

@@ -2374,8 +2374,6 @@ export async function registerRoutes(
 
   const WAV_POLL_MAX_ATTEMPTS = 75;
   const WAV_POLL_INTERVAL_MS = 2000;
-  const MP4_POLL_MAX_ATTEMPTS = 90;
-  const MP4_POLL_INTERVAL_MS = 2000;
 
   /** 생성된 클립의 고품질 WAV 다운로드 URL 조회 (AIMusicAPI: 즉시, Suno: 변환 작업 시작 후 폴링) */
   app.post("/api/ai-music/wav-url", isAuthenticated, async (req, res) => {
@@ -2582,59 +2580,70 @@ export async function registerRoutes(
       if (!mp4TaskId) {
         return res.status(502).json({ message: genMsg || "MP4 task id was not returned." });
       }
-      for (let i = 0; i < MP4_POLL_MAX_ATTEMPTS; i++) {
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, MP4_POLL_INTERVAL_MS));
-        }
-        const infoRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/record-info?taskId=${encodeURIComponent(mp4TaskId)}`, {
-          headers: { Authorization: `Bearer ${mp4Upstream.key}` },
-        });
-        const infoData = await infoRes.json().catch(() => ({}));
-        if (!infoRes.ok) {
-          const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
-          return res.status(infoRes.status >= 400 && infoRes.status < 500 ? infoRes.status : 502).json({
-            message: String(msg || "MP4 status lookup failed."),
-          });
-        }
-        const infoCode = (infoData as { code?: number }).code;
-        if (typeof infoCode === "number" && infoCode !== 200) {
-          const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
-          return res.status(502).json({ message: String(msg || `MP4 status lookup failed (${infoCode}).`) });
-        }
-        const d = (infoData as {
-          data?: {
-            successFlag?: string;
-            success_flag?: string;
-            status?: string;
-            response?: { videoUrl?: string; video_url?: string; mp4Url?: string; mp4_url?: string };
-            videoUrl?: string;
-            video_url?: string;
-            mp4Url?: string;
-            mp4_url?: string;
-            errorMessage?: string;
-          };
-        }).data;
-        const flag = String(d?.successFlag ?? d?.success_flag ?? d?.status ?? "").trim().toUpperCase();
-        const videoUrl =
-          d?.response?.videoUrl ??
-          d?.response?.video_url ??
-          d?.response?.mp4Url ??
-          d?.response?.mp4_url ??
-          d?.videoUrl ??
-          d?.video_url ??
-          d?.mp4Url ??
-          d?.mp4_url;
-        if (flag === "SUCCESS" && typeof videoUrl === "string" && videoUrl.trim()) {
-          return res.json({ mp4_url: videoUrl.trim() });
-        }
-        if (flag && ["CREATE_TASK_FAILED", "GENERATE_MP4_FAILED", "CALLBACK_EXCEPTION"].includes(flag)) {
-          return res.status(502).json({ message: d?.errorMessage ?? "MP4 conversion failed." });
-        }
-      }
-      return res.status(504).json({ message: "MP4 conversion timed out. Please try again shortly." });
+      return res.status(202).json({ mp4_task_id: mp4TaskId });
     } catch (e) {
       console.error("[ai-music mp4-url]", e);
       return res.status(500).json({ message: "An error occurred during MP4 conversion." });
+    }
+  });
+
+  app.get("/api/ai-music/mp4-status/:taskId", isAuthenticated, async (req, res) => {
+    const taskId = String(req.params.taskId ?? "").trim();
+    const provider = (typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER || "").trim();
+    if (!taskId) return res.status(400).json({ message: "MP4 task id is required." });
+    const mp4Upstream = provider === "kie" || provider === "suno" ? sunoStyleUpstream(provider) : null;
+    if (!mp4Upstream) {
+      return res.status(503).json({ message: "MP4 conversion is not supported by the current provider." });
+    }
+    try {
+      const infoRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/record-info?taskId=${encodeURIComponent(taskId)}`, {
+        headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+      });
+      const infoData = await infoRes.json().catch(() => ({}));
+      if (!infoRes.ok) {
+        const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+        return res.status(infoRes.status >= 400 && infoRes.status < 500 ? infoRes.status : 502).json({
+          message: String(msg || "MP4 status lookup failed."),
+        });
+      }
+      const infoCode = (infoData as { code?: number }).code;
+      if (typeof infoCode === "number" && infoCode !== 200) {
+        const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+        return res.status(502).json({ message: String(msg || `MP4 status lookup failed (${infoCode}).`) });
+      }
+      const d = (infoData as {
+        data?: {
+          successFlag?: string;
+          success_flag?: string;
+          status?: string;
+          response?: { videoUrl?: string; video_url?: string; mp4Url?: string; mp4_url?: string };
+          videoUrl?: string;
+          video_url?: string;
+          mp4Url?: string;
+          mp4_url?: string;
+          errorMessage?: string;
+        };
+      }).data;
+      const flag = String(d?.successFlag ?? d?.success_flag ?? d?.status ?? "").trim().toUpperCase();
+      const videoUrl =
+        d?.response?.videoUrl ??
+        d?.response?.video_url ??
+        d?.response?.mp4Url ??
+        d?.response?.mp4_url ??
+        d?.videoUrl ??
+        d?.video_url ??
+        d?.mp4Url ??
+        d?.mp4_url;
+      if (flag === "SUCCESS" && typeof videoUrl === "string" && videoUrl.trim()) {
+        return res.json({ state: "succeeded", mp4_url: videoUrl.trim() });
+      }
+      if (flag && ["CREATE_TASK_FAILED", "GENERATE_MP4_FAILED", "CALLBACK_EXCEPTION"].includes(flag)) {
+        return res.status(502).json({ message: d?.errorMessage ?? "MP4 conversion failed." });
+      }
+      return res.json({ state: "pending" });
+    } catch (e) {
+      console.error("[ai-music mp4-status]", e);
+      return res.status(502).json({ message: "MP4 status lookup failed." });
     }
   });
 
