@@ -4125,20 +4125,7 @@ export default function CreateMusic() {
                   const payload = publishConfirm;
                   if (!payload) return;
                   const { track, publishThenDownload } = payload;
-                  /** 공개만(다운로드 결합 아님)일 때도 유료·5월이벤트는 같은 task 미공개 클립을 한 번에 배포 — 유료는 형제만 파일 받고 사이트 미배포되는 문제 방지 */
-                  const tid = (track.generationTaskId ?? "").trim();
-                  const hasUnpublishedSibling =
-                    Boolean(tid) &&
-                    savedTracksRef.current.some(
-                      (x) =>
-                        x.id !== track.id &&
-                        (x.generationTaskId ?? "").trim() === tid &&
-                        !x.publishedToSite &&
-                        Boolean((x.audio_url ?? "").trim()),
-                    );
-                  const canMultiPublishOnServer = Boolean(aiUsage?.isPaidTier || may2026EventFreeUi);
-                  const chainSiblings =
-                    publishThenDownload || (canMultiPublishOnServer && hasUnpublishedSibling);
+                  const chainSiblings = publishThenDownload;
                   const ok = await handlePublishTrack(track, { chainSiblings });
                   if (ok && publishThenDownload) {
                     const tid = (track.generationTaskId ?? "").trim();
