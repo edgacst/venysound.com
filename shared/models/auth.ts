@@ -176,6 +176,7 @@ export const musicVideos = pgTable(
     id: serial("id").primaryKey(),
     userId: varchar("user_id", { length: 128 }).notNull(),
     title: varchar("title", { length: 180 }).notNull(),
+    creatorName: varchar("creator_name", { length: 120 }),
     description: text("description"),
     videoUrl: text("video_url").notNull(),
     originalFilename: varchar("original_filename", { length: 260 }),

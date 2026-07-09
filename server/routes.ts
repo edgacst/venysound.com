@@ -5438,6 +5438,7 @@ export async function registerRoutes(
           id: musicVideos.id,
           userId: musicVideos.userId,
           title: musicVideos.title,
+          creatorName: musicVideos.creatorName,
           description: musicVideos.description,
           videoUrl: musicVideos.videoUrl,
           originalFilename: musicVideos.originalFilename,
@@ -5488,7 +5489,7 @@ export async function registerRoutes(
           createdAt: row.createdAt,
           creator: {
             id: row.userId,
-            name: row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
+            name: row.creatorName || row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
             profileImageUrl: row.profileImageUrl,
           },
         })),
@@ -5791,6 +5792,29 @@ export async function registerRoutes(
     } catch (e) {
       console.error("[music-videos DELETE]", e);
       res.status(500).json({ message: "뮤직비디오 삭제에 실패했습니다." });
+    }
+  });
+
+  app.patch("/api/music-videos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const title = String(req.body?.title || "").trim().slice(0, 180);
+      const creatorName = String(req.body?.creatorName || "").trim().slice(0, 120);
+      const description = String(req.body?.description || "").trim().slice(0, 1200);
+      if (!title) return res.status(400).json({ message: "제목을 입력해 주세요." });
+      if (!creatorName) return res.status(400).json({ message: "만든이를 입력해 주세요." });
+      const [updated] = await db
+        .update(musicVideos)
+        .set({ title, creatorName, description: description || null, updatedAt: new Date() })
+        .where(and(eq(musicVideos.id, id), eq(musicVideos.userId, userId)))
+        .returning({ id: musicVideos.id, title: musicVideos.title, creatorName: musicVideos.creatorName, description: musicVideos.description });
+      if (!updated) return res.status(403).json({ message: "본인이 올린 뮤직비디오만 수정할 수 있습니다." });
+      res.json(updated);
+    } catch (e) {
+      console.error("[music-videos PATCH]", e);
+      res.status(500).json({ message: "뮤직비디오 수정에 실패했습니다." });
     }
   });
 

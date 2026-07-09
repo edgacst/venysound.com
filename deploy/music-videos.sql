@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS music_videos (
 ALTER TABLE music_videos
   ADD COLUMN IF NOT EXISTS play_count INTEGER NOT NULL DEFAULT 0;
 
+ALTER TABLE music_videos
+  ADD COLUMN IF NOT EXISTS creator_name VARCHAR(120);
+
 CREATE INDEX IF NOT EXISTS idx_music_videos_created
   ON music_videos (created_at DESC);
 

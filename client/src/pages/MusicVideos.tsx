@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Download, Eye, Film, Heart, Loader2, MessageCircle, MoreVertical, Pause, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
+import { ArrowLeft, Download, Eye, Film, Heart, Loader2, MessageCircle, MoreVertical, Pause, Pencil, Play, Reply, Share2, Smile, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type MusicVideo = {
@@ -141,6 +141,10 @@ export default function MusicVideos() {
   const [description, setDescription] = useState("");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [commentsVideo, setCommentsVideo] = useState<MusicVideo | null>(null);
+  const [editingVideo, setEditingVideo] = useState<MusicVideo | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCreatorName, setEditCreatorName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [commentText, setCommentText] = useState("");
   const [replyToComment, setReplyToComment] = useState<MusicVideoComment | null>(null);
   const [shouldAutoPlayMobile, setShouldAutoPlayMobile] = useState(false);
@@ -273,6 +277,42 @@ export default function MusicVideos() {
       });
     },
   });
+
+  const editVideoMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingVideo) throw new Error("수정할 뮤직비디오가 없습니다.");
+      const res = await fetch(`/api/music-videos/${editingVideo.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: editTitle, creatorName: editCreatorName, description: editDescription }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || "뮤직비디오 수정에 실패했습니다.");
+      return { id: editingVideo.id, title: body.title as string, creatorName: body.creatorName as string, description: body.description as string | null };
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<MusicVideo[]>(["/api/music-videos"], (prev) =>
+        prev?.map((video) =>
+          video.id === updated.id
+            ? { ...video, title: updated.title, description: updated.description, creator: { ...video.creator, name: updated.creatorName } }
+            : video,
+        ),
+      );
+      setEditingVideo(null);
+      toast({ title: "뮤직비디오 정보가 수정되었습니다." });
+    },
+    onError: (err) => {
+      toast({ title: "뮤직비디오 수정 실패", description: err instanceof Error ? err.message : "다시 시도해 주세요.", variant: "destructive" });
+    },
+  });
+
+  const openEditVideo = (video: MusicVideo) => {
+    setEditingVideo(video);
+    setEditTitle(video.title);
+    setEditCreatorName(video.creator.name);
+    setEditDescription(video.description || "");
+  };
 
   const previewUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : ""), [selectedFile]);
   useEffect(() => {
@@ -503,8 +543,9 @@ export default function MusicVideos() {
     }
   };
 
-  const renderAdminDeleteMenu = (video: MusicVideo) => {
-    if (!isAdmin) return null;
+  const renderVideoMenu = (video: MusicVideo) => {
+    const isOwner = String(user?.id || "") === String(video.creator.id);
+    if (!isOwner && !isAdmin) return null;
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -513,6 +554,13 @@ export default function MusicVideos() {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {isOwner ? (
+            <DropdownMenuItem onClick={() => openEditVideo(video)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              수정
+            </DropdownMenuItem>
+          ) : null}
+          {isAdmin ? (
           <DropdownMenuItem
             className="text-red-500 focus:text-red-500"
             disabled={deleteVideoMutation.isPending}
@@ -524,6 +572,7 @@ export default function MusicVideos() {
             <Trash2 className="mr-2 h-4 w-4" />
             삭제
           </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     );
@@ -570,7 +619,7 @@ export default function MusicVideos() {
           <span className={compact ? "text-xs" : "text-[11px] leading-none"}>MP4</span>
         </button>
       ) : null}
-      {isAdmin && compact ? renderAdminDeleteMenu(video) : null}
+      {renderVideoMenu(video)}
     </div>
   );
 
@@ -757,6 +806,35 @@ export default function MusicVideos() {
           )}
         </section>
       </main>
+      <Dialog open={Boolean(editingVideo)} onOpenChange={(open) => { if (!open) setEditingVideo(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>뮤직비디오 수정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium">제목</label>
+              <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={180} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">만든이</label>
+              <Input value={editCreatorName} onChange={(e) => setEditCreatorName(e.target.value)} maxLength={120} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">설명</label>
+              <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} maxLength={1200} rows={4} />
+            </div>
+            <Button
+              className="w-full"
+              disabled={!editTitle.trim() || !editCreatorName.trim() || editVideoMutation.isPending}
+              onClick={() => editVideoMutation.mutate()}
+            >
+              {editVideoMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              저장
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={Boolean(commentsVideo)}
         onOpenChange={(open) => {
