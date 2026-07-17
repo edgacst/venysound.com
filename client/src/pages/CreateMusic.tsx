@@ -510,6 +510,66 @@ function sanitizeFilename(name: string): string {
   return s || "audio";
 }
 
+function normalizePastedLyricsText(text: string): string {
+  let s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  if (!s) return s;
+  s = s.replace(/\s*(\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])\s*/gi, "\n\n$1\n");
+  s = s.replace(/\s*(\((?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\))\s*/gi, "\n\n$1\n");
+  s = s.replace(/(\])(?=[^\s\n])/g, "$1\n");
+  s = s.replace(/\)\s*(?=\()/g, ")\n");
+  s = s.replace(/\)\s*(?=[^\s\[\(])/g, ")\n");
+  s = s.replace(/([.!?。！？])\s*(?=\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])/gi, "$1\n\n");
+  s = s.replace(/([.!?。！？])\s*(?=(?:Just|Let|Mmm|Um|Yeah|Oh|Woo|La)\b)/g, "$1\n");
+  s = s.replace(/\n{3,}/g, "\n\n");
+  return s.trim();
+}
+
+function clipboardHtmlToText(html: string): string {
+  if (!html.trim()) return "";
+  const withBreaks = html
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*\/\s*(p|div|li|h[1-6]|blockquote)\s*>/gi, "\n")
+    .replace(/<\s*(p|div|li|h[1-6]|blockquote)(?:\s[^>]*)?>/gi, "\n");
+  const doc = new DOMParser().parseFromString(withBreaks, "text/html");
+  return (doc.body.textContent ?? "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function pickClipboardText(data: DataTransfer): string {
+  const plainText = (data.getData("text/plain") || data.getData("text") || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const htmlText = clipboardHtmlToText(data.getData("text/html"));
+  if (!htmlText.trim()) return plainText;
+  if (!plainText.trim()) return htmlText;
+  return htmlText.length >= plainText.length ? htmlText : plainText;
+}
+
+function insertPastedPromptText(
+  e: React.ClipboardEvent<HTMLTextAreaElement>,
+  opts: {
+    mode: CreateMode;
+    instrumentalOnly: boolean;
+    setPrompt: React.Dispatch<React.SetStateAction<string>>;
+  },
+) {
+  if (opts.mode === "custom" && opts.instrumentalOnly) return;
+  const raw = pickClipboardText(e.clipboardData);
+  if (!raw.trim()) return;
+  e.preventDefault();
+  const pasted =
+    opts.mode === "custom"
+      ? normalizePastedLyricsText(raw)
+      : raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const el = e.currentTarget;
+  const start = el.selectionStart ?? 0;
+  const end = el.selectionEnd ?? 0;
+  const nextPos = start + pasted.length;
+  opts.setPrompt((prev) => `${prev.slice(0, start)}${pasted}${prev.slice(end)}`);
+  requestAnimationFrame(() => {
+    el.setSelectionRange(nextPos, nextPos);
+  });
+}
+
 function isLikelyBadAiMusicAudioUrl(u: string): boolean {
   const s = u.trim();
   if (s.length < 12) return true;
@@ -2607,7 +2667,8 @@ export default function CreateMusic() {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  className="mt-3 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm"
+                  onPaste={(e) => insertPastedPromptText(e, { mode: "description", instrumentalOnly: false, setPrompt })}
+                  className="mt-3 min-h-[116px] w-full resize-y rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm whitespace-pre-wrap"
                   placeholder={t(
                     "createMusic.guestPromptPlaceholder",
                     "예: 비 오는 밤, 창밖을 보며 다시 시작하는 마음을 담은 감성 팝 발라드",
@@ -3262,7 +3323,8 @@ export default function CreateMusic() {
                         <textarea
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
-                          className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y"
+                          onPaste={(e) => insertPastedPromptText(e, { mode, instrumentalOnly, setPrompt })}
+                          className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y whitespace-pre-wrap"
                           placeholder={
                             mode === "custom"
                               ? instrumentalOnly
