@@ -23,6 +23,7 @@ import {
   Disc3,
   Mic,
   Upload,
+  ClipboardPaste,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
@@ -1384,6 +1385,7 @@ export default function CreateMusic() {
   const [cvSourcePreviewUrl, setCvSourcePreviewUrl] = useState<string | null>(null);
   const [cvVerifyBlob, setCvVerifyBlob] = useState<Blob | null>(null);
   const [cvVerifyPreviewUrl, setCvVerifyPreviewUrl] = useState<string | null>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const cv = useKieCustomVoiceRegister();
   const cvSourceFileInputRef = useRef<HTMLInputElement>(null);
   const cvVerifyFileInputRef = useRef<HTMLInputElement>(null);
@@ -2332,6 +2334,43 @@ export default function CreateMusic() {
       t,
     ],
   );
+
+  const handlePasteClipboardToPrompt = useCallback(async () => {
+    if (mode === "custom" && instrumentalOnly) return;
+    if (!navigator.clipboard?.readText) {
+      toast({
+        title: t("createMusic.clipboardPasteUnsupported", "이 브라우저에서는 붙여넣기 버튼을 사용할 수 없습니다."),
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const raw = await navigator.clipboard.readText();
+      if (!raw.trim()) {
+        toast({
+          title: t("createMusic.clipboardPasteEmpty", "클립보드에 붙여넣을 텍스트가 없습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      const pasted = mode === "custom" ? normalizePastedLyricsText(raw) : raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const el = promptTextareaRef.current;
+      const start = el?.selectionStart ?? prompt.length;
+      const end = el?.selectionEnd ?? prompt.length;
+      const nextPos = start + pasted.length;
+      setPrompt((prev) => `${prev.slice(0, start)}${pasted}${prev.slice(end)}`);
+      requestAnimationFrame(() => {
+        promptTextareaRef.current?.focus();
+        promptTextareaRef.current?.setSelectionRange(nextPos, nextPos);
+      });
+    } catch {
+      toast({
+        title: t("createMusic.clipboardPasteFailed", "클립보드 읽기에 실패했습니다."),
+        description: t("createMusic.clipboardPasteFailedHint", "브라우저 권한을 허용하거나 Ctrl+V로 다시 시도해 주세요."),
+        variant: "destructive",
+      });
+    }
+  }, [instrumentalOnly, mode, prompt.length, t, toast]);
 
   const handleStudioGenerateLyrics = useCallback(async () => {
     if (!user) return;
@@ -3292,6 +3331,14 @@ export default function CreateMusic() {
                             <div className="ml-auto hidden flex-wrap items-center gap-2 md:flex">
                               <button
                                 type="button"
+                                onClick={() => void handlePasteClipboardToPrompt()}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:border-violet-300 hover:text-violet-800 transition-colors"
+                              >
+                                <ClipboardPaste className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                                {t("createMusic.pasteLyrics", "붙여넣기")}
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => void handleStudioOptimizeLyrics()}
                                 disabled={lyricsAssistLoading !== null}
                                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 hover:border-violet-300 hover:text-violet-800 transition-colors disabled:opacity-50"
@@ -3321,6 +3368,7 @@ export default function CreateMusic() {
                         </div>
 
                         <textarea
+                          ref={promptTextareaRef}
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
                           onPaste={(e) => insertPastedPromptText(e, { mode, instrumentalOnly, setPrompt })}
