@@ -515,6 +515,7 @@ function normalizePastedLyricsText(text: string): string {
   let s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!s) return s;
   s = s.replace(/\s*(\[(?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\])\s*/gi, "\n\n$1\n");
+  s = s.replace(/\s*(\((?:Intro|Verse|Pre-Chorus|Pre Chorus|Chorus|Hook|Bridge|Outro|Interlude|Break|Instrumental|Solo|Rap|Drop|Build|Refrain|Ending)(?:\s*\d+)?\))\s*/gi, "\n\n$1\n");
   s = s.replace(/(\])(?=[^\s\n])/g, "$1\n");
   s = s.replace(/\)\s*(?=\()/g, ")\n");
   s = s.replace(/\)\s*(?=[^\s\[\(])/g, ")\n");
@@ -532,6 +533,16 @@ function clipboardHtmlToText(html: string): string {
     .replace(/<\s*(p|div|li|h[1-6]|blockquote)(?:\s[^>]*)?>/gi, "\n");
   const doc = new DOMParser().parseFromString(withBreaks, "text/html");
   return (doc.body.textContent ?? "").replace(/\u00a0/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function pickClipboardText(data: DataTransfer): string {
+  const plainText = (data.getData("text/plain") || data.getData("text") || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const htmlText = clipboardHtmlToText(data.getData("text/html"));
+  if (!htmlText.trim()) return plainText;
+  if (!plainText.trim()) return htmlText;
+  return htmlText.length >= plainText.length ? htmlText : plainText;
 }
 
 function downloadUrlInBrowser(url: string, fileName: string) {
@@ -3549,15 +3560,18 @@ export default function CreateMusic() {
                           onChange={(e) => setPrompt(e.target.value)}
                           onPaste={(e) => {
                             if (mode !== "custom" || instrumentalOnly) return;
-                            const htmlText = clipboardHtmlToText(e.clipboardData.getData("text/html"));
-                            const plainText = e.clipboardData.getData("text");
-                            const pasted = htmlText.includes("\n") ? htmlText : plainText.includes("\n") ? plainText : "";
-                            if (!pasted) return;
+                            const raw = pickClipboardText(e.clipboardData);
+                            if (!raw.trim()) return;
                             e.preventDefault();
+                            const pasted = normalizePastedLyricsText(raw);
                             const el = e.currentTarget;
                             const start = el.selectionStart ?? prompt.length;
                             const end = el.selectionEnd ?? prompt.length;
-                            setPrompt(`${prompt.slice(0, start)}${pasted}${prompt.slice(end)}`);
+                            const nextPos = start + pasted.length;
+                            setPrompt((prev) => `${prev.slice(0, start)}${pasted}${prev.slice(end)}`);
+                            requestAnimationFrame(() => {
+                              el.setSelectionRange(nextPos, nextPos);
+                            });
                           }}
                           className="create-music-field w-full rounded-lg bg-white border border-slate-200 px-4 py-3 min-h-[120px] resize-y whitespace-pre-wrap"
                           placeholder={
