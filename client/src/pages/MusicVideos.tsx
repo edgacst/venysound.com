@@ -553,7 +553,11 @@ export default function MusicVideos() {
             <MoreVertical className="h-5 w-5" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent
+          align="end"
+          collisionPadding={{ top: 76, right: 12, bottom: 68, left: 12 }}
+          className="z-[80]"
+        >
           {isOwner ? (
             <DropdownMenuItem onClick={() => openEditVideo(video)}>
               <Pencil className="mr-2 h-4 w-4" />
