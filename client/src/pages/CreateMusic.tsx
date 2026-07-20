@@ -652,6 +652,7 @@ function TrackCard({
   isPublishing,
   isPublished,
   may2026EventFreeUi,
+  previewOnly = false,
   studioDark = false,
   t,
 }: {
@@ -676,6 +677,8 @@ function TrackCard({
   isPublished: boolean;
   /** 5월 이벤트 승인+무료: '신곡으로 공개' 대신 다운로드 한 줄로 공개+저장, 옆 다운로드 링크 숨김 */
   may2026EventFreeUi?: boolean;
+  /** FIRST_SUCCESS에서 재생만 허용하고 보관함 작업은 최종 완료 뒤 노출 */
+  previewOnly?: boolean;
   studioDark?: boolean;
   t: TTranslate;
 }) {
@@ -740,26 +743,34 @@ function TrackCard({
               role="status"
               aria-label={t("createMusic.trackStatusAria", "다운로드·공개 상태")}
             >
-              <span
-                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
-                  hasDownloaded
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
-                    : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {t("createMusic.statusDownload", "다운로드")}{" "}
-                {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
-              </span>
-              <span
-                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
-                  isPublished
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900"
-                    : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {t("createMusic.statusPublish", "공개")}{" "}
-                {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
-              </span>
+              {previewOnly ? (
+                <span className="inline-flex items-center rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-800">
+                  {t("createMusic.firstTrackPreviewReady", "첫 곡 미리듣기 준비 완료")}
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                      hasDownloaded
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {t("createMusic.statusDownload", "다운로드")}{" "}
+                    {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                      isPublished
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-900"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {t("createMusic.statusPublish", "공개")}{" "}
+                    {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
               <button
@@ -791,6 +802,8 @@ function TrackCard({
                     {isNowPlaying ? <Disc3 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                     {t("createMusic.play", "재생")}
                   </button>
+                  {!previewOnly ? (
+                    <>
                   {showInlineDownloadLink ? (
                     <button
                       type="button"
@@ -984,20 +997,24 @@ function TrackCard({
                         : t("createMusic.publishToSite", "신곡으로 공개")}
                     </button>
                   )}
+                    </>
+                  ) : null}
                 </>
               )}
             </div>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0 text-slate-500 hover:text-destructive"
-            onClick={onRemove}
-            title={t("createMusic.remove", "목록에서 삭제")}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
+          {!previewOnly ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 flex-shrink-0 text-slate-500 hover:text-destructive"
+              onClick={onRemove}
+              title={t("createMusic.remove", "목록에서 삭제")}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          ) : null}
         </div>
         {(showLyrics || showStyle) && (
           <div className="mt-1 pt-2 border-t border-slate-200 space-y-3">
@@ -1084,6 +1101,19 @@ function generatedPreviewToSavedTrack(tr: GeneratedTrack, taskKey: string, index
     prompt: tr.prompt,
     custom_mode: tr.custom_mode,
   } as SavedTrack;
+}
+
+/** FIRST_SUCCESS 폴링 응답을 누적 병합해 먼저 도착한 곡이 다음 응답에서 사라지거나 중복되지 않게 유지 */
+function mergeGeneratedPreviewTracks(previous: GeneratedTrack[], incoming: GeneratedTrack[]): GeneratedTrack[] {
+  const merged = new Map<string, GeneratedTrack>();
+  const keyOf = (track: GeneratedTrack, index: number) =>
+    String(track.clip_id ?? pickSavedTrackAudioUrl(track as Record<string, unknown>) ?? `preview-${index}`);
+  previous.forEach((track, index) => merged.set(keyOf(track, index), track));
+  incoming.forEach((track, index) => {
+    const key = keyOf(track, index);
+    merged.set(key, { ...(merged.get(key) ?? {}), ...track });
+  });
+  return Array.from(merged.values());
 }
 
 function parseLocalStorageRawToArray(parsed: unknown): unknown[] {
@@ -1507,10 +1537,31 @@ export default function CreateMusic() {
   }, [useMyVoice, creationModelVersion, myVoiceReady]);
   const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
+  const submittedInstrumentalRef = useRef(false);
   const submittedLyricsRef = useRef<string>("");
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
   const didRestoreGuestDraft = useRef(false);
+  const previewSavedTracks = useMemo(() => {
+    if (!taskId) return [];
+    const unique = new Map<string, SavedTrack>();
+    previewTracks.forEach((track, index) => {
+      const preview = generatedPreviewToSavedTrack(track, taskId, index);
+      const playableUrl = getSavedTrackPlayableUrl(preview);
+      if (!playableUrl) return;
+      const key = String(track.clip_id ?? playableUrl);
+      if (!unique.has(key)) {
+        unique.set(key, {
+          ...preview,
+          generationTaskId: taskId,
+          generationProvider: taskProvider ?? undefined,
+          tags: submittedTagsRef.current.trim() || preview.tags,
+          original_prompt: submitModeRef.current === "custom" ? submittedLyricsRef.current : undefined,
+        });
+      }
+    });
+    return Array.from(unique.values());
+  }, [previewTracks, taskId, taskProvider]);
 
   useEffect(() => {
     if (didRestoreGuestDraft.current) return;
@@ -2256,13 +2307,12 @@ export default function CreateMusic() {
       if (state === "preview" && Array.isArray(data.data)) {
         const userTitle = submittedTitleRef.current.trim();
         const customMode = submitModeRef.current === "custom";
-        setPreviewTracks(
-          mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
+        const incoming = mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
             userTitle,
             customMode,
             submittedLyrics: submittedLyricsRef.current,
-          }),
-        );
+          });
+        setPreviewTracks((previous) => mergeGeneratedPreviewTracks(previous, incoming));
       }
       if (state === "succeeded" && Array.isArray(data.data)) {
         generationStartRef.current = null;
@@ -2712,6 +2762,7 @@ export default function CreateMusic() {
     setElapsedSec(0);
     generationStartRef.current = Date.now();
     submitModeRef.current = mode;
+    submittedInstrumentalRef.current = instrumentalOnly;
     /** 커스텀·설명 공통: 제목 비움 시 가사/설명에서 제목 추론용 */
     submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
@@ -3789,7 +3840,7 @@ export default function CreateMusic() {
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-6 flex-1 flex flex-col min-h-0">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
                         <h2 className="text-lg font-bold shrink-0">
-                          {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
+                          {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length + previewSavedTracks.length})
                         </h2>
                         {savedTracks.length > 0 && totalDownloads > 0 && (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
@@ -3813,19 +3864,56 @@ export default function CreateMusic() {
                         </div>
                       )}
 
-                      {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
+                      {previewSavedTracks.length > 0 ? (
+                        <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800" role="status">
+                          {t(
+                            submittedInstrumentalRef.current
+                              ? "createMusic.instrumentalPreviewReady"
+                              : "createMusic.firstTrackReadySecondGenerating",
+                            submittedInstrumentalRef.current
+                              ? "연주곡 미리듣기가 준비되었습니다. 최종 완료까지 계속 생성 중입니다."
+                              : "첫 번째 곡이 준비되었습니다. 지금 재생할 수 있으며, 두 번째 곡은 계속 생성 중입니다.",
+                          )}
+                        </p>
+                      ) : null}
+
+                      {savedTracks.length === 0 && previewSavedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
                         <p className="text-slate-600 text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 위에서 음악을 생성해 보세요.")}</p>
-                      ) : sortedFilteredSavedTracks.length === 0 ? (
+                      ) : sortedFilteredSavedTracks.length === 0 && previewSavedTracks.length === 0 ? (
                         <p className="text-slate-600 text-sm">{t("createMusic.noSearchResults", "검색 결과가 없습니다.")}</p>
                       ) : (
                         <>
                           <div className="flex flex-col gap-4 min-w-0">
                             <div className="flex-1 min-w-0 space-y-3 pr-1">
+                              {previewSavedTracks.map((track, index) => (
+                                <TrackCard
+                                  key={track.id}
+                                  track={track}
+                                  order={index + 1}
+                                  onRemove={() => {}}
+                                  onDownload={() => {}}
+                                  onDownloadWav={() => {}}
+                                  onDownloadMp4={() => {}}
+                                  libraryDownloadAllowed={false}
+                                  onScoreExport={() => {}}
+                                  scoreExportLoading={false}
+                                  wavExportLoading={false}
+                                  mp4ExportLoading={false}
+                                  scorePdfEnabled={false}
+                                  onPlay={() => playTrackInGlobalPlayer(track)}
+                                  isNowPlaying={activeExternalTrack?.url === getSavedTrackPlayableUrl(track)}
+                                  onRequestPublish={() => {}}
+                                  isPublishing={false}
+                                  isPublished={false}
+                                  previewOnly
+                                  t={t as TTranslate}
+                                />
+                              ))}
                               {savedTracksPageSlice.map((track, index) => (
                                 <TrackCard
                                   key={track.id}
                                   track={track}
-                                  order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
+                                  order={previewSavedTracks.length + (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
                                   onRemove={() => removeSavedTrack(track.id)}
                                   onDownload={() => handleDownloadTrack(track)}
                                   onDownloadWav={() => void handleDownloadGeneratedMedia(track, "wav")}
