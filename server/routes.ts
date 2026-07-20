@@ -1948,6 +1948,70 @@ export async function registerRoutes(
     return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
   }
 
+  function sunoRecordInfoClipRaws(info: unknown): Record<string, unknown>[] {
+    const resp = (info as { data?: { response?: { sunoData?: unknown[]; suno_data?: unknown[] } } }).data?.response;
+    const merged = resp?.sunoData ?? resp?.suno_data;
+    return Array.isArray(merged) ? (merged as Record<string, unknown>[]) : [];
+  }
+
+  function parseSunoGenerateParamInstrumental(info: unknown): boolean {
+    try {
+      const paramRaw = (info as { data?: { param?: string } }).data?.param;
+      if (typeof paramRaw !== "string") return false;
+      const param = JSON.parse(paramRaw) as { instrumental?: boolean };
+      return param.instrumental === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** MP4/WAV 변환용 upstream audioId — clip_id 우선, 없으면 제목으로 보조 매칭 */
+  function resolveSunoClipAudioIdFromRaws(
+    raws: Record<string, unknown>[],
+    clipId: string,
+    titleForMatch?: string,
+  ): string {
+    const wantId = clipId.trim();
+    if (wantId) {
+      const byId = raws.find((r) => String(r.id ?? "").trim() === wantId);
+      const idFromClip = byId?.id;
+      if (typeof idFromClip === "string" && idFromClip.trim()) return idFromClip.trim();
+    }
+    const requestedTitle = normalizeAiTitleForMatch(titleForMatch);
+    if (requestedTitle) {
+      const byTitle = raws.find((r) => normalizeAiTitleForMatch(r.title) === requestedTitle);
+      const idFromTitle = byTitle?.id;
+      if (typeof idFromTitle === "string" && idFromTitle.trim()) return idFromTitle.trim();
+    }
+    return wantId;
+  }
+
+  /** MP4 자막(타임스탬프 가사) 준비 — instrumental이면 생략, 보컬 곡은 짧게 재시도 */
+  async function primeTimestampedLyricsForMp4(
+    upstream: { base: string; key: string },
+    taskId: string,
+    audioId: string,
+    instrumental: boolean,
+  ): Promise<void> {
+    if (instrumental || !taskId.trim() || !audioId.trim()) return;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const lyricsRes = await fetch(`${upstream.base}/api/v1/generate/get-timestamped-lyrics`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId, audioId }),
+        });
+        const lyricsData = await lyricsRes.json().catch(() => ({}));
+        if ((lyricsData as { code?: number }).code !== 200) continue;
+        const words = (lyricsData as { data?: { alignedWords?: unknown[] } }).data?.alignedWords;
+        if (Array.isArray(words) && words.length > 0) return;
+      } catch (primeErr) {
+        console.warn("[ai-music mp4-url] timestamped lyrics prime skipped:", primeErr instanceof Error ? primeErr.message : String(primeErr));
+      }
+    }
+  }
+
   function resolveAiCreatorDisplayName(userRow: typeof users.$inferSelect | undefined | null): string {
     const fullName = [userRow?.firstName, userRow?.lastName].filter(Boolean).join(" ").trim();
     const emailName = typeof userRow?.email === "string" ? userRow.email.split("@")[0]?.trim() : "";
@@ -2530,24 +2594,22 @@ export async function registerRoutes(
         return res.status(400).json({ message: "generation_task_id is required for MP4 conversion." });
       }
       let resolvedClipId = clipId;
-      const requestedTitle = normalizeAiTitleForMatch(body.title);
-      if (requestedTitle) {
-        try {
-          const originalInfoRes = await fetch(`${mp4Upstream.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(genTaskId)}`, {
-            headers: { Authorization: `Bearer ${mp4Upstream.key}` },
-          });
-          const originalInfo = await originalInfoRes.json().catch(() => ({}));
-          const resp = (originalInfo as { data?: { response?: { sunoData?: unknown[]; suno_data?: unknown[] } } }).data?.response;
-          const raws = (Array.isArray(resp?.sunoData) ? resp?.sunoData : Array.isArray(resp?.suno_data) ? resp?.suno_data : []) as Record<string, unknown>[];
-          const matched = raws.find((r) => normalizeAiTitleForMatch(r.title) === requestedTitle);
-          const matchedId = matched?.id;
-          if (typeof matchedId === "string" && matchedId.trim()) {
-            resolvedClipId = matchedId.trim();
-          }
-        } catch (matchErr) {
-          console.warn("[ai-music mp4-url] title/audioId match skipped:", matchErr instanceof Error ? matchErr.message : String(matchErr));
+      let generationInstrumental = false;
+      try {
+        const originalInfoRes = await fetch(`${mp4Upstream.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(genTaskId)}`, {
+          headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+        });
+        const originalInfo = await originalInfoRes.json().catch(() => ({}));
+        const raws = sunoRecordInfoClipRaws(originalInfo);
+        generationInstrumental = parseSunoGenerateParamInstrumental(originalInfo);
+        if (raws.length > 0) {
+          resolvedClipId = resolveSunoClipAudioIdFromRaws(raws, clipId, body.title);
         }
+      } catch (matchErr) {
+        console.warn("[ai-music mp4-url] audioId resolve skipped:", matchErr instanceof Error ? matchErr.message : String(matchErr));
       }
+
+      await primeTimestampedLyricsForMp4(mp4Upstream, genTaskId, resolvedClipId, generationInstrumental);
 
       const genRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/generate`, {
         method: "POST",
@@ -4361,16 +4423,14 @@ export async function registerRoutes(
       try {
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
-          const firstCompleted =
-            cached.state === "succeeded" && Array.isArray(cached.data)
-              ? { ...cached, data: cached.data.slice(0, 1) }
-              : cached;
           if (cached.state === "succeeded" && pollUserId) {
-            const clipN = 1;
+            const clipN = Array.isArray(cached.data)
+              ? cached.data.length
+              : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
             const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: clipN });
             sunoCallbackResults.delete(taskId);
             return res.json({
-              ...firstCompleted,
+              ...cached,
               billing: {
                 applied: billing.applied,
                 won_charged: billing.wonCharged,
@@ -4380,7 +4440,7 @@ export async function registerRoutes(
             });
           }
           sunoCallbackResults.delete(taskId);
-          return res.json(firstCompleted);
+          return res.json(cached);
         }
         const upstreamCtrl = new AbortController();
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
@@ -4443,10 +4503,12 @@ export async function registerRoutes(
           if (sunoList.length === 0) {
             return res.json({ state: "running", data: null });
           }
-          const list = mapSunoRawsToClips((sunoList as Record<string, unknown>[]).slice(0, 1));
+          const list = mapSunoRawsToClips((sunoList as Record<string, unknown>[]).slice(0, expectedClipCount));
           let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
           if (pollUserId) {
-            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: list.length });
+            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, {
+              promoOutputTracks: list.length > 0 ? list.length : expectedClipCount,
+            });
             billing = {
               applied: b.applied,
               won_charged: b.wonCharged,
@@ -4462,19 +4524,21 @@ export async function registerRoutes(
          * 업스트림이 SUCCESS로 안 올리고 FIRST_SUCCESS에 머무는 경우(지연·버전 차이) 대비:
          * 기대 클립 수만큼 결과가 있고, 각각 재생 가능 오디오·최소 길이(초)가 있으면 완료로 간주.
          */
-        if (status === "FIRST_SUCCESS" && raws.length >= 1) {
-          const listEarly = mapSunoRawsToClips(raws.slice(0, 1));
+        if (status === "FIRST_SUCCESS" && raws.length >= expectedClipCount) {
+          const listEarly = mapSunoRawsToClips(raws.slice(0, expectedClipCount));
           const minDur = 8;
           const ok =
-            listEarly.length === 1 &&
+            listEarly.length >= expectedClipCount &&
             listEarly.every((c) => (c.audio_url ?? "").trim().length > 12) &&
-            raws.slice(0, 1).every(
+            raws.slice(0, expectedClipCount).every(
               (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
             );
           if (ok) {
             let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
             if (pollUserId) {
-              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: listEarly.length });
+              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, {
+                promoOutputTracks: listEarly.length > 0 ? listEarly.length : expectedClipCount,
+              });
               billing = {
                 applied: b.applied,
                 won_charged: b.wonCharged,
