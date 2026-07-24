@@ -591,6 +591,7 @@ export function GlobalAudioPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
+  const volumeRef = useRef(volume);
   const [isMuted, setIsMuted] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -600,6 +601,12 @@ export function GlobalAudioPlayer() {
   const [eqGains, setEqGains] = useState<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const [eqPreset, setEqPreset] = useState('flat');
   const currentListRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+    const audio = audioRef.current;
+    if (audio) audio.volume = volume;
+  }, [volume]);
 
   useEffect(() => {
     const keepAudioContextRunning = () => {
@@ -1143,9 +1150,10 @@ export function GlobalAudioPlayer() {
       if (cancelled || usePlayerStore.getState().pauseRequested) return;
       if (playAttemptKeyRef.current === playKey) return;
       playAttemptKeyRef.current = playKey;
+      const targetVolume = volumeRef.current;
       audio.muted = false;
-      audio.volume = volume;
-      void playWithSoftStart(audio, volume)
+      audio.volume = targetVolume;
+      void playWithSoftStart(audio, targetVolume)
         .then(() => {
           if (!cancelled) {
             audio.muted = false;
@@ -1186,7 +1194,7 @@ export function GlobalAudioPlayer() {
       window.clearTimeout(retryTimer);
       audio.removeEventListener("canplay", onReadyOnce);
     };
-  }, [audioUrl, activeMusicId, activeExternalTrack, volume]);
+  }, [audioUrl, activeMusicId, activeExternalTrack]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -1391,6 +1399,7 @@ export function GlobalAudioPlayer() {
     if (!audio) return;
     const v = parseFloat(e.target.value);
     audio.volume = v;
+    volumeRef.current = v;
     setVolume(v);
     if (v === 0) {
       audio.muted = true;
