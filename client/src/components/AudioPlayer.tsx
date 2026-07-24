@@ -1490,14 +1490,15 @@ export function GlobalAudioPlayer() {
       setPauseRequested(false);
       audioRef.current?.play().catch(() => {});
     });
-    // 통화 등 OS 일시정지는 pauseRequested로 취급하지 않음 — 통화 종료 후 자동 재개 가능
+    // MediaSession pause는 상단 플레이바 등 사용자의 명시적 정지 요청이다.
+    // 통화 등 시스템 중단은 audio pause/visibility 이벤트에서 별도로 복구한다.
     navigator.mediaSession.setActionHandler('pause', () => {
       audioDebugLog("music", "media-session-pause", audioRef.current);
-      markSystemAudioInterruption();
-      resumeAfterSystemPauseRef.current = true;
-      systemPauseNeedsReloadRef.current = true;
+      cancelSystemResume();
+      setPauseRequested(true);
+      audioRef.current?.pause();
       setIsPlaying(false);
-      window.setTimeout(() => scheduleResumeAfterSystemPause(true), 700);
+      setNeedsTap(false);
     });
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
@@ -1517,7 +1518,7 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, markSystemAudioInterruption, playNext, playPrev, scheduleResumeAfterSystemPause, setPauseRequested]);
+  }, [displayMusic, imageUrl, cancelSystemResume, playNext, playPrev, setPauseRequested]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;

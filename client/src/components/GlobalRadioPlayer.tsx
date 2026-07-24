@@ -771,10 +771,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         el.play().catch(() => setNeedsTap(true));
       }
     });
-    // 통화 등 OS 일시정지는 userStopped로 취급하지 않음 — 통화 종료 후 자동 재개 가능
+    // MediaSession pause는 상단 플레이바 등 사용자의 명시적 정지 요청이다.
+    // 통화 등 시스템 중단은 audio pause/visibility 이벤트에서 별도로 복구한다.
     navigator.mediaSession.setActionHandler("pause", () => {
       const el = getActiveAudio();
       audioDebugLog("radio", "media-session-pause", el, { slug, streamUrl });
+      setUserStopped(true);
       if (el) el.pause();
       setPlaying(false);
     });
