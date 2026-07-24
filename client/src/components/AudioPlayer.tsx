@@ -563,6 +563,7 @@ export function GlobalAudioPlayer() {
   useResumeAudioWhenForeground(
     () => audioRef.current,
     () => {
+      if ("mediaSession" in navigator) return false;
       const st = usePlayerStore.getState();
       return !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
     },
@@ -707,6 +708,9 @@ export function GlobalAudioPlayer() {
   }, []);
 
   const scheduleResumeAfterSystemPause = useCallback((forceReload = false) => {
+    // Android Chrome/TWA는 전화 통화의 오디오 포커스를 네이티브 MediaSession에서 관리한다.
+    // 여기서 play()를 재시도하면 통화 중 새 재생으로 간주되어 잡음이 날 수 있다.
+    if ("mediaSession" in navigator) return;
     const audio = audioRef.current;
     const st = usePlayerStore.getState();
     if (!audio || st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
@@ -886,6 +890,7 @@ export function GlobalAudioPlayer() {
   }, [markSystemAudioInterruption, scheduleResumeAfterSystemPause]);
 
   useEffect(() => {
+    if ("mediaSession" in navigator) return;
     const retryForegroundPlayback = () => {
       if (document.visibilityState !== "visible") return;
       const st = usePlayerStore.getState();
@@ -1253,6 +1258,7 @@ export function GlobalAudioPlayer() {
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !hasTrack) return;
     if (pauseRequested) return;
+    if ("mediaSession" in navigator) return;
 
     const isCoarseOrTouchDevice = () => {
       try {

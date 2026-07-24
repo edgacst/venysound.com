@@ -268,6 +268,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [locationPath, restoreAudibleOutput, getActiveAudio, requestPlay]);
 
   useEffect(() => {
+    if ("mediaSession" in navigator) return;
     const onVis = () => {
       if (document.visibilityState === "visible") restoreAudibleOutput();
     };
@@ -280,6 +281,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [restoreAudibleOutput]);
 
   useResumeAudioWhenForeground(getActiveAudio, () => {
+    if ("mediaSession" in navigator) return false;
     const s = useRadioPlayerStore.getState();
     return !s.userStopped && !!s.streamUrl && !!s.slug;
   });
@@ -402,6 +404,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   ]);
 
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
+    // Android Chrome/TWA의 통화 오디오 포커스는 네이티브 MediaSession에 맡긴다.
+    // 통화 중 play() 재시도는 Android가 새 사용자 재생으로 판단해 잡음을 낼 수 있다.
+    if ("mediaSession" in navigator) return;
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
     if (radioBlurredWhileVisibleRef.current) return;
@@ -486,6 +491,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     if (!isCoarseOrTouchDevice()) return;
     if (!slug || !streamUrl || userStopped) return;
+    if ("mediaSession" in navigator) return;
     const tick = window.setInterval(() => {
       if (document.visibilityState !== "hidden") return;
       const s = useRadioPlayerStore.getState();
