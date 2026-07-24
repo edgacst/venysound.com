@@ -24,6 +24,7 @@ export function useResumeAudioWhenForeground(
   useEffect(() => {
     const getEl = () => getAudioRef.current();
     const resumeTimers = new Set<number>();
+    let interruptionRetryInterval: number | null = null;
 
     const hasPlayableSrc = (a: HTMLAudioElement) => {
       const s = a.src || "";
@@ -64,11 +65,38 @@ export function useResumeAudioWhenForeground(
       requestAnimationFrame(run);
     };
 
+    const stopInterruptionRetry = () => {
+      if (interruptionRetryInterval == null) return;
+      window.clearInterval(interruptionRetryInterval);
+      interruptionRetryInterval = null;
+    };
+
+    const keepRetryingInterruptedAudio = () => {
+      if (interruptionRetryInterval != null) return;
+      interruptionRetryInterval = window.setInterval(() => {
+        if (!shouldRef.current()) {
+          stopInterruptionRetry();
+          return;
+        }
+        const a = getEl();
+        if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) {
+          stopInterruptionRetry();
+          return;
+        }
+        if (!a.paused) {
+          stopInterruptionRetry();
+          return;
+        }
+        tryResume();
+      }, 1800);
+    };
+
     /** 통화 등 OS pause: 앱이 foreground에 남아 있어도 통화 종료 후 재개 */
     const onElementPause = () => {
       if (!shouldRef.current()) return;
       const a = getEl();
       if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) return;
+      keepRetryingInterruptedAudio();
       for (const delay of [400, 1200, 2800]) {
         const tid = window.setTimeout(() => {
           resumeTimers.delete(tid);
@@ -99,6 +127,7 @@ export function useResumeAudioWhenForeground(
     return () => {
       for (const tid of resumeTimers) window.clearTimeout(tid);
       resumeTimers.clear();
+      stopInterruptionRetry();
       window.clearInterval(attachPoll);
       attached?.removeEventListener("pause", onElementPause);
       window.removeEventListener("focus", tryResume);

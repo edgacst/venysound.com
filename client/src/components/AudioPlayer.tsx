@@ -569,7 +569,9 @@ export function GlobalAudioPlayer() {
     {
       prepareResume: () => {
         const ctx = audioContextRef.current;
-        if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
+        if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
+          void ctx.resume().catch(() => {});
+        }
       },
     },
   );
@@ -613,7 +615,7 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       if (st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
       const ctx = audioContextRef.current;
-      if (ctx?.state === "suspended") {
+      if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
         void ctx.resume().catch(() => {});
       }
     };
@@ -753,7 +755,9 @@ export function GlobalAudioPlayer() {
         attempts: resumeAfterSystemPauseAttemptsRef.current,
         audioContextState: ctx?.state ?? null,
       });
-      if (ctx?.state === "suspended") void ctx.resume().catch(() => {});
+      if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
+        void ctx.resume().catch(() => {});
+      }
       if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
         resumeAfterSystemPauseAttemptsRef.current += 1;
         await reloadAudioForSystemResume(currentAudio);
@@ -1003,7 +1007,7 @@ export function GlobalAudioPlayer() {
       filters[filters.length - 1].connect(ctx.destination);
       eqFiltersRef.current = filters;
 
-      if (ctx.state === 'suspended') {
+      if (ctx.state !== 'running' && ctx.state !== 'closed') {
         ctx.resume().catch(() => {});
       }
     } catch {}
