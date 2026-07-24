@@ -25,6 +25,7 @@ export function useResumeAudioWhenForeground(
     const getEl = () => getAudioRef.current();
     const resumeTimers = new Set<number>();
     let interruptionRetryInterval: number | null = null;
+    let blurredWhileVisible = false;
 
     const hasPlayableSrc = (a: HTMLAudioElement) => {
       const s = a.src || "";
@@ -47,6 +48,7 @@ export function useResumeAudioWhenForeground(
 
     const tryResume = () => {
       if (!shouldRef.current()) return;
+      if (blurredWhileVisible) return;
       const run = () => {
         const a = getEl();
         if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) return;
@@ -107,7 +109,19 @@ export function useResumeAudioWhenForeground(
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === "visible") tryResume();
+      if (document.visibilityState === "visible") {
+        if (document.hasFocus()) blurredWhileVisible = false;
+        tryResume();
+      }
+    };
+
+    const onFocus = () => {
+      blurredWhileVisible = false;
+      tryResume();
+    };
+
+    const onBlur = () => {
+      if (document.visibilityState === "visible") blurredWhileVisible = true;
     };
 
     let attached: HTMLAudioElement | null = null;
@@ -121,7 +135,8 @@ export function useResumeAudioWhenForeground(
     syncPauseListener();
     const attachPoll = window.setInterval(syncPauseListener, 600);
 
-    window.addEventListener("focus", tryResume);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("pageshow", tryResume);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -130,7 +145,8 @@ export function useResumeAudioWhenForeground(
       stopInterruptionRetry();
       window.clearInterval(attachPoll);
       attached?.removeEventListener("pause", onElementPause);
-      window.removeEventListener("focus", tryResume);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("pageshow", tryResume);
       document.removeEventListener("visibilitychange", onVisibility);
     };

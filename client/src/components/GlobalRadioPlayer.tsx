@@ -104,6 +104,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
+  const radioBlurredWhileVisibleRef = useRef(false);
 
   const activeMusicId = usePlayerStore((s) => s.activeMusicId);
   const activeExternalTrack = usePlayerStore((s) => s.activeExternalTrack);
@@ -186,6 +187,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** PC 크로스페이드 rAF가 effect cleanup으로 끊기면 활성 트랙 볼륨이 0에 가깝게 남거나 비활성 audio가 같이 재생될 수 있음 */
   const restoreAudibleOutput = useCallback(() => {
+    if (radioBlurredWhileVisibleRef.current) return;
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl) return;
     const wanted = s.streamUrl;
@@ -402,6 +404,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
+    if (radioBlurredWhileVisibleRef.current) return;
     audioDebugLog("radio", "system-recovery:schedule", getActiveAudio(), {
       slug: s.slug,
       streamUrl: s.streamUrl,
@@ -415,9 +418,20 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") scheduleRadioRecoveryAfterSystemPause();
+      if (document.visibilityState === "visible") {
+        if (document.hasFocus()) radioBlurredWhileVisibleRef.current = false;
+        scheduleRadioRecoveryAfterSystemPause();
+      }
     };
-    window.addEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
+    const onFocus = () => {
+      radioBlurredWhileVisibleRef.current = false;
+      scheduleRadioRecoveryAfterSystemPause();
+    };
+    const onBlur = () => {
+      if (document.visibilityState === "visible") radioBlurredWhileVisibleRef.current = true;
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
     document.addEventListener("visibilitychange", onVis);
     return () => {
@@ -425,7 +439,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         window.clearTimeout(radioRecoverTimerRef.current);
         radioRecoverTimerRef.current = null;
       }
-      window.removeEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
       document.removeEventListener("visibilitychange", onVis);
     };
@@ -471,6 +486,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (document.visibilityState !== "hidden") return;
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl || !s.slug) return;
+      if (radioBlurredWhileVisibleRef.current) return;
       if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
       const el = getActiveAudio();
       if (!el || el.ended || !radioAudioPathMatchesStream(el, s.streamUrl)) return;

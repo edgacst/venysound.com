@@ -586,6 +586,7 @@ export function GlobalAudioPlayer() {
   const systemPauseHiddenAtRef = useRef<number | null>(null);
   const systemPauseSnapshotRef = useRef<{ src: string; time: number } | null>(null);
   const systemPauseNeedsReloadRef = useRef(false);
+  const systemPauseBlurredWhileVisibleRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -718,6 +719,10 @@ export function GlobalAudioPlayer() {
       needsReload: systemPauseNeedsReloadRef.current,
       attempts: resumeAfterSystemPauseAttemptsRef.current,
     });
+    if (systemPauseBlurredWhileVisibleRef.current) {
+      systemPauseNeedsReloadRef.current = systemPauseNeedsReloadRef.current || forceReload;
+      return;
+    }
     if (document.visibilityState !== "visible") {
       systemPauseNeedsReloadRef.current = systemPauseNeedsReloadRef.current || forceReload;
       audioDebugLog("music", "system-resume:defer-hidden", audio, {
@@ -827,6 +832,7 @@ export function GlobalAudioPlayer() {
 
   useEffect(() => {
     const onResumeSignal = () => {
+      if (document.hasFocus()) systemPauseBlurredWhileVisibleRef.current = false;
       if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
     };
     const onVisibilityChange = () => {
@@ -848,6 +854,7 @@ export function GlobalAudioPlayer() {
     };
     const onBlur = () => {
       audioDebugLog("music", "window-blur", audioRef.current);
+      if (document.visibilityState === "visible") systemPauseBlurredWhileVisibleRef.current = true;
       markSystemAudioInterruption();
     };
     const onPageHide = () => {
@@ -1261,6 +1268,7 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       const shouldBePlaying = !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
       if (!shouldBePlaying) return;
+      if (systemPauseBlurredWhileVisibleRef.current) return;
       const a = audioRef.current;
       if (!a) return;
 
