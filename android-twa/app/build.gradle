@@ -63,9 +63,9 @@ android {
     namespace "com.edgarcst.venysound"
     defaultConfig {
         applicationId "com.edgarcst.venysound"
-        minSdkVersion 23
+        minSdkVersion 21
         targetSdkVersion 36
-        versionCode 5
+        versionCode 6
         versionName "1.0.4"
 
         // The name for the application
@@ -243,9 +243,8 @@ repositories {
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     
-        implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.2'
-        implementation 'androidx.browser:browser:1.10.0'
-        implementation 'androidx.media3:media3-exoplayer:1.10.1'
-        implementation 'androidx.media3:media3-session:1.10.1'
+        implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.6.2'
+        implementation 'androidx.media3:media3-exoplayer:1.5.1'
+        implementation 'androidx.media3:media3-session:1.5.1'
     
 }
