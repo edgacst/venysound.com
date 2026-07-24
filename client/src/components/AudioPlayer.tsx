@@ -832,7 +832,7 @@ export function GlobalAudioPlayer() {
 
   useEffect(() => {
     const onResumeSignal = () => {
-      if (document.hasFocus()) systemPauseBlurredWhileVisibleRef.current = false;
+      systemPauseBlurredWhileVisibleRef.current = false;
       if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
     };
     const onVisibilityChange = () => {
@@ -845,6 +845,7 @@ export function GlobalAudioPlayer() {
         markSystemAudioInterruption();
         return;
       }
+      systemPauseBlurredWhileVisibleRef.current = false;
       const hiddenAt = systemPauseHiddenAtRef.current;
       const wasInterrupted = hiddenAt != null && Date.now() - hiddenAt > 1200;
       systemPauseHiddenAtRef.current = null;
@@ -1268,7 +1269,16 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       const shouldBePlaying = !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
       if (!shouldBePlaying) return;
-      if (systemPauseBlurredWhileVisibleRef.current) return;
+      if (systemPauseBlurredWhileVisibleRef.current) {
+        if (document.visibilityState === "visible" && document.hasFocus()) {
+          systemPauseBlurredWhileVisibleRef.current = false;
+          if (resumeAfterSystemPauseRef.current) {
+            scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
+          }
+        } else {
+          return;
+        }
+      }
       const a = audioRef.current;
       if (!a) return;
 
@@ -1287,7 +1297,7 @@ export function GlobalAudioPlayer() {
     }, 1200);
 
     return () => window.clearInterval(interval);
-  }, [activeMusicId, activeExternalTrack, pauseRequested, volume, isPlaying]);
+  }, [activeMusicId, activeExternalTrack, pauseRequested, volume, isPlaying, scheduleResumeAfterSystemPause]);
 
   useEffect(() => {
     const audio = audioRef.current;

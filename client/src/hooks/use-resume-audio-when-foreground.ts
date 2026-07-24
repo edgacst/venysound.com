@@ -48,7 +48,13 @@ export function useResumeAudioWhenForeground(
 
     const tryResume = () => {
       if (!shouldRef.current()) return;
-      if (blurredWhileVisible) return;
+      if (blurredWhileVisible) {
+        if (document.visibilityState === "visible" && document.hasFocus()) {
+          blurredWhileVisible = false;
+        } else {
+          return;
+        }
+      }
       const run = () => {
         const a = getEl();
         if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) return;
@@ -120,6 +126,11 @@ export function useResumeAudioWhenForeground(
       tryResume();
     };
 
+    const onPageShow = () => {
+      blurredWhileVisible = false;
+      tryResume();
+    };
+
     const onBlur = () => {
       if (document.visibilityState === "visible") blurredWhileVisible = true;
     };
@@ -137,7 +148,7 @@ export function useResumeAudioWhenForeground(
 
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
-    window.addEventListener("pageshow", tryResume);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       for (const tid of resumeTimers) window.clearTimeout(tid);
@@ -147,7 +158,7 @@ export function useResumeAudioWhenForeground(
       attached?.removeEventListener("pause", onElementPause);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
-      window.removeEventListener("pageshow", tryResume);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);

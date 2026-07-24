@@ -419,7 +419,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === "visible") {
-        if (document.hasFocus()) radioBlurredWhileVisibleRef.current = false;
+        radioBlurredWhileVisibleRef.current = false;
         scheduleRadioRecoveryAfterSystemPause();
       }
     };
@@ -430,9 +430,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const onBlur = () => {
       if (document.visibilityState === "visible") radioBlurredWhileVisibleRef.current = true;
     };
+    const onPageShow = () => {
+      radioBlurredWhileVisibleRef.current = false;
+      scheduleRadioRecoveryAfterSystemPause();
+    };
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
-    window.addEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVis);
     return () => {
       if (radioRecoverTimerRef.current != null) {
@@ -441,7 +445,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
-      window.removeEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [scheduleRadioRecoveryAfterSystemPause]);
