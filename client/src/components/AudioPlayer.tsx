@@ -1408,12 +1408,15 @@ export function GlobalAudioPlayer() {
     if (!audio) return;
     if (audio.paused) {
       setPauseRequested(false);
+      audio.muted = false;
+      audio.volume = volume;
+      void audio.play().catch(() => setNeedsTap(true));
     } else {
       cancelSystemResume();
       setPauseRequested(true);
       audio.pause();
     }
-  }, [cancelSystemResume, setPauseRequested]);
+  }, [cancelSystemResume, setPauseRequested, volume]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -1509,21 +1512,10 @@ export function GlobalAudioPlayer() {
       artwork: imageUrl ? [{ src: imageUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     });
 
-    navigator.mediaSession.setActionHandler('play', () => {
-      audioDebugLog("music", "media-session-play", audioRef.current);
-      setPauseRequested(false);
-      audioRef.current?.play().catch(() => {});
-    });
-    // MediaSession pause는 상단 플레이바 등 사용자의 명시적 정지 요청이다.
-    // 통화 등 시스템 중단은 audio pause/visibility 이벤트에서 별도로 복구한다.
-    navigator.mediaSession.setActionHandler('pause', () => {
-      audioDebugLog("music", "media-session-pause", audioRef.current);
-      cancelSystemResume();
-      setPauseRequested(true);
-      audioRef.current?.pause();
-      setIsPlaying(false);
-      setNeedsTap(false);
-    });
+    // play/pause는 Android Chrome 기본 MediaSession에 맡겨 통화의 일시적
+    // 오디오 포커스 손실과 사용자의 알림 플레이바 조작을 브라우저가 구분하게 한다.
+    navigator.mediaSession.setActionHandler('play', null);
+    navigator.mediaSession.setActionHandler('pause', null);
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
     navigator.mediaSession.setActionHandler('seekto', (details) => {
@@ -1542,7 +1534,7 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, cancelSystemResume, playNext, playPrev, setPauseRequested]);
+  }, [displayMusic, imageUrl, playNext, playPrev]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;

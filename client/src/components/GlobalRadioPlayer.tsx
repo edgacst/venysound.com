@@ -786,26 +786,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         ? [{ src: `${origin}/favicon.png`, sizes: "192x192", type: "image/png" }]
         : [],
     });
-    navigator.mediaSession.setActionHandler("play", () => {
-      audioDebugLog("radio", "media-session-play", getActiveAudio(), { slug, streamUrl });
-      setUserStopped(false);
-      setNeedsTap(false);
-      const el = getActiveAudio();
-      if (el) {
-        el.muted = false;
-        el.volume = 1;
-        el.play().catch(() => setNeedsTap(true));
-      }
-    });
-    // MediaSession pause는 상단 플레이바 등 사용자의 명시적 정지 요청이다.
-    // 통화 등 시스템 중단은 audio pause/visibility 이벤트에서 별도로 복구한다.
-    navigator.mediaSession.setActionHandler("pause", () => {
-      const el = getActiveAudio();
-      audioDebugLog("radio", "media-session-pause", el, { slug, streamUrl });
-      setUserStopped(true);
-      if (el) el.pause();
-      setPlaying(false);
-    });
+    // play/pause는 Android Chrome 기본 MediaSession에 맡겨 통화의 일시적
+    // 오디오 포커스 손실과 사용자의 알림 플레이바 조작을 브라우저가 구분하게 한다.
+    navigator.mediaSession.setActionHandler("play", null);
+    navigator.mediaSession.setActionHandler("pause", null);
     navigator.mediaSession.setActionHandler("stop", () => {
       audioDebugLog("radio", "media-session-stop", getActiveAudio(), { slug, streamUrl });
       handleStop();
@@ -817,7 +801,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         navigator.mediaSession.setActionHandler("stop", null);
       } catch { /* ignore */ }
     };
-  }, [streamUrl, channelName, getActiveAudio, handleStop, setUserStopped, t]);
+  }, [streamUrl, channelName, getActiveAudio, handleStop, t]);
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
