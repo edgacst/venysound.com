@@ -457,14 +457,15 @@ function Get-GradleKeystorePropsPathForInteractiveSigning {
   if (-not $keyAlias) { $keyAlias = "android" }
 
   $ksInRoot = Join-Path $root "android.keystore"
-  $storeFileProp = "android.keystore"
-  if (-not (Test-Path -LiteralPath $ksInRoot)) {
-    $expanded = if ($manifestKeyPath) { [Environment]::ExpandEnvironmentVariables($manifestKeyPath) } else { "" }
-    if (-not $expanded -or -not (Test-Path -LiteralPath $expanded)) {
-      Write-Host "Keystore not found. Expected: $ksInRoot or signingKey.path in twa-manifest.json"
-      exit 1
-    }
+  $expanded = if ($manifestKeyPath) { [Environment]::ExpandEnvironmentVariables($manifestKeyPath) } else { "" }
+  if ($expanded -and (Test-Path -LiteralPath $expanded)) {
+    # 업로드 키 재설정 후에는 manifest에 지정한 새 키를 기존 android.keystore보다 우선한다.
     $storeFileProp = ($expanded -replace '\\', '/')
+  } elseif (Test-Path -LiteralPath $ksInRoot) {
+    $storeFileProp = "android.keystore"
+  } else {
+    Write-Host "Keystore not found. Expected: signingKey.path in twa-manifest.json or $ksInRoot"
+    exit 1
   }
 
   Write-Host ""
