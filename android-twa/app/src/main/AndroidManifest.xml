@@ -24,6 +24,9 @@
 
     
         <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+        <uses-permission android:name="android.permission.INTERNET"/>
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     
 
     
@@ -189,6 +192,19 @@
             <intent-filter>
                 <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE"/>
                 <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="androidx.browser.customtabs.PostMessageService"
+            android:exported="true" />
+
+        <service
+            android:name=".MediaPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
 

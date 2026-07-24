@@ -1341,7 +1341,10 @@ export async function registerRoutes(
     res.type("application/json").send(
       JSON.stringify([
         {
-          relation: ["delegate_permission/common.handle_all_urls"],
+          relation: [
+            "delegate_permission/common.handle_all_urls",
+            "delegate_permission/common.use_as_origin",
+          ],
           target: {
             namespace: "android_app",
             package_name: packageName,

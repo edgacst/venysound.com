@@ -7,7 +7,7 @@ import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { blockGuestPlaybackIfNeeded } from "@/lib/guest-listen-quota";
-import { useRef, useCallback, useEffect, useState, useMemo } from "react";
+import { useRef, useCallback, useEffect, useState, useMemo, useSyncExternalStore } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,12 @@ import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-fore
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { audioDebugLog } from "@/lib/audio-debug";
+import {
+  isNativePlayerReady,
+  postNativePlayerMessage,
+  subscribeNativePlayer,
+  subscribeNativePlayerReady,
+} from "@/lib/native-player-bridge";
 
 type RepeatMode = 'none' | 'all' | 'one';
 
@@ -559,6 +565,11 @@ export function GlobalAudioPlayer() {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const nativePlayerReady = useSyncExternalStore(
+    subscribeNativePlayerReady,
+    isNativePlayerReady,
+    () => false,
+  );
 
   useResumeAudioWhenForeground(
     () => audioRef.current,
@@ -930,6 +941,7 @@ export function GlobalAudioPlayer() {
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
+  const lastNativeSessionIdRef = useRef("");
   const isClosingRef = useRef(false);
 
   if (activeExternalTrack) {
@@ -951,9 +963,19 @@ export function GlobalAudioPlayer() {
   const audioUrl = lastAudioUrlRef.current;
   const imageUrl = lastImageUrlRef.current;
   const isExternalTrack = !!activeExternalTrack;
+  const nativeSessionId = useMemo(
+    () =>
+      activeMusicId != null
+        ? `music:${activeMusicId}`
+        : activeExternalTrack
+          ? `music:external:${activeExternalTrack.url}`
+          : "",
+    [activeMusicId, activeExternalTrack],
+  );
   const baseList = playlist.length > 0 ? playlist : (allMusic?.data?.map((m: any) => m.id) || []);
 
   const tryStartNextTrackImmediately = useCallback((nextId: number) => {
+    if (nativePlayerReady) return;
     const audio = audioRef.current;
     if (!audio || usePlayerStore.getState().pauseRequested) return;
     try {
@@ -975,7 +997,7 @@ export function GlobalAudioPlayer() {
       setIsPlaying(false);
       setNeedsTap(true);
     }
-  }, [pauseRequested, volume]);
+  }, [nativePlayerReady, pauseRequested, volume]);
 
   useEffect(() => {
     if (shuffleEnabled && baseList.length > 0) {
@@ -1075,6 +1097,11 @@ export function GlobalAudioPlayer() {
     const playerState = usePlayerStore.getState();
     if (playerState.activeExternalTrack) {
       if (repeatMode === 'one') {
+        if (nativePlayerReady) {
+          postNativePlayerMessage("player.seek", { positionMs: 0 });
+          postNativePlayerMessage("player.play");
+          return;
+        }
         const audio = audioRef.current;
         if (audio) {
           audio.currentTime = 0;
@@ -1107,6 +1134,11 @@ export function GlobalAudioPlayer() {
     const nextCurrentIndex = playerState.activeMusicId ? nextList.indexOf(playerState.activeMusicId) : -1;
     if (nextList.length === 0) return;
     if (repeatMode === 'one') {
+      if (nativePlayerReady) {
+        postNativePlayerMessage("player.seek", { positionMs: 0 });
+        postNativePlayerMessage("player.play");
+        return;
+      }
       const audio = audioRef.current;
       if (audio) {
         audio.currentTime = 0;
@@ -1130,11 +1162,15 @@ export function GlobalAudioPlayer() {
       usePlayerStore.setState({ activeMusicId: nextId, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
       tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, currentList, repeatMode, tryStartNextTrackImmediately]);
+  }, [tracker, currentList, repeatMode, tryStartNextTrackImmediately, nativePlayerReady]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
     if (currentList.length === 0) return;
+    if (nativePlayerReady && currentTime > 3) {
+      postNativePlayerMessage("player.seek", { positionMs: 0 });
+      return;
+    }
     const audio = audioRef.current;
     if (audio && audio.currentTime > 3) {
       audio.currentTime = 0;
@@ -1142,13 +1178,81 @@ export function GlobalAudioPlayer() {
     }
     const prevIndex = (currentIndex - 1 + currentList.length) % currentList.length;
     playMusic(currentList[prevIndex]);
-  }, [tracker, currentList, currentIndex, playMusic]);
+  }, [tracker, currentList, currentIndex, playMusic, nativePlayerReady, currentTime]);
 
   const handlePlayFromQueue = useCallback((index: number) => {
     const id = queue[index];
     removeFromQueue(index);
     playMusic(id);
   }, [queue, removeFromQueue, playMusic]);
+
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeSessionId || !audioUrl || !displayMusic) return;
+    if (activeMusicId != null && music?.id !== activeMusicId) return;
+    const priorNativeSessionId = lastNativeSessionIdRef.current;
+    if (priorNativeSessionId === nativeSessionId) return;
+    const handoffPositionSeconds = priorNativeSessionId ? 0 : currentTime;
+    lastNativeSessionIdRef.current = nativeSessionId;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    postNativePlayerMessage("player.load", {
+      mode: "music",
+      sessionId: nativeSessionId,
+      url: new URL(audioUrl, window.location.origin).toString(),
+      title: displayMusic.title ?? "VenySound",
+      artist: displayMusic.artist ?? "",
+      album: "VenySound",
+      artworkUrl: imageUrl ? new URL(imageUrl, window.location.origin).toString() : "",
+      positionMs: Math.max(0, Math.floor(handoffPositionSeconds * 1000)),
+      autoplay: !pauseRequested,
+    });
+  }, [
+    nativePlayerReady,
+    nativeSessionId,
+    audioUrl,
+    displayMusic?.title,
+    displayMusic?.artist,
+    imageUrl,
+    activeMusicId,
+    music?.id,
+  ]);
+
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeSessionId) return;
+    return subscribeNativePlayer((message) => {
+      const payload = message.payload;
+      if (
+        typeof payload.sessionId === "string" &&
+        payload.sessionId &&
+        payload.sessionId !== nativeSessionId
+      ) {
+        return;
+      }
+      if (message.type === "player.state" || message.type === "player.position") {
+        if (typeof payload.positionMs === "number") setCurrentTime(Math.max(0, payload.positionMs / 1000));
+        if (typeof payload.durationMs === "number" && payload.durationMs > 0) {
+          setDuration(payload.durationMs / 1000);
+        }
+        if (typeof payload.isPlaying === "boolean") setIsPlaying(payload.isPlaying);
+        if (typeof payload.playWhenReady === "boolean") {
+          setPauseRequested(!payload.playWhenReady);
+        }
+        return;
+      }
+      if (message.type === "player.ended") {
+        playNext();
+        return;
+      }
+      if (message.type === "player.error") {
+        setIsPlaying(false);
+        setNeedsTap(true);
+      }
+    });
+  }, [nativePlayerReady, nativeSessionId, playNext, setPauseRequested]);
 
   useEffect(() => {
     setShowLyricsPanel(false);
@@ -1159,6 +1263,7 @@ export function GlobalAudioPlayer() {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !audioUrl || !hasTrack) return;
+    if (nativePlayerReady) return;
     let cancelled = false;
     const playKey = `${audioUrl}:${activeMusicId ?? ""}:${activeExternalTrack?.url ?? ""}`;
     playAttemptKeyRef.current = null;
@@ -1211,12 +1316,31 @@ export function GlobalAudioPlayer() {
       window.clearTimeout(retryTimer);
       audio.removeEventListener("canplay", onReadyOnce);
     };
-  }, [audioUrl, activeMusicId, activeExternalTrack]);
+  }, [audioUrl, activeMusicId, activeExternalTrack, nativePlayerReady]);
 
   useEffect(() => {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio) return;
+    if (nativePlayerReady) {
+      if (!hasTrack) {
+        const sessionId = lastNativeSessionIdRef.current;
+        if (sessionId) {
+          postNativePlayerMessage("player.stop", { mode: "music", sessionId });
+          lastNativeSessionIdRef.current = "";
+        }
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+      } else {
+        postNativePlayerMessage(pauseRequested ? "player.pause" : "player.play", {
+          mode: "music",
+          sessionId: nativeSessionId,
+        });
+      }
+      prevPauseRequestedRef.current = pauseRequested;
+      return;
+    }
     if (!hasTrack) {
       prevPauseRequestedRef.current = pauseRequested;
       audio.pause();
@@ -1249,7 +1373,15 @@ export function GlobalAudioPlayer() {
           setNeedsTap(true);
         });
     }
-  }, [cancelSystemResume, pauseRequested, activeMusicId, activeExternalTrack, volume]);
+  }, [
+    cancelSystemResume,
+    pauseRequested,
+    activeMusicId,
+    activeExternalTrack,
+    volume,
+    nativePlayerReady,
+    nativeSessionId,
+  ]);
 
   // 일부 모바일(특히 S24/LTE 백그라운드)에서 "조용히 paused" 되는 케이스 방지:
   // 재생해야 하는데 paused면 hidden 상태에서도 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
@@ -1406,6 +1538,15 @@ export function GlobalAudioPlayer() {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    if (nativePlayerReady) {
+      const shouldPause = isPlaying;
+      setPauseRequested(shouldPause);
+      postNativePlayerMessage(shouldPause ? "player.pause" : "player.play", {
+        mode: "music",
+        sessionId: nativeSessionId,
+      });
+      return;
+    }
     if (audio.paused) {
       setPauseRequested(false);
       audio.muted = false;
@@ -1416,7 +1557,14 @@ export function GlobalAudioPlayer() {
       setPauseRequested(true);
       audio.pause();
     }
-  }, [cancelSystemResume, setPauseRequested, volume]);
+  }, [
+    cancelSystemResume,
+    setPauseRequested,
+    volume,
+    nativePlayerReady,
+    isPlaying,
+    nativeSessionId,
+  ]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -1449,9 +1597,14 @@ export function GlobalAudioPlayer() {
     const rect = bar.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
-    setCurrentTime(ratio * duration);
-  }, [duration]);
+    const nextTime = ratio * duration;
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.seek", { positionMs: Math.floor(nextTime * 1000) });
+    } else {
+      audio.currentTime = nextTime;
+    }
+    setCurrentTime(nextTime);
+  }, [duration, nativePlayerReady]);
 
   const handleSeekStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     setIsSeeking(true);
@@ -1464,8 +1617,13 @@ export function GlobalAudioPlayer() {
       const rect = bar.getBoundingClientRect();
       const clientX = 'touches' in ev ? ev.touches[0].clientX : (ev as MouseEvent).clientX;
       const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      audio.currentTime = ratio * duration;
-      setCurrentTime(ratio * duration);
+      const nextTime = ratio * duration;
+      if (nativePlayerReady) {
+        postNativePlayerMessage("player.seek", { positionMs: Math.floor(nextTime * 1000) });
+      } else {
+        audio.currentTime = nextTime;
+      }
+      setCurrentTime(nextTime);
     };
 
     const onEnd = () => {
@@ -1480,11 +1638,17 @@ export function GlobalAudioPlayer() {
     document.addEventListener('mouseup', onEnd);
     document.addEventListener('touchmove', onMove);
     document.addEventListener('touchend', onEnd);
-  }, [duration, handleSeek]);
+  }, [duration, handleSeek, nativePlayerReady]);
 
   const handleClose = useCallback(() => {
     isClosingRef.current = true;
     tracker.onEnded();
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.stop", {
+        mode: "music",
+        sessionId: nativeSessionId,
+      });
+    }
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -1499,11 +1663,12 @@ export function GlobalAudioPlayer() {
     }
     closePlayer();
     setTimeout(() => { isClosingRef.current = false; }, 300);
-  }, [tracker, closePlayer]);
+  }, [tracker, closePlayer, nativePlayerReady, nativeSessionId]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!displayMusic || !('mediaSession' in navigator)) return;
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -1534,9 +1699,10 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, playNext, playPrev]);
+  }, [displayMusic, imageUrl, playNext, playPrev, nativePlayerReady]);
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!("mediaSession" in navigator)) return;
     const playing = isPlaying && !pauseRequested;
     try {
@@ -1544,9 +1710,10 @@ export function GlobalAudioPlayer() {
     } catch {
       /* ignore */
     }
-  }, [isPlaying, pauseRequested]);
+  }, [isPlaying, pauseRequested, nativePlayerReady]);
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!('mediaSession' in navigator) || !audioRef.current) return;
     const audio = audioRef.current;
     const updatePositionState = () => {
@@ -1562,7 +1729,7 @@ export function GlobalAudioPlayer() {
     };
     const interval = setInterval(updatePositionState, 1000);
     return () => clearInterval(interval);
-  }, [activeMusicId]);
+  }, [activeMusicId, nativePlayerReady]);
 
   const togglePanel = useCallback((panel: 'lyrics' | 'queue' | 'eq') => {
     if (panel === 'lyrics') {
