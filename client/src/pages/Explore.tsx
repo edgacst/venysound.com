@@ -48,6 +48,7 @@ export default function Explore() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | undefined>(undefined);
   const [currentPage, setCurrentPage] = useState(pageFromSearch);
+  const [isStartingPlayAll, setIsStartingPlayAll] = useState(false);
   const didInitPagingReset = useRef(false);
   
   const debouncedSearch = useDebounce(searchTerm, 500);
@@ -189,6 +190,41 @@ export default function Explore() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handlePlayAllSiteMusic = async () => {
+    if (!user) return redirectToLogin();
+    if (siteTotalCount <= 0 || isStartingPlayAll) return;
+    setIsStartingPlayAll(true);
+    try {
+      const chunkSize = 500;
+      const pageCount = Math.ceil(siteTotalCount / chunkSize);
+      const pages = await Promise.all(
+        Array.from({ length: pageCount }, async (_, index) => {
+          const params = new URLSearchParams({
+            page: String(index + 1),
+            limit: String(chunkSize),
+          });
+          if (debouncedSearch) params.set("search", debouncedSearch);
+          if (selectedGenre && selectedGenre !== "전체" && selectedGenre !== "All") {
+            params.set("genre", selectedGenre);
+          }
+          const response = await fetch(`/api/music?${params.toString()}`, {
+            credentials: "include",
+          });
+          if (!response.ok) throw new Error("Failed to load full playlist");
+          return response.json() as Promise<{ data: Array<{ id: number }> }>;
+        }),
+      );
+      const ids = Array.from(new Set(pages.flatMap((page) => page.data.map((music) => music.id))));
+      if (ids.length === 0) return;
+      setPlaylist(ids);
+      playMusic(ids[0]);
+    } catch {
+      // 기존 재생목록은 유지하고 버튼만 다시 활성화한다.
+    } finally {
+      setIsStartingPlayAll(false);
+    }
+  };
+
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
     const maxVisible = 5;
@@ -255,15 +291,11 @@ export default function Explore() {
                 <Button
                   variant="outline"
                   className="gap-2 border-white/10"
-                  onClick={() => {
-                    if (!user) return redirectToLogin();
-                    const ids = musicList.map((m) => m.id);
-                    setPlaylist(ids);
-                    if (musicList[0]) playMusic(musicList[0].id);
-                  }}
+                  onClick={handlePlayAllSiteMusic}
+                  disabled={isStartingPlayAll}
                   data-testid="button-play-all"
                 >
-                  <Play size={16} />
+                  {isStartingPlayAll ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
                   {t("explore.playAll")}
                 </Button>
               )}
