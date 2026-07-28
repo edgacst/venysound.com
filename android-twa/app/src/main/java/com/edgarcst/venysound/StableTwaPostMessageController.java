@@ -2,7 +2,9 @@ package com.edgarcst.venysound;
 
 import android.content.ComponentName;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -46,6 +48,8 @@ final class StableTwaPostMessageController {
     @Nullable private TwaLauncher launcher;
     @Nullable private CustomTabsSession session;
     @Nullable private CustomTabsServiceConnection warmupConnection;
+    @Nullable private AudioManager audioManager;
+    @Nullable private Object audioModeListener;
     private boolean warmupBound;
     private boolean warmupComplete;
     private boolean navigationFinished;
@@ -90,6 +94,13 @@ final class StableTwaPostMessageController {
 
     StableTwaPostMessageController(LauncherActivity activity) {
         this.activity = activity;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager =
+                    (AudioManager) activity.getSystemService(android.content.Context.AUDIO_SERVICE);
+            if (audioManager != null) {
+                audioModeListener = Api31.registerAudioModeListener(audioManager, this);
+            }
+        }
     }
 
     void attachLauncher(TwaLauncher value) {
@@ -184,6 +195,7 @@ final class StableTwaPostMessageController {
                 TwaPostMessageBridge.setReady(true);
                 Log.i(TAG, "postMessage channel ready");
                 handler.post(bridgeReadyAnnouncer);
+                sendCurrentAudioMode();
             }
 
             @Override
@@ -313,6 +325,7 @@ final class StableTwaPostMessageController {
                     handler.removeCallbacks(bridgeReadyAnnouncer);
                     Log.i(TAG, "web bridge acknowledged");
                     sendBridgeReady();
+                    sendCurrentAudioMode();
                     return;
             }
             if (!isPlayerCommand(type)) return;
@@ -346,9 +359,51 @@ final class StableTwaPostMessageController {
                         + ",\"payload\":{\"nativeVersion\":1,\"media3\":true}}");
     }
 
+    private void onAudioModeChanged(int audioMode) {
+        boolean delivered = sendAudioMode(audioMode);
+        Log.i(TAG, "audio mode changed: " + audioMode + "; delivered=" + delivered);
+    }
+
+    private void sendCurrentAudioMode() {
+        AudioManager manager = audioManager;
+        if (manager != null) sendAudioMode(manager.getMode());
+    }
+
+    private boolean sendAudioMode(int audioMode) {
+        return TwaPostMessageBridge.send(
+                "{\"v\":1,\"type\":\"system.audio-mode\",\"ts\":"
+                        + System.currentTimeMillis()
+                        + ",\"payload\":{\"audioMode\":"
+                        + audioMode
+                        + "}}");
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+    private static final class Api31 {
+        private Api31() {}
+
+        static Object registerAudioModeListener(
+                AudioManager manager, StableTwaPostMessageController controller) {
+            AudioManager.OnModeChangedListener listener = controller::onAudioModeChanged;
+            manager.addOnModeChangedListener(controller.activity.getMainExecutor(), listener);
+            return listener;
+        }
+
+        static void unregisterAudioModeListener(AudioManager manager, Object listener) {
+            manager.removeOnModeChangedListener((AudioManager.OnModeChangedListener) listener);
+        }
+    }
+
     void destroy() {
         destroyed = true;
         handler.removeCallbacksAndMessages(null);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                && audioManager != null
+                && audioModeListener != null) {
+            Api31.unregisterAudioModeListener(audioManager, audioModeListener);
+            audioModeListener = null;
+        }
+        audioManager = null;
         if (warmupBound && warmupConnection != null) {
             try {
                 activity.unbindService(warmupConnection);

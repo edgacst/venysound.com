@@ -122,6 +122,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
   const radioBlurredWhileVisibleRef = useRef(false);
+  const radioCallModeObservedRef = useRef(false);
   const lastNativeRadioSessionIdRef = useRef("");
 
   const activeMusicId = usePlayerStore((s) => s.activeMusicId);
@@ -429,23 +430,53 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     requestPlay,
   ]);
 
-  const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
-    // Android Chrome/TWA의 통화 오디오 포커스는 네이티브 MediaSession에 맡긴다.
-    // 통화 중 play() 재시도는 Android가 새 사용자 재생으로 판단해 잡음을 낼 수 있다.
-    if ("mediaSession" in navigator) return;
+  const scheduleRadioRecoveryAfterSystemPause = useCallback((confirmedCallEnd = false) => {
+    // MediaSession 기기에서는 네이티브가 통화 종료를 확인한 경우에만 복구한다.
+    // 일반 pause 중 play() 재시도는 통화 잡음을 만들 수 있으므로 그대로 차단한다.
+    if ("mediaSession" in navigator && !confirmedCallEnd) return;
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
-    if (radioBlurredWhileVisibleRef.current) return;
+    if (radioBlurredWhileVisibleRef.current && !confirmedCallEnd) return;
     audioDebugLog("radio", "system-recovery:schedule", getActiveAudio(), {
       slug: s.slug,
       streamUrl: s.streamUrl,
+      confirmedCallEnd,
     });
     if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = window.setTimeout(() => {
       radioRecoverTimerRef.current = null;
       void runRadioRecoveryAfterSystemPause();
-    }, 180);
+    }, confirmedCallEnd ? 750 : 180);
   }, [runRadioRecoveryAfterSystemPause]);
+
+  useEffect(() => {
+    if (!nativeBridgeReady || !slug || !streamUrl) {
+      radioCallModeObservedRef.current = false;
+      return;
+    }
+    return subscribeNativePlayer((message) => {
+      if (message.type !== "system.audio-mode") return;
+      const audioMode =
+        typeof message.payload.audioMode === "number"
+          ? message.payload.audioMode
+          : null;
+      if (audioMode == null) return;
+      if (audioMode >= 1 && audioMode <= 5) {
+        radioCallModeObservedRef.current = true;
+        return;
+      }
+      if (audioMode === 0 && radioCallModeObservedRef.current) {
+        radioCallModeObservedRef.current = false;
+        radioBlurredWhileVisibleRef.current = false;
+        scheduleRadioRecoveryAfterSystemPause(true);
+      }
+    });
+  }, [
+    nativeBridgeReady,
+    slug,
+    streamUrl,
+    scheduleRadioRecoveryAfterSystemPause,
+  ]);
 
   useEffect(() => {
     const onVis = () => {
