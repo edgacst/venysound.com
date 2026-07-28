@@ -495,6 +495,7 @@ public final class MediaPlaybackService extends MediaSessionService {
                     "playWhenReady",
                     player.getPlayWhenReady()
                             || (callRecoveryPending && userIntendsPlayback));
+            payload.put("userIntendsPlayback", userIntendsPlayback);
             payload.put("callInterrupted", callRecoveryPending && callModeObserved);
             payload.put("playbackState", player.getPlaybackState());
             payload.put("positionMs", Math.max(0L, player.getCurrentPosition()));

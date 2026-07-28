@@ -591,6 +591,7 @@ export function GlobalAudioPlayer() {
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
   const prevPauseRequestedRef = useRef(pauseRequested);
+  const nativePauseSyncValueRef = useRef<boolean | null>(null);
   const playAttemptKeyRef = useRef<string | null>(null);
   const resumeAfterSystemPauseRef = useRef(false);
   const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
@@ -1376,8 +1377,18 @@ export function GlobalAudioPlayer() {
           setDuration(payload.durationMs / 1000);
         }
         if (typeof payload.isPlaying === "boolean") setIsPlaying(payload.isPlaying);
-        if (typeof payload.playWhenReady === "boolean") {
-          setPauseRequested(!payload.playWhenReady);
+        const nativeIntendsPlayback =
+          typeof payload.userIntendsPlayback === "boolean"
+            ? payload.userIntendsPlayback
+            : typeof payload.playWhenReady === "boolean"
+              ? payload.playWhenReady
+              : null;
+        if (nativeIntendsPlayback != null) {
+          const nextPauseRequested = !nativeIntendsPlayback;
+          if (usePlayerStore.getState().pauseRequested !== nextPauseRequested) {
+            nativePauseSyncValueRef.current = nextPauseRequested;
+            setPauseRequested(nextPauseRequested);
+          }
         }
         return;
       }
@@ -1473,10 +1484,16 @@ export function GlobalAudioPlayer() {
         setCurrentTime(0);
         setDuration(0);
       } else {
-        postNativePlayerMessage(pauseRequested ? "player.pause" : "player.play", {
-          mode: "music",
-          sessionId: nativeSessionId,
-        });
+        const nativeSyncedPause = nativePauseSyncValueRef.current;
+        if (nativeSyncedPause === pauseRequested) {
+          nativePauseSyncValueRef.current = null;
+        } else if (prevPauseRequestedRef.current !== pauseRequested) {
+          nativePauseSyncValueRef.current = null;
+          postNativePlayerMessage(pauseRequested ? "player.pause" : "player.play", {
+            mode: "music",
+            sessionId: nativeSessionId,
+          });
+        }
       }
       prevPauseRequestedRef.current = pauseRequested;
       return;
@@ -1680,6 +1697,8 @@ export function GlobalAudioPlayer() {
     if (!audio) return;
     if (nativePlayerReady) {
       const shouldPause = isPlaying;
+      nativePauseSyncValueRef.current = null;
+      prevPauseRequestedRef.current = shouldPause;
       setPauseRequested(shouldPause);
       postNativePlayerMessage(shouldPause ? "player.pause" : "player.play", {
         mode: "music",
