@@ -1,11 +1,14 @@
 package com.edgarcst.venysound;
 
 import android.os.Bundle;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
+import androidx.browser.customtabs.CustomTabsService;
 import androidx.browser.customtabs.CustomTabsSession;
 
 final class TwaPostMessageBridge {
+    private static final String TAG = "VenySoundTwaBridge";
     private static final Object LOCK = new Object();
 
     @Nullable
@@ -39,7 +42,11 @@ final class TwaPostMessageBridge {
     static boolean send(String message) {
         synchronized (LOCK) {
             if (!ready || session == null) return false;
-            return session.postMessage(message, (Bundle) null) >= 0;
+            int result = session.postMessage(message, (Bundle) null);
+            if (result != CustomTabsService.RESULT_SUCCESS) {
+                Log.w(TAG, "postMessage failed with result " + result);
+            }
+            return result == CustomTabsService.RESULT_SUCCESS;
         }
     }
 }

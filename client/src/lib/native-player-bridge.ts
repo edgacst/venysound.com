@@ -8,7 +8,10 @@ export type NativePlayerMessage = {
 type MessageListener = (message: NativePlayerMessage) => void;
 type ReadyListener = () => void;
 
-const TRUSTED_ORIGIN = "https://venysound.com";
+const TRUSTED_ORIGINS = new Set([
+  "https://venysound.com",
+  "android-app://venysound.com",
+]);
 
 let installed = false;
 let ready = false;
@@ -53,7 +56,7 @@ function install() {
   if (installed || typeof window === "undefined") return;
   installed = true;
   window.addEventListener("message", (event: MessageEvent) => {
-    if (event.origin && event.origin !== TRUSTED_ORIGIN) return;
+    if (event.origin && !TRUSTED_ORIGINS.has(event.origin)) return;
     const incomingPort = event.ports?.[0] ?? null;
     if (incomingPort && incomingPort !== port) {
       port = incomingPort;
