@@ -15,7 +15,6 @@ import androidx.browser.customtabs.CustomTabsCallback;
 import androidx.browser.customtabs.CustomTabsService;
 import androidx.browser.customtabs.CustomTabsServiceConnection;
 import androidx.browser.customtabs.CustomTabsSession;
-import androidx.core.content.ContextCompat;
 
 import com.google.androidbrowserhelper.trusted.TwaLauncher;
 
@@ -322,7 +321,11 @@ final class StableTwaPostMessageController {
                     new Intent(activity, MediaPlaybackService.class)
                             .setAction(MediaPlaybackService.ACTION_BRIDGE_COMMAND)
                             .putExtra(MediaPlaybackService.EXTRA_MESSAGE, rawMessage);
-            ContextCompat.startForegroundService(activity, command);
+            // MediaSessionService promotes itself while ExoPlayer is actually playing.
+            // Starting every bridge command as an FGS is unsafe: pause/seek/stop and
+            // call-suppressed play commands never enter the foreground and Android 16
+            // terminates the process with ForegroundServiceDidNotStartInTimeException.
+            activity.startService(command);
         } catch (JSONException error) {
             Log.w(TAG, "Ignoring malformed web bridge message");
         }

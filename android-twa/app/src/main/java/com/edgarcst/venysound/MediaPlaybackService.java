@@ -22,14 +22,19 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.session.MediaSession;
 import androidx.media3.session.MediaSessionService;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public final class MediaPlaybackService extends MediaSessionService {
     private static final String TAG = "VenySoundPlayback";
     private static final long CALL_MODE_DETECTION_WINDOW_MS = 3000L;
     private static final long CALL_MODE_POLL_INTERVAL_MS = 250L;
     private static final long NORMAL_MODE_STABLE_MS = 750L;
+    private static final int MAX_NATIVE_QUEUE_ITEMS = 500;
 
     public static final String ACTION_BRIDGE_COMMAND =
             "com.edgarcst.venysound.action.BRIDGE_COMMAND";
@@ -189,6 +194,29 @@ public final class MediaPlaybackService extends MediaSessionService {
                     }
 
                     @Override
+                    public void onMediaItemTransition(
+                            @Nullable MediaItem mediaItem, int reason) {
+                        if (mediaItem == null) return;
+                        String nextSessionId = mediaItem.mediaId;
+                        String previousSessionId = currentBridgeSessionId;
+                        currentBridgeSessionId = nextSessionId;
+                        if (!nextSessionId.equals(previousSessionId)) {
+                            JSONObject payload = new JSONObject();
+                            try {
+                                payload.put("mode", currentMode);
+                                payload.put("sessionId", nextSessionId);
+                                payload.put("previousSessionId", previousSessionId);
+                                payload.put("mediaIndex", player.getCurrentMediaItemIndex());
+                                payload.put("positionMs", Math.max(0L, player.getCurrentPosition()));
+                            } catch (JSONException ignored) {
+                                // Best-effort transition payload.
+                            }
+                            sendEvent("player.transition", payload);
+                        }
+                        sendState("player.state");
+                    }
+
+                    @Override
                     public void onPlayerError(PlaybackException error) {
                         JSONObject payload = new JSONObject();
                         try {
@@ -289,13 +317,69 @@ public final class MediaPlaybackService extends MediaSessionService {
     }
 
     private void load(JSONObject payload) {
-        String url = payload.optString("url", "");
-        if (url.isEmpty()) return;
+        List<MediaItem> mediaItems = new ArrayList<>();
+        JSONArray items = payload.optJSONArray("items");
+        if (items != null) {
+            int itemCount = Math.min(items.length(), MAX_NATIVE_QUEUE_ITEMS);
+            for (int i = 0; i < itemCount; i++) {
+                JSONObject itemPayload = items.optJSONObject(i);
+                if (itemPayload == null) continue;
+                MediaItem item = buildMediaItem(itemPayload);
+                if (item != null) mediaItems.add(item);
+            }
+        }
+        if (mediaItems.isEmpty()) {
+            MediaItem singleItem = buildMediaItem(payload);
+            if (singleItem == null) return;
+            mediaItems.add(singleItem);
+        }
+
         cancelCallRecovery();
-        currentBridgeSessionId = payload.optString("sessionId", url);
+        String requestedSessionId = payload.optString("sessionId", "");
         currentMode = payload.optString("mode", "music");
         boolean autoplay = payload.optBoolean("autoplay", true);
         userIntendsPlayback = autoplay;
+
+        int startIndex = 0;
+        if (!requestedSessionId.isEmpty()) {
+            for (int i = 0; i < mediaItems.size(); i++) {
+                if (requestedSessionId.equals(mediaItems.get(i).mediaId)) {
+                    startIndex = i;
+                    break;
+                }
+            }
+        } else {
+            startIndex =
+                    Math.max(
+                            0,
+                            Math.min(
+                                    payload.optInt("startIndex", 0),
+                                    mediaItems.size() - 1));
+        }
+        currentBridgeSessionId = mediaItems.get(startIndex).mediaId;
+
+        String repeatMode = payload.optString("repeatMode", "none");
+        if ("one".equals(repeatMode)) {
+            player.setRepeatMode(Player.REPEAT_MODE_ONE);
+        } else if ("all".equals(repeatMode)) {
+            player.setRepeatMode(Player.REPEAT_MODE_ALL);
+        } else {
+            player.setRepeatMode(Player.REPEAT_MODE_OFF);
+        }
+        player.setShuffleModeEnabled(false);
+        player.setMediaItems(
+                mediaItems,
+                startIndex,
+                Math.max(0L, payload.optLong("positionMs", 0L)));
+        player.setPlayWhenReady(autoplay);
+        player.prepare();
+    }
+
+    @Nullable
+    private static MediaItem buildMediaItem(JSONObject payload) {
+        String url = payload.optString("url", "");
+        if (url.isEmpty()) return null;
+        String sessionId = payload.optString("sessionId", url);
 
         MediaMetadata.Builder metadata =
                 new MediaMetadata.Builder()
@@ -305,15 +389,11 @@ public final class MediaPlaybackService extends MediaSessionService {
         String artworkUrl = payload.optString("artworkUrl", "");
         if (!artworkUrl.isEmpty()) metadata.setArtworkUri(Uri.parse(artworkUrl));
 
-        MediaItem item =
-                new MediaItem.Builder()
-                        .setMediaId(currentBridgeSessionId)
-                        .setUri(Uri.parse(url))
-                        .setMediaMetadata(metadata.build())
-                        .build();
-        player.setMediaItem(item, Math.max(0L, payload.optLong("positionMs", 0L)));
-        player.setPlayWhenReady(autoplay);
-        player.prepare();
+        return new MediaItem.Builder()
+                .setMediaId(sessionId)
+                .setUri(Uri.parse(url))
+                .setMediaMetadata(metadata.build())
+                .build();
     }
 
     private void beginCallRecoveryDetection() {

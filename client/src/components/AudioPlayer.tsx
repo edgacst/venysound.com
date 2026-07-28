@@ -942,6 +942,8 @@ export function GlobalAudioPlayer() {
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
   const lastNativeSessionIdRef = useRef("");
+  const lastNativePlanKeyRef = useRef("");
+  const skipNextNativePlanReloadRef = useRef("");
   const isClosingRef = useRef(false);
 
   if (activeExternalTrack) {
@@ -1010,6 +1012,65 @@ export function GlobalAudioPlayer() {
   }, [baseList.length, shuffleEnabled]);
 
   const currentList = shuffleEnabled && shuffledOrder.length > 0 ? shuffledOrder : baseList;
+  const nativePlaybackPlan = useMemo(() => {
+    if (activeMusicId == null || activeExternalTrack) {
+      return { ids: [] as number[], repeatMode };
+    }
+
+    const currentId = activeMusicId;
+    if (!user || repeatMode === "one") {
+      return {
+        ids: [currentId],
+        repeatMode: !user ? ("none" as RepeatMode) : repeatMode,
+      };
+    }
+
+    const orderedIds = currentList.filter(
+      (id: unknown): id is number => typeof id === "number" && Number.isFinite(id),
+    );
+    const currentIndexInList = orderedIds.indexOf(currentId);
+    if (currentIndexInList < 0) {
+      return { ids: [currentId], repeatMode: "none" as RepeatMode };
+    }
+
+    if (queue.length > 0) {
+      const queuedIds = queue.filter((id) => Number.isFinite(id));
+      const anchorId =
+        queuedIds.length > 0 ? queuedIds[queuedIds.length - 1] : currentId;
+      const anchorIndex = orderedIds.indexOf(anchorId);
+      const continuation =
+        anchorIndex >= 0
+          ? orderedIds.slice(anchorIndex + 1)
+          : orderedIds.slice(currentIndexInList + 1);
+      return {
+        ids: [currentId, ...queuedIds, ...continuation].slice(0, 500),
+        // The web queue is one-shot. Repeating the native list would replay queued entries.
+        repeatMode: "none" as RepeatMode,
+      };
+    }
+
+    if (repeatMode === "all") {
+      return {
+        ids: [
+          ...orderedIds.slice(currentIndexInList),
+          ...orderedIds.slice(0, currentIndexInList),
+        ].slice(0, 500),
+        repeatMode,
+      };
+    }
+
+    return {
+      ids: orderedIds.slice(currentIndexInList, currentIndexInList + 500),
+      repeatMode: "none" as RepeatMode,
+    };
+  }, [
+    activeMusicId,
+    activeExternalTrack,
+    currentList,
+    queue,
+    repeatMode,
+    user,
+  ]);
   useEffect(() => {
     if (currentList.length > 0) currentListRef.current = currentList;
   }, [currentList]);
@@ -1189,16 +1250,59 @@ export function GlobalAudioPlayer() {
   useEffect(() => {
     if (!nativePlayerReady || !nativeSessionId || !audioUrl || !displayMusic) return;
     if (activeMusicId != null && music?.id !== activeMusicId) return;
+
+    const planKey = JSON.stringify({
+      sessionId: nativeSessionId,
+      ids: nativePlaybackPlan.ids,
+      repeatMode: nativePlaybackPlan.repeatMode,
+      externalUrl: activeExternalTrack?.url ?? "",
+    });
     const priorNativeSessionId = lastNativeSessionIdRef.current;
-    if (priorNativeSessionId === nativeSessionId) return;
-    const handoffPositionSeconds = priorNativeSessionId ? 0 : currentTime;
+    if (skipNextNativePlanReloadRef.current === nativeSessionId) {
+      skipNextNativePlanReloadRef.current = "";
+      lastNativeSessionIdRef.current = nativeSessionId;
+      lastNativePlanKeyRef.current = planKey;
+      return;
+    }
+    if (
+      priorNativeSessionId === nativeSessionId &&
+      lastNativePlanKeyRef.current === planKey
+    ) {
+      return;
+    }
+
+    const handoffPositionSeconds =
+      priorNativeSessionId === nativeSessionId || !priorNativeSessionId
+        ? currentTime
+        : 0;
     lastNativeSessionIdRef.current = nativeSessionId;
+    lastNativePlanKeyRef.current = planKey;
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
     }
+
+    const musicRows = Array.isArray(allMusic?.data) ? allMusic.data : [];
+    const nativeItems = nativePlaybackPlan.ids.map((id) => {
+      const track =
+        id === activeMusicId
+          ? displayMusic
+          : musicRows.find((candidate: any) => candidate?.id === id);
+      const artworkPath = track?.imageFilename
+        ? resolveStorageUrl(track.imageFilename)
+        : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=150&h=150&fit=crop";
+      return {
+        sessionId: `music:${id}`,
+        url: new URL(`/api/music/${id}/stream`, window.location.origin).toString(),
+        title: track?.title ?? "VenySound",
+        artist: track?.artist ?? "",
+        album: "VenySound",
+        artworkUrl: new URL(artworkPath, window.location.origin).toString(),
+      };
+    });
+
     postNativePlayerMessage("player.load", {
       mode: "music",
       sessionId: nativeSessionId,
@@ -1209,6 +1313,8 @@ export function GlobalAudioPlayer() {
       artworkUrl: imageUrl ? new URL(imageUrl, window.location.origin).toString() : "",
       positionMs: Math.max(0, Math.floor(handoffPositionSeconds * 1000)),
       autoplay: !pauseRequested,
+      repeatMode: nativePlaybackPlan.repeatMode,
+      items: nativeItems.length > 0 ? nativeItems : undefined,
     });
   }, [
     nativePlayerReady,
@@ -1218,13 +1324,45 @@ export function GlobalAudioPlayer() {
     displayMusic?.artist,
     imageUrl,
     activeMusicId,
+    activeExternalTrack,
     music?.id,
+    nativePlaybackPlan,
+    allMusic?.data,
+    currentTime,
+    pauseRequested,
   ]);
 
   useEffect(() => {
     if (!nativePlayerReady || !nativeSessionId) return;
     return subscribeNativePlayer((message) => {
       const payload = message.payload;
+      if (message.type === "player.transition") {
+        const nextSessionId =
+          typeof payload.sessionId === "string" ? payload.sessionId : "";
+        const match = /^music:(\d+)$/.exec(nextSessionId);
+        if (!match) return;
+        const nextMusicId = Number.parseInt(match[1], 10);
+        if (!Number.isFinite(nextMusicId)) return;
+        if (payload.previousSessionId === nativeSessionId) tracker.onEnded();
+        lastNativeSessionIdRef.current = nextSessionId;
+        skipNextNativePlanReloadRef.current = nextSessionId;
+        if (typeof payload.positionMs === "number") {
+          setCurrentTime(Math.max(0, payload.positionMs / 1000));
+        } else {
+          setCurrentTime(0);
+        }
+        usePlayerStore.setState((state) => ({
+          activeMusicId: nextMusicId,
+          activeExternalTrack: null,
+          pauseRequested: false,
+          lyricsRequested: false,
+          queue:
+            state.queue[0] === nextMusicId
+              ? state.queue.slice(1)
+              : state.queue,
+        }));
+        return;
+      }
       if (
         typeof payload.sessionId === "string" &&
         payload.sessionId &&
@@ -1252,7 +1390,7 @@ export function GlobalAudioPlayer() {
         setNeedsTap(true);
       }
     });
-  }, [nativePlayerReady, nativeSessionId, playNext, setPauseRequested]);
+  }, [nativePlayerReady, nativeSessionId, playNext, setPauseRequested, tracker]);
 
   useEffect(() => {
     setShowLyricsPanel(false);
@@ -1328,6 +1466,8 @@ export function GlobalAudioPlayer() {
         if (sessionId) {
           postNativePlayerMessage("player.stop", { mode: "music", sessionId });
           lastNativeSessionIdRef.current = "";
+          lastNativePlanKeyRef.current = "";
+          skipNextNativePlanReloadRef.current = "";
         }
         setIsPlaying(false);
         setCurrentTime(0);

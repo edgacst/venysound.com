@@ -29,6 +29,11 @@ const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 const LISTENER_ADVANCE_AFTER_TRACK_END_MS = 1000;
 /** LTE에서 client-advance 실패 시 재시도 간격(ms) */
 const CLIENT_ADVANCE_RETRY_DELAYS_MS = [2000, 5000, 10000] as const;
+/**
+ * 라디오는 실제 웹 <audio>가 재생 중이어야 백그라운드에서도 Chrome이 onEnded를 전달한다.
+ * Media3로 넘기면 웹 페이지가 동결되어 보호 로직인 onAudioEnded → client-advance가 멈춘다.
+ */
+const NATIVE_RADIO_PLAYBACK_ENABLED = false;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -102,11 +107,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const isAuthenticated = !!user;
   const audioARef = useRef<HTMLAudioElement | null>(null);
   const audioBRef = useRef<HTMLAudioElement | null>(null);
-  const nativePlayerReady = useSyncExternalStore(
+  const nativeBridgeReady = useSyncExternalStore(
     subscribeNativePlayerReady,
     isNativePlayerReady,
     () => false,
   );
+  const nativePlayerReady = nativeBridgeReady && NATIVE_RADIO_PLAYBACK_ENABLED;
   const [activeIndex, setActiveIndex] = useState(0);
   const activeIndexRef = useRef(0);
   const pendingSeekRef = useRef<number | null>(null);
