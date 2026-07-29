@@ -40,8 +40,10 @@ final class StableTwaPostMessageController {
     private static final long CHANNEL_RETRY_DELAY_MS = 750L;
     private static final long CHANNEL_READY_TIMEOUT_MS = 2000L;
     private static final long BRIDGE_READY_RETRY_DELAY_MS = 500L;
+    private static final long AUDIO_MODE_RETRY_DELAY_MS = 500L;
     private static final int MAX_CHANNEL_ATTEMPTS = 8;
     private static final int MAX_BRIDGE_READY_ATTEMPTS = 12;
+    private static final int MAX_AUDIO_MODE_DELIVERY_ATTEMPTS = 60;
 
     private final LauncherActivity activity;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -58,9 +60,13 @@ final class StableTwaPostMessageController {
     private int channelRequestAttempts;
     private boolean webBridgeAcknowledged;
     private int bridgeReadyAttempts;
+    @Nullable private Integer pendingAudioMode;
+    private int audioModeDeliveryAttempts;
+    private boolean audioModeChannelRecoveryStarted;
     private boolean destroyed;
 
     private final Runnable channelRequestRunnable = this::requestChannelIfReady;
+    private final Runnable audioModeDeliveryRunnable = this::deliverPendingAudioMode;
     private final Runnable channelReadyWatchdog =
             () -> {
                 if (destroyed || channelReady || !navigationFinished) return;
@@ -360,13 +366,68 @@ final class StableTwaPostMessageController {
     }
 
     private void onAudioModeChanged(int audioMode) {
-        boolean delivered = sendAudioMode(audioMode);
-        Log.i(TAG, "audio mode changed: " + audioMode + "; delivered=" + delivered);
+        queueAudioMode(audioMode);
     }
 
     private void sendCurrentAudioMode() {
         AudioManager manager = audioManager;
-        if (manager != null) sendAudioMode(manager.getMode());
+        if (manager != null) queueAudioMode(manager.getMode());
+    }
+
+    private void queueAudioMode(int audioMode) {
+        pendingAudioMode = audioMode;
+        audioModeDeliveryAttempts = 0;
+        audioModeChannelRecoveryStarted = false;
+        handler.removeCallbacks(audioModeDeliveryRunnable);
+        handler.post(audioModeDeliveryRunnable);
+    }
+
+    private void deliverPendingAudioMode() {
+        Integer audioMode = pendingAudioMode;
+        if (destroyed || audioMode == null) return;
+
+        audioModeDeliveryAttempts++;
+        boolean delivered = sendAudioMode(audioMode);
+        Log.i(
+                TAG,
+                "audio mode delivery: mode="
+                        + audioMode
+                        + "; attempt="
+                        + audioModeDeliveryAttempts
+                        + "; delivered="
+                        + delivered);
+        if (delivered) {
+            pendingAudioMode = null;
+            audioModeDeliveryAttempts = 0;
+            audioModeChannelRecoveryStarted = false;
+            return;
+        }
+
+        if (audioModeDeliveryAttempts >= MAX_AUDIO_MODE_DELIVERY_ATTEMPTS) {
+            Log.w(TAG, "audio mode delivery timed out for mode " + audioMode);
+            pendingAudioMode = null;
+            return;
+        }
+
+        // A Custom Tabs postMessage channel can become stale while a phone call has the TWA
+        // backgrounded. Give a transient failure one retry, then revalidate the same stable
+        // launcher session and keep the newest audio mode pending until the channel returns.
+        if (audioModeDeliveryAttempts >= 2 && !audioModeChannelRecoveryStarted) {
+            audioModeChannelRecoveryStarted = true;
+            channelReady = false;
+            channelRequested = false;
+            channelRequestAttempts = 0;
+            webBridgeAcknowledged = false;
+            bridgeReadyAttempts = 0;
+            handler.removeCallbacks(channelRequestRunnable);
+            handler.removeCallbacks(channelReadyWatchdog);
+            handler.removeCallbacks(bridgeReadyAnnouncer);
+            TwaPostMessageBridge.setReady(false);
+            scheduleChannelRequest(0L);
+            Log.i(TAG, "recovering postMessage channel for pending audio mode " + audioMode);
+        }
+
+        handler.postDelayed(audioModeDeliveryRunnable, AUDIO_MODE_RETRY_DELAY_MS);
     }
 
     private boolean sendAudioMode(int audioMode) {
