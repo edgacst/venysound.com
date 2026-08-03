@@ -399,6 +399,8 @@ export interface IStorage {
     updatedAt: Date | null;
   }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
+  updateRadioPlaylistSnapshotIfStartedAt(id: number, expectedStartedAt: Date, playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number }): Promise<boolean>;
+  advanceRadioChannelIfStartedAt(id: number, expectedStartedAt: Date, data: { nowPlayingMusicId: number; nowPlayingStartedAt: Date; nowPlayingObjectPath: null; nowPlayingTempDurationSeconds: null; nowPlayingTempNextSnapshotIndex: null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }): Promise<boolean>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
@@ -4423,6 +4425,24 @@ export class DatabaseStorage implements IStorage {
     if (data.notice !== undefined) set.notice = data.notice;
     if (data.playlistSnapshot !== undefined) set.playlistSnapshot = data.playlistSnapshot;
     await db.update(radioChannels).set(set as any).where(eq(radioChannels.id, id));
+  }
+
+  async advanceRadioChannelIfStartedAt(id: number, expectedStartedAt: Date, data: { nowPlayingMusicId: number; nowPlayingStartedAt: Date; nowPlayingObjectPath: null; nowPlayingTempDurationSeconds: null; nowPlayingTempNextSnapshotIndex: null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }): Promise<boolean> {
+    const [updated] = await db
+      .update(radioChannels)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(radioChannels.id, id), eq(radioChannels.nowPlayingStartedAt, expectedStartedAt)))
+      .returning({ id: radioChannels.id });
+    return updated != null;
+  }
+
+  async updateRadioPlaylistSnapshotIfStartedAt(id: number, expectedStartedAt: Date, playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number }): Promise<boolean> {
+    const [updated] = await db
+      .update(radioChannels)
+      .set({ playlistSnapshot, updatedAt: new Date() })
+      .where(and(eq(radioChannels.id, id), eq(radioChannels.nowPlayingStartedAt, expectedStartedAt)))
+      .returning({ id: radioChannels.id });
+    return updated != null;
   }
 
   async deleteRadioChannel(id: number): Promise<void> {

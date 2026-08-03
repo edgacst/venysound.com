@@ -2,8 +2,9 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
-import { execSync } from "child_process";
+import { execFile, execSync } from "child_process";
 import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import { promisify } from "util";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
 import { parseAdminRevenueRangeQuery } from "./admin-revenue-range";
@@ -1329,6 +1330,104 @@ export async function registerRoutes(
   // local-uploads 폴더 자동 생성
   const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
+
+  // 라디오 서버 자동 진행은 실제 파일 길이를 기준으로 해야 한다. 브라우저가 아직 메타데이터를
+  // 읽지 못해 보낸 240초 기본값은 캐시된 실제 길이로 교체하고, 백그라운드에서 큐 전체를 보정한다.
+  const execFileAsync = promisify(execFile);
+  const radioMusicDurationCache = new Map<number, number>();
+  const radioDurationProbeRetryAt = new Map<number, number>();
+  const radioDurationEnrichmentInFlight = new Map<string, Promise<void>>();
+  const RADIO_DURATION_FALLBACK_SECONDS = 240;
+  const RADIO_DURATION_PROBE_RETRY_MS = 5 * 60 * 1000;
+
+  function normalizeRadioDurationSeconds(value: unknown): number | null {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 2 || value > 6 * 60 * 60) return null;
+    return Math.ceil(value);
+  }
+
+  function resolveLocalRadioMusicPath(filename: string): string | null {
+    const raw = filename.trim();
+    if (!raw || /^https?:\/\//i.test(raw)) return null;
+    const objectMatch = raw.match(/\/objects\/uploads\/(.+)$/);
+    let fileId = objectMatch?.[1]
+      ?? (raw.startsWith("uploads/") ? raw.replace(/^uploads\//, "") : raw.includes("/") ? raw.split("/").pop() ?? "" : raw);
+    fileId = fileId.replace(/^\//, "");
+    if (!fileId || path.basename(fileId) !== fileId) return null;
+    const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+    return [
+      path.join(uploadsDir, fileId),
+      path.join(uploadsDir, `${baseId}.mp3`),
+      path.join(uploadsDir, `${baseId}.wav`),
+      path.join(uploadsDir, `${baseId}.ogg`),
+    ].find((candidate) => existsSync(candidate)) ?? null;
+  }
+
+  async function probeRadioMusicDurationSeconds(musicId: number): Promise<number | null> {
+    const cached = radioMusicDurationCache.get(musicId);
+    if (cached != null) return cached;
+    if ((radioDurationProbeRetryAt.get(musicId) ?? 0) > Date.now()) return null;
+    try {
+      const item = await storage.getMusicById(musicId);
+      const localPath = item ? resolveLocalRadioMusicPath(item.filename) : null;
+      if (!localPath) throw new Error("local audio file not found");
+      const ffprobe = process.env.FFPROBE_PATH?.trim() || "ffprobe";
+      const { stdout } = await execFileAsync(
+        ffprobe,
+        ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", localPath],
+        { encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024, windowsHide: true },
+      );
+      const duration = normalizeRadioDurationSeconds(Number(String(stdout).trim()));
+      if (duration == null) throw new Error("invalid audio duration");
+      radioMusicDurationCache.set(musicId, duration);
+      radioDurationProbeRetryAt.delete(musicId);
+      return duration;
+    } catch {
+      radioDurationProbeRetryAt.set(musicId, Date.now() + RADIO_DURATION_PROBE_RETRY_MS);
+      return null;
+    }
+  }
+
+  function scheduleRadioPlaylistDurationEnrichment(channelId: number, slug: string, musicIds: number[]): void {
+    const uniqueIds = [...new Set(musicIds.filter((id) => Number.isInteger(id) && id > 0))];
+    const now = Date.now();
+    const needsProbe = uniqueIds.some((id) => !radioMusicDurationCache.has(id) && (radioDurationProbeRetryAt.get(id) ?? 0) <= now);
+    if (uniqueIds.length === 0 || !needsProbe) return;
+    const taskKey = `${channelId}:${musicIds.join(",")}`;
+    if (radioDurationEnrichmentInFlight.has(taskKey)) return;
+
+    const task = (async () => {
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < uniqueIds.length) {
+          const id = uniqueIds[cursor++];
+          await probeRadioMusicDurationSeconds(id);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, uniqueIds.length) }, () => worker()));
+
+      const latest = await storage.getRadioChannelBySlug(slug);
+      const snapshot = latest?.playlistSnapshot;
+      if (!latest || latest.id !== channelId || !snapshot || !latest.nowPlayingStartedAt) return;
+      if (snapshot.musicIds.length !== musicIds.length || snapshot.musicIds.some((id, index) => id !== musicIds[index])) return;
+
+      const durationsSeconds = snapshot.musicIds.map((id, index) =>
+        radioMusicDurationCache.get(id)
+        ?? normalizeRadioDurationSeconds(snapshot.durationsSeconds[index])
+        ?? RADIO_DURATION_FALLBACK_SECONDS,
+      );
+      if (durationsSeconds.every((duration, index) => duration === snapshot.durationsSeconds[index])) return;
+
+      await storage.updateRadioPlaylistSnapshotIfStartedAt(
+        channelId,
+        latest.nowPlayingStartedAt,
+        { ...snapshot, durationsSeconds },
+      );
+    })()
+      .catch((error) => console.warn("[radio durations] playlist enrichment failed", error))
+      .finally(() => radioDurationEnrichmentInFlight.delete(taskKey));
+
+    radioDurationEnrichmentInFlight.set(taskKey, task);
+  }
 
   // Play Store TWA: Digital Asset Links (설정 시에만 응답, 미설정 시 404로 연동 없음)
   app.get("/.well-known/assetlinks.json", (_req, res) => {
@@ -11436,6 +11535,7 @@ export async function registerRoutes(
 
       const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, homepageUrl: bodyHomepageUrl, homeTickerText: bodyHomeTickerText, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
+      let queueMusicIdsForDurationEnrichment: number[] | null = null;
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -11546,16 +11646,30 @@ export async function registerRoutes(
         if (queueMusicIds && queueMusicIds.length > 0 && updates.nowPlayingMusicId != null) {
           const currentIndex = queueMusicIds.indexOf(updates.nowPlayingMusicId);
           if (currentIndex >= 0) {
-            const durationsSeconds = (queueDurationsSeconds && queueDurationsSeconds.length === queueMusicIds.length)
-              ? queueDurationsSeconds.slice(0, queueMusicIds.length)
-              : queueMusicIds.map(() => 240);
-            const durationForCurrent = currentTrackDuration ?? durationsSeconds[currentIndex] ?? 240;
-            if (currentTrackDuration != null && durationsSeconds[currentIndex] === 240) {
-              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
-            } else if (currentTrackDuration != null) {
-              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
+            const previousDurationsByMusicId = new Map<number, number>();
+            channel.playlistSnapshot?.musicIds.forEach((id, index) => {
+              const duration = normalizeRadioDurationSeconds(channel.playlistSnapshot?.durationsSeconds[index]);
+              if (duration != null) previousDurationsByMusicId.set(id, duration);
+            });
+            const durationsSeconds = queueMusicIds.map((id, index) => {
+              const measured = radioMusicDurationCache.get(id);
+              if (measured != null) return measured;
+              const supplied = normalizeRadioDurationSeconds(
+                queueDurationsSeconds && queueDurationsSeconds.length === queueMusicIds.length
+                  ? queueDurationsSeconds[index]
+                  : null,
+              );
+              // 240은 송출 브라우저의 미확정 기본값이므로 이미 확인된 길이를 덮어쓰지 않는다.
+              if (supplied != null && supplied !== RADIO_DURATION_FALLBACK_SECONDS) return supplied;
+              return previousDurationsByMusicId.get(id) ?? supplied ?? RADIO_DURATION_FALLBACK_SECONDS;
+            });
+            const normalizedCurrentDuration = normalizeRadioDurationSeconds(currentTrackDuration);
+            if (normalizedCurrentDuration != null) {
+              durationsSeconds[currentIndex] = normalizedCurrentDuration;
+              radioMusicDurationCache.set(updates.nowPlayingMusicId, normalizedCurrentDuration);
             }
             updates.playlistSnapshot = { musicIds: queueMusicIds, durationsSeconds, currentIndex };
+            queueMusicIdsForDurationEnrichment = queueMusicIds;
           }
         } else if (
           currentTrackDuration != null &&
@@ -11567,8 +11681,13 @@ export async function registerRoutes(
           const idx = snap.currentIndex;
           const newDurations = [...snap.durationsSeconds];
           if (idx >= 0 && idx < newDurations.length) {
-            newDurations[idx] = Math.ceil(currentTrackDuration);
-            updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
+            const normalizedCurrentDuration = normalizeRadioDurationSeconds(currentTrackDuration);
+            if (normalizedCurrentDuration != null) {
+              newDurations[idx] = normalizedCurrentDuration;
+              const currentMusicId = snap.musicIds[idx];
+              if (currentMusicId != null) radioMusicDurationCache.set(currentMusicId, normalizedCurrentDuration);
+              updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
+            }
           }
         }
         // 로컬 파일(object path) 송출: play 직후 duration 미확정이면 기본 240초로 잡혀 곡이 끝나기 전에 서버가 넘길 수 있음 → 메타데이터 로드 후 보정
@@ -11623,6 +11742,9 @@ export async function registerRoutes(
 
       if (Object.keys(updates).length > 0) {
         await storage.updateRadioChannel(channel.id, updates);
+      }
+      if (queueMusicIdsForDurationEnrichment) {
+        scheduleRadioPlaylistDurationEnrichment(channel.id, slug, queueMusicIdsForDurationEnrichment);
       }
       const updated = await storage.getRadioChannelBySlug(slug);
       if ((updates.nowPlayingMusicId !== undefined || updates.nowPlayingObjectPath !== undefined) && updated) {
@@ -11682,14 +11804,17 @@ export async function registerRoutes(
           : snap.currentIndex;
       const nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
       const nextId = snap.musicIds[nextIndex];
-      await storage.updateRadioChannel(channel.id, {
+      if (!channel.nowPlayingStartedAt) return res.json({ ok: false, reason: "already_advanced" });
+      const nextStartedAt = new Date();
+      const advanced = await storage.advanceRadioChannelIfStartedAt(channel.id, channel.nowPlayingStartedAt, {
         nowPlayingMusicId: nextId,
-        nowPlayingStartedAt: new Date(),
+        nowPlayingStartedAt: nextStartedAt,
         nowPlayingObjectPath: null,
         nowPlayingTempDurationSeconds: null,
         nowPlayingTempNextSnapshotIndex: null,
         playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
       });
+      if (!advanced) return res.json({ ok: false, reason: "already_advanced" });
       radioLocalTitles.delete(slug);
       broadcastToRadioChannel(slug, {
         type: "radio_now_playing",
@@ -11697,7 +11822,7 @@ export async function registerRoutes(
         musicId: nextId,
         nowPlayingObjectPath: null,
         nowPlayingLocalTitle: null,
-        startedAt: new Date().toISOString(),
+        startedAt: nextStartedAt.toISOString(),
         elapsedSeconds: 0,
       });
       return res.json({ ok: true, nextMusicId: nextId });
@@ -11716,27 +11841,46 @@ export async function registerRoutes(
       for (const ch of channels) {
         // 송출실(DJ)이 활성화된 경우 서버 자동 진행 건너뜀 (DJ가 직접 제어)
         if ((ch as any).currentHostId) continue;
+        if (ch.playlistSnapshot) {
+          scheduleRadioPlaylistDurationEnrichment(ch.id, ch.slug, ch.playlistSnapshot.musicIds);
+        }
         const started = (ch.nowPlayingStartedAt as Date).getTime();
         const snap = ch.playlistSnapshot;
         if (!snap || snap.musicIds.length === 0) continue;
 
         let durationMs: number;
+        let hasMeasuredDuration = false;
         if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempDurationSeconds != null) {
           durationMs = ch.nowPlayingTempDurationSeconds * 1000;
+          const normalizedTempDuration = normalizeRadioDurationSeconds(ch.nowPlayingTempDurationSeconds);
+          hasMeasuredDuration = normalizedTempDuration != null && normalizedTempDuration !== RADIO_DURATION_FALLBACK_SECONDS;
         } else if (ch.nowPlayingMusicId != null) {
           // 동일 musicId가 큐에 여러 번 있으면 indexOf는 첫 번째만 보므로, currentIndex와 일치할 때는 스냅샷 인덱스를 우선한다.
           const idxPreferred =
             snap.musicIds[snap.currentIndex] === ch.nowPlayingMusicId ? snap.currentIndex : snap.musicIds.indexOf(ch.nowPlayingMusicId);
           const idx = idxPreferred >= 0 ? idxPreferred : snap.currentIndex;
           const rawDur = idx >= 0 && idx < snap.durationsSeconds.length ? snap.durationsSeconds[idx] : 0;
-          const dur = typeof rawDur === "number" && rawDur > 0 ? rawDur : 240;
+          const measuredDuration = radioMusicDurationCache.get(ch.nowPlayingMusicId);
+          const snapshotDuration = normalizeRadioDurationSeconds(rawDur);
+          // 미확정 240초인 동안에는 먼저 실제 길이 측정을 끝내 조기 전환 가능성을 없앤다.
+          if (
+            measuredDuration == null
+            && snapshotDuration === RADIO_DURATION_FALLBACK_SECONDS
+            && (radioDurationProbeRetryAt.get(ch.nowPlayingMusicId) ?? 0) <= now
+          ) {
+            continue;
+          }
+          const dur = measuredDuration ?? snapshotDuration ?? RADIO_DURATION_FALLBACK_SECONDS;
+          hasMeasuredDuration = measuredDuration != null || (snapshotDuration != null && snapshotDuration !== RADIO_DURATION_FALLBACK_SECONDS);
           durationMs = dur * 1000;
         } else {
           continue;
         }
 
-        // 스냅샷 길이가 실제보다 짧을 때 곡 중간에 넘어가는 것 방지: 고정 4.5초보다 곡 길이 비례 여유(상한 있음)
-        const AUTO_ADVANCE_END_SLACK_MS = Math.min(22_000, Math.max(8_000, Math.floor(durationMs * 0.12)));
+        // 실제 길이가 확인된 곡은 짧은 오차만 허용하고, 240초 미확정 값만 기존 안전 여유를 유지한다.
+        const AUTO_ADVANCE_END_SLACK_MS = hasMeasuredDuration
+          ? 1_500
+          : Math.min(22_000, Math.max(8_000, Math.floor(durationMs * 0.12)));
         if (now - started < durationMs + AUTO_ADVANCE_END_SLACK_MS) continue;
 
         // 다음 곡 결정
@@ -11756,14 +11900,16 @@ export async function registerRoutes(
         if (nextIndex >= snap.musicIds.length) nextIndex = 0;
         const nextId = snap.musicIds[nextIndex];
 
-        await storage.updateRadioChannel(ch.id, {
+        const nextStartedAt = new Date();
+        const advanced = await storage.advanceRadioChannelIfStartedAt(ch.id, ch.nowPlayingStartedAt, {
           nowPlayingMusicId: nextId,
-          nowPlayingStartedAt: new Date(),
+          nowPlayingStartedAt: nextStartedAt,
           nowPlayingObjectPath: null,
           nowPlayingTempDurationSeconds: null,
           nowPlayingTempNextSnapshotIndex: null,
           playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
         });
+        if (!advanced) continue;
         radioLocalTitles.delete(ch.slug);
         broadcastToRadioChannel(ch.slug, {
           type: "radio_now_playing",
@@ -11771,7 +11917,7 @@ export async function registerRoutes(
           musicId: nextId,
           nowPlayingObjectPath: null,
           nowPlayingLocalTitle: null,
-          startedAt: new Date().toISOString(),
+          startedAt: nextStartedAt.toISOString(),
           elapsedSeconds: 0,
         });
       }

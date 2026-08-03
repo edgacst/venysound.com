@@ -763,6 +763,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       /** 비활성 버퍼에 이미 올바른 src가 있을 때(이전 effect 취소 등)에도 반드시 핸드오프·재생 */
       const handoffToInactive = (inactiveEl: HTMLAudioElement) => {
         if (userStoppedNow()) return;
+        const currentTarget = useRadioPlayerStore.getState().streamUrl;
+        if (!currentTarget || streamPathname(currentTarget) !== streamPathname(streamUrl) || !matchSrc(inactiveEl)) return;
         const seek = pendingSeekRef.current ?? useRadioPlayerStore.getState().initialSeekSeconds ?? null;
         if (seek != null && seek > 0) {
           try {
@@ -808,8 +810,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (active) tryPlay(active);
         return;
       }
-      if (matchSrc(inactive) && inactive && inactive.readyState >= 2) {
-        handoffToInactive(inactive);
+      if (matchSrc(inactive) && inactive) {
+        // 같은 다음 곡을 이미 버퍼링 중이면 src를 제거·재할당하지 않는다.
+        // 기존 canplay 핸들러가 준비 완료 시 한 번만 핸드오프한다.
+        if (inactive.readyState >= 2) handoffToInactive(inactive);
         return;
       }
 
