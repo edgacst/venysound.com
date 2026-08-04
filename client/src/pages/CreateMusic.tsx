@@ -2126,49 +2126,29 @@ export default function CreateMusic() {
       try {
         const baseName = sanitizeFilename(effective.title || t("createMusic.untitled", "제목 없음"));
         const url = await requestGeneratedMediaUrl(effective, kind);
-        const proxyUrl =
-          `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
-          `&filename=${encodeURIComponent(baseName)}` +
-          `&url=${encodeURIComponent(url)}`;
-        const downloadRes = await fetch(proxyUrl, { credentials: "include" });
-        const downloaded = await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
-        if (kind === "mp4") {
-          const file = new File([downloaded.blob], downloaded.fileName || `${baseName}.mp4`, {
-            type: downloaded.blob.type || "video/mp4",
-          });
-          const formData = new FormData();
-          formData.append("file", file);
-          const uploadRes = await fetch("/api/uploads/local", {
-            method: "POST",
-            credentials: "include",
-            body: formData,
-          });
-          if (!uploadRes.ok) {
-            const uploadErr = await uploadRes.json().catch(() => ({}));
-            throw new Error(uploadErr.error || t("createMusic.mp4VideoUploadFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 업로드에 실패했습니다."));
-          }
-          const uploaded = (await uploadRes.json()) as { objectPath?: string; metadata?: { name?: string } };
-          if (!uploaded.objectPath) {
-            throw new Error(t("createMusic.mp4VideoUploadFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 업로드에 실패했습니다."));
-          }
-          const registerRes = await fetch("/api/music-videos", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: effective.title || baseName,
-              description: effective.prompt || effective.tags || "",
-              videoUrl: uploaded.objectPath,
-              originalFilename: uploaded.metadata?.name || downloaded.fileName || `${baseName}.mp4`,
-              durationSec: typeof effective.duration === "number" ? Math.round(effective.duration) : undefined,
-              fileSize: downloaded.blob.size,
-            }),
-          });
-          if (!registerRes.ok) {
-            const registerErr = await registerRes.json().catch(() => ({}));
-            throw new Error(registerErr.message || t("createMusic.mp4VideoRegisterFailed", "MP4 다운로드는 완료됐지만 뮤직비디오 등록에 실패했습니다."));
-          }
-        }
+        const downloadRes =
+          kind === "mp4"
+            ? await fetch("/api/ai-music/generated-file-proxy", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  kind,
+                  filename: baseName,
+                  url,
+                  registerMusicVideo: true,
+                  title: effective.title || baseName,
+                  description: effective.prompt || effective.tags || "",
+                  durationSec: typeof effective.duration === "number" ? Math.round(effective.duration) : undefined,
+                }),
+              })
+            : await fetch(
+                `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
+                  `&filename=${encodeURIComponent(baseName)}` +
+                  `&url=${encodeURIComponent(url)}`,
+                { credentials: "include" },
+              );
+        await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
         setSavedTracks((prev) => {
           const next = prev.map((t) =>
             t.id === effective.id

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
 import { execFile, execSync } from "child_process";
-import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync, unlinkSync } from "fs";
 import { promisify } from "util";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
@@ -2475,10 +2475,11 @@ export async function registerRoutes(
     }
   });
 
-  /** Suno WAV 변환 완료 콜백 URL용 (본 서버는 폴링으로 결과를 받지만 API 스펙상 필수) */
-  app.get("/api/ai-music/generated-file-proxy", isAuthenticated, async (req, res) => {
-    const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
-    const kind = typeof req.query.kind === "string" ? req.query.kind.trim().toLowerCase() : "";
+  /** 생성 파일을 내려받고, MP4 POST 요청은 응답 전에 뮤직비디오로 저장·등록한다. */
+  const handleGeneratedFileProxy = async (req: Request, res: Response) => {
+    const input = req.method === "POST" && req.body && typeof req.body === "object" ? req.body : req.query;
+    const rawUrl = typeof input.url === "string" ? input.url : "";
+    const kind = typeof input.kind === "string" ? input.kind.trim().toLowerCase() : "";
     if (!rawUrl || (kind !== "wav" && kind !== "mp4")) {
       return res.status(400).json({ message: "url and kind are required." });
     }
@@ -2491,7 +2492,7 @@ export async function registerRoutes(
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       return res.status(400).json({ message: "Only http(s) URLs are supported." });
     }
-    const fileBase = sanitizeDownloadFileName(req.query.filename, kind === "wav" ? "audio" : "video");
+    const fileBase = sanitizeDownloadFileName(input.filename, kind === "wav" ? "audio" : "video");
     const contentTypeFallback = kind === "wav" ? "audio/wav" : "video/mp4";
     const maxBytes = kind === "wav" ? 120 * 1024 * 1024 : 260 * 1024 * 1024;
     try {
@@ -2520,15 +2521,49 @@ export async function registerRoutes(
       }
       const upstreamType = fileRes.headers.get("content-type") || contentTypeFallback;
       const safeName = `${fileBase}.${kind}`;
+      if (kind === "mp4" && req.method === "POST" && input.registerMusicVideo === true) {
+        const title = String(input.title || fileBase).trim().slice(0, 180) || fileBase;
+        const description = String(input.description || "").trim().slice(0, 1200) || null;
+        const durationValue = Number(input.durationSec);
+        const durationSec = Number.isFinite(durationValue) ? Math.max(0, Math.floor(durationValue)) : null;
+        // @ts-ignore Replit auth
+        const userId = String(req.user?.claims?.sub || "");
+        if (!userId) {
+          return res.status(401).json({ message: "로그인이 필요합니다." });
+        }
+
+        const videoUrl = saveBufferToLocalUploads(buf, ".mp4");
+        try {
+          await db.insert(musicVideos).values({
+            userId,
+            title,
+            description,
+            videoUrl,
+            originalFilename: safeName.slice(0, 260),
+            durationSec,
+            fileSize: buf.byteLength,
+          });
+        } catch (registrationError) {
+          try {
+            const savedFile = path.resolve(process.cwd(), "local-uploads", "uploads", path.basename(videoUrl));
+            unlinkSync(savedFile);
+          } catch {}
+          console.error("[ai-music generated-file-proxy register]", registrationError);
+          return res.status(500).json({ message: "MP4 파일을 뮤직비디오에 등록하지 못했습니다." });
+        }
+      }
       res.setHeader("Content-Type", upstreamType);
       res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
-      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("Cache-Control", req.method === "POST" ? "private, no-store" : "private, max-age=300");
       return res.send(buf);
     } catch (e) {
       console.error("[ai-music generated-file-proxy]", e);
       return res.status(502).json({ message: `${kind.toUpperCase()} file download failed.` });
     }
-  });
+  };
+
+  app.get("/api/ai-music/generated-file-proxy", isAuthenticated, handleGeneratedFileProxy);
+  app.post("/api/ai-music/generated-file-proxy", isAuthenticated, handleGeneratedFileProxy);
 
   app.post("/api/ai-music/suno-wav-callback", (_req, res) => {
     res.status(200).json({ received: true });
