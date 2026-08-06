@@ -62,6 +62,90 @@ const mainGenres: Record<string, string[]> = {
   "기타": []
 };
 
+const MAX_VIDEO_FILE_SIZE = 500 * 1024 * 1024;
+
+type VideoUploadTicket = {
+  uploadURL?: string;
+  objectPath?: string;
+  localMode?: boolean;
+  uploadEndpoint?: string;
+  error?: string;
+  message?: string;
+};
+
+function uploadVideoBody(
+  url: string,
+  method: "POST" | "PUT",
+  body: XMLHttpRequestBodyInit,
+  options: { contentType?: string; withCredentials?: boolean; onProgress: (percent: number) => void },
+): Promise<VideoUploadTicket> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    xhr.withCredentials = options.withCredentials === true;
+    if (options.contentType) xhr.setRequestHeader("Content-Type", options.contentType);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        options.onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    xhr.onerror = () => reject(new Error("영상 파일 전송 중 네트워크 오류가 발생했습니다."));
+    xhr.onload = () => {
+      let response: VideoUploadTicket = {};
+      try {
+        response = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        response = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress(100);
+        resolve(response);
+        return;
+      }
+      const message =
+        xhr.status === 413
+          ? "MP4 파일 용량이 서버 허용 범위를 초과했습니다."
+          : response.error || response.message || `영상 업로드에 실패했습니다. (HTTP ${xhr.status})`;
+      reject(new Error(message));
+    };
+    xhr.send(body);
+  });
+}
+
+async function uploadMusicVideoFile(file: File, onProgress: (percent: number) => void): Promise<VideoUploadTicket> {
+  onProgress(0);
+  const ticketRes = await fetch("/api/uploads/request-url", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      contentType: file.type || "video/mp4",
+    }),
+  });
+  const ticket = (await ticketRes.json().catch(() => ({}))) as VideoUploadTicket;
+  if (!ticketRes.ok) throw new Error(ticket.error || ticket.message || "영상 업로드 주소를 준비하지 못했습니다.");
+
+  if (ticket.localMode) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("desiredFilename", file.name);
+    const uploaded = await uploadVideoBody(ticket.uploadEndpoint || "/api/uploads/local", "POST", formData, {
+      withCredentials: true,
+      onProgress,
+    });
+    return uploaded;
+  }
+
+  if (!ticket.uploadURL || !ticket.objectPath) throw new Error("영상 업로드 주소가 올바르지 않습니다.");
+  await uploadVideoBody(ticket.uploadURL, "PUT", file, {
+    contentType: file.type || "video/mp4",
+    onProgress,
+  });
+  return ticket;
+}
+
 async function getVideoDuration(file: File): Promise<number | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -90,7 +174,6 @@ export default function Upload() {
 
   const { uploadFile: uploadAudio, isUploading: isUploadingAudio } = useUpload();
   const { uploadFile: uploadImage, isUploading: isUploadingImage } = useUpload();
-  const { uploadFile: uploadVideo, isUploading: isUploadingVideo, progress: videoUploadProgress } = useUpload();
   
   const { toast } = useToast();
   const { data: uploadLimit } = useQuery<{ limited: boolean; current: number; limit: number }>({
@@ -105,6 +188,8 @@ export default function Upload() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoTitle, setVideoTitle] = useState("");
   const [videoDescription, setVideoDescription] = useState("");
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
   const [isRegisteringVideo, setIsRegisteringVideo] = useState(false);
 
   const tryExtractMp3Cover = useCallback((file: File) => {
@@ -381,6 +466,11 @@ export default function Upload() {
       toast({ title: "MP4 파일만 업로드할 수 있습니다.", variant: "destructive" });
       return;
     }
+    if (file.size > MAX_VIDEO_FILE_SIZE) {
+      setVideoFile(null);
+      toast({ title: "MP4 파일은 최대 500MB까지 업로드할 수 있습니다.", variant: "destructive" });
+      return;
+    }
     setVideoFile(file);
     if (!videoTitle.trim()) setVideoTitle(file.name.replace(/\.[^.]+$/, ""));
   };
@@ -391,11 +481,14 @@ export default function Upload() {
       return;
     }
 
-    setIsRegisteringVideo(true);
+    setIsUploadingVideo(true);
+    setVideoUploadProgress(0);
     try {
-      const upload = await uploadVideo(videoFile, { preferredName: videoFile.name });
+      const upload = await uploadMusicVideoFile(videoFile, setVideoUploadProgress);
       if (!upload?.objectPath) throw new Error("영상 업로드에 실패했습니다.");
 
+      setIsUploadingVideo(false);
+      setIsRegisteringVideo(true);
       const durationSec = await getVideoDuration(videoFile);
       const res = await fetch("/api/music-videos", {
         method: "POST",
@@ -425,6 +518,7 @@ export default function Upload() {
         variant: "destructive",
       });
     } finally {
+      setIsUploadingVideo(false);
       setIsRegisteringVideo(false);
     }
   };
@@ -861,7 +955,10 @@ export default function Upload() {
                     onChange={(e) => {
                       const file = e.target.files?.[0] ?? null;
                       handleVideoFileChange(file);
-                      if (file && !file.type.includes("mp4") && !file.name.toLowerCase().endsWith(".mp4")) {
+                      if (
+                        file &&
+                        ((!file.type.includes("mp4") && !file.name.toLowerCase().endsWith(".mp4")) || file.size > MAX_VIDEO_FILE_SIZE)
+                      ) {
                         e.currentTarget.value = "";
                       }
                     }}
@@ -876,7 +973,7 @@ export default function Upload() {
                     <div className="text-muted-foreground flex flex-col items-center">
                       <Film className="mb-2 h-8 w-8 opacity-50" />
                       <span className="text-sm">MP4 파일을 선택하세요</span>
-                      <span className="mt-1 text-xs text-muted-foreground">MP4 형식</span>
+                      <span className="mt-1 text-xs text-muted-foreground">MP4 형식, 최대 500MB</span>
                     </div>
                   )}
                 </label>
