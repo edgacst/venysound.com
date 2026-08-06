@@ -18,6 +18,7 @@ import {
   FormDescription
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -844,7 +845,7 @@ export default function Upload() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <FormLabel htmlFor="video-input">MP4 영상 파일</FormLabel>
+                <Label htmlFor="video-input">MP4 영상 파일</Label>
                 <label
                   htmlFor="video-input"
                   className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors min-h-[160px] flex flex-col items-center justify-center ${
@@ -882,7 +883,7 @@ export default function Upload() {
               </div>
 
               <div className="space-y-2">
-                <FormLabel htmlFor="video-title">영상 제목</FormLabel>
+                <Label htmlFor="video-title">영상 제목</Label>
                 <Input
                   id="video-title"
                   value={videoTitle}
@@ -895,7 +896,7 @@ export default function Upload() {
               </div>
 
               <div className="space-y-2">
-                <FormLabel htmlFor="video-description">설명 (선택사항)</FormLabel>
+                <Label htmlFor="video-description">설명 (선택사항)</Label>
                 <Textarea
                   id="video-description"
                   value={videoDescription}
