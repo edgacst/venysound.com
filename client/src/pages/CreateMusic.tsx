@@ -2849,6 +2849,16 @@ export default function CreateMusic() {
       <div className="min-h-screen bg-transparent text-white flex flex-col md:bg-white md:text-slate-900">
         <Navigation />
 
+        <Link
+          href="/ai-music-tools-test"
+          className="group block w-full bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 px-4 py-2.5 text-center text-xs font-medium text-white transition-opacity hover:opacity-90 md:text-sm"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            🎛️ 새 기능: 곡의 특정 구간만 다시 만들거나, 보컬·악기를 따로 분리해보세요
+            <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
+          </span>
+        </Link>
+
         <section className="relative overflow-hidden px-0 py-4 md:py-10">
           <div className="absolute inset-0 hidden bg-gradient-to-b from-white via-white to-slate-50 pointer-events-none md:block" />
           <div className="mx-auto w-full max-w-[1360px] relative z-10 px-4 md:px-8">

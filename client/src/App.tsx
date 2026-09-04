@@ -434,6 +434,7 @@ import PlaylistStudio from "@/pages/PlaylistStudio";
 import AiSingerGuide from "@/pages/AiSingerGuide";
 import MusicVideos from "@/pages/MusicVideos";
 import AudioDebug from "@/pages/AudioDebug";
+import AiMusicToolsTest from "@/pages/AiMusicToolsTest";
 
 function Routes() {
   return (
@@ -495,6 +496,7 @@ function Routes() {
       <Route path="/playlist-studio" component={PlaylistStudio} />
       <Route path="/ai-singer-guide" component={AiSingerGuide} />
       <Route path="/audio-debug" component={AudioDebug} />
+      <Route path="/ai-music-tools-test" component={AiMusicToolsTest} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>

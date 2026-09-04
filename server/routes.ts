@@ -1988,6 +1988,12 @@ export async function registerRoutes(
     limits: { fileSize: 8 * 1024 * 1024 },
   });
 
+  /** Replace Section / Stem Separation 커스텀 오디오 업로드 (sunoapi.org 20MB 제한) */
+  const aiAudioEditUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
   /** Suno-compatible upstream (KIE · sunoapi.org) — provider별 base/key. 옛 suno task는 provider=suno로만 조회. */
   function sunoStyleUpstream(provider: string): { base: string; key: string } | null {
     const p = provider.trim().toLowerCase();
@@ -4544,6 +4550,283 @@ export async function registerRoutes(
       }
     },
   );
+
+  // === [LOCAL TEST ONLY] KIE/Suno: Replace Section + Advanced Stem Separation ===
+  // 2026-07-08 KIE 업데이트 대응. 크레딧/사용량 과금 로직은 붙이지 않은 로컬 검증용 엔드포인트.
+  // 배포 전 이 블록 전체와 client의 /ai-music-tools-test 라우트를 제거할 것.
+
+  /** Replace Section — 결과 폴링은 기존 GET /api/ai-music/task/:taskId 를 그대로 재사용 (KIE 문서: get-music-details와 동일 엔드포인트) */
+  app.post(
+    "/api/ai-music/replace-section",
+    isAuthenticated,
+    aiAudioEditUpload.single("audio"),
+    async (req, res) => {
+      if (!AI_MUSIC_PROVIDER) {
+        return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string | undefined;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as {
+        provider?: string;
+        taskId?: string;
+        audioId?: string;
+        uploadUrl?: string;
+        mv?: string;
+        prompt?: string;
+        tags?: string;
+        title?: string;
+        negativeTags?: string;
+        fullLyrics?: string;
+        infillStartS?: string | number;
+        infillEndS?: string | number;
+      };
+
+      const providerReq =
+        typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : AI_MUSIC_PROVIDER;
+      const upstream = sunoStyleUpstream(providerReq);
+      if (!upstream) {
+        return res
+          .status(503)
+          .json({ message: "선택한 provider의 API 키(SUNOAPI_API_KEY/KIE_API_KEY)가 설정되어 있지 않습니다.", code: "PROVIDER_UNAVAILABLE" });
+      }
+
+      const prompt = String(body.prompt ?? "").trim();
+      if (!prompt) return res.status(400).json({ message: "교체할 구간의 프롬프트(가사/설명)를 입력해 주세요." });
+
+      const infillStartS = Number(body.infillStartS);
+      const infillEndS = Number(body.infillEndS);
+      if (!Number.isFinite(infillStartS) || !Number.isFinite(infillEndS)) {
+        return res.status(400).json({ message: "infillStartS/infillEndS는 숫자여야 합니다." });
+      }
+      if (infillStartS < 0 || infillEndS <= infillStartS) {
+        return res.status(400).json({ message: "infillEndS는 infillStartS보다 커야 합니다." });
+      }
+      if (infillEndS - infillStartS < 10) {
+        return res.status(400).json({ message: "교체 구간은 최소 10초 이상이어야 합니다." });
+      }
+
+      const file = req.file;
+      const bodyUploadUrl = String(body.uploadUrl ?? "").trim();
+      const hasUpload = Boolean(file?.buffer?.length) || Boolean(bodyUploadUrl);
+      const hasExisting = Boolean(String(body.taskId ?? "").trim()) && Boolean(String(body.audioId ?? "").trim());
+      if (!hasUpload && !hasExisting) {
+        return res.status(400).json({ message: "기존 곡(taskId+audioId) 또는 업로드 오디오(uploadUrl) 중 하나가 필요합니다." });
+      }
+
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
+      const payload: Record<string, unknown> = {
+        prompt: prompt.slice(0, 5000),
+        infillStartS: Math.round(infillStartS * 100) / 100,
+        infillEndS: Math.round(infillEndS * 100) / 100,
+        callBackUrl,
+      };
+      if (body.tags?.trim()) payload.tags = body.tags.trim().slice(0, 1000);
+      if (body.title?.trim()) payload.title = body.title.trim().slice(0, 200);
+      if (body.negativeTags?.trim()) payload.negativeTags = body.negativeTags.trim().slice(0, 500);
+      if (body.fullLyrics?.trim()) payload.fullLyrics = body.fullLyrics.trim().slice(0, 8000);
+
+      try {
+        if (hasUpload) {
+          let uploadUrl = bodyUploadUrl;
+          if (!uploadUrl && file?.buffer?.length) {
+            const ext = file.mimetype?.includes("wav")
+              ? ".wav"
+              : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3")
+                ? ".mp3"
+                : ".webm";
+            uploadUrl = await kieUploadAudioBuffer({
+              apiKey: upstream.key,
+              buffer: file.buffer,
+              fileName: `replace-section-${crypto.randomUUID()}${ext}`,
+              mimeType: file.mimetype || "audio/mpeg",
+              fileUploadBase: resolveSunoStyleFileUploadBase(providerReq === "kie" ? "kie" : "suno"),
+            });
+          }
+          if (!uploadUrl) return res.status(400).json({ message: "오디오 업로드에 실패했습니다." });
+          payload.uploadUrl = uploadUrl;
+          payload.model = resolveSunoGenerateModel(body.mv) || "V5";
+        } else {
+          payload.taskId = String(body.taskId).trim();
+          payload.audioId = String(body.audioId).trim();
+        }
+
+        const apiRes = await fetch(`${upstream.base}/api/v1/generate/replace-section`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const bizCode = (data as { code?: number }).code;
+        if (typeof bizCode === "number" && bizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "구간 교체 API 오류";
+          return res.status(502).json({
+            message:
+              formatKieApiUserMessage(String(msg), { creditsProvider: providerReq === "kie" ? "kie" : "suno" }) ||
+              String(msg),
+          });
+        }
+        const d = data as { data?: { taskId?: string }; taskId?: string };
+        const taskId = d?.data?.taskId ?? d?.taskId ?? "";
+        if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+
+        return res.json({ task_id: taskId, provider: providerReq, mode: hasUpload ? "upload" : "existing" });
+      } catch (e) {
+        console.error("[ai-music replace-section]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        return res.status(500).json({
+          message: "구간 교체 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_REPLACE_SECTION_ERROR",
+          ...(process.env.NODE_ENV === "development" ? { detail: errMsg.slice(0, 500) } : {}),
+        });
+      }
+    },
+  );
+
+  /** Advanced Stem Separation — 보컬/악기 분리 (separate_vocal | split_stem | split_stem_advanced) */
+  app.post(
+    "/api/ai-music/stem-separation",
+    isAuthenticated,
+    aiAudioEditUpload.single("audio"),
+    async (req, res) => {
+      if (!AI_MUSIC_PROVIDER) {
+        return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string | undefined;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as {
+        provider?: string;
+        taskId?: string;
+        audioId?: string;
+        audioUrl?: string;
+        type?: string;
+        stemName?: string;
+      };
+      const providerReq =
+        typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : AI_MUSIC_PROVIDER;
+      const upstream = sunoStyleUpstream(providerReq);
+      if (!upstream) {
+        return res
+          .status(503)
+          .json({ message: "선택한 provider의 API 키(SUNOAPI_API_KEY/KIE_API_KEY)가 설정되어 있지 않습니다.", code: "PROVIDER_UNAVAILABLE" });
+      }
+
+      const file = req.file;
+      const bodyAudioUrl = String(body.audioUrl ?? "").trim();
+      const hasUpload = Boolean(file?.buffer?.length) || Boolean(bodyAudioUrl);
+      const hasExisting = Boolean(String(body.taskId ?? "").trim()) && Boolean(String(body.audioId ?? "").trim());
+      if (!hasUpload && !hasExisting) {
+        return res.status(400).json({ message: "기존 곡(taskId+audioId) 또는 오디오(audioUrl/파일) 중 하나가 필요합니다." });
+      }
+
+      const type =
+        body.type === "split_stem" || body.type === "split_stem_advanced" ? body.type : "separate_vocal";
+      if (type === "split_stem_advanced" && !body.stemName?.trim()) {
+        return res.status(400).json({ message: "split_stem_advanced 모드는 stemName이 필요합니다." });
+      }
+
+      const callBackUrl = `${siteBase}/api/ai-music/stem-separation-callback`;
+      const payload: Record<string, unknown> = { type, callBackUrl };
+      if (type === "split_stem_advanced") payload.stemName = body.stemName!.trim().slice(0, 100);
+
+      try {
+        if (hasExisting) {
+          payload.taskId = String(body.taskId).trim();
+          payload.audioId = String(body.audioId).trim();
+        } else {
+          let audioUrl = bodyAudioUrl;
+          if (!audioUrl && file?.buffer?.length) {
+            const ext = file.mimetype?.includes("wav")
+              ? ".wav"
+              : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3")
+                ? ".mp3"
+                : ".webm";
+            audioUrl = await kieUploadAudioBuffer({
+              apiKey: upstream.key,
+              buffer: file.buffer,
+              fileName: `stem-separation-${crypto.randomUUID()}${ext}`,
+              mimeType: file.mimetype || "audio/mpeg",
+              fileUploadBase: resolveSunoStyleFileUploadBase(providerReq === "kie" ? "kie" : "suno"),
+            });
+          }
+          if (!audioUrl) return res.status(400).json({ message: "오디오 업로드에 실패했습니다." });
+          payload.audioUrl = audioUrl;
+        }
+
+        const apiRes = await fetch(`${upstream.base}/api/v1/vocal-removal/generate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const bizCode = (data as { code?: number }).code;
+        if (typeof bizCode === "number" && bizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "스템 분리 API 오류";
+          return res.status(502).json({ message: String(msg) });
+        }
+        const d = data as { data?: { taskId?: string }; taskId?: string };
+        const taskId = d?.data?.taskId ?? d?.taskId ?? "";
+        if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+
+        return res.json({ task_id: taskId, provider: providerReq, type });
+      } catch (e) {
+        console.error("[ai-music stem-separation]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        return res.status(500).json({
+          message: "스템 분리 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_STEM_SEPARATION_ERROR",
+          ...(process.env.NODE_ENV === "development" ? { detail: errMsg.slice(0, 500) } : {}),
+        });
+      }
+    },
+  );
+
+  /** Stem Separation 상태 조회 (vocal-removal/record-info) */
+  app.get("/api/ai-music/stem-separation/:taskId", isAuthenticated, async (req, res) => {
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+    }
+    const taskId = String(req.params.taskId ?? "").trim();
+    if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
+    const providerReq = typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER;
+    const upstream = sunoStyleUpstream(providerReq);
+    if (!upstream) {
+      return res.status(503).json({ message: "선택한 provider의 API 키가 설정되어 있지 않습니다." });
+    }
+    try {
+      const q = new URLSearchParams({ taskId });
+      const apiRes = await fetch(`${upstream.base}/api/v1/vocal-removal/record-info?${q}`, {
+        headers: { Authorization: `Bearer ${upstream.key}` },
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok) {
+        const msg = (data as { msg?: string }).msg ?? "조회 실패";
+        return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+      }
+      return res.json(data);
+    } catch (e) {
+      console.error("[ai-music stem-separation record-info]", e);
+      return res.status(500).json({ message: "스템 분리 상태 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  /** Stem Separation 완료 콜백 — 로컬 테스트에서는 폴링만 사용, 수신만 확인 */
+  app.post("/api/ai-music/stem-separation-callback", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
+  // === [/LOCAL TEST ONLY] ===
 
   app.get("/api/ai-music/task/:taskId", isAuthenticated, async (req, res) => {
     if (!AI_MUSIC_PROVIDER) {
