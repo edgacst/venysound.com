@@ -238,6 +238,14 @@ function SegmentedControl<T extends string>({
   );
 }
 
+/** 화면 표시용 — 실제 차감액은 서버(server/routes.ts)가 확정. 여기 값은 그것과 반드시 일치시킬 것. (kie 크레딧 × 15원) */
+const REPLACE_SECTION_PRICE_WON_CLIENT = 75;
+const STEM_SEPARATION_PRICE_WON_CLIENT: Record<"separate_vocal" | "split_stem" | "split_stem_advanced", number> = {
+  separate_vocal: 150,
+  split_stem: 750,
+  split_stem_advanced: 300,
+};
+
 const PROVIDER_OPTIONS: { value: Provider; label: string; disabled?: boolean; disabledReason?: string }[] = [
   {
     value: "kie",
@@ -336,21 +344,32 @@ function ProcessStatus({
   }
 
   // fail
+  const isInsufficientBalance = Boolean(errorMessage && /잔액이 부족/.test(errorMessage));
   return (
     <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
       <span className="flex items-center gap-2.5">
         <span>❌</span>
         <span>{errorMessage || "처리에 실패했어요. 잠시 후 다시 시도해 주세요."}</span>
       </span>
-      {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="ml-auto rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20"
-        >
-          다시 시도
-        </button>
-      ) : null}
+      <span className="ml-auto flex items-center gap-2">
+        {isInsufficientBalance ? (
+          <a
+            href="/credits"
+            className="rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/20"
+          >
+            지갑 충전하기 →
+          </a>
+        ) : null}
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-500/20"
+          >
+            다시 시도
+          </button>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -827,7 +846,7 @@ function ReplaceSectionPanel({
         try {
           const res = await apiRequest(
             "GET",
-            `/api/ai-music/task/${encodeURIComponent(resultTaskId)}?provider=${provider}`,
+            `/api/ai-music/task/${encodeURIComponent(resultTaskId)}?provider=${provider}&_t=${Date.now()}`,
           );
           const data = await res.json();
           if (stopped) return;
@@ -929,7 +948,7 @@ function ReplaceSectionPanel({
         <TextAreaField label="fullLyrics (선택, 수정 반영된 전체 가사)" value={fullLyrics} onChange={setFullLyrics} />
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex items-center gap-3">
         <Button
           onClick={submit}
           disabled={busy || !prompt.trim()}
@@ -937,6 +956,7 @@ function ReplaceSectionPanel({
         >
           {phase === "submitting" ? "요청 중…" : phase === "pending" ? "처리 중…" : "구간 교체 요청"}
         </Button>
+        <span className="text-xs text-slate-500">이용료 {REPLACE_SECTION_PRICE_WON_CLIENT.toLocaleString()}원</span>
       </div>
 
       <ProcessStatus
@@ -1045,7 +1065,7 @@ function StemSeparationPanel({
         try {
           const res = await apiRequest(
             "GET",
-            `/api/ai-music/stem-separation/${encodeURIComponent(resultTaskId)}?provider=${provider}`,
+            `/api/ai-music/stem-separation/${encodeURIComponent(resultTaskId)}?provider=${provider}&_t=${Date.now()}`,
           );
           const data = await res.json();
           if (stopped) return;
@@ -1144,7 +1164,7 @@ function StemSeparationPanel({
         ) : null}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex items-center gap-3">
         <Button
           onClick={submit}
           disabled={busy}
@@ -1152,6 +1172,7 @@ function StemSeparationPanel({
         >
           {phase === "submitting" ? "요청 중…" : phase === "pending" ? "분리 중…" : "스템 분리 요청"}
         </Button>
+        <span className="text-xs text-slate-500">이용료 {STEM_SEPARATION_PRICE_WON_CLIENT[type].toLocaleString()}원</span>
       </div>
 
       <ProcessStatus

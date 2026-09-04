@@ -4551,9 +4551,96 @@ export async function registerRoutes(
     },
   );
 
-  // === [LOCAL TEST ONLY] KIE/Suno: Replace Section + Advanced Stem Separation ===
-  // 2026-07-08 KIE 업데이트 대응. 크레딧/사용량 과금 로직은 붙이지 않은 로컬 검증용 엔드포인트.
-  // 배포 전 이 블록 전체와 client의 /ai-music-tools-test 라우트를 제거할 것.
+  // === KIE/Suno: Replace Section + Advanced Stem Separation (2026-07-08 KIE 업데이트 대응) ===
+  // /ai-music-tools-test 페이지에서 사용. 아래 가격은 kie.ai 공식 크레딧 소모량 × 15원/크레딧(운영자 지정 환율)로 산정.
+  // (kie.ai/suno-api 가격표 기준: Replace Section 5credits, separate_vocal 10, split_stem 50, split_stem_advanced 20)
+
+  /** 지갑 잔액 부족 시에도 kie.ai 크레딧을 낭비하지 않도록, 업스트림 호출 "전"에 확인만 하고, 실제 차감은 taskId를 정상 발급받은 "후"에 한다 */
+  async function hasEnoughWalletBalance(userId: string, priceWon: number): Promise<boolean> {
+    const [row] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+    return (row?.credits ?? 0) >= priceWon;
+  }
+
+  /**
+   * taskId 발급 시점에 이미 차감된 이용료를, 나중에 폴링에서 작업이 "실패"로 확정되면 환불하기 위한 임시 장부.
+   * 서버 재시작 시 사라지지만(인메모리), 실패 확정은 보통 몇 분 내에 폴링으로 감지되므로 실사용에는 충분하다.
+   */
+  const aiMusicToolCharges = new Map<
+    string,
+    { userId: string; priceWon: number; type: string; description: string }
+  >();
+
+  /** 성공 확정 후 지갑에서 이용료 차감 + 거래내역 기록 (드문 레이스로 차감 실패해도 이미 발급된 taskId는 그대로 사용자에게 돌려줌) */
+  async function chargeAiMusicToolFee(
+    userId: string,
+    priceWon: number,
+    type: string,
+    description: string,
+    taskId: string,
+  ) {
+    if (priceWon <= 0) return;
+    try {
+      const deducted = await storage.deductCredits(userId, priceWon);
+      if (!deducted) {
+        console.warn(`[ai-music tool fee] deduct failed after balance check passed userId=${userId} priceWon=${priceWon}`);
+        return;
+      }
+      await storage.createCreditTransaction({ userId, type, amount: -priceWon, description });
+      if (taskId) aiMusicToolCharges.set(taskId, { userId, priceWon, type, description });
+    } catch (e) {
+      console.error("[ai-music tool fee] charge failed", e);
+    }
+  }
+
+  /** 작업이 최종 성공으로 확정되면 환불 장부에서 지워 메모리를 정리한다(환불 없음) */
+  function clearAiMusicToolCharge(taskId: string) {
+    aiMusicToolCharges.delete(taskId);
+  }
+
+  /** 작업이 최종 실패로 확정되면, 이미 차감했던 이용료를 지갑에 환불하고 장부에서 지운다 */
+  async function refundAiMusicToolFeeIfCharged(taskId: string, reason: string) {
+    const charge = taskId ? aiMusicToolCharges.get(taskId) : undefined;
+    if (!charge) return;
+    aiMusicToolCharges.delete(taskId);
+    try {
+      await storage.addCredits(charge.userId, charge.priceWon);
+      await storage.createCreditTransaction({
+        userId: charge.userId,
+        type: `${charge.type}_refund`,
+        amount: charge.priceWon,
+        description: `${charge.description} — 처리 실패로 환불 (${reason})`.slice(0, 500),
+      });
+    } catch (e) {
+      console.error("[ai-music tool fee] refund failed", e);
+    }
+  }
+
+  /** 업스트림 상태 문자열 추출 — 클라이언트(AiMusicToolsTest.tsx)의 extractStatusText와 동일 로직 */
+  function extractUpstreamStatusText(data: unknown): string | null {
+    if (!data || typeof data !== "object") return null;
+    const obj = data as Record<string, any>;
+    const candidates = [
+      obj.state,
+      obj.status,
+      obj.data?.status,
+      obj.data?.state,
+      obj.data?.successFlag,
+      obj.data?.response?.successFlag,
+      obj.data?.response?.status,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim()) return c.trim().toUpperCase();
+    }
+    return null;
+  }
+
+  const REPLACE_SECTION_PRICE_WON = 75; // kie 5 credits × 15원
+
+  const STEM_SEPARATION_PRICE_WON: Record<"separate_vocal" | "split_stem" | "split_stem_advanced", number> = {
+    separate_vocal: 150, // 10 credits × 15원
+    split_stem: 750, // 50 credits × 15원
+    split_stem_advanced: 300, // 20 credits × 15원
+  };
 
   /** Replace Section — 결과 폴링은 기존 GET /api/ai-music/task/:taskId 를 그대로 재사용 (KIE 문서: get-music-details와 동일 엔드포인트) */
   app.post(
@@ -4613,6 +4700,14 @@ export async function registerRoutes(
       const hasExisting = Boolean(String(body.taskId ?? "").trim()) && Boolean(String(body.audioId ?? "").trim());
       if (!hasUpload && !hasExisting) {
         return res.status(400).json({ message: "기존 곡(taskId+audioId) 또는 업로드 오디오(uploadUrl) 중 하나가 필요합니다." });
+      }
+
+      if (!(await hasEnoughWalletBalance(userId, REPLACE_SECTION_PRICE_WON))) {
+        return res.status(402).json({
+          message: `지갑 잔액이 부족합니다. 구간 교체는 ${REPLACE_SECTION_PRICE_WON}원이 필요해요. 충전 후 다시 시도해 주세요.`,
+          insufficientCredits: true,
+          priceWon: REPLACE_SECTION_PRICE_WON,
+        });
       }
 
       const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
@@ -4675,7 +4770,13 @@ export async function registerRoutes(
         const taskId = d?.data?.taskId ?? d?.taskId ?? "";
         if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
 
-        return res.json({ task_id: taskId, provider: providerReq, mode: hasUpload ? "upload" : "existing" });
+        await chargeAiMusicToolFee(userId, REPLACE_SECTION_PRICE_WON, "ai_music_replace_section", "AI 음악 — 구간 교체", taskId);
+        return res.json({
+          task_id: taskId,
+          provider: providerReq,
+          mode: hasUpload ? "upload" : "existing",
+          priceWon: REPLACE_SECTION_PRICE_WON,
+        });
       } catch (e) {
         console.error("[ai-music replace-section]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -4732,6 +4833,15 @@ export async function registerRoutes(
         return res.status(400).json({ message: "split_stem_advanced 모드는 stemName이 필요합니다." });
       }
 
+      const priceWon = STEM_SEPARATION_PRICE_WON[type];
+      if (!(await hasEnoughWalletBalance(userId, priceWon))) {
+        return res.status(402).json({
+          message: `지갑 잔액이 부족합니다. 이 기능은 ${priceWon}원이 필요해요. 충전 후 다시 시도해 주세요.`,
+          insufficientCredits: true,
+          priceWon,
+        });
+      }
+
       const callBackUrl = `${siteBase}/api/ai-music/stem-separation-callback`;
       const payload: Record<string, unknown> = { type, callBackUrl };
       if (type === "split_stem_advanced") payload.stemName = body.stemName!.trim().slice(0, 100);
@@ -4779,7 +4889,8 @@ export async function registerRoutes(
         const taskId = d?.data?.taskId ?? d?.taskId ?? "";
         if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
 
-        return res.json({ task_id: taskId, provider: providerReq, type });
+        await chargeAiMusicToolFee(userId, priceWon, "ai_music_stem_separation", `AI 음악 — 스템 분리 (${type})`, taskId);
+        return res.json({ task_id: taskId, provider: providerReq, type, priceWon });
       } catch (e) {
         console.error("[ai-music stem-separation]", e);
         const errMsg = e instanceof Error ? e.message : String(e);
@@ -4794,6 +4905,7 @@ export async function registerRoutes(
 
   /** Stem Separation 상태 조회 (vocal-removal/record-info) */
   app.get("/api/ai-music/stem-separation/:taskId", isAuthenticated, async (req, res) => {
+    res.set("Cache-Control", "no-store"); // 폴링용 — 브라우저가 이전 상태를 재사용(304)하지 않도록
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
     }
@@ -4812,7 +4924,19 @@ export async function registerRoutes(
       const data = await apiRes.json().catch(() => ({}));
       if (!apiRes.ok) {
         const msg = (data as { msg?: string }).msg ?? "조회 실패";
+        await refundAiMusicToolFeeIfCharged(taskId, String(msg));
         return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+      }
+      // 이용료 환불/정리: 클라이언트(extractStatusText/statusToPhase)와 동일 기준으로 최종 성공/실패를 판정
+      const statusText = extractUpstreamStatusText(data);
+      if (statusText) {
+        if (/SUCCESS|COMPLETE|DONE|FIRST_SUCCESS/.test(statusText)) {
+          clearAiMusicToolCharge(taskId);
+        } else if (/FAIL|ERROR/.test(statusText)) {
+          const d = data as { msg?: string; message?: string; data?: { errorMessage?: string } };
+          const failMsg = d?.msg ?? d?.message ?? d?.data?.errorMessage ?? "스템 분리에 실패했습니다.";
+          await refundAiMusicToolFeeIfCharged(taskId, String(failMsg));
+        }
       }
       return res.json(data);
     } catch (e) {
@@ -4887,6 +5011,7 @@ export async function registerRoutes(
         if (typeof bizCode === "number" && bizCode !== 200) {
           const msg = (data as { msg?: string }).msg ?? `Suno API code ${bizCode}`;
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, String(msg));
+          await refundAiMusicToolFeeIfCharged(taskId, String(msg));
           return res.json({ state: "failed", message: String(msg), data: null });
         }
         const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[]; suno_data?: unknown[] }; errorMessage?: string; param?: string } }).data;
@@ -4936,6 +5061,7 @@ export async function registerRoutes(
               credits_balance: b.balanceWon,
             };
           }
+          clearAiMusicToolCharge(taskId);
           return res.json({ state: "succeeded", data: list, billing });
         }
         const raws = sunoList as Record<string, unknown>[];
@@ -4966,6 +5092,7 @@ export async function registerRoutes(
                 credits_balance: b.balanceWon,
               };
             }
+            clearAiMusicToolCharge(taskId);
             return res.json({ state: "succeeded", data: listEarly, billing });
           }
         }
@@ -4980,6 +5107,7 @@ export async function registerRoutes(
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
           const failMsg = formatKieApiUserMessage(d?.errorMessage) || "생성에 실패했습니다.";
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, failMsg);
+          await refundAiMusicToolFeeIfCharged(taskId, failMsg);
           return res.json({ state: "failed", message: failMsg, data: null });
         }
         return res.json({ state: status === "TEXT_SUCCESS" || status === "FIRST_SUCCESS" ? "running" : "pending", data: null });
