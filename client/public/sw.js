@@ -19,6 +19,7 @@ self.addEventListener("push", (event) => {
     icon: "/favicon.png",
     badge: "/favicon.png",
     data: { url: data.url || "/" },
+    requireInteraction: true,
   };
   event.waitUntil(
     self.registration.showNotification(data.title || "Venysound", opts)
