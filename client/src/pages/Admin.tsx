@@ -103,6 +103,7 @@ type AdminUserWalletResponse = {
   creditSummary: { totalCreditsIn: number; totalCreditsOut: number; currentBalance: number };
   aiMusicMonthly?: {
     periodMonth: string;
+    usagePeriodKey?: string;
     limit: number;
     used: number;
     unit: "songs" | "credits" | "won" | "unlimited";
@@ -456,7 +457,7 @@ export default function Admin() {
     plan: string | null;
     billingPeriod: string | null;
     paymentKey: string | null;
-    /** 서버: payup_meta.txnId (payment_key 비정상 시 PG취소 반영 버튼용) */
+    /** 서버: payup_meta.txnId (payment_key 비정상 시 페이업 취소 버튼용) */
     payupMetaTxnId?: string | null;
     createdAt: string;
     email: string | null;
@@ -466,7 +467,7 @@ export default function Admin() {
     paymentKind: "subscription" | "credit";
   };
 
-  const adminRowSupportsPayupPgRevert = (row: AdminRevenuePaymentRow): boolean => {
+  const adminRowSupportsPayupCancel = (row: AdminRevenuePaymentRow): boolean => {
     if (row.paymentKind !== "subscription") return false;
     const pk = (row.paymentKey ?? "").trim().toLowerCase();
     /** `payup:{txn}` 또는 meta 의 txnId/pgTransactionId/pgTid(서버 payupMetaTxnId) */
@@ -1136,6 +1137,7 @@ export default function Admin() {
       setWalletTxPage(0);
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users/wallet"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
       toast({ title: t("admin.walletCreditsAdjusted", "크레딧 잔액을 조정했습니다.") });
     },
     onError: (err: any) => {
@@ -1415,6 +1417,7 @@ export default function Admin() {
     () => (pendingPayupSubPayments ?? []).filter((p: any) => String(p.paymentStatus ?? "").toLowerCase() === "pending").length,
     [pendingPayupSubPayments],
   );
+  const payupCardHistoryCount = pendingPayupSubPayments?.length ?? 0;
 
   const confirmBankMutation = useMutation({
     mutationFn: async (paymentId: string) => {
@@ -1467,12 +1470,12 @@ export default function Admin() {
     },
   });
 
-  /** 페이업에서 PG 환불·취소 후 DB만 paid 인 카드 구독 건 — refunded + 필요 시 회원 무료화 */
-  const revokePayupPaidMutation = useMutation({
+  /** 우리 사이트에서 페이업 취소 API를 실행하고, 성공하면 refunded + 필요 시 회원 무료화 */
+  const cancelPayupPaidMutation = useMutation({
     mutationFn: async (paymentId: string) => {
       const res = await apiRequest(
         "POST",
-        `/api/admin/payments/${encodeURIComponent(paymentId)}/revoke-payup-subscription`,
+        `/api/admin/payments/${encodeURIComponent(paymentId)}/cancel-payup-subscription`,
         {},
       );
       if (!res.ok) {
@@ -1488,6 +1491,7 @@ export default function Admin() {
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/revenue-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/pending-payup-subscription-payments"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
       if (data.alreadyRefunded) {
         toast({
@@ -1497,8 +1501,8 @@ export default function Admin() {
       }
       toast({
         title: data.downgradedUser
-          ? t("admin.revokePayupDowngraded", "회원 구독을 무료로 되돌렸습니다.")
-          : t("admin.revokePayupRefundedOnly", "결제를 refunded 처리했습니다. (다른 유료 구독 건이 있어 티어는 유지)"),
+          ? t("admin.payupCancelDowngraded", "페이업 취소가 완료되어 회원 구독을 무료로 되돌렸습니다.")
+          : t("admin.payupCancelRefundedOnly", "페이업 취소가 완료되어 결제를 refunded 처리했습니다. (다른 유료 구독 건이 있어 티어는 유지)"),
       });
     },
     onError: (err: unknown) => {
@@ -1530,11 +1534,11 @@ export default function Admin() {
 
   /** 카드사·PG에만 승인돼 있고 DB가 pending 인 건 — 거래조회(0000) 후 paid+구독 반영 */
   const finalizePayupPendingInquiryMutation = useMutation({
-    mutationFn: async (paymentId: string) => {
+    mutationFn: async (input: { paymentId: string; transactionId?: string }) => {
       const res = await apiRequest(
         "POST",
-        `/api/admin/payments/${encodeURIComponent(paymentId)}/finalize-payup-pending-inquiry`,
-        {},
+        `/api/admin/payments/${encodeURIComponent(input.paymentId)}/finalize-payup-pending-inquiry`,
+        input.transactionId ? { transactionId: input.transactionId } : {},
       );
       if (!res.ok) {
         const j = (await res.json().catch(() => ({}))) as { message?: string };
@@ -1572,7 +1576,7 @@ export default function Admin() {
           <p>
             {t(
               "admin.payupCardHistoryBannerIntro",
-              "미승인(pending·주문만 생성) 건은 전부 표시됩니다. 승인 완료(paid) 건은 최근 {{days}}일 이내만 표시됩니다.",
+              "미승인(pending·주문만 생성) 건은 전부 표시됩니다. 승인 완료(paid)와 취소/환불(refunded) 건은 최근 {{days}}일 이내만 표시됩니다.",
               { days: PAYUP_CARD_HISTORY_PAID_DAYS },
             )}
           </p>
@@ -1611,6 +1615,10 @@ export default function Admin() {
               <tbody>
                 {pendingPayupSubPayments.map((p: any) => {
                   const isPending = String(p.paymentStatus ?? "").toLowerCase() === "pending";
+                  const isRefunded =
+                    String(p.paymentStatus ?? "").toLowerCase() === "refunded" ||
+                    String(p.cardApprovalStatus ?? "").toLowerCase() === "refunded";
+                  const canRevokeApprovedPayup = !isPending && !isRefunded;
                   const pk = typeof p.paymentKey === "string" ? p.paymentKey : "";
                   return (
                     <tr
@@ -1618,6 +1626,8 @@ export default function Admin() {
                       className={
                         isPending
                           ? "border-b border-amber-500/25 bg-amber-500/[0.07] last:border-0"
+                          : isRefunded
+                            ? "border-b border-rose-500/25 bg-rose-500/[0.06] last:border-0"
                           : "border-b border-border/50 last:border-0"
                       }
                     >
@@ -1625,6 +1635,10 @@ export default function Admin() {
                         {isPending ? (
                           <Badge variant="outline" className="text-amber-800 border-amber-600/50 bg-amber-500/10">
                             {t("admin.payupCardStatusPending", "미승인")}
+                          </Badge>
+                        ) : isRefunded ? (
+                          <Badge variant="outline" className="text-rose-800 border-rose-600/50 bg-rose-500/10 dark:text-rose-100">
+                            {t("admin.payupCardStatusRefunded", "취소/환불")}
                           </Badge>
                         ) : (
                           <Badge variant="secondary" className="text-emerald-900 dark:text-emerald-100">
@@ -1672,7 +1686,18 @@ export default function Admin() {
                                 ) {
                                   return;
                                 }
-                                finalizePayupPendingInquiryMutation.mutate(String(p.id));
+                                const tid = window.prompt(
+                                  t(
+                                    "admin.payupFinalizeTidPrompt",
+                                    "페이업 관리자에 보이는 거래번호(TID)가 있으면 입력하세요. 없으면 비우고 확인(주문번호로 조회 시도).",
+                                  ),
+                                  "",
+                                );
+                                if (tid === null) return;
+                                finalizePayupPendingInquiryMutation.mutate({
+                                  paymentId: String(p.id),
+                                  transactionId: tid.trim() || undefined,
+                                });
                               }}
                             >
                               {t("admin.payupFinalizeButton", "PG승인→DB반영")}
@@ -1700,6 +1725,33 @@ export default function Admin() {
                               {t("admin.pendingPayupDeleteButton", "미승인 건 삭제")}
                             </Button>
                           </div>
+                        ) : canRevokeApprovedPayup ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="text-[10px] h-7 px-1.5"
+                            disabled={cancelPayupPaidMutation.isPending}
+                            title={t(
+                              "admin.payupCancelButtonTitle",
+                              "페이업 취소 API를 호출하고 성공하면 DB를 취소/환불로 맞춥니다.",
+                            )}
+                            onClick={() => {
+                              if (
+                                !window.confirm(
+                                  t(
+                                    "admin.payupCancelConfirm",
+                                    "이 결제를 페이업에서 실제 취소합니다. 취소 성공 응답을 받은 뒤 사이트 DB도 취소/환불로 바뀝니다. 계속할까요?",
+                                  ),
+                                )
+                              ) {
+                                return;
+                              }
+                              cancelPayupPaidMutation.mutate(String(p.id));
+                            }}
+                          >
+                            {t("admin.payupCancelButton", "페이업 취소")}
+                          </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
@@ -1724,6 +1776,8 @@ export default function Admin() {
       deletePendingPayupSubMutation.mutate,
       finalizePayupPendingInquiryMutation.isPending,
       finalizePayupPendingInquiryMutation.mutate,
+      cancelPayupPaidMutation.isPending,
+      cancelPayupPaidMutation.mutate,
       t,
       PAYUP_CARD_HISTORY_PAID_DAYS,
     ],
@@ -2003,7 +2057,7 @@ export default function Admin() {
                 <CreditCard size={14} className="shrink-0" />
                 {t("admin.tabPayupCardHistoryShort", "카드승인내역")}
                 <Badge variant="secondary" className="ml-0.5 text-[10px] h-5 px-1.5" data-testid="badge-payup-pending-count">
-                  {pendingPayupCardOnlyCount}
+                  {payupCardHistoryCount}
                 </Badge>
               </TabsTrigger>
               <TabsTrigger value="credit-refunds" className="gap-1.5">
@@ -2524,32 +2578,32 @@ export default function Admin() {
                                 {row.orderId}
                               </td>
                               <td className="p-2 whitespace-nowrap">
-                                {adminRowSupportsPayupPgRevert(row) ? (
+                                {adminRowSupportsPayupCancel(row) ? (
                                   <Button
                                     type="button"
                                     size="sm"
                                     variant="outline"
                                     className="text-[10px] h-7 px-1.5"
-                                    disabled={revokePayupPaidMutation.isPending}
+                                    disabled={cancelPayupPaidMutation.isPending}
                                     title={t(
-                                      "admin.revokePayupButtonTitle",
-                                      "페이업에서 이미 취소·환불한 카드 구독 건이면 눌러 DB를 맞춥니다.",
+                                      "admin.payupCancelButtonTitle",
+                                      "페이업 취소 API를 호출하고 성공하면 DB를 취소/환불로 맞춥니다.",
                                     )}
                                     onClick={() => {
                                       if (
                                         !window.confirm(
                                           t(
-                                            "admin.revokePayupConfirm",
-                                            "이 결제를 refunded 로 표시하고, 다른 유료 구독 결제가 없으면 회원을 무료로 되돌립니다. 페이업에서 실제 취소가 끝난 건만 진행하세요.",
+                                            "admin.payupCancelConfirm",
+                                            "이 결제를 페이업에서 실제 취소합니다. 취소 성공 응답을 받은 뒤 사이트 DB도 취소/환불로 바뀝니다. 계속할까요?",
                                           ),
                                         )
                                       ) {
                                         return;
                                       }
-                                      revokePayupPaidMutation.mutate(row.id);
+                                      cancelPayupPaidMutation.mutate(row.id);
                                     }}
                                   >
-                                    {t("admin.revokePayupButton", "PG취소 반영")}
+                                    {t("admin.payupCancelButton", "페이업 취소")}
                                   </Button>
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
@@ -5840,8 +5894,9 @@ export default function Admin() {
                         </tr>
                       ) : (
                         walletData.payments.rows.map((p) => {
-                          const canRepairBankSub =
-                            p.paymentKey === "bank_transfer" && isPaidSubscriptionTierId(p.plan);
+                          const canRepairPaidSub =
+                            isPaidSubscriptionTierId(p.plan) &&
+                            (p.paymentKey === "bank_transfer" || adminRowSupportsPayupCancel(p as AdminRevenuePaymentRow));
                           return (
                             <tr key={p.id} className="border-b border-border/60">
                               <td className="p-2 whitespace-nowrap">{adminPaymentKindLabel(p.plan)}</td>
@@ -5852,7 +5907,7 @@ export default function Admin() {
                                 {p.orderId}
                               </td>
                               <td className="p-2 align-middle">
-                                {canRepairBankSub ? (
+                                {canRepairPaidSub ? (
                                   <Button
                                     type="button"
                                     size="sm"

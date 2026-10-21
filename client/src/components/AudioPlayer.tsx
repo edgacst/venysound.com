@@ -7,7 +7,7 @@ import { resolveStorageUrl } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { blockGuestPlaybackIfNeeded } from "@/lib/guest-listen-quota";
-import { useRef, useCallback, useEffect, useState, useMemo } from "react";
+import { useRef, useCallback, useEffect, useState, useMemo, useSyncExternalStore } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Slider } from "@/components/ui/slider";
 import { useTranslation } from 'react-i18next';
@@ -15,8 +15,50 @@ import { useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 import { useRadioPlayerStore } from "@/stores/radio-player";
+import { audioDebugLog } from "@/lib/audio-debug";
+import {
+  isNativePlayerReady,
+  postNativePlayerMessage,
+  subscribeNativePlayer,
+  subscribeNativePlayerReady,
+} from "@/lib/native-player-bridge";
 
 type RepeatMode = 'none' | 'all' | 'one';
+
+function playWithSoftStart(el: HTMLMediaElement, targetVolume = 1): Promise<void> {
+  const volume = Math.max(0, Math.min(1, targetVolume));
+  el.muted = false;
+  if (document.visibilityState !== "visible") {
+    el.volume = volume;
+    return el.play();
+  }
+  el.volume = 0;
+  return el.play().then(
+    () =>
+      new Promise<void>((resolve) => {
+        const startedAt = performance.now();
+        const tick = () => {
+          if (document.visibilityState !== "visible") {
+            el.volume = volume;
+            resolve();
+            return;
+          }
+          const ratio = Math.min(1, (performance.now() - startedAt) / 90);
+          el.volume = volume * ratio;
+          if (ratio < 1) {
+            requestAnimationFrame(tick);
+          } else {
+            resolve();
+          }
+        };
+        requestAnimationFrame(tick);
+      }),
+    (err) => {
+      el.volume = volume;
+      throw err;
+    },
+  );
+}
 
 export interface ExternalTrack {
   url: string;
@@ -522,18 +564,42 @@ export function GlobalAudioPlayer() {
   }, [user, toast, t]);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const nativePlayerReady = useSyncExternalStore(
+    subscribeNativePlayerReady,
+    isNativePlayerReady,
+    () => false,
+  );
 
   useResumeAudioWhenForeground(
     () => audioRef.current,
     () => {
+      if ("mediaSession" in navigator) return false;
       const st = usePlayerStore.getState();
       return !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
     },
+    {
+      prepareResume: () => {
+        const ctx = audioContextRef.current;
+        if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
+          void ctx.resume().catch(() => {});
+        }
+      },
+    },
   );
-  const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const progressRef = useRef<HTMLDivElement>(null);
+  const prevPauseRequestedRef = useRef(pauseRequested);
+  const nativePauseSyncValueRef = useRef<boolean | null>(null);
+  const playAttemptKeyRef = useRef<string | null>(null);
+  const resumeAfterSystemPauseRef = useRef(false);
+  const resumeAfterSystemPauseTimerRef = useRef<number | null>(null);
+  const resumeAfterSystemPauseAttemptsRef = useRef(0);
+  const systemPauseHiddenAtRef = useRef<number | null>(null);
+  const systemPauseSnapshotRef = useRef<{ src: string; time: number } | null>(null);
+  const systemPauseNeedsReloadRef = useRef(false);
+  const systemPauseBlurredWhileVisibleRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
   useScreenWakeLockWhilePlaying(
     isPlaying && !pauseRequested && (!!activeMusicId || !!activeExternalTrack),
@@ -541,6 +607,7 @@ export function GlobalAudioPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
+  const volumeRef = useRef(volume);
   const [isMuted, setIsMuted] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [isSeeking, setIsSeeking] = useState(false);
@@ -549,10 +616,335 @@ export function GlobalAudioPlayer() {
   const [showEqPanel, setShowEqPanel] = useState(false);
   const [eqGains, setEqGains] = useState<number[]>([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const [eqPreset, setEqPreset] = useState('flat');
+  const currentListRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+    const audio = audioRef.current;
+    if (audio) audio.volume = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    const keepAudioContextRunning = () => {
+      const st = usePlayerStore.getState();
+      if (st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+      const ctx = audioContextRef.current;
+      if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
+        void ctx.resume().catch(() => {});
+      }
+    };
+
+    keepAudioContextRunning();
+    const interval = window.setInterval(keepAudioContextRunning, 1000);
+    document.addEventListener("visibilitychange", keepAudioContextRunning);
+    window.addEventListener("focus", keepAudioContextRunning);
+    window.addEventListener("pageshow", keepAudioContextRunning);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", keepAudioContextRunning);
+      window.removeEventListener("focus", keepAudioContextRunning);
+      window.removeEventListener("pageshow", keepAudioContextRunning);
+    };
+  }, []);
+
+  const reloadAudioForSystemResume = useCallback((audio: HTMLAudioElement) => {
+    const snapshot = systemPauseSnapshotRef.current;
+    const resumeTime = Number.isFinite(audio.currentTime) && audio.currentTime > 0
+      ? audio.currentTime
+      : snapshot?.time ?? 0;
+    const resumeSrc = audio.currentSrc || audio.src || snapshot?.src || "";
+    if (!resumeSrc) return Promise.resolve(false);
+    audioDebugLog("music", "reload-for-system-resume:start", audio, {
+      resumeSrc,
+      resumeTime,
+      snapshot,
+    });
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let settleTimer: number | null = null;
+      const cleanup = () => {
+        audio.removeEventListener("loadedmetadata", restoreTime);
+        audio.removeEventListener("seeked", onReady);
+        audio.removeEventListener("canplay", onReady);
+        audio.removeEventListener("error", onReady);
+        if (settleTimer != null) window.clearTimeout(settleTimer);
+      };
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        audioDebugLog("music", "reload-for-system-resume:ready", audio, { resumeTime });
+        resolve(true);
+      };
+      const onReady = () => finish();
+      const restoreTime = () => {
+        if (Number.isFinite(resumeTime) && resumeTime > 0) {
+          try {
+            audio.currentTime = resumeTime;
+            audio.addEventListener("seeked", onReady, { once: true });
+            settleTimer = window.setTimeout(finish, 450);
+            return;
+          } catch {
+            /* ignore */
+          }
+        }
+        if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) finish();
+        else audio.addEventListener("canplay", onReady, { once: true });
+      };
+
+      audio.pause();
+      audio.muted = true;
+      audio.volume = 0;
+      audio.src = resumeSrc;
+      audio.load();
+      audio.addEventListener("error", onReady, { once: true });
+      if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        restoreTime();
+      } else {
+        audio.addEventListener("loadedmetadata", restoreTime, { once: true });
+      }
+    });
+  }, []);
+
+  const cancelSystemResume = useCallback(() => {
+    audioDebugLog("music", "cancel-system-resume", audioRef.current);
+    resumeAfterSystemPauseRef.current = false;
+    resumeAfterSystemPauseAttemptsRef.current = 0;
+    systemPauseNeedsReloadRef.current = false;
+    systemPauseHiddenAtRef.current = null;
+    if (resumeAfterSystemPauseTimerRef.current) {
+      window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+      resumeAfterSystemPauseTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleResumeAfterSystemPause = useCallback((forceReload = false) => {
+    // Android Chrome/TWA는 전화 통화의 오디오 포커스를 네이티브 MediaSession에서 관리한다.
+    // 여기서 play()를 재시도하면 통화 중 새 재생으로 간주되어 잡음이 날 수 있다.
+    if ("mediaSession" in navigator) return;
+    const audio = audioRef.current;
+    const st = usePlayerStore.getState();
+    if (!audio || st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+    resumeAfterSystemPauseRef.current = true;
+    audioDebugLog("music", "schedule-system-resume", audio, {
+      forceReload,
+      pauseRequested: st.pauseRequested,
+      activeMusicId: st.activeMusicId,
+      hasExternalTrack: !!st.activeExternalTrack,
+      needsReload: systemPauseNeedsReloadRef.current,
+      attempts: resumeAfterSystemPauseAttemptsRef.current,
+    });
+    if (systemPauseBlurredWhileVisibleRef.current) {
+      systemPauseNeedsReloadRef.current = systemPauseNeedsReloadRef.current || forceReload;
+      return;
+    }
+    if (document.visibilityState !== "visible") {
+      systemPauseNeedsReloadRef.current = systemPauseNeedsReloadRef.current || forceReload;
+      audioDebugLog("music", "system-resume:defer-hidden", audio, {
+        forceReload,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
+      return;
+    }
+
+    if (resumeAfterSystemPauseTimerRef.current) {
+      window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+    }
+
+    const tryResume = () => {
+      void (async () => {
+      const currentAudio = audioRef.current;
+      const currentState = usePlayerStore.getState();
+      if (!currentAudio || currentState.pauseRequested || (!currentState.activeMusicId && !currentState.activeExternalTrack)) {
+        audioDebugLog("music", "system-resume:abort", currentAudio, {
+          pauseRequested: currentState.pauseRequested,
+          activeMusicId: currentState.activeMusicId,
+          hasExternalTrack: !!currentState.activeExternalTrack,
+        });
+        resumeAfterSystemPauseRef.current = false;
+        resumeAfterSystemPauseAttemptsRef.current = 0;
+        systemPauseNeedsReloadRef.current = false;
+        return;
+      }
+      if (!resumeAfterSystemPauseRef.current) return;
+
+      const ctx = audioContextRef.current;
+      audioDebugLog("music", "system-resume:attempt", currentAudio, {
+        forceReload,
+        needsReload: systemPauseNeedsReloadRef.current,
+        attempts: resumeAfterSystemPauseAttemptsRef.current,
+        audioContextState: ctx?.state ?? null,
+      });
+      if (ctx && ctx.state !== "running" && ctx.state !== "closed") {
+        void ctx.resume().catch(() => {});
+      }
+      if (forceReload && resumeAfterSystemPauseAttemptsRef.current === 0) {
+        resumeAfterSystemPauseAttemptsRef.current += 1;
+        await reloadAudioForSystemResume(currentAudio);
+        systemPauseNeedsReloadRef.current = false;
+      }
+      currentAudio.muted = false;
+      currentAudio.volume = volume;
+      if (!currentAudio.paused && !systemPauseNeedsReloadRef.current) {
+        audioDebugLog("music", "system-resume:already-playing", currentAudio);
+        resumeAfterSystemPauseRef.current = false;
+        resumeAfterSystemPauseAttemptsRef.current = 0;
+        systemPauseNeedsReloadRef.current = false;
+        setIsPlaying(true);
+        setNeedsTap(false);
+        return;
+      }
+
+      resumeAfterSystemPauseAttemptsRef.current += 1;
+      if (systemPauseNeedsReloadRef.current || resumeAfterSystemPauseAttemptsRef.current === 3) {
+        await reloadAudioForSystemResume(currentAudio);
+        systemPauseNeedsReloadRef.current = false;
+      }
+
+      void playWithSoftStart(currentAudio, volume)
+        .then(() => {
+          audioDebugLog("music", "system-resume:play-success", currentAudio);
+          resumeAfterSystemPauseRef.current = false;
+          resumeAfterSystemPauseAttemptsRef.current = 0;
+          systemPauseNeedsReloadRef.current = false;
+          setIsPlaying(true);
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          audioDebugLog("music", "system-resume:play-failed", currentAudio, {
+            attempts: resumeAfterSystemPauseAttemptsRef.current,
+          });
+          const delay = resumeAfterSystemPauseAttemptsRef.current >= 3 ? 1800 : 1200;
+          resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, delay);
+        });
+      })();
+    };
+
+    resumeAfterSystemPauseTimerRef.current = window.setTimeout(tryResume, 350);
+  }, [reloadAudioForSystemResume, volume]);
+
+  const markSystemAudioInterruption = useCallback(() => {
+    const st = usePlayerStore.getState();
+    const hasTrack = !!st.activeMusicId || !!st.activeExternalTrack;
+    const audio = audioRef.current;
+    if (!st.pauseRequested && hasTrack) {
+      const src = audio?.currentSrc || audio?.src || "";
+      if (src) {
+        systemPauseSnapshotRef.current = {
+          src,
+          time: Number.isFinite(audio?.currentTime) ? audio?.currentTime ?? 0 : 0,
+        };
+      }
+      systemPauseHiddenAtRef.current = Date.now();
+      resumeAfterSystemPauseRef.current = true;
+      audioDebugLog("music", "mark-system-interruption", audio, {
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+        snapshot: systemPauseSnapshotRef.current,
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResumeSignal = () => {
+      systemPauseBlurredWhileVisibleRef.current = false;
+      if (resumeAfterSystemPauseRef.current) scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
+    };
+    const onVisibilityChange = () => {
+      audioDebugLog("music", "document-visibilitychange", audioRef.current, {
+        nextVisibility: document.visibilityState,
+        resumeFlag: resumeAfterSystemPauseRef.current,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
+      if (document.visibilityState === "hidden") {
+        markSystemAudioInterruption();
+        return;
+      }
+      systemPauseBlurredWhileVisibleRef.current = false;
+      const hiddenAt = systemPauseHiddenAtRef.current;
+      const wasInterrupted = hiddenAt != null && Date.now() - hiddenAt > 1200;
+      systemPauseHiddenAtRef.current = null;
+      if (wasInterrupted || resumeAfterSystemPauseRef.current) {
+        scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
+      }
+    };
+    const onBlur = () => {
+      audioDebugLog("music", "window-blur", audioRef.current);
+      if (document.visibilityState === "visible") systemPauseBlurredWhileVisibleRef.current = true;
+      markSystemAudioInterruption();
+    };
+    const onPageHide = () => {
+      audioDebugLog("music", "window-pagehide", audioRef.current);
+      markSystemAudioInterruption();
+    };
+    const onFreeze = () => {
+      audioDebugLog("music", "document-freeze", audioRef.current);
+      markSystemAudioInterruption();
+    };
+    window.addEventListener("focus", onResumeSignal);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("freeze", onFreeze);
+    window.addEventListener("pageshow", onResumeSignal);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onResumeSignal);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("freeze", onFreeze);
+      window.removeEventListener("pageshow", onResumeSignal);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (resumeAfterSystemPauseTimerRef.current) {
+        window.clearTimeout(resumeAfterSystemPauseTimerRef.current);
+      }
+    };
+  }, [markSystemAudioInterruption, scheduleResumeAfterSystemPause]);
+
+  useEffect(() => {
+    if ("mediaSession" in navigator) return;
+    const retryForegroundPlayback = () => {
+      if (document.visibilityState !== "visible") return;
+      const st = usePlayerStore.getState();
+      if (st.pauseRequested || (!st.activeMusicId && !st.activeExternalTrack)) return;
+      const audio = audioRef.current;
+      if (!audio || !audio.src || !audio.paused || audio.ended) return;
+      audioDebugLog("music", "foreground-paused-retry", audio, {
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+      });
+      audio.muted = false;
+      audio.volume = volume;
+      void playWithSoftStart(audio, volume)
+        .then(() => {
+          setIsPlaying(true);
+          setNeedsTap(false);
+        })
+        .catch(() => {
+          setNeedsTap(true);
+        });
+    };
+    const delayedRetry = () => {
+      retryForegroundPlayback();
+      window.setTimeout(retryForegroundPlayback, 300);
+      window.setTimeout(retryForegroundPlayback, 1000);
+    };
+    window.addEventListener("focus", delayedRetry);
+    window.addEventListener("pageshow", delayedRetry);
+    document.addEventListener("visibilitychange", delayedRetry);
+    return () => {
+      window.removeEventListener("focus", delayedRetry);
+      window.removeEventListener("pageshow", delayedRetry);
+      document.removeEventListener("visibilitychange", delayedRetry);
+    };
+  }, [volume]);
 
   const lastMusicRef = useRef<any>(null);
   const lastAudioUrlRef = useRef<string>("");
   const lastImageUrlRef = useRef<string>("");
+  const lastNativeSessionIdRef = useRef("");
+  const lastNativePlanKeyRef = useRef("");
+  const skipNextNativePlanReloadRef = useRef("");
   const isClosingRef = useRef(false);
 
   if (activeExternalTrack) {
@@ -574,18 +966,27 @@ export function GlobalAudioPlayer() {
   const audioUrl = lastAudioUrlRef.current;
   const imageUrl = lastImageUrlRef.current;
   const isExternalTrack = !!activeExternalTrack;
+  const nativeSessionId = useMemo(
+    () =>
+      activeMusicId != null
+        ? `music:${activeMusicId}`
+        : activeExternalTrack
+          ? `music:external:${activeExternalTrack.url}`
+          : "",
+    [activeMusicId, activeExternalTrack],
+  );
   const baseList = playlist.length > 0 ? playlist : (allMusic?.data?.map((m: any) => m.id) || []);
 
   const tryStartNextTrackImmediately = useCallback((nextId: number) => {
+    if (nativePlayerReady) return;
     const audio = audioRef.current;
-    if (!audio || pauseRequested) return;
+    if (!audio || usePlayerStore.getState().pauseRequested) return;
     try {
       audio.muted = false;
       audio.volume = volume;
       audio.src = `/api/music/${nextId}/stream`;
       audio.load();
-      void audio
-        .play()
+      void playWithSoftStart(audio, volume)
         .then(() => {
           setIsPlaying(true);
           setIsMuted(false);
@@ -599,7 +1000,7 @@ export function GlobalAudioPlayer() {
       setIsPlaying(false);
       setNeedsTap(true);
     }
-  }, [pauseRequested, volume]);
+  }, [nativePlayerReady, pauseRequested, volume]);
 
   useEffect(() => {
     if (shuffleEnabled && baseList.length > 0) {
@@ -612,6 +1013,68 @@ export function GlobalAudioPlayer() {
   }, [baseList.length, shuffleEnabled]);
 
   const currentList = shuffleEnabled && shuffledOrder.length > 0 ? shuffledOrder : baseList;
+  const nativePlaybackPlan = useMemo(() => {
+    if (activeMusicId == null || activeExternalTrack) {
+      return { ids: [] as number[], repeatMode };
+    }
+
+    const currentId = activeMusicId;
+    if (!user || repeatMode === "one") {
+      return {
+        ids: [currentId],
+        repeatMode: !user ? ("none" as RepeatMode) : repeatMode,
+      };
+    }
+
+    const orderedIds = currentList.filter(
+      (id: unknown): id is number => typeof id === "number" && Number.isFinite(id),
+    );
+    const currentIndexInList = orderedIds.indexOf(currentId);
+    if (currentIndexInList < 0) {
+      return { ids: [currentId], repeatMode: "none" as RepeatMode };
+    }
+
+    if (queue.length > 0) {
+      const queuedIds = queue.filter((id) => Number.isFinite(id));
+      const anchorId =
+        queuedIds.length > 0 ? queuedIds[queuedIds.length - 1] : currentId;
+      const anchorIndex = orderedIds.indexOf(anchorId);
+      const continuation =
+        anchorIndex >= 0
+          ? orderedIds.slice(anchorIndex + 1)
+          : orderedIds.slice(currentIndexInList + 1);
+      return {
+        ids: [currentId, ...queuedIds, ...continuation].slice(0, 500),
+        // The web queue is one-shot. Repeating the native list would replay queued entries.
+        repeatMode: "none" as RepeatMode,
+      };
+    }
+
+    if (repeatMode === "all") {
+      return {
+        ids: [
+          ...orderedIds.slice(currentIndexInList),
+          ...orderedIds.slice(0, currentIndexInList),
+        ].slice(0, 500),
+        repeatMode,
+      };
+    }
+
+    return {
+      ids: orderedIds.slice(currentIndexInList, currentIndexInList + 500),
+      repeatMode: "none" as RepeatMode,
+    };
+  }, [
+    activeMusicId,
+    activeExternalTrack,
+    currentList,
+    queue,
+    repeatMode,
+    user,
+  ]);
+  useEffect(() => {
+    if (currentList.length > 0) currentListRef.current = currentList;
+  }, [currentList]);
 
   const initEqualizer = useCallback(() => {
     const audio = audioRef.current;
@@ -641,7 +1104,7 @@ export function GlobalAudioPlayer() {
       filters[filters.length - 1].connect(ctx.destination);
       eqFiltersRef.current = filters;
 
-      if (ctx.state === 'suspended') {
+      if (ctx.state !== 'running' && ctx.state !== 'closed') {
         ctx.resume().catch(() => {});
       }
     } catch {}
@@ -693,8 +1156,14 @@ export function GlobalAudioPlayer() {
 
   const playNext = useCallback(() => {
     tracker.onEnded();
-    if (activeExternalTrack) {
+    const playerState = usePlayerStore.getState();
+    if (playerState.activeExternalTrack) {
       if (repeatMode === 'one') {
+        if (nativePlayerReady) {
+          postNativePlayerMessage("player.seek", { positionMs: 0 });
+          postNativePlayerMessage("player.play");
+          return;
+        }
         const audio = audioRef.current;
         if (audio) {
           audio.currentTime = 0;
@@ -703,15 +1172,35 @@ export function GlobalAudioPlayer() {
       }
       return;
     }
-    if (queue.length > 0) {
-      const nextId = queue[0];
-      removeFromQueue(0);
-      playMusic(nextId);
-      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+    if (playerState.queue.length > 0) {
+      const nextId = playerState.queue[0];
+      if (blockGuestPlaybackIfNeeded()) return;
+      clearGlobalRadioForOnDemandPlayback();
+      usePlayerStore.setState({
+        activeMusicId: nextId,
+        activeExternalTrack: null,
+        pauseRequested: false,
+        lyricsRequested: false,
+        queue: playerState.queue.slice(1),
+      });
+      tryStartNextTrackImmediately(nextId);
       return;
     }
-    if (currentList.length === 0) return;
+    const nextList = playerState.shuffleEnabled && playerState.shuffledOrder.length > 0
+      ? playerState.shuffledOrder
+      : playerState.playlist.length > 0
+        ? playerState.playlist
+        : currentListRef.current.length > 0
+          ? currentListRef.current
+          : currentList;
+    const nextCurrentIndex = playerState.activeMusicId ? nextList.indexOf(playerState.activeMusicId) : -1;
+    if (nextList.length === 0) return;
     if (repeatMode === 'one') {
+      if (nativePlayerReady) {
+        postNativePlayerMessage("player.seek", { positionMs: 0 });
+        postNativePlayerMessage("player.play");
+        return;
+      }
       const audio = audioRef.current;
       if (audio) {
         audio.currentTime = 0;
@@ -719,23 +1208,31 @@ export function GlobalAudioPlayer() {
       }
       return;
     }
-    const nextIndex = currentIndex + 1;
-    if (nextIndex >= currentList.length) {
+    const nextIndex = nextCurrentIndex + 1;
+    if (nextIndex >= nextList.length) {
       if (repeatMode === 'all') {
-        const nextId = currentList[0];
-        playMusic(nextId);
-        if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+        const nextId = nextList[0];
+        if (blockGuestPlaybackIfNeeded()) return;
+        clearGlobalRadioForOnDemandPlayback();
+        usePlayerStore.setState({ activeMusicId: nextId, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
+        tryStartNextTrackImmediately(nextId);
       }
     } else {
-      const nextId = currentList[nextIndex];
-      playMusic(nextId);
-      if (document.visibilityState === "hidden") tryStartNextTrackImmediately(nextId);
+      const nextId = nextList[nextIndex];
+      if (blockGuestPlaybackIfNeeded()) return;
+      clearGlobalRadioForOnDemandPlayback();
+      usePlayerStore.setState({ activeMusicId: nextId, activeExternalTrack: null, pauseRequested: false, lyricsRequested: false });
+      tryStartNextTrackImmediately(nextId);
     }
-  }, [tracker, activeExternalTrack, currentList, currentIndex, playMusic, repeatMode, queue, removeFromQueue, tryStartNextTrackImmediately]);
+  }, [tracker, currentList, repeatMode, tryStartNextTrackImmediately, nativePlayerReady]);
 
   const playPrev = useCallback(() => {
     tracker.onEnded();
     if (currentList.length === 0) return;
+    if (nativePlayerReady && currentTime > 3) {
+      postNativePlayerMessage("player.seek", { positionMs: 0 });
+      return;
+    }
     const audio = audioRef.current;
     if (audio && audio.currentTime > 3) {
       audio.currentTime = 0;
@@ -743,13 +1240,168 @@ export function GlobalAudioPlayer() {
     }
     const prevIndex = (currentIndex - 1 + currentList.length) % currentList.length;
     playMusic(currentList[prevIndex]);
-  }, [tracker, currentList, currentIndex, playMusic]);
+  }, [tracker, currentList, currentIndex, playMusic, nativePlayerReady, currentTime]);
 
   const handlePlayFromQueue = useCallback((index: number) => {
     const id = queue[index];
     removeFromQueue(index);
     playMusic(id);
   }, [queue, removeFromQueue, playMusic]);
+
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeSessionId || !audioUrl || !displayMusic) return;
+    if (activeMusicId != null && music?.id !== activeMusicId) return;
+
+    const planKey = JSON.stringify({
+      sessionId: nativeSessionId,
+      ids: nativePlaybackPlan.ids,
+      repeatMode: nativePlaybackPlan.repeatMode,
+      externalUrl: activeExternalTrack?.url ?? "",
+    });
+    const priorNativeSessionId = lastNativeSessionIdRef.current;
+    if (skipNextNativePlanReloadRef.current === nativeSessionId) {
+      skipNextNativePlanReloadRef.current = "";
+      lastNativeSessionIdRef.current = nativeSessionId;
+      lastNativePlanKeyRef.current = planKey;
+      return;
+    }
+    if (
+      priorNativeSessionId === nativeSessionId &&
+      lastNativePlanKeyRef.current === planKey
+    ) {
+      return;
+    }
+
+    const handoffPositionSeconds =
+      priorNativeSessionId === nativeSessionId || !priorNativeSessionId
+        ? currentTime
+        : 0;
+    lastNativeSessionIdRef.current = nativeSessionId;
+    lastNativePlanKeyRef.current = planKey;
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+
+    const musicRows = Array.isArray(allMusic?.data) ? allMusic.data : [];
+    const nativeItems = nativePlaybackPlan.ids.map((id) => {
+      const track =
+        id === activeMusicId
+          ? displayMusic
+          : musicRows.find((candidate: any) => candidate?.id === id);
+      const artworkPath = track?.imageFilename
+        ? resolveStorageUrl(track.imageFilename)
+        : "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=150&h=150&fit=crop";
+      return {
+        sessionId: `music:${id}`,
+        url: new URL(`/api/music/${id}/stream`, window.location.origin).toString(),
+        title: track?.title ?? "VenySound",
+        artist: track?.artist ?? "",
+        album: "VenySound",
+        artworkUrl: new URL(artworkPath, window.location.origin).toString(),
+      };
+    });
+
+    postNativePlayerMessage("player.load", {
+      mode: "music",
+      sessionId: nativeSessionId,
+      url: new URL(audioUrl, window.location.origin).toString(),
+      title: displayMusic.title ?? "VenySound",
+      artist: displayMusic.artist ?? "",
+      album: "VenySound",
+      artworkUrl: imageUrl ? new URL(imageUrl, window.location.origin).toString() : "",
+      positionMs: Math.max(0, Math.floor(handoffPositionSeconds * 1000)),
+      autoplay: !pauseRequested,
+      repeatMode: nativePlaybackPlan.repeatMode,
+      items: nativeItems.length > 0 ? nativeItems : undefined,
+    });
+  }, [
+    nativePlayerReady,
+    nativeSessionId,
+    audioUrl,
+    displayMusic?.title,
+    displayMusic?.artist,
+    imageUrl,
+    activeMusicId,
+    activeExternalTrack,
+    music?.id,
+    nativePlaybackPlan,
+    allMusic?.data,
+    currentTime,
+    pauseRequested,
+  ]);
+
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeSessionId) return;
+    return subscribeNativePlayer((message) => {
+      const payload = message.payload;
+      if (message.type === "player.transition") {
+        const nextSessionId =
+          typeof payload.sessionId === "string" ? payload.sessionId : "";
+        const match = /^music:(\d+)$/.exec(nextSessionId);
+        if (!match) return;
+        const nextMusicId = Number.parseInt(match[1], 10);
+        if (!Number.isFinite(nextMusicId)) return;
+        if (payload.previousSessionId === nativeSessionId) tracker.onEnded();
+        lastNativeSessionIdRef.current = nextSessionId;
+        skipNextNativePlanReloadRef.current = nextSessionId;
+        if (typeof payload.positionMs === "number") {
+          setCurrentTime(Math.max(0, payload.positionMs / 1000));
+        } else {
+          setCurrentTime(0);
+        }
+        usePlayerStore.setState((state) => ({
+          activeMusicId: nextMusicId,
+          activeExternalTrack: null,
+          pauseRequested: false,
+          lyricsRequested: false,
+          queue:
+            state.queue[0] === nextMusicId
+              ? state.queue.slice(1)
+              : state.queue,
+        }));
+        return;
+      }
+      if (
+        typeof payload.sessionId === "string" &&
+        payload.sessionId &&
+        payload.sessionId !== nativeSessionId
+      ) {
+        return;
+      }
+      if (message.type === "player.state" || message.type === "player.position") {
+        if (typeof payload.positionMs === "number") setCurrentTime(Math.max(0, payload.positionMs / 1000));
+        if (typeof payload.durationMs === "number" && payload.durationMs > 0) {
+          setDuration(payload.durationMs / 1000);
+        }
+        if (typeof payload.isPlaying === "boolean") setIsPlaying(payload.isPlaying);
+        const nativeIntendsPlayback =
+          typeof payload.userIntendsPlayback === "boolean"
+            ? payload.userIntendsPlayback
+            : typeof payload.playWhenReady === "boolean"
+              ? payload.playWhenReady
+              : null;
+        if (nativeIntendsPlayback != null) {
+          const nextPauseRequested = !nativeIntendsPlayback;
+          if (usePlayerStore.getState().pauseRequested !== nextPauseRequested) {
+            nativePauseSyncValueRef.current = nextPauseRequested;
+            setPauseRequested(nextPauseRequested);
+          }
+        }
+        return;
+      }
+      if (message.type === "player.ended") {
+        playNext();
+        return;
+      }
+      if (message.type === "player.error") {
+        setIsPlaying(false);
+        setNeedsTap(true);
+      }
+    });
+  }, [nativePlayerReady, nativeSessionId, playNext, setPauseRequested, tracker]);
 
   useEffect(() => {
     setShowLyricsPanel(false);
@@ -760,14 +1412,19 @@ export function GlobalAudioPlayer() {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !audioUrl || !hasTrack) return;
+    if (nativePlayerReady) return;
     let cancelled = false;
+    const playKey = `${audioUrl}:${activeMusicId ?? ""}:${activeExternalTrack?.url ?? ""}`;
+    playAttemptKeyRef.current = null;
 
     const tryPlay = () => {
       if (cancelled || usePlayerStore.getState().pauseRequested) return;
+      if (playAttemptKeyRef.current === playKey) return;
+      playAttemptKeyRef.current = playKey;
+      const targetVolume = volumeRef.current;
       audio.muted = false;
-      audio.volume = volume;
-      void audio
-        .play()
+      audio.volume = targetVolume;
+      void playWithSoftStart(audio, targetVolume)
         .then(() => {
           if (!cancelled) {
             audio.muted = false;
@@ -775,20 +1432,12 @@ export function GlobalAudioPlayer() {
           }
         })
         .catch(() => {
-          if (cancelled) return;
-          audio.muted = true;
-          void audio
-            .play()
-            .then(() => {
-              if (!cancelled) {
-                audio.muted = false;
-                setIsMuted(false);
-                setNeedsTap(false);
-              }
-            })
-            .catch(() => {
-              if (!cancelled) setNeedsTap(true);
-            });
+          if (!cancelled) setNeedsTap(true);
+        })
+        .finally(() => {
+          window.setTimeout(() => {
+            if (playAttemptKeyRef.current === playKey) playAttemptKeyRef.current = null;
+          }, 500);
         });
     };
 
@@ -803,7 +1452,6 @@ export function GlobalAudioPlayer() {
     if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       tryPlay();
     } else {
-      audio.addEventListener("canplaythrough", onReadyOnce, { once: true });
       audio.addEventListener("canplay", onReadyOnce, { once: true });
     }
 
@@ -815,16 +1463,43 @@ export function GlobalAudioPlayer() {
     return () => {
       cancelled = true;
       window.clearTimeout(retryTimer);
-      audio.removeEventListener("canplaythrough", onReadyOnce);
       audio.removeEventListener("canplay", onReadyOnce);
     };
-  }, [audioUrl, activeMusicId, activeExternalTrack, volume]);
+  }, [audioUrl, activeMusicId, activeExternalTrack, nativePlayerReady]);
 
   useEffect(() => {
     const audio = audioRef.current;
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio) return;
+    if (nativePlayerReady) {
+      if (!hasTrack) {
+        const sessionId = lastNativeSessionIdRef.current;
+        if (sessionId) {
+          postNativePlayerMessage("player.stop", { mode: "music", sessionId });
+          lastNativeSessionIdRef.current = "";
+          lastNativePlanKeyRef.current = "";
+          skipNextNativePlanReloadRef.current = "";
+        }
+        setIsPlaying(false);
+        setCurrentTime(0);
+        setDuration(0);
+      } else {
+        const nativeSyncedPause = nativePauseSyncValueRef.current;
+        if (nativeSyncedPause === pauseRequested) {
+          nativePauseSyncValueRef.current = null;
+        } else if (prevPauseRequestedRef.current !== pauseRequested) {
+          nativePauseSyncValueRef.current = null;
+          postNativePlayerMessage(pauseRequested ? "player.pause" : "player.play", {
+            mode: "music",
+            sessionId: nativeSessionId,
+          });
+        }
+      }
+      prevPauseRequestedRef.current = pauseRequested;
+      return;
+    }
     if (!hasTrack) {
+      prevPauseRequestedRef.current = pauseRequested;
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
@@ -835,35 +1510,35 @@ export function GlobalAudioPlayer() {
       return;
     }
     if (pauseRequested) {
+      cancelSystemResume();
+      prevPauseRequestedRef.current = true;
       audio.pause();
       setIsPlaying(false);
       return;
     }
+    if (!prevPauseRequestedRef.current) return;
+    prevPauseRequestedRef.current = false;
     if (audio.src && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       audio.muted = false;
       audio.volume = volume;
-      void audio
-        .play()
+      void playWithSoftStart(audio, volume)
         .then(() => {
           setIsPlaying(true);
           setNeedsTap(false);
         })
         .catch(() => {
-          audio.muted = true;
-          void audio
-            .play()
-            .then(() => {
-              audio.muted = false;
-              setIsPlaying(true);
-              setIsMuted(false);
-              setNeedsTap(false);
-            })
-            .catch(() => {
-              setNeedsTap(true);
-            });
+          setNeedsTap(true);
         });
     }
-  }, [pauseRequested, activeMusicId, activeExternalTrack, volume]);
+  }, [
+    cancelSystemResume,
+    pauseRequested,
+    activeMusicId,
+    activeExternalTrack,
+    volume,
+    nativePlayerReady,
+    nativeSessionId,
+  ]);
 
   // 일부 모바일(특히 S24/LTE 백그라운드)에서 "조용히 paused" 되는 케이스 방지:
   // 재생해야 하는데 paused면 hidden 상태에서도 isPlaying 동기화 + 재생 재시도 + 실패 시 needsTap 노출
@@ -872,6 +1547,7 @@ export function GlobalAudioPlayer() {
     const hasTrack = activeMusicId || activeExternalTrack;
     if (!audio || !hasTrack) return;
     if (pauseRequested) return;
+    if ("mediaSession" in navigator) return;
 
     const isCoarseOrTouchDevice = () => {
       try {
@@ -888,6 +1564,16 @@ export function GlobalAudioPlayer() {
       const st = usePlayerStore.getState();
       const shouldBePlaying = !st.pauseRequested && (!!st.activeMusicId || !!st.activeExternalTrack);
       if (!shouldBePlaying) return;
+      if (systemPauseBlurredWhileVisibleRef.current) {
+        if (document.visibilityState === "visible" && document.hasFocus()) {
+          systemPauseBlurredWhileVisibleRef.current = false;
+          if (resumeAfterSystemPauseRef.current) {
+            scheduleResumeAfterSystemPause(systemPauseNeedsReloadRef.current);
+          }
+        } else {
+          return;
+        }
+      }
       const a = audioRef.current;
       if (!a) return;
 
@@ -896,7 +1582,7 @@ export function GlobalAudioPlayer() {
       if (a.paused) {
         a.muted = false;
         a.volume = volume;
-        void a.play()
+        void playWithSoftStart(a, volume)
           .then(() => setNeedsTap(false))
           .catch(() => {
             setIsPlaying(false);
@@ -906,7 +1592,7 @@ export function GlobalAudioPlayer() {
     }, 1200);
 
     return () => window.clearInterval(interval);
-  }, [activeMusicId, activeExternalTrack, pauseRequested, volume, isPlaying]);
+  }, [activeMusicId, activeExternalTrack, pauseRequested, volume, isPlaying, scheduleResumeAfterSystemPause]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -922,9 +1608,43 @@ export function GlobalAudioPlayer() {
       setCurrentTime(0);
     };
     const onDurationChange = () => setDuration(audio.duration);
-    const onPlay = () => { setIsPlaying(true); tracker.onPlay(); };
-    const onPause = () => { setIsPlaying(false); tracker.onPause(); };
+    const onPlay = () => {
+      audioDebugLog("music", "audio-play", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+        needsReload: systemPauseNeedsReloadRef.current,
+      });
+      resumeAfterSystemPauseRef.current = false;
+      setIsPlaying(true);
+      tracker.onPlay();
+    };
+    const onPause = () => {
+      const st = usePlayerStore.getState();
+      audioDebugLog("music", "audio-pause", audio, {
+        pauseRequested: st.pauseRequested,
+        activeMusicId: st.activeMusicId,
+        hasExternalTrack: !!st.activeExternalTrack,
+        resumeFlag: resumeAfterSystemPauseRef.current,
+      });
+      if (!st.pauseRequested && (st.activeMusicId || st.activeExternalTrack) && !audio.ended) {
+        markSystemAudioInterruption();
+        systemPauseNeedsReloadRef.current = true;
+        scheduleResumeAfterSystemPause();
+      }
+      setIsPlaying(false);
+      tracker.onPause();
+    };
     const onEnded = () => {
+      const d = audio.duration;
+      const isNaturalEnd = audio.ended || (Number.isFinite(d) && d > 0 && audio.currentTime >= d - 0.5);
+      audioDebugLog("music", "audio-ended", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+        isNaturalEnd,
+      });
+      if (resumeAfterSystemPauseRef.current && !isNaturalEnd) {
+        systemPauseNeedsReloadRef.current = true;
+        scheduleResumeAfterSystemPause(true);
+        return;
+      }
       setIsPlaying(false);
       // 연속 재생 여부는 playMusic 내부의 guest quota 차단(blockGuestPlaybackIfNeeded)에서 결정한다.
       // (모바일에서 auth/user가 순간 null로 흔들리면 여기서 연속 재생이 끊기는 문제가 있어 ended에서는 항상 다음 곡을 시도)
@@ -933,6 +1653,14 @@ export function GlobalAudioPlayer() {
     };
     const onError = () => {
       if (isClosingRef.current) return;
+      audioDebugLog("music", "audio-error", audio, {
+        resumeFlag: resumeAfterSystemPauseRef.current,
+      });
+      if (resumeAfterSystemPauseRef.current) {
+        systemPauseNeedsReloadRef.current = true;
+        scheduleResumeAfterSystemPause(true);
+        return;
+      }
       setIsPlaying(false);
       if (displayMusic?.title) {
         toast({
@@ -967,14 +1695,35 @@ export function GlobalAudioPlayer() {
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    if (nativePlayerReady) {
+      const shouldPause = isPlaying;
+      nativePauseSyncValueRef.current = null;
+      prevPauseRequestedRef.current = shouldPause;
+      setPauseRequested(shouldPause);
+      postNativePlayerMessage(shouldPause ? "player.pause" : "player.play", {
+        mode: "music",
+        sessionId: nativeSessionId,
+      });
+      return;
+    }
     if (audio.paused) {
       setPauseRequested(false);
-      audio.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+      audio.muted = false;
+      audio.volume = volume;
+      void audio.play().catch(() => setNeedsTap(true));
     } else {
+      cancelSystemResume();
       setPauseRequested(true);
       audio.pause();
     }
-  }, [setPauseRequested]);
+  }, [
+    cancelSystemResume,
+    setPauseRequested,
+    volume,
+    nativePlayerReady,
+    isPlaying,
+    nativeSessionId,
+  ]);
 
   const toggleMute = useCallback(() => {
     const audio = audioRef.current;
@@ -988,6 +1737,7 @@ export function GlobalAudioPlayer() {
     if (!audio) return;
     const v = parseFloat(e.target.value);
     audio.volume = v;
+    volumeRef.current = v;
     setVolume(v);
     if (v === 0) {
       audio.muted = true;
@@ -1006,9 +1756,14 @@ export function GlobalAudioPlayer() {
     const rect = bar.getBoundingClientRect();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
-    setCurrentTime(ratio * duration);
-  }, [duration]);
+    const nextTime = ratio * duration;
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.seek", { positionMs: Math.floor(nextTime * 1000) });
+    } else {
+      audio.currentTime = nextTime;
+    }
+    setCurrentTime(nextTime);
+  }, [duration, nativePlayerReady]);
 
   const handleSeekStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     setIsSeeking(true);
@@ -1021,8 +1776,13 @@ export function GlobalAudioPlayer() {
       const rect = bar.getBoundingClientRect();
       const clientX = 'touches' in ev ? ev.touches[0].clientX : (ev as MouseEvent).clientX;
       const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      audio.currentTime = ratio * duration;
-      setCurrentTime(ratio * duration);
+      const nextTime = ratio * duration;
+      if (nativePlayerReady) {
+        postNativePlayerMessage("player.seek", { positionMs: Math.floor(nextTime * 1000) });
+      } else {
+        audio.currentTime = nextTime;
+      }
+      setCurrentTime(nextTime);
     };
 
     const onEnd = () => {
@@ -1037,11 +1797,17 @@ export function GlobalAudioPlayer() {
     document.addEventListener('mouseup', onEnd);
     document.addEventListener('touchmove', onMove);
     document.addEventListener('touchend', onEnd);
-  }, [duration, handleSeek]);
+  }, [duration, handleSeek, nativePlayerReady]);
 
   const handleClose = useCallback(() => {
     isClosingRef.current = true;
     tracker.onEnded();
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.stop", {
+        mode: "music",
+        sessionId: nativeSessionId,
+      });
+    }
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -1056,11 +1822,12 @@ export function GlobalAudioPlayer() {
     }
     closePlayer();
     setTimeout(() => { isClosingRef.current = false; }, 300);
-  }, [tracker, closePlayer]);
+  }, [tracker, closePlayer, nativePlayerReady, nativeSessionId]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!displayMusic || !('mediaSession' in navigator)) return;
 
     navigator.mediaSession.metadata = new MediaMetadata({
@@ -1069,14 +1836,10 @@ export function GlobalAudioPlayer() {
       artwork: imageUrl ? [{ src: imageUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     });
 
-    navigator.mediaSession.setActionHandler('play', () => {
-      setPauseRequested(false);
-      audioRef.current?.play().catch(() => {});
-    });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      setPauseRequested(true);
-      audioRef.current?.pause();
-    });
+    // play/pause는 Android Chrome 기본 MediaSession에 맡겨 통화의 일시적
+    // 오디오 포커스 손실과 사용자의 알림 플레이바 조작을 브라우저가 구분하게 한다.
+    navigator.mediaSession.setActionHandler('play', null);
+    navigator.mediaSession.setActionHandler('pause', null);
     navigator.mediaSession.setActionHandler('previoustrack', playPrev);
     navigator.mediaSession.setActionHandler('nexttrack', playNext);
     navigator.mediaSession.setActionHandler('seekto', (details) => {
@@ -1095,9 +1858,10 @@ export function GlobalAudioPlayer() {
         navigator.mediaSession.setActionHandler('seekto', null);
       }
     };
-  }, [displayMusic, imageUrl, playNext, playPrev, setPauseRequested]);
+  }, [displayMusic, imageUrl, playNext, playPrev, nativePlayerReady]);
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!("mediaSession" in navigator)) return;
     const playing = isPlaying && !pauseRequested;
     try {
@@ -1105,9 +1869,10 @@ export function GlobalAudioPlayer() {
     } catch {
       /* ignore */
     }
-  }, [isPlaying, pauseRequested]);
+  }, [isPlaying, pauseRequested, nativePlayerReady]);
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!('mediaSession' in navigator) || !audioRef.current) return;
     const audio = audioRef.current;
     const updatePositionState = () => {
@@ -1123,7 +1888,7 @@ export function GlobalAudioPlayer() {
     };
     const interval = setInterval(updatePositionState, 1000);
     return () => clearInterval(interval);
-  }, [activeMusicId]);
+  }, [activeMusicId, nativePlayerReady]);
 
   const togglePanel = useCallback((panel: 'lyrics' | 'queue' | 'eq') => {
     if (panel === 'lyrics') {
@@ -1163,7 +1928,7 @@ export function GlobalAudioPlayer() {
               if (!a) return;
               a.muted = false;
               a.volume = volume;
-              void a.play().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
+              void playWithSoftStart(a, volume).then(() => setNeedsTap(false)).catch(() => setNeedsTap(true));
             }}
           >
             {t("player.tapToContinue", "탭해서 계속 듣기")}

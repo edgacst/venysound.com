@@ -139,23 +139,22 @@ export function getWalletBackedPaidTierId(user: UserSubscriptionFields | undefin
   return sumRemainingSubscriptionAiWallet(user?.subscriptionAiWallet) > 0 ? (tier as PaidSubscriptionTierId) : null;
 }
 
+export function isSubscriptionAiWalletDepleted(user: (UserSubscriptionFields & { role?: string | null }) | undefined): boolean {
+  if (!user || user.role === "admin") return false;
+  const tier = String(user.subscriptionTier ?? "free").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(tier)) return false;
+  return sumRemainingSubscriptionAiWallet(user.subscriptionAiWallet) < AI_MUSIC_WON_PER_TRACK;
+}
+
 export function isUserPaidSubscriptionActive(user: UserSubscriptionFields | undefined, now: Date): boolean {
   if (!user) return false;
-  const view = buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now);
-  const pruned = pruneExpiredEntitlements(view, now);
-  return getActivePaidTierIds(pruned, now).length > 0 || getWalletBackedPaidTierId(user) != null;
+  return getWalletBackedPaidTierId(user) != null;
 }
 
 /** 활성 유료 플랜이 있으면 각 tier 월 AI 예산(원)을 합산 */
 export function sumActivePaidAiMusicMonthlyWonBudget(user: UserSubscriptionFields | undefined, now: Date): number {
-  const view = buildEntitlementsView(user?.subscriptionEntitlements, user?.subscriptionTier, user?.subscriptionExpiresAt, now);
-  const pruned = pruneExpiredEntitlements(view, now);
-  const active = getActivePaidTierIds(pruned, now);
-  if (active.length === 0) {
-    const walletTier = getWalletBackedPaidTierId(user);
-    return walletTier ? AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[walletTier] : FREE_AI_MUSIC_LIMIT_PER_MONTH;
-  }
-  return active.reduce((sum, t) => sum + AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[t], 0);
+  const walletTier = getWalletBackedPaidTierId(user);
+  return walletTier ? AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[walletTier] : FREE_AI_MUSIC_LIMIT_PER_MONTH;
 }
 
 /** @deprecated sumActivePaidAiMusicMonthlyWonBudget */
@@ -196,25 +195,9 @@ export function getAiMusicUsagePeriodKey(
 ): string {
   const cal = calendarMonthKeyUtc(now);
   if (role === "admin") return cal;
-  if (!isUserPaidSubscriptionActive(user, now)) return cal;
-
   const walletTier = getWalletBackedPaidTierId(user);
   if (walletTier) return `wallet:${walletTier}`;
-
-  const billing = String(user?.subscriptionPlan ?? "").trim().toLowerCase();
-  if (billing === "yearly") {
-    return cal;
-  }
-
-  const computed = computeDisplayedSubscriptionFromEntitlements(
-    user?.subscriptionEntitlements,
-    user?.subscriptionTier,
-    user?.subscriptionExpiresAt,
-    now,
-  );
-  const exp = computed.subscriptionExpiresAt;
-  if (!exp || !(exp instanceof Date) || isNaN(exp.getTime())) return cal;
-  return `sub:${exp.getTime()}`;
+  return cal;
 }
 
 /** UI·DB 레거시 컬럼용: 최고 tier + 활성 tier 중 가장 늦은 만료 */
@@ -229,21 +212,11 @@ export function computeDisplayedSubscriptionFromEntitlements(
   subscriptionTier: string;
   subscriptionExpiresAt: Date | null;
 } {
-  const view = buildEntitlementsView(stored, legacyTier, legacyExp, now);
-  const pruned = pruneExpiredEntitlements(view, now);
-  const active = getActivePaidTierIds(pruned, now);
-  if (active.length === 0) {
-    const walletTier = getWalletBackedPaidTierId({ subscriptionTier: legacyTier, subscriptionAiWallet });
-    if (walletTier) {
-      return { subscriptionEntitlements: pruned, subscriptionTier: walletTier, subscriptionExpiresAt: null };
-    }
-    return { subscriptionEntitlements: pruned, subscriptionTier: "free", subscriptionExpiresAt: null };
+  const walletTier = getWalletBackedPaidTierId({ subscriptionTier: legacyTier, subscriptionAiWallet });
+  if (walletTier) {
+    return { subscriptionEntitlements: {}, subscriptionTier: walletTier, subscriptionExpiresAt: null };
   }
-  return {
-    subscriptionEntitlements: pruned,
-    subscriptionTier: highestPaidTier(active),
-    subscriptionExpiresAt: maxExpiryAmongTiers(pruned, active),
-  };
+  return { subscriptionEntitlements: {}, subscriptionTier: "free", subscriptionExpiresAt: null };
 }
 
 export function subscriptionRowNeedsSync(
@@ -279,9 +252,7 @@ export function hasActivePremiumSubscription(
 ): boolean {
   if (!user) return false;
   if (user.role === "admin") return true;
-  const view = buildEntitlementsView(user.subscriptionEntitlements, user.subscriptionTier, user.subscriptionExpiresAt, now);
-  const pruned = pruneExpiredEntitlements(view, now);
-  return getActivePaidTierIds(pruned, now).includes("premium");
+  return getWalletBackedPaidTierId(user) === "premium";
 }
 
 /** @deprecated AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER */

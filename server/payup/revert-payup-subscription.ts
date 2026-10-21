@@ -66,11 +66,8 @@ export async function revertPayupCardSubscriptionPaymentById(
   if (!payment) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
 
   const st = String(payment.status ?? "").trim().toLowerCase();
-  if (st === "refunded") {
-    return { ok: true, downgradedUser: false, userId: payment.userId, noop: "already_refunded" };
-  }
-  if (st !== "paid") {
-    return { ok: false, message: `paid 상태의 건만 처리할 수 있습니다. (현재: ${payment.status ?? "?"})` };
+  if (st !== "paid" && st !== "refunded") {
+    return { ok: false, message: `paid/refunded 상태의 건만 처리할 수 있습니다. (현재: ${payment.status ?? "?"})` };
   }
 
   const planNorm = String(payment.plan ?? "").trim().toLowerCase();
@@ -90,11 +87,8 @@ export async function revertPayupCardSubscriptionPaymentById(
     const [cur] = await tx.select().from(payments).where(eq(payments.id, paymentId));
     if (!cur) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
     const curSt = String(cur.status ?? "").trim().toLowerCase();
-    if (curSt === "refunded") {
-      return { ok: true, downgradedUser: false, userId: cur.userId, noop: "already_refunded" };
-    }
-    if (curSt !== "paid") {
-      return { ok: false, message: `paid 상태의 건만 처리할 수 있습니다. (현재: ${cur.status ?? "?"})` };
+    if (curSt !== "paid" && curSt !== "refunded") {
+      return { ok: false, message: `paid/refunded 상태의 건만 처리할 수 있습니다. (현재: ${cur.status ?? "?"})` };
     }
 
     const pk2 = normalizePaymentKeyString(cur.paymentKey);
@@ -114,26 +108,36 @@ export async function revertPayupCardSubscriptionPaymentById(
           eq(payments.status, "paid"),
           inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
           ne(payments.id, paymentId),
+          cur.createdAt ? sql`${payments.createdAt} > ${cur.createdAt}` : sql`true`,
         ),
       )
       .limit(1);
     const hasOtherPaidSub = others.length > 0;
 
-    const prevMeta =
-      cur.payupMeta && typeof cur.payupMeta === "object" ? ({ ...(cur.payupMeta as Record<string, unknown>) } as Record<string, unknown>) : {};
-    await tx
-      .update(payments)
-      .set({
-        status: "refunded",
-        paymentKey: normalizedKey.toLowerCase().startsWith("payup:") ? normalizedKey : cur.paymentKey,
-        payupMeta: {
-          ...prevMeta,
-          pgCancelRevertedAt: new Date().toISOString(),
-        },
-      })
-      .where(eq(payments.id, paymentId));
+    if (curSt === "paid") {
+      const prevMeta =
+        cur.payupMeta && typeof cur.payupMeta === "object" ? ({ ...(cur.payupMeta as Record<string, unknown>) } as Record<string, unknown>) : {};
+      await tx
+        .update(payments)
+        .set({
+          status: "refunded",
+          paymentKey: normalizedKey.toLowerCase().startsWith("payup:") ? normalizedKey : cur.paymentKey,
+          payupMeta: {
+            ...prevMeta,
+            pgCancelRevertedAt: new Date().toISOString(),
+          },
+        })
+        .where(eq(payments.id, paymentId));
+    }
 
+    let downgradedUser = false;
     if (!hasOtherPaidSub) {
+      const [curUser] = await tx
+        .select({ subscriptionTier: users.subscriptionTier })
+        .from(users)
+        .where(eq(users.id, cur.userId))
+        .limit(1);
+      downgradedUser = isPaidSubscriptionTierId(String(curUser?.subscriptionTier ?? "").trim().toLowerCase());
       await tx
         .update(users)
         .set({
@@ -149,6 +153,11 @@ export async function revertPayupCardSubscriptionPaymentById(
         })
         .where(eq(users.id, cur.userId));
     }
-    return { ok: true, downgradedUser: !hasOtherPaidSub, userId: cur.userId };
+    return {
+      ok: true,
+      downgradedUser,
+      userId: cur.userId,
+      ...(curSt === "refunded" && !downgradedUser ? { noop: "already_refunded" as const } : {}),
+    };
   });
 }

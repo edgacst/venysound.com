@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, type RefObject } from "react";
+import { useRef, useEffect, useCallback, useState, useSyncExternalStore, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Pause, Play, X, Radio } from "lucide-react";
 import { useRadioPlayerStore, radioSeekSecondsForHandoff } from "@/stores/radio-player";
@@ -14,6 +14,13 @@ import { Link, useLocation } from "wouter";
 import { useResumeAudioWhenForeground } from "@/hooks/use-resume-audio-when-foreground";
 import { useScreenWakeLockWhilePlaying } from "@/hooks/use-screen-wake-lock-while-playing";
 import { usePlayerStore } from "@/components/AudioPlayer";
+import { audioDebugLog } from "@/lib/audio-debug";
+import {
+  isNativePlayerReady,
+  postNativePlayerMessage,
+  subscribeNativePlayer,
+  subscribeNativePlayerReady,
+} from "@/lib/native-player-bridge";
 
 const REFETCH_INTERVAL_MS = 8000;
 /** 모바일/네트워크 흔들림에서 status가 잠깐 non-live로 오는 경우가 있어 즉시 clear하지 않음 */
@@ -22,6 +29,11 @@ const POLL_NOT_LIVE_CLEAR_AFTER = 5;
 const LISTENER_ADVANCE_AFTER_TRACK_END_MS = 1000;
 /** LTE에서 client-advance 실패 시 재시도 간격(ms) */
 const CLIENT_ADVANCE_RETRY_DELAYS_MS = [2000, 5000, 10000] as const;
+/**
+ * 라디오는 실제 웹 <audio>가 재생 중이어야 백그라운드에서도 Chrome이 onEnded를 전달한다.
+ * Media3로 넘기면 웹 페이지가 동결되어 보호 로직인 onAudioEnded → client-advance가 멈춘다.
+ */
+const NATIVE_RADIO_PLAYBACK_ENABLED = false;
 
 /** `/api/music/:id/stream` 형태만 id 추출 (로컬 파일 object path는 null) */
 function musicIdFromSiteMusicStreamUrl(url: string | null | undefined): number | null {
@@ -95,6 +107,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const isAuthenticated = !!user;
   const audioARef = useRef<HTMLAudioElement | null>(null);
   const audioBRef = useRef<HTMLAudioElement | null>(null);
+  const nativeBridgeReady = useSyncExternalStore(
+    subscribeNativePlayerReady,
+    isNativePlayerReady,
+    () => false,
+  );
+  const nativePlayerReady = nativeBridgeReady && NATIVE_RADIO_PLAYBACK_ENABLED;
   const [activeIndex, setActiveIndex] = useState(0);
   const activeIndexRef = useRef(0);
   const pendingSeekRef = useRef<number | null>(null);
@@ -103,6 +121,9 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const [isMuted, setIsMuted] = useState(false);
   const [listenerCount, setListenerCount] = useState<number | null>(null);
   const pollNotLiveStreakRef = useRef(0);
+  const radioBlurredWhileVisibleRef = useRef(false);
+  const radioCallModeObservedRef = useRef(false);
+  const lastNativeRadioSessionIdRef = useRef("");
 
   const activeMusicId = usePlayerStore((s) => s.activeMusicId);
   const activeExternalTrack = usePlayerStore((s) => s.activeExternalTrack);
@@ -112,8 +133,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   const {
     slug,
     channelName,
+    trackTitle,
     streamUrl,
     streamHandoffSeq,
+    initialSeekSeconds,
     isPlaying,
     userStopped,
     playTrigger,
@@ -125,6 +148,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     clear,
     requestPlay,
   } = useRadioPlayerStore();
+  const nativeRadioSessionId =
+    slug && streamUrl ? `radio:${slug}:${streamUrl}` : "";
+
+  useEffect(() => {
+    if (!slug || !streamUrl) lastNativeRadioSessionIdRef.current = "";
+  }, [slug, streamUrl]);
 
   /** 음악 글로벌 플레이어가 켜지면 라디오 플레이바·오디오를 즉시 내림 (홈 자동 라디오와 중복 방지) */
   useEffect(() => {
@@ -185,6 +214,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   /** PC 크로스페이드 rAF가 effect cleanup으로 끊기면 활성 트랙 볼륨이 0에 가깝게 남거나 비활성 audio가 같이 재생될 수 있음 */
   const restoreAudibleOutput = useCallback(() => {
+    if (radioBlurredWhileVisibleRef.current) return;
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl) return;
     const wanted = s.streamUrl;
@@ -201,6 +231,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (def && !def.ended && radioAudioPathMatchesStream(def, wanted)) primary = def;
     }
     if (!primary) return;
+    audioDebugLog("radio", "restore-audible-output", primary, {
+      slug: s.slug,
+      streamUrl: s.streamUrl,
+      activeIndex: activeIndexRef.current,
+    });
     primary.volume = 1;
     primary.muted = false;
     const other = primary === a ? b : a;
@@ -260,6 +295,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [locationPath, restoreAudibleOutput, getActiveAudio, requestPlay]);
 
   useEffect(() => {
+    if ("mediaSession" in navigator) return;
     const onVis = () => {
       if (document.visibilityState === "visible") restoreAudibleOutput();
     };
@@ -272,6 +308,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [restoreAudibleOutput]);
 
   useResumeAudioWhenForeground(getActiveAudio, () => {
+    if ("mediaSession" in navigator) return false;
     const s = useRadioPlayerStore.getState();
     return !s.userStopped && !!s.streamUrl && !!s.slug;
   });
@@ -292,10 +329,14 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   }, [isAuthenticated]);
 
   /** 통화·시스템 오디오 점유 후 무음: play만으로는 복구 안 될 때 src 재부착·채널 재동기화 (연속 재생/ended 로직 미변경) */
-  const radioRecoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const radioRecoverTimerRef = useRef<number | null>(null);
   const runRadioRecoveryAfterSystemPause = useCallback(async () => {
     const s0 = useRadioPlayerStore.getState();
     if (s0.userStopped || !s0.slug || !s0.streamUrl) return;
+    audioDebugLog("radio", "system-recovery:start", getActiveAudio(), {
+      slug: s0.slug,
+      streamUrl: s0.streamUrl,
+    });
 
     restoreAudibleOutput();
     requestPlay();
@@ -312,11 +353,15 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       radioAudioPathMatchesStream(active, wanted) &&
       !active.paused &&
       active.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-    if (looksPlaying) return;
+    if (looksPlaying) {
+      audioDebugLog("radio", "system-recovery:already-playing", active, { wanted });
+      return;
+    }
 
     const target = getActiveAudio();
     if (target && radioAudioPathMatchesStream(target, wanted)) {
       try {
+        audioDebugLog("radio", "system-recovery:reload-current-stream", target, { wanted });
         target.pause();
         target.muted = false;
         target.volume = 1;
@@ -369,6 +414,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         newStreamUrl,
         radioSeekSecondsForHandoff(s2.streamUrl, newStreamUrl, data?.nowPlayingElapsedSeconds as number | null | undefined),
       );
+      audioDebugLog("radio", "system-recovery:set-new-stream", el2, { newStreamUrl });
       requestPlay();
     } catch {
       /* ignore */
@@ -384,30 +430,84 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     requestPlay,
   ]);
 
-  const scheduleRadioRecoveryAfterSystemPause = useCallback(() => {
+  const scheduleRadioRecoveryAfterSystemPause = useCallback((confirmedCallEnd = false) => {
+    // MediaSession 기기에서는 네이티브가 통화 종료를 확인한 경우에만 복구한다.
+    // 일반 pause 중 play() 재시도는 통화 잡음을 만들 수 있으므로 그대로 차단한다.
+    if ("mediaSession" in navigator && !confirmedCallEnd) return;
     const s = useRadioPlayerStore.getState();
     if (s.userStopped || !s.streamUrl || !s.slug) return;
+    if (radioBlurredWhileVisibleRef.current && !confirmedCallEnd) return;
+    audioDebugLog("radio", "system-recovery:schedule", getActiveAudio(), {
+      slug: s.slug,
+      streamUrl: s.streamUrl,
+      confirmedCallEnd,
+    });
     if (radioRecoverTimerRef.current != null) window.clearTimeout(radioRecoverTimerRef.current);
     radioRecoverTimerRef.current = window.setTimeout(() => {
       radioRecoverTimerRef.current = null;
       void runRadioRecoveryAfterSystemPause();
-    }, 180);
+    }, confirmedCallEnd ? 750 : 180);
   }, [runRadioRecoveryAfterSystemPause]);
 
   useEffect(() => {
+    if (!nativeBridgeReady || !slug || !streamUrl) {
+      radioCallModeObservedRef.current = false;
+      return;
+    }
+    return subscribeNativePlayer((message) => {
+      if (message.type !== "system.audio-mode") return;
+      const audioMode =
+        typeof message.payload.audioMode === "number"
+          ? message.payload.audioMode
+          : null;
+      if (audioMode == null) return;
+      if (audioMode >= 1 && audioMode <= 5) {
+        radioCallModeObservedRef.current = true;
+        return;
+      }
+      if (audioMode === 0 && radioCallModeObservedRef.current) {
+        radioCallModeObservedRef.current = false;
+        radioBlurredWhileVisibleRef.current = false;
+        scheduleRadioRecoveryAfterSystemPause(true);
+      }
+    });
+  }, [
+    nativeBridgeReady,
+    slug,
+    streamUrl,
+    scheduleRadioRecoveryAfterSystemPause,
+  ]);
+
+  useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") scheduleRadioRecoveryAfterSystemPause();
+      if (document.visibilityState === "visible") {
+        radioBlurredWhileVisibleRef.current = false;
+        scheduleRadioRecoveryAfterSystemPause();
+      }
     };
-    window.addEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
-    window.addEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+    const onFocus = () => {
+      radioBlurredWhileVisibleRef.current = false;
+      scheduleRadioRecoveryAfterSystemPause();
+    };
+    const onBlur = () => {
+      if (document.visibilityState === "visible") radioBlurredWhileVisibleRef.current = true;
+    };
+    const onPageShow = () => {
+      radioBlurredWhileVisibleRef.current = false;
+      scheduleRadioRecoveryAfterSystemPause();
+    };
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVis);
     return () => {
       if (radioRecoverTimerRef.current != null) {
         window.clearTimeout(radioRecoverTimerRef.current);
         radioRecoverTimerRef.current = null;
       }
-      window.removeEventListener("focus", scheduleRadioRecoveryAfterSystemPause);
-      window.removeEventListener("pageshow", scheduleRadioRecoveryAfterSystemPause);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVis);
     };
   }, [scheduleRadioRecoveryAfterSystemPause]);
@@ -418,6 +518,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     const onMediaStall = () => {
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl) return;
+      audioDebugLog("radio", "audio-stall-or-suspend", getActiveAudio(), {
+        slug: s.slug,
+        streamUrl: s.streamUrl,
+        visibility: document.visibilityState,
+      });
       if (document.visibilityState === "hidden" && isCoarseOrTouchDevice()) {
         restoreAudibleOutput();
         return;
@@ -443,10 +548,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     if (!isCoarseOrTouchDevice()) return;
     if (!slug || !streamUrl || userStopped) return;
+    if ("mediaSession" in navigator) return;
     const tick = window.setInterval(() => {
       if (document.visibilityState !== "hidden") return;
       const s = useRadioPlayerStore.getState();
       if (s.userStopped || !s.streamUrl || !s.slug) return;
+      if (radioBlurredWhileVisibleRef.current) return;
       if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
       const el = getActiveAudio();
       if (!el || el.ended || !radioAudioPathMatchesStream(el, s.streamUrl)) return;
@@ -457,10 +564,19 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const playNowRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    playNowRef.current = () => { getActiveAudio()?.play().catch(() => {}); };
+    playNowRef.current = () => {
+      if (nativePlayerReady) {
+        postNativePlayerMessage("player.play", {
+          mode: "radio",
+          sessionId: nativeRadioSessionId,
+        });
+        return;
+      }
+      getActiveAudio()?.play().catch(() => {});
+    };
     setPlayNowRef(playNowRef);
     return () => setPlayNowRef(null);
-  }, [getActiveAudio, setPlayNowRef]);
+  }, [getActiveAudio, setPlayNowRef, nativePlayerReady, nativeRadioSessionId]);
 
   // WebSocket: 곡 변경 + 청취자 수 수신
   useEffect(() => {
@@ -493,7 +609,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
             const current = useRadioPlayerStore.getState().streamUrl;
             const activeEl = activeIndexRef.current === 0 ? audioARef.current : audioBRef.current;
             // URL이 같더라도 오디오 src가 비어있으면(트랙 종료 후) 다시 로드
-            const needsReload = !activeEl?.src || activeEl.src === window.location.href;
+            const needsReload =
+              !nativePlayerReady && (!activeEl?.src || activeEl.src === window.location.href);
             if (newStreamUrl !== current || needsReload) {
               // 비로그인은 첫 곡 종료 이후에는 다음 곡으로 넘기지 않음
               if (!authLoading && !isAuthenticated && unauthFirstEndedCountRef.current >= 1) return;
@@ -513,6 +630,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         }
       }
       if (msg.type === "radio_broadcast_ended" && (msg.slug == null || String(msg.slug).toLowerCase() === normalizedSlug)) {
+        if (nativePlayerReady) {
+          postNativePlayerMessage("player.stop", {
+            mode: "radio",
+            sessionId: nativeRadioSessionId,
+          });
+        }
         [audioARef.current, audioBRef.current].forEach((el) => {
           if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
         });
@@ -520,7 +643,17 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       }
     });
     return unsub;
-  }, [slug, channelName, subscribe, clear, setStream, isAuthenticated, authLoading]);
+  }, [
+    slug,
+    channelName,
+    subscribe,
+    clear,
+    setStream,
+    isAuthenticated,
+    authLoading,
+    nativePlayerReady,
+    nativeRadioSessionId,
+  ]);
 
   const handleUnmute = useCallback(() => {
     const el = getActiveAudio();
@@ -536,19 +669,35 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     setNeedsTap(false);
     setIsMuted(false);
     setUserStopped(false);
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.play", {
+        mode: "radio",
+        sessionId: nativeRadioSessionId,
+      });
+      return;
+    }
     const el = getActiveAudio();
+    audioDebugLog("radio", "ui-play", el, { slug, streamUrl });
     if (el) {
       el.muted = false;
       el.volume = 1;
       el.play().catch(() => {});
     }
-  }, [setUserStopped, getActiveAudio]);
+  }, [setUserStopped, getActiveAudio, nativePlayerReady, nativeRadioSessionId]);
 
   const handlePause = useCallback(() => {
     setUserStopped(true);
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.pause", {
+        mode: "radio",
+        sessionId: nativeRadioSessionId,
+      });
+      return;
+    }
     const el = getActiveAudio();
+    audioDebugLog("radio", "ui-pause", el, { slug, streamUrl });
     if (el) el.pause();
-  }, [setUserStopped, getActiveAudio]);
+  }, [setUserStopped, getActiveAudio, nativePlayerReady, nativeRadioSessionId]);
 
   /** ended + timeupdate 폴백 중복 방지 (백그라운드에서 ended 미발화 대비) */
   const trackEndLockRef = useRef(false);
@@ -563,6 +712,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
   useEffect(() => {
     if (!streamUrl) return;
     setPlayError(false);
+    if (nativePlayerReady) {
+      const active = getActiveAudio();
+      audioARef.current?.pause();
+      audioBRef.current?.pause();
+      if (active) active.dataset.streamUrl = streamUrl;
+      return;
+    }
     let cancelled = false;
     const tId = window.setTimeout(() => {
       if (cancelled) return;
@@ -607,6 +763,8 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       /** 비활성 버퍼에 이미 올바른 src가 있을 때(이전 effect 취소 등)에도 반드시 핸드오프·재생 */
       const handoffToInactive = (inactiveEl: HTMLAudioElement) => {
         if (userStoppedNow()) return;
+        const currentTarget = useRadioPlayerStore.getState().streamUrl;
+        if (!currentTarget || streamPathname(currentTarget) !== streamPathname(streamUrl) || !matchSrc(inactiveEl)) return;
         const seek = pendingSeekRef.current ?? useRadioPlayerStore.getState().initialSeekSeconds ?? null;
         if (seek != null && seek > 0) {
           try {
@@ -652,8 +810,10 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         if (active) tryPlay(active);
         return;
       }
-      if (matchSrc(inactive) && inactive && inactive.readyState >= 2) {
-        handoffToInactive(inactive);
+      if (matchSrc(inactive) && inactive) {
+        // 같은 다음 곡을 이미 버퍼링 중이면 src를 제거·재할당하지 않는다.
+        // 기존 canplay 핸들러가 준비 완료 시 한 번만 핸드오프한다.
+        if (inactive.readyState >= 2) handoffToInactive(inactive);
         return;
       }
 
@@ -684,9 +844,25 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       cancelled = true;
       clearTimeout(tId);
     };
-  }, [streamUrl, streamHandoffSeq, getActiveAudio, getInactiveAudio, setPlaying]);
+  }, [
+    streamUrl,
+    streamHandoffSeq,
+    getActiveAudio,
+    getInactiveAudio,
+    setPlaying,
+    nativePlayerReady,
+  ]);
 
   useEffect(() => {
+    if (nativePlayerReady) {
+      if (playTrigger > 0 && !userStopped) {
+        postNativePlayerMessage("player.play", {
+          mode: "radio",
+          sessionId: nativeRadioSessionId,
+        });
+      }
+      return;
+    }
     const el = getActiveAudio();
     if (!el) return;
     if (playTrigger > 0 && !userStopped) {
@@ -694,18 +870,40 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         .then(() => setPlaying(true))
         .catch(() => setPlaying(false));
     }
-  }, [playTrigger, userStopped, getActiveAudio, setPlaying]);
+  }, [
+    playTrigger,
+    userStopped,
+    getActiveAudio,
+    setPlaying,
+    nativePlayerReady,
+    nativeRadioSessionId,
+  ]);
 
   useEffect(() => {
+    if (nativePlayerReady) {
+      if (pauseTrigger > 0) {
+        postNativePlayerMessage("player.pause", {
+          mode: "radio",
+          sessionId: nativeRadioSessionId,
+        });
+      }
+      return;
+    }
     const el = getActiveAudio();
     if (!el) return;
     if (pauseTrigger > 0) el.pause();
-  }, [pauseTrigger, getActiveAudio]);
+  }, [pauseTrigger, getActiveAudio, nativePlayerReady, nativeRadioSessionId]);
 
   const handleStop = useCallback(() => {
     setPlayError(false);
     setNeedsTap(false);
     setIsMuted(false);
+    if (nativePlayerReady) {
+      postNativePlayerMessage("player.stop", {
+        mode: "radio",
+        sessionId: nativeRadioSessionId,
+      });
+    }
     if (listenerAdvanceDelayTimerRef.current != null) {
       window.clearTimeout(listenerAdvanceDelayTimerRef.current);
       listenerAdvanceDelayTimerRef.current = null;
@@ -716,13 +914,15 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el) { el.pause(); el.removeAttribute("src"); el.load(); }
     });
     activeIndexRef.current = 0;
+    lastNativeRadioSessionIdRef.current = "";
     setActiveIndex(0);
     setListenerCount(null);
     clear();
-  }, [clear]);
+  }, [clear, nativePlayerReady, nativeRadioSessionId]);
 
   // MediaSession API: handleStop 선언 이후에 위치해야 TDZ 에러 없음
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!("mediaSession" in navigator)) return;
     if (!streamUrl || !channelName) return;
     const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -734,16 +934,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         ? [{ src: `${origin}/favicon.png`, sizes: "192x192", type: "image/png" }]
         : [],
     });
-    navigator.mediaSession.setActionHandler("play", () => {
-      const el = getActiveAudio();
-      if (el) el.play().catch(() => {});
-    });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      setUserStopped(true);
-      const el = getActiveAudio();
-      if (el) el.pause();
-    });
+    // play/pause는 Android Chrome 기본 MediaSession에 맡겨 통화의 일시적
+    // 오디오 포커스 손실과 사용자의 알림 플레이바 조작을 브라우저가 구분하게 한다.
+    navigator.mediaSession.setActionHandler("play", null);
+    navigator.mediaSession.setActionHandler("pause", null);
     navigator.mediaSession.setActionHandler("stop", () => {
+      audioDebugLog("radio", "media-session-stop", getActiveAudio(), { slug, streamUrl });
       handleStop();
     });
     return () => {
@@ -753,16 +949,22 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
         navigator.mediaSession.setActionHandler("stop", null);
       } catch { /* ignore */ }
     };
-  }, [streamUrl, channelName, getActiveAudio, handleStop, setUserStopped, t]);
+  }, [streamUrl, channelName, getActiveAudio, handleStop, t, nativePlayerReady]);
 
   useEffect(() => {
+    if (nativePlayerReady) return;
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-  }, [isPlaying]);
+  }, [isPlaying, nativePlayerReady]);
 
   const onAudioPlay = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target === getActiveAudio()) {
       const el = e.target as HTMLAudioElement;
+      audioDebugLog("radio", "audio-play", el, {
+        slug,
+        streamUrl,
+        activeIndex: activeIndexRef.current,
+      });
       if (el.volume < 0.05) el.volume = 1;
       trackEndLockRef.current = false;
       radioAutoAdvanceRef.current = false;
@@ -772,6 +974,13 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
 
   const onAudioPause = useCallback((e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (e.target !== getActiveAudio()) return;
+    audioDebugLog("radio", "audio-pause", e.target as HTMLAudioElement, {
+      slug,
+      streamUrl,
+      trackEndLock: trackEndLockRef.current,
+      autoAdvance: radioAutoAdvanceRef.current,
+      userStopped: useRadioPlayerStore.getState().userStopped,
+    });
     if (trackEndLockRef.current || radioAutoAdvanceRef.current) return;
     setPlaying(false);
   }, [getActiveAudio, setPlaying]);
@@ -782,7 +991,7 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
       if (el !== getActiveAudio()) return;
       trackEndLockRef.current = true;
 
-      const endedSrc = el.src;
+      const endedSrc = el.dataset.streamUrl || el.src;
       setPlaying(false);
       const shouldLimit = !authLoading && !isAuthenticated;
       const unauthFirstEnd = shouldLimit && unauthFirstEndedCountRef.current === 0;
@@ -996,6 +1205,75 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     ],
   );
 
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeRadioSessionId || !streamUrl || !slug) return;
+    const priorNativeSessionId = lastNativeRadioSessionIdRef.current;
+    if (priorNativeSessionId === nativeRadioSessionId) return;
+    const handoffSeconds =
+      !priorNativeSessionId
+        ? (initialSeekSeconds ?? getActiveAudio()?.currentTime ?? 0)
+        : (initialSeekSeconds ?? 0);
+    lastNativeRadioSessionIdRef.current = nativeRadioSessionId;
+    audioARef.current?.pause();
+    audioBRef.current?.pause();
+    postNativePlayerMessage("player.load", {
+      mode: "radio",
+      sessionId: nativeRadioSessionId,
+      url: new URL(streamUrl, window.location.origin).toString(),
+      title: trackTitle || channelName || "VenySound Radio",
+      artist: channelName || "VenySound",
+      album: "VenySound Radio",
+      positionMs: Math.max(0, Math.floor(handoffSeconds * 1000)),
+      autoplay: !userStopped,
+    });
+  }, [
+    nativePlayerReady,
+    nativeRadioSessionId,
+    streamUrl,
+    slug,
+    trackTitle,
+    channelName,
+    getActiveAudio,
+  ]);
+
+  useEffect(() => {
+    if (!nativePlayerReady || !nativeRadioSessionId) return;
+    return subscribeNativePlayer((message) => {
+      const payload = message.payload;
+      if (
+        typeof payload.sessionId === "string" &&
+        payload.sessionId &&
+        payload.sessionId !== nativeRadioSessionId
+      ) {
+        return;
+      }
+      if (message.type === "player.state" || message.type === "player.position") {
+        if (typeof payload.isPlaying === "boolean") setPlaying(payload.isPlaying);
+        if (typeof payload.playWhenReady === "boolean") {
+          setUserStopped(!payload.playWhenReady);
+        }
+        return;
+      }
+      if (message.type === "player.ended") {
+        const activeAudio = getActiveAudio();
+        if (activeAudio) processActiveTrackEnded(activeAudio);
+        return;
+      }
+      if (message.type === "player.error") {
+        setPlaying(false);
+        setPlayError(true);
+        setNeedsTap(true);
+      }
+    });
+  }, [
+    nativePlayerReady,
+    nativeRadioSessionId,
+    getActiveAudio,
+    processActiveTrackEnded,
+    setPlaying,
+    setUserStopped,
+  ]);
+
   const onAudioTimeUpdate = useCallback(
     (e: React.SyntheticEvent<HTMLAudioElement>) => {
       const el = e.target as HTMLAudioElement;
@@ -1031,6 +1309,11 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     // 비활성 오디오 엘리먼트(src 없음)의 오류는 무시
     if (e.target !== getActiveAudio()) return;
     const el = e.target as HTMLAudioElement;
+    audioDebugLog("radio", "audio-error", el, {
+      slug,
+      streamUrl,
+      userStopped: useRadioPlayerStore.getState().userStopped,
+    });
     // src가 없는 경우는 정상적인 reset 동작이므로 무시
     if (!el.src || el.src === window.location.href) return;
     setPlayError(true);
@@ -1046,6 +1329,12 @@ export function GlobalRadioPlayer({ waveformBufferRef: _waveformBufferRef }: { w
     (e: React.SyntheticEvent<HTMLAudioElement>) => {
       const el = e.target as HTMLAudioElement;
       if (el !== getActiveAudio()) return;
+      audioDebugLog("radio", "audio-ended", el, {
+        slug,
+        streamUrl,
+        trackEndLock: trackEndLockRef.current,
+        autoAdvance: radioAutoAdvanceRef.current,
+      });
       processActiveTrackEnded(el);
     },
     [getActiveAudio, processActiveTrackEnded],

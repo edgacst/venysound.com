@@ -16,9 +16,17 @@ CREATE TABLE IF NOT EXISTS ai_music_saved_tracks (
   generation_provider VARCHAR(32),
   upload_count INTEGER NOT NULL DEFAULT 0,
   download_count INTEGER NOT NULL DEFAULT 0,
+  wav_download_count INTEGER NOT NULL DEFAULT 0,
+  mp4_download_count INTEGER NOT NULL DEFAULT 0,
   published_to_site BOOLEAN NOT NULL DEFAULT FALSE,
   CONSTRAINT ai_music_saved_tracks_user_client UNIQUE (user_id, client_id)
 );
+
+ALTER TABLE ai_music_saved_tracks
+  ADD COLUMN IF NOT EXISTS wav_download_count INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE ai_music_saved_tracks
+  ADD COLUMN IF NOT EXISTS mp4_download_count INTEGER NOT NULL DEFAULT 0;
 
 CREATE INDEX IF NOT EXISTS idx_ai_music_saved_user_created ON ai_music_saved_tracks(user_id, created_at DESC);
 

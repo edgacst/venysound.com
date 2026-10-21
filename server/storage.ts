@@ -24,6 +24,7 @@ import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   getAiMusicMonthlyUsageLimit,
   getAiMusicUsagePeriodKey,
+  isSubscriptionAiWalletDepleted,
   isUserPaidSubscriptionActive,
 } from "@shared/subscription-entitlements";
 import { syncSubscriptionAiWalletForPaidUser } from "./subscription-ai-wallet";
@@ -381,10 +382,10 @@ export interface IStorage {
     scheduledEndAt: Date | null;
     notice: string | null;
     updatedAt: Date | null;
-    ownerDisplayName: string;
+    ownerDisplayName?: string;
     homeTickerText: string | null;
   }[]>;
-  listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number; nowPlayingStartedAt: Date; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }[]>;
+  listLiveRadioChannelsForAutoAdvance(): Promise<{ id: number; slug: string; nowPlayingMusicId: number | null; nowPlayingObjectPath?: string | null; nowPlayingStartedAt: Date; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }[]>;
   listAllRadioChannels(): Promise<{
     id: number;
     ownerId: string;
@@ -394,18 +395,20 @@ export interface IStorage {
     description: string | null;
     coverFilename: string | null;
     ownerUsername: string | null;
-    ownerDisplayName: string;
+    ownerDisplayName?: string;
     updatedAt: Date | null;
   }[]>;
   updateRadioChannel(id: number, data: { name?: string; slug?: string; description?: string | null; homepageUrl?: string | null; homeTickerText?: string | null; coverFilename?: string | null; status?: string; visibility?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null }): Promise<void>;
+  updateRadioPlaylistSnapshotIfStartedAt(id: number, expectedStartedAt: Date, playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number }): Promise<boolean>;
+  advanceRadioChannelIfStartedAt(id: number, expectedStartedAt: Date, data: { nowPlayingMusicId: number; nowPlayingStartedAt: Date; nowPlayingObjectPath: null; nowPlayingTempDurationSeconds: null; nowPlayingTempNextSnapshotIndex: null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }): Promise<boolean>;
   deleteRadioChannel(id: number): Promise<void>;
 
   createRadioChatMessage(channelId: number, userId: string, content: string): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date }>;
-  getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date; username?: string | null }[]>;
+  getRadioChatMessages(channelId: number, limit?: number): Promise<{ id: number; channelId: number; userId: string; content: string; createdAt: Date | null; username?: string | null }[]>;
   deleteRadioChatMessagesByChannel(channelId: number): Promise<void>;
   deleteRadioChatMessagesOlderThanDays(days: number): Promise<void>;
   createRadioSongRequest(data: { channelId: number; userId: string; musicId?: number | null; title?: string | null; artist?: string | null; message?: string | null }): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date }>;
-  getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date; musicTitle?: string | null; musicArtist?: string | null }[]>;
+  getRadioSongRequestsByChannel(channelId: number, status?: string): Promise<{ id: number; channelId: number; userId: string; musicId: number | null; title: string | null; artist: string | null; message: string | null; status: string; sortOrder: number; createdAt: Date | null; musicTitle?: string | null; musicArtist?: string | null }[]>;
   updateRadioSongRequest(id: number, channelId: number, data: { status?: string; sortOrder?: number }): Promise<void>;
 
   getRadioChannelStaff(channelId: number): Promise<{ id: number; channelId: number; userId: string; role: string; username?: string | null }[]>;
@@ -481,6 +484,7 @@ export interface IStorage {
     /** 구독 월 AI 한도 vs 충전 지갑(users.credits)은 별개 */
     aiMusicMonthly: {
       periodMonth: string;
+      usagePeriodKey?: string;
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";
@@ -2197,6 +2201,8 @@ export class DatabaseStorage implements IStorage {
     pendingSubscriptionCount: number;
     pendingCreditChargeWon: number;
     pendingCreditChargeCount: number;
+    pendingPayupSubscriptionWon: number;
+    pendingPayupSubscriptionCount: number;
     pendingTotalWon: number;
   }> {
     const tierIds = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
@@ -2543,7 +2549,7 @@ export class DatabaseStorage implements IStorage {
       ];
 
       const found = candidates.find((c) => existsSync(c.p));
-      return found ?? null;
+      return found ? { path: found.p, ext: found.ext } : null;
     }
 
     const [release] = await db
@@ -3432,6 +3438,7 @@ export class DatabaseStorage implements IStorage {
     payments: { total: number; rows: any[] };
     aiMusicMonthly: {
       periodMonth: string;
+      usagePeriodKey?: string;
       limit: number;
       used: number;
       unit: "songs" | "credits" | "won" | "unlimited";
@@ -3457,6 +3464,8 @@ export class DatabaseStorage implements IStorage {
         subscriptionExpiresAt: users.subscriptionExpiresAt,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionEntitlements: users.subscriptionEntitlements,
+        subscriptionAiWallet: users.subscriptionAiWallet,
+        subscriptionAiPeriodKey: users.subscriptionAiPeriodKey,
         promoAiCreditsWon: users.promoAiCreditsWon,
         promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
       })
@@ -3472,6 +3481,47 @@ export class DatabaseStorage implements IStorage {
     let planGrantWon: number | null = null;
     let walletRemainingWon: number | null = null;
     if (user.role !== "admin" && isUserPaidSubscriptionActive(user, now)) {
+      if (isSubscriptionAiWalletDepleted(user)) {
+        await db
+          .update(users)
+          .set({
+            subscriptionEntitlements: sql`'{}'::jsonb`,
+            subscriptionTier: "free",
+            subscriptionExpiresAt: null,
+            subscriptionPlan: null,
+            tossBillingKey: null,
+            tossCustomerKey: null,
+            subscriptionAiWallet: sql`'[]'::jsonb`,
+            subscriptionAiPeriodKey: null,
+            subscriptionAiPeriodConsumedWon: 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, userId));
+        const [freshAfterDepleted] = await db
+          .select({
+            subscriptionTier: users.subscriptionTier,
+            subscriptionExpiresAt: users.subscriptionExpiresAt,
+            subscriptionPlan: users.subscriptionPlan,
+            subscriptionEntitlements: users.subscriptionEntitlements,
+            subscriptionAiWallet: users.subscriptionAiWallet,
+            subscriptionAiPeriodKey: users.subscriptionAiPeriodKey,
+            promoAiCreditsWon: users.promoAiCreditsWon,
+            promoAiCreditsExpiresAt: users.promoAiCreditsExpiresAt,
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        if (freshAfterDepleted) {
+          user.subscriptionTier = freshAfterDepleted.subscriptionTier;
+          user.subscriptionExpiresAt = freshAfterDepleted.subscriptionExpiresAt;
+          user.subscriptionPlan = freshAfterDepleted.subscriptionPlan;
+          user.subscriptionEntitlements = freshAfterDepleted.subscriptionEntitlements;
+          user.subscriptionAiWallet = freshAfterDepleted.subscriptionAiWallet;
+          user.subscriptionAiPeriodKey = freshAfterDepleted.subscriptionAiPeriodKey;
+          user.promoAiCreditsWon = freshAfterDepleted.promoAiCreditsWon;
+          user.promoAiCreditsExpiresAt = freshAfterDepleted.promoAiCreditsExpiresAt;
+        }
+      }
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (w) {
         usagePeriodKey = w.periodKey;
@@ -4375,6 +4425,24 @@ export class DatabaseStorage implements IStorage {
     if (data.notice !== undefined) set.notice = data.notice;
     if (data.playlistSnapshot !== undefined) set.playlistSnapshot = data.playlistSnapshot;
     await db.update(radioChannels).set(set as any).where(eq(radioChannels.id, id));
+  }
+
+  async advanceRadioChannelIfStartedAt(id: number, expectedStartedAt: Date, data: { nowPlayingMusicId: number; nowPlayingStartedAt: Date; nowPlayingObjectPath: null; nowPlayingTempDurationSeconds: null; nowPlayingTempNextSnapshotIndex: null; playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } }): Promise<boolean> {
+    const [updated] = await db
+      .update(radioChannels)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(radioChannels.id, id), eq(radioChannels.nowPlayingStartedAt, expectedStartedAt)))
+      .returning({ id: radioChannels.id });
+    return updated != null;
+  }
+
+  async updateRadioPlaylistSnapshotIfStartedAt(id: number, expectedStartedAt: Date, playlistSnapshot: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number }): Promise<boolean> {
+    const [updated] = await db
+      .update(radioChannels)
+      .set({ playlistSnapshot, updatedAt: new Date() })
+      .where(and(eq(radioChannels.id, id), eq(radioChannels.nowPlayingStartedAt, expectedStartedAt)))
+      .returning({ id: radioChannels.id });
+    return updated != null;
   }
 
   async deleteRadioChannel(id: number): Promise<void> {

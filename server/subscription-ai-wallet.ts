@@ -72,8 +72,8 @@ async function performSubscriptionAiWalletSync(
   if (!isUserPaidSubscriptionActive(u, now)) return null;
 
   const desiredKey = getAiMusicUsagePeriodKey(u, u.role ?? null, now);
-  const eventBonusWon = await getMay2026SubscriptionAiBonusWon(tx, u, userId, now);
-  const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now) + eventBonusWon;
+  const eventBonusWon = 0;
+  const monthlyGrant = sumActivePaidAiMusicMonthlyWonBudget(u, now);
   let wallet = pruneAiWallet(parseAiWallet(u.subscriptionAiWallet), now);
   let sumBeforeSync = sumAiWallet(wallet);
   let consumed = Math.max(0, u.subscriptionAiPeriodConsumedWon ?? 0);
@@ -135,7 +135,7 @@ async function performSubscriptionAiWalletSync(
       .where(and(eq(aiMusicUsage.userId, userId), eq(aiMusicUsage.periodMonth, desiredKey)));
     /** 달력 YYYY-MM ai_music_usage 는 무료(곡 수)·만료 후 크레딧(원)용이라, 구독 지갑(sub:)과 섞지 않음 — 충전 직후 0/9000이 달력 잔여로 1650/9000 되는 버그 방지 */
     const usedLegacy = Math.max(0, usageDesired?.count ?? 0);
-    const startWon = Math.max(0, monthlyGrant - usedLegacy);
+    const startWon = 0;
     wallet = appendAiWalletGrant(wallet, startWon, now);
     consumed = usedLegacy;
   } else {
@@ -174,10 +174,8 @@ async function performSubscriptionAiWalletSync(
      * 충전: (1) 달력 월 롤오버 (2) sub 만료 시각이 실제로 늘어난 갱신 (3) 달→sub 전환인데 지갑이 비어 있을 때만 1회.
      */
     let grantWon = 0;
-    if (calendarMonthRolled || subPeriodRenewedForward) {
-      grantWon = monthlyGrant;
-    } else if (migratingCalToSub && walletBeforeGrant === 0) {
-      grantWon = monthlyGrant;
+    if (calendarMonthRolled || subPeriodRenewedForward || (migratingCalToSub && walletBeforeGrant === 0)) {
+      grantWon = 0;
     }
     if (grantWon > 0) {
       wallet = appendAiWalletGrant(wallet, grantWon, now);

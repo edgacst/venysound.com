@@ -27,6 +27,8 @@ import {
   Download,
   Megaphone,
   Wand2,
+  Film,
+  AudioLines,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -151,22 +153,34 @@ export function Navigation() {
       <div
         data-testid={`nav-link-${href.replace(/\//g, '') || 'home'}`}
         className={`
-        flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0
+        flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-[13px] lg:gap-1.5 lg:px-3 lg:py-1.5 lg:text-sm
         ${isActive(href) 
           ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 font-semibold" 
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
         }
       `}>
-        <Icon size={18} className="flex-shrink-0" />
+        <Icon size={16} className="flex-shrink-0 lg:hidden" />
+        <Icon size={18} className="flex-shrink-0 hidden lg:block" />
         <span className="whitespace-nowrap">{children}</span>
       </div>
     </Link>
   );
 
+  /** SPA 외부 경로(프록시) — 전체 페이지 이동 */
+  const ExternalNavLink = ({ href, icon: Icon, children }: { href: string; icon: any; children: React.ReactNode }) => (
+    <a href={href} data-testid={`nav-link-${href.replace(/\//g, '') || 'external'}`}>
+      <div className="flex items-center gap-1 px-2 py-1 rounded-full transition-all duration-200 cursor-pointer shrink-0 text-[13px] lg:gap-1.5 lg:px-3 lg:py-1.5 lg:text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
+        <Icon size={16} className="flex-shrink-0 lg:hidden" />
+        <Icon size={18} className="flex-shrink-0 hidden lg:block" />
+        <span className="whitespace-nowrap">{children}</span>
+      </div>
+    </a>
+  );
+
   return (
     <nav className="fixed top-0 z-[70] w-full border-b border-white/10 bg-[#07080b] text-white shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] md:sticky md:bg-[#07080b]/95 md:backdrop-blur-xl">
-      <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center justify-between gap-4 px-4">
-        <Link href="/" className="flex-shrink-0 min-w-0" title="Veny Sound">
+      <div className="w-full max-w-[1400px] mx-auto flex h-16 items-center gap-x-2 px-4 md:gap-x-3">
+        <Link href="/" className="relative z-30 shrink-0 min-w-0 mr-1 md:mr-0" title="Veny Sound">
             <div className="relative flex items-center gap-2 cursor-pointer group" data-testid="nav-logo">
             <img src={logoImage} alt="Veny Sound" className="h-10 w-auto rounded-md bg-white/10 p-0.5 flex-shrink-0" />
             <span className="text-lg sm:text-xl font-display font-bold whitespace-nowrap" title="Veny Sound">
@@ -179,10 +193,12 @@ export function Navigation() {
           </div>
         </Link>
 
-        <div className="veny-nav-desktop hidden md:flex items-center min-w-0 flex-1 justify-center">
-          <div className="flex items-center gap-1 shrink-0 py-1">
+        <div className="veny-nav-desktop hidden md:block flex-1 min-w-0 overflow-hidden isolate">
+          <div className="veny-nav-center-scroll flex items-center gap-0.5 lg:gap-1 shrink-0 py-0 overflow-x-hidden pl-1 pr-1">
             <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
             <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
+            <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
+            <ExternalNavLink href="/mastering/" icon={AudioLines}>{t('nav.mp3Master', 'mp3마스터')}</ExternalNavLink>
             <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
             <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
             <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>
@@ -200,13 +216,13 @@ export function Navigation() {
           </div>
         </div>
 
-        <div className="veny-nav-desktop hidden md:flex items-center gap-2 flex-shrink-0 justify-end">
+        <div className="veny-nav-desktop hidden md:flex items-center gap-1 shrink-0 relative z-30 ml-1">
           {user ? (
             <>
               <Link href={`/profile/${user.id}`} className="shrink-0" title={t('nav.myMusic', '나의 음악')}>
-                <Button size="sm" variant="ghost" className="gap-2 text-foreground shrink-0" data-testid="button-my-music">
+                <Button size="sm" variant="ghost" className="gap-2 text-foreground shrink-0 px-2 xl:px-3" data-testid="button-my-music">
                   <User size={16} />
-                  <span className="whitespace-nowrap">{t('nav.myMusic', '나의 음악')}</span>
+                  <span className="whitespace-nowrap hidden xl:inline">{t('nav.myMusic', '나의 음악')}</span>
                 </Button>
               </Link>
               <Link href="/upload" title={t('nav.upload')}>
@@ -356,7 +372,7 @@ export function Navigation() {
         </div>
 
         <button 
-          className="veny-nav-mobile-toggle md:hidden p-2 text-muted-foreground hover:text-foreground"
+          className="veny-nav-mobile-toggle md:hidden ml-auto p-2 text-muted-foreground hover:text-foreground shrink-0"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           data-testid="button-mobile-menu"
         >
@@ -376,6 +392,8 @@ export function Navigation() {
               <p className="px-3 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t('nav.menu', '메뉴')}</p>
               <NavLink href="/" icon={Home}>{t('nav.home')}</NavLink>
               <NavLink href="/music" icon={Search}>{t('nav.musicList')}</NavLink>
+              <NavLink href="/music-videos" icon={Film}>{t('nav.musicVideos', '뮤직비디오')}</NavLink>
+              <ExternalNavLink href="/mastering/" icon={AudioLines}>{t('nav.mp3Master', 'mp3마스터')}</ExternalNavLink>
               <NavLink href="/popular" icon={TrendingUp}>{t('nav.popular')}</NavLink>
               <NavLink href="/community" icon={Users}>{t('nav.community')}</NavLink>
               <NavLink href="/pricing" icon={Crown}>{t('nav.premium')}</NavLink>

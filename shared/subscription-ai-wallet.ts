@@ -19,11 +19,10 @@ export function parseAiWallet(raw: unknown): AiWalletChunk[] {
 }
 
 export function pruneAiWallet(chunks: AiWalletChunk[], now: Date): AiWalletChunk[] {
-  const t = now.getTime();
   return chunks.filter((ch) => {
     const ct = new Date(ch.creditedAt).getTime();
     if (Number.isNaN(ct)) return false;
-    return t - ct <= AI_SUBSCRIPTION_WALLET_EXPIRY_MS;
+    return true;
   });
 }
 

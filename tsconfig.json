@@ -6,13 +6,15 @@
     "dist",
     "**/*.test.ts",
     "backups",
-    "client/src/lib/locales/venysound/app_new"
+    "client/src/lib/locales/venysound/app_new",
+    "server/replit_integrations"
   ],
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,
     "module": "ESNext",
+    "target": "ES2022",
     "strict": true,
     "lib": ["esnext", "dom", "dom.iterable"],
     "jsx": "preserve",

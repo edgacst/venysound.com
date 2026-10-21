@@ -20,6 +20,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerPayupRoutes } from "./payup/routes";
 import { serveStatic } from "./static";
+import { registerMasteringProxy } from "./mastering-proxy";
 import { createServer } from "http";
 import { seedDatabase } from "./seed";
 import { pool } from "./db";
@@ -252,6 +253,9 @@ async function runAutoMigrations() {
 
 const app = express();
 const httpServer = createServer(app);
+
+/** /mastering/* 는 body parser 이전에 프록시 (JSON·multipart 원본 body 전달) */
+registerMasteringProxy(app);
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false }));

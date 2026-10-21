@@ -20,16 +20,17 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 
+import androidx.browser.customtabs.CustomTabsCallback;
 
+import com.google.androidbrowserhelper.trusted.TwaLauncher;
 
 public class LauncherActivity
         extends com.google.androidbrowserhelper.trusted.LauncherActivity {
-    
-
-    
+    private StableTwaPostMessageController postMessageController;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        postMessageController = new StableTwaPostMessageController(this);
         super.onCreate(savedInstanceState);
         // Setting an orientation crashes the app due to the transparent background on Android 8.0
         // Oreo and below. We only set the orientation on Oreo and above. This only affects the
@@ -43,12 +44,27 @@ public class LauncherActivity
     }
 
     @Override
+    protected TwaLauncher createTwaLauncher() {
+        TwaLauncher launcher = super.createTwaLauncher();
+        postMessageController.attachLauncher(launcher);
+        return launcher;
+    }
+
+    @Override
+    protected CustomTabsCallback getCustomTabsCallback() {
+        return postMessageController.wrap(super.getCustomTabsCallback());
+    }
+
+    @Override
     protected Uri getLaunchingUrl() {
-        // Get the original launch Url.
         Uri uri = super.getLaunchingUrl();
 
-        
-
         return uri;
+    }
+
+    @Override
+    protected void onDestroy() {
+        postMessageController.destroy();
+        super.onDestroy();
     }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useSearch } from "wouter";
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
@@ -28,6 +28,7 @@ import {
   Layers,
   Globe,
   FileText,
+  Youtube,
   type LucideIcon,
 } from "lucide-react";
 import { PageTransition } from "@/components/PageTransition";
@@ -74,18 +75,21 @@ export default function Pricing() {
   const STARTER_FEATURES = [
     { icon: Star, text: t("pricing.starterFeature1", "Free 모든 기능") },
     { icon: Sparkles, text: t("pricing.starterFeatureAi", "입문용 약 66곡 생성 가능") },
+    { icon: Youtube, text: t("pricing.youtubePlaylistToolGift", "유튜브플레이리스트 자동생성툴 증정") },
     { icon: Shield, text: t("pricing.starterFeatureNoAds", "광고 없음") },
   ];
 
   const BASIC_FEATURES = [
     { icon: Layers, text: t("pricing.basicFeature1", "Free 모든 기능") },
     { icon: Sparkles, text: t("pricing.basicFeatureAi", "약 120곡 생성 가능") },
+    { icon: Youtube, text: t("pricing.youtubePlaylistToolGift", "유튜브플레이리스트 자동생성툴 증정") },
     { icon: Shield, text: t("pricing.basicFeatureNoAds", "광고 없음") },
   ];
 
   const PRO_FEATURES = [
     { icon: Crown, text: t("pricing.proFeatureAllFree", "Free 모든 기능") },
     { icon: Sparkles, text: t("pricing.proFeatureAiMusic", "약 200곡 생성 가능") },
+    { icon: Youtube, text: t("pricing.youtubePlaylistToolGift", "유튜브플레이리스트 자동생성툴 증정") },
     { icon: Shield, text: t("pricing.proFeatureNoAds", "광고 없음") },
     {
       icon: Globe,
@@ -99,6 +103,7 @@ export default function Pricing() {
   const PREMIUM_FEATURES = [
     { icon: Crown, text: t("pricing.premiumFeatureAllPro", "Pro 모든 기능") },
     { icon: Sparkles, text: t("pricing.premiumFeatureCredits", "약 300곡 생성 가능") },
+    { icon: Youtube, text: t("pricing.youtubePlaylistToolGift", "유튜브플레이리스트 자동생성툴 증정") },
     { icon: FileText, text: t("pricing.premiumFeatureScorePdf", "AI 라이브러리 악보 PDF 다운로드") },
     { icon: Crown, text: t("pricing.premiumFeature6", "프리미엄 배지") },
     { icon: Shield, text: t("pricing.premiumFeatureSupport", "우선 지원") },
@@ -128,6 +133,8 @@ export default function Pricing() {
   }>({
     queryKey: ["/api/subscription/me"],
     enabled: !!user,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: bankInfo } = useQuery<{
@@ -149,16 +156,25 @@ export default function Pricing() {
     staleTime: 60_000,
   });
 
+  const [payupPendingOrder, setPayupPendingOrder] = useState<string | null>(null);
+  const [activeCheckoutPlanId, setActiveCheckoutPlanId] = useState<PaidSubscriptionTierId | null>(null);
+
+  const clearPayupCheckoutClientState = useCallback(() => {
+    try {
+      sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
+    } catch {
+      /* ignore */
+    }
+    setPayupPendingOrder(null);
+    setActiveCheckoutPlanId(null);
+  }, []);
+
   useEffect(() => {
     if (!searchString) return;
     const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
     const p = params.get("payup");
     if (p === "success") {
-      try {
-        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
-      } catch {
-        /* ignore */
-      }
+      clearPayupCheckoutClientState();
       toast({
         title: t("pricing.payupSuccessTitle", "구독 결제 완료"),
         description: t("pricing.payupSuccessDesc", "멤버십이 적용되었습니다."),
@@ -175,25 +191,25 @@ export default function Pricing() {
       } catch {
         /* ignore */
       }
-      if (user && pendingOrder) {
-        void fetch("/api/subscription/payup/client-outcome", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderNumber: pendingOrder, outcome: p === "cancel" ? "cancel" : "fail" }),
-        })
-          .then(() => {
-            void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-          })
-          .catch(() => {
-            /* 알림 실패는 요금/토스트와 무관 */
-          });
-      }
-      try {
-        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
-      } catch {
-        /* ignore */
-      }
+      const outcome = p === "cancel" ? "cancel" : "fail";
+      void (async () => {
+        if (!user) return;
+        if (pendingOrder) {
+          try {
+            await apiRequest("POST", "/api/subscription/payup/client-outcome", {
+              orderNumber: pendingOrder,
+              outcome,
+            });
+          } catch {
+            /* 보정 실패는 토스트와 무관 */
+          }
+        }
+        await queryClient.refetchQueries({ queryKey: ["/api/subscription/me"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
+        await queryClient.refetchQueries({ queryKey: ["/api/ai-music/usage"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      })();
+      clearPayupCheckoutClientState();
       if (p === "cancel") {
         toast({
           title: t("pricing.payupCancelledTitle", "결제 취소"),
@@ -208,17 +224,14 @@ export default function Pricing() {
         });
       }
       /** 음악 생성 등 다른 탭·캐시에 남은 유료 한도 표시 제거 (취소해도 서버는 free 인데 클라만 오래된 경우) */
-      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       window.history.replaceState(null, "", "/pricing");
     }
-  }, [searchString, toast, t, queryClient, user]);
+  }, [searchString, toast, t, queryClient, user, clearPayupCheckoutClientState]);
 
-  const [payupPendingOrder, setPayupPendingOrder] = useState<string | null>(null);
   useEffect(() => {
     if (!user) {
       setPayupPendingOrder(null);
+      setActiveCheckoutPlanId(null);
       return;
     }
     try {
@@ -227,7 +240,7 @@ export default function Pricing() {
     } catch {
       setPayupPendingOrder(null);
     }
-  }, [user?.id]);
+  }, [user?.id, searchString]);
 
   /** 페이업에서 취소·환불된 뒤에도 서버 paid 가 남은 경우 — 조회 경로 설정 시 자동 보정 */
   useEffect(() => {
@@ -429,6 +442,7 @@ export default function Pricing() {
       } catch {
         /* ignore */
       }
+      setPayupPendingOrder(data.orderNumber.trim());
       submitPayupDanalDirectCheckout({
         starturl: data.starturl,
         startparams: data.startparams,
@@ -436,7 +450,11 @@ export default function Pricing() {
         cardCode: data.cardCode,
       });
     },
+    onSettled: () => {
+      setActiveCheckoutPlanId(null);
+    },
     onError: (error: Error) => {
+      setActiveCheckoutPlanId(null);
       toast({
         title: t("pricing.payupOrderFailedTitle", "카드 결제"),
         description: error.message,
@@ -444,6 +462,33 @@ export default function Pricing() {
       });
     },
   });
+
+  /** PG 복귀·bfcache 시 플랜 버튼「처리 중」이 남지 않도록 mutation·체크아웃 플랜 초기화 */
+  useEffect(() => {
+    if (!searchString) return;
+    const params = new URLSearchParams(searchString.startsWith("?") ? searchString.slice(1) : searchString);
+    const p = params.get("payup");
+    if (p === "cancel" || p === "fail" || p === "success") {
+      payupSubscribeMutation.reset();
+      setActiveCheckoutPlanId(null);
+    }
+  }, [searchString, payupSubscribeMutation]);
+
+  useEffect(() => {
+    const onPageReturn = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      payupSubscribeMutation.reset();
+      setActiveCheckoutPlanId(null);
+      try {
+        const o = sessionStorage.getItem(PAYUP_PENDING_ORDER_KEY);
+        setPayupPendingOrder(o && o.trim() ? o.trim() : null);
+      } catch {
+        setPayupPendingOrder(null);
+      }
+    };
+    window.addEventListener("pageshow", onPageReturn);
+    return () => window.removeEventListener("pageshow", onPageReturn);
+  }, [payupSubscribeMutation]);
 
   const requestBankMutation = useMutation({
     mutationFn: async ({ period, planId }: { period: "monthly" | "yearly"; planId: PaidSubscriptionTierId }) => {
@@ -477,9 +522,9 @@ export default function Pricing() {
     },
     onSuccess: (data) => {
       toast({ title: t("pricing.cancelSuccess", "구독 해지"), description: data.message });
-      void queryClient.invalidateQueries({ queryKey: ["/api/subscription/me"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
-      void queryClient.invalidateQueries({ queryKey: ["/api/ai-music/usage"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/subscription/me"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/auth/user"] });
+      void queryClient.refetchQueries({ queryKey: ["/api/ai-music/usage"] });
     },
     onError: (error: Error) => {
       toast({ title: t("pricing.cancelFailed", "해지 실패"), description: error.message, variant: "destructive" });
@@ -567,6 +612,7 @@ export default function Pricing() {
             : "text-yellow-500";
     const checkClass =
       id === "premium" ? "text-yellow-500 shrink-0" : id === "pro" ? "text-primary shrink-0" : "text-muted-foreground shrink-0";
+    const cardCheckoutBusy = activeCheckoutPlanId === id && payupSubscribeMutation.isPending;
 
     return (
       <Card
@@ -596,7 +642,6 @@ export default function Pricing() {
             {monthly.toLocaleString("ko-KR")}
             {t("pricing.won", "원")}
           </span>
-          <span className="text-muted-foreground text-sm">/{t("pricing.perMonth", "월")}</span>
           <p className="text-xs text-muted-foreground mt-0.5">
             {t("pricing.vatExcluded", "공급가")} · {t("pricing.vatSeparateLine", "부가세 별도")}
           </p>
@@ -656,7 +701,7 @@ export default function Pricing() {
                   variant="outline"
                   size="sm"
                   className="w-full"
-                  disabled={payupSubscribeMutation.isPending}
+                  disabled={cardCheckoutBusy}
                   onClick={() => {
                     if (!user) {
                       toast({
@@ -667,12 +712,13 @@ export default function Pricing() {
                       window.location.href = LOGIN_PATH;
                       return;
                     }
+                    setActiveCheckoutPlanId(id);
                     payupSubscribeMutation.mutate({ period: billingPeriod, planId: id });
                   }}
                   data-testid={`button-payup-subscribe-${id}`}
                 >
                   <CreditCard size={14} className="mr-2" />
-                  {payupSubscribeMutation.isPending
+                  {cardCheckoutBusy
                     ? t("pricing.processing", "처리 중...")
                     : t("pricing.cardPayupSubscribe", "카드로 결제하기 (페이업)")}
                 </Button>
@@ -746,12 +792,7 @@ export default function Pricing() {
                     size="sm"
                     variant="outline"
                     onClick={() => {
-                      try {
-                        sessionStorage.removeItem(PAYUP_PENDING_ORDER_KEY);
-                      } catch {
-                        /* ignore */
-                      }
-                      setPayupPendingOrder(null);
+                      clearPayupCheckoutClientState();
                     }}
                   >
                     {t("pricing.payupRecoveryDismiss", "나중에")}

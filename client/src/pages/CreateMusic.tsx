@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
+  FileVideo,
   Plus,
   RefreshCw,
   Disc3,
@@ -277,7 +278,7 @@ const STYLE_API_TOKEN: Record<StylePresetId, string> = {
 const MAX_STYLE_PRESETS = 6;
 
 /** 스튜디오 스타일 칩 빠른 선택 (Mureka형 UI) */
-const STUDIO_QUICK_STYLE_IDS: (typeof STYLE_PRESET_IDS)[number][] = [
+const STUDIO_QUICK_STYLE_IDS: string[] = [
   "edm",
   "ambient",
   "piano",
@@ -571,6 +572,42 @@ function insertPastedPromptText(
   });
 }
 
+function downloadUrlInBrowser(url: string, fileName: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.rel = "noopener noreferrer";
+  a.target = "_blank";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+async function downloadResponseBlob(res: Response, fallbackName: string): Promise<{ blob: Blob; fileName: string }> {
+  if (!res.ok) {
+    const raw = await res.text().catch(() => "");
+    let message = raw.replace(/\s+/g, " ").slice(0, 300);
+    if (res.status === 504 || /504\s+Gateway\s+Time-?out/i.test(raw)) {
+      message = "서버 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.";
+    } else {
+      try {
+        const json = JSON.parse(raw) as { message?: string; error?: string; msg?: string };
+        message = json.message || json.error || json.msg || message;
+      } catch {}
+    }
+    throw new Error(message || `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") || "";
+  const m = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"/i.exec(cd);
+  const fileName = decodeURIComponent((m?.[1] || m?.[2] || fallbackName).trim()) || fallbackName;
+  const url = URL.createObjectURL(blob);
+  downloadUrlInBrowser(url, fileName);
+  URL.revokeObjectURL(url);
+  return { blob, fileName };
+}
+}
+
 function isLikelyBadAiMusicAudioUrl(u: string): boolean {
   const s = u.trim();
   if (s.length < 12) return true;
@@ -629,9 +666,13 @@ function TrackCard({
   order,
   onRemove,
   onDownload,
+  onDownloadWav,
+  onDownloadMp4,
   libraryDownloadAllowed,
   onScoreExport,
   scoreExportLoading,
+  wavExportLoading,
+  mp4ExportLoading,
   scorePdfEnabled,
   onPlay,
   isNowPlaying,
@@ -639,6 +680,7 @@ function TrackCard({
   isPublishing,
   isPublished,
   may2026EventFreeUi,
+  previewOnly = false,
   studioDark = false,
   t,
 }: {
@@ -646,10 +688,14 @@ function TrackCard({
   order: number;
   onRemove: () => void;
   onDownload: () => void;
+  onDownloadWav: () => void;
+  onDownloadMp4: () => void;
   /** 무료 플랜: 사이트 공개 전에는 라이브러리 파일 다운로드 불가(유료·관리자는 항상 허용) */
   libraryDownloadAllowed: boolean;
   onScoreExport: (format: "pdf" | "musicxml" | "zip") => void;
   scoreExportLoading: boolean;
+  wavExportLoading: boolean;
+  mp4ExportLoading: boolean;
   scorePdfEnabled: boolean;
   onPlay: () => void;
   isNowPlaying: boolean;
@@ -659,6 +705,8 @@ function TrackCard({
   isPublished: boolean;
   /** 5월 이벤트 승인+무료: '신곡으로 공개' 대신 다운로드 한 줄로 공개+저장, 옆 다운로드 링크 숨김 */
   may2026EventFreeUi?: boolean;
+  /** FIRST_SUCCESS에서 재생만 허용하고 보관함 작업은 최종 완료 뒤 노출 */
+  previewOnly?: boolean;
   studioDark?: boolean;
   t: TTranslate;
 }) {
@@ -670,6 +718,8 @@ function TrackCard({
   const fullText = (isLyricsMode && track.original_prompt ? track.original_prompt : track.prompt || track.tags || "").trim();
   const styleDescription = (track.tags ?? "").trim() || (track.prompt ?? "").trim() || "";
   const hasDownloaded = (track.downloadCount ?? 0) > 0;
+  const wavDownloadCount = track.wavDownloadCount ?? 0;
+  const mp4DownloadCount = track.mp4DownloadCount ?? 0;
   const doneActionClass = "text-emerald-700 font-medium";
   const actionLinkClass = "text-cyan-700 hover:text-cyan-800 transition-colors";
   const publishLinkClass = "text-amber-700 hover:text-amber-800 transition-colors";
@@ -721,26 +771,34 @@ function TrackCard({
               role="status"
               aria-label={t("createMusic.trackStatusAria", "다운로드·공개 상태")}
             >
-              <span
-                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
-                  hasDownloaded
-                    ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
-                    : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {t("createMusic.statusDownload", "다운로드")}{" "}
-                {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
-              </span>
-              <span
-                className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
-                  isPublished
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900"
-                    : "border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {t("createMusic.statusPublish", "공개")}{" "}
-                {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
-              </span>
+              {previewOnly ? (
+                <span className="inline-flex items-center rounded border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-800">
+                  {t("createMusic.firstTrackPreviewReady", "첫 곡 미리듣기 준비 완료")}
+                </span>
+              ) : (
+                <>
+                  <span
+                    className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                      hasDownloaded
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {t("createMusic.statusDownload", "다운로드")}{" "}
+                    {hasDownloaded ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+                  </span>
+                  <span
+                    className={`inline-flex items-center rounded border px-1.5 py-0.5 font-medium tabular-nums ${
+                      isPublished
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-900"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {t("createMusic.statusPublish", "공개")}{" "}
+                    {isPublished ? t("createMusic.statusDone", "완료") : t("createMusic.statusPending", "대기")}
+                  </span>
+                </>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
               <button
@@ -772,6 +830,8 @@ function TrackCard({
                     {isNowPlaying ? <Disc3 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                     {t("createMusic.play", "재생")}
                   </button>
+                  {!previewOnly ? (
+                    <>
                   {showInlineDownloadLink ? (
                     <button
                       type="button"
@@ -782,7 +842,7 @@ function TrackCard({
                       disabled={!libraryDownloadAllowed}
                       title={
                         libraryDownloadAllowed
-                          ? t("createMusic.download", "다운로드")
+                          ? t("createMusic.downloadMp3", "MP3 다운로드")
                           : t(
                               "createMusic.libraryDownloadAfterPublishTitle",
                               "무료 플랜: 사이트에 신곡 공개 후 다운로드할 수 있습니다.",
@@ -793,11 +853,58 @@ function TrackCard({
                       }`}
                     >
                       <Download className="w-3 h-3 flex-shrink-0" />
-                      {t("createMusic.download", "다운로드")}
+                      {t("createMusic.downloadMp3", "MP3 다운로드")}
                       {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
                         <span className={countBadgeClass}>{track.downloadCount}</span>
                       )}
                     </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!libraryDownloadAllowed || wavExportLoading) return;
+                      onDownloadWav();
+                    }}
+                    disabled={!libraryDownloadAllowed || wavExportLoading}
+                    title={
+                      libraryDownloadAllowed
+                        ? t("createMusic.downloadWav", "WAV 다운로드")
+                        : t(
+                            "createMusic.libraryDownloadAfterPublishTitle",
+                            "무료 플랜: 사이트에 유일 공개 후 다운로드할 수 있습니다.",
+                          )
+                    }
+                    className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline ${actionLinkClass}`}
+                  >
+                    {wavExportLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                    {t("createMusic.downloadWavShort", "WAV")}
+                    <span className={countBadgeClass}>{wavDownloadCount}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!libraryDownloadAllowed || mp4ExportLoading) return;
+                      onDownloadMp4();
+                    }}
+                    disabled={!libraryDownloadAllowed || mp4ExportLoading}
+                    title={
+                      libraryDownloadAllowed
+                        ? t("createMusic.downloadMp4", "MP4 다운로드")
+                        : t(
+                            "createMusic.libraryDownloadAfterPublishTitle",
+                            "무료 플랜: 사이트에 유일 공개 후 다운로드할 수 있습니다.",
+                          )
+                    }
+                    className={`inline-flex items-center gap-0.5 hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline ${actionLinkClass}`}
+                  >
+                    {mp4ExportLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileVideo className="w-3 h-3" />}
+                    {t("createMusic.downloadMp4Short", "MP4")}
+                    <span className={countBadgeClass}>{mp4DownloadCount}</span>
+                  </button>
+                  {!libraryDownloadAllowed ? (
+                    <span className="basis-full text-[10px] leading-snug text-amber-700">
+                      {t("createMusic.generatedDownloadAfterUploadHint", "회원 다운로드는 사이트 업로드 후 가능합니다.")}
+                    </span>
                   ) : null}
                   {scorePdfEnabled && (
                     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
@@ -855,11 +962,11 @@ function TrackCard({
                         <button
                           type="button"
                           onClick={() => onDownload()}
-                          title={t("createMusic.download", "다운로드")}
+                          title={t("createMusic.downloadMp3", "MP3 다운로드")}
                           className={`inline-flex items-center gap-0.5 hover:underline ${hasDownloaded ? doneActionClass : actionLinkClass}`}
                         >
                           <Download className="w-3 h-3 flex-shrink-0" />
-                          {t("createMusic.download", "다운로드")}
+                          {t("createMusic.downloadMp3", "MP3 다운로드")}
                           {typeof track.downloadCount === "number" && track.downloadCount > 0 && (
                             <span className={countBadgeClass}>{track.downloadCount}</span>
                           )}
@@ -914,24 +1021,28 @@ function TrackCard({
                         <Globe className="w-3 h-3" />
                       )}
                       {may2026EventFreeUi || combinePublishAndDownload
-                        ? t("createMusic.download", "다운로드")
+                        ? t("createMusic.downloadMp3", "MP3 다운로드")
                         : t("createMusic.publishToSite", "신곡으로 공개")}
                     </button>
                   )}
+                    </>
+                  ) : null}
                 </>
               )}
             </div>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 flex-shrink-0 text-slate-500 hover:text-destructive"
-            onClick={onRemove}
-            title={t("createMusic.remove", "목록에서 삭제")}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </Button>
+          {!previewOnly ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 flex-shrink-0 text-slate-500 hover:text-destructive"
+              onClick={onRemove}
+              title={t("createMusic.remove", "목록에서 삭제")}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          ) : null}
         </div>
         {(showLyrics || showStyle) && (
           <div className="mt-1 pt-2 border-t border-slate-200 space-y-3">
@@ -981,6 +1092,8 @@ type SavedTrack = GeneratedTrack & {
   createdAt: number;
   uploadCount?: number;
   downloadCount?: number;
+  wavDownloadCount?: number;
+  mp4DownloadCount?: number;
   /** 사이트에 신곡 공개 완료 여부 (localStorage 유지) */
   publishedToSite?: boolean;
   /** `/api/ai-music/publish` 성공 시 발급된 사이트 음원 ID — 공개 후 다운로드는 로컬 업로드 파일로 받는 게 안전 */
@@ -1018,6 +1131,19 @@ function generatedPreviewToSavedTrack(tr: GeneratedTrack, taskKey: string, index
   } as SavedTrack;
 }
 
+/** FIRST_SUCCESS 폴링 응답을 누적 병합해 먼저 도착한 곡이 다음 응답에서 사라지거나 중복되지 않게 유지 */
+function mergeGeneratedPreviewTracks(previous: GeneratedTrack[], incoming: GeneratedTrack[]): GeneratedTrack[] {
+  const merged = new Map<string, GeneratedTrack>();
+  const keyOf = (track: GeneratedTrack, index: number) =>
+    String(track.clip_id ?? pickSavedTrackAudioUrl(track as Record<string, unknown>) ?? `preview-${index}`);
+  previous.forEach((track, index) => merged.set(keyOf(track, index), track));
+  incoming.forEach((track, index) => {
+    const key = keyOf(track, index);
+    merged.set(key, { ...(merged.get(key) ?? {}), ...track });
+  });
+  return Array.from(merged.values());
+}
+
 function parseLocalStorageRawToArray(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) return parsed;
   if (parsed && typeof parsed === "object" && Array.isArray((parsed as { data?: unknown[] }).data)) {
@@ -1038,6 +1164,8 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       typeof t.createdAt === "number" ? t.createdAt : typeof t.created_at === "number" ? t.created_at : Date.now();
     const uploadCount = typeof t.uploadCount === "number" ? t.uploadCount : 0;
     const downloadCount = typeof t.downloadCount === "number" ? t.downloadCount : 0;
+    const wavDownloadCount = typeof t.wavDownloadCount === "number" ? t.wavDownloadCount : typeof t.wav_download_count === "number" ? t.wav_download_count : 0;
+    const mp4DownloadCount = typeof t.mp4DownloadCount === "number" ? t.mp4DownloadCount : typeof t.mp4_download_count === "number" ? t.mp4_download_count : 0;
     const siteMusicIdRaw = t.siteMusicId ?? t.site_music_id;
     const siteMusicId =
       typeof siteMusicIdRaw === "number" && Number.isFinite(siteMusicIdRaw)
@@ -1058,6 +1186,8 @@ function normalizeRawToSavedTracks(arr: unknown[]): SavedTrack[] {
       createdAt,
       uploadCount,
       downloadCount,
+      wavDownloadCount,
+      mp4DownloadCount,
       duration,
       generationTaskId:
         typeof t.generationTaskId === "string"
@@ -1200,6 +1330,8 @@ function mergeAiMusicLibrary(server: SavedTrack[], local: SavedTrack[]): SavedTr
         image_url: preferNonEmptyMediaUrl(existing.image_url, t.image_url),
         uploadCount: Math.max(existing.uploadCount ?? 0, t.uploadCount ?? 0),
         downloadCount: Math.max(existing.downloadCount ?? 0, t.downloadCount ?? 0),
+        wavDownloadCount: Math.max(existing.wavDownloadCount ?? 0, t.wavDownloadCount ?? 0),
+        mp4DownloadCount: Math.max(existing.mp4DownloadCount ?? 0, t.mp4DownloadCount ?? 0),
         publishedToSite: Boolean(existing.publishedToSite) || Boolean(t.publishedToSite),
         generationTaskId: genTask,
         generationProvider: genProv,
@@ -1232,6 +1364,8 @@ function tracksToWirePayload(tracks: SavedTrack[]) {
     generationProvider: t.generationProvider,
     uploadCount: t.uploadCount,
     downloadCount: t.downloadCount,
+    wavDownloadCount: t.wavDownloadCount,
+    mp4DownloadCount: t.mp4DownloadCount,
     publishedToSite: t.publishedToSite,
     ...(typeof t.duration === "number" && Number.isFinite(t.duration) && t.duration > 0 ? { duration: t.duration } : {}),
   }));
@@ -1432,10 +1566,31 @@ export default function CreateMusic() {
   }, [useMyVoice, creationModelVersion, myVoiceReady]);
   const generationStartRef = useRef<number | null>(null);
   const submitModeRef = useRef<CreateMode>("description");
+  const submittedInstrumentalRef = useRef(false);
   const submittedLyricsRef = useRef<string>("");
   const submittedTitleRef = useRef<string>("");
   const submittedTagsRef = useRef<string>("");
   const didRestoreGuestDraft = useRef(false);
+  const previewSavedTracks = useMemo(() => {
+    if (!taskId) return [];
+    const unique = new Map<string, SavedTrack>();
+    previewTracks.forEach((track, index) => {
+      const preview = generatedPreviewToSavedTrack(track, taskId, index);
+      const playableUrl = getSavedTrackPlayableUrl(preview);
+      if (!playableUrl) return;
+      const key = String(track.clip_id ?? playableUrl);
+      if (!unique.has(key)) {
+        unique.set(key, {
+          ...preview,
+          generationTaskId: taskId,
+          generationProvider: taskProvider ?? undefined,
+          tags: submittedTagsRef.current.trim() || preview.tags,
+          original_prompt: submitModeRef.current === "custom" ? submittedLyricsRef.current : undefined,
+        });
+      }
+    });
+    return Array.from(unique.values());
+  }, [previewTracks, taskId, taskProvider]);
 
   useEffect(() => {
     if (didRestoreGuestDraft.current) return;
@@ -1916,6 +2071,145 @@ export default function CreateMusic() {
 
   const [scorePdfEnabled, setScorePdfEnabled] = useState(false);
   const [scorePdfTrackId, setScorePdfTrackId] = useState<string | null>(null);
+  const [wavExportTrackId, setWavExportTrackId] = useState<string | null>(null);
+  const [mp4ExportTrackId, setMp4ExportTrackId] = useState<string | null>(null);
+
+  const requestGeneratedMediaUrl = useCallback(
+    async (track: SavedTrack, kind: "wav" | "mp4"): Promise<string> => {
+      const clipId = (track.clip_id ?? "").trim();
+      const generationTaskId = (track.generationTaskId ?? "").trim();
+      if (!clipId || !generationTaskId) {
+        throw new Error(t("createMusic.generatedMediaMissingIds", "생성 파일을 만들기 위한 곡 ID가 없습니다."));
+      }
+      const endpoint = kind === "wav" ? "/api/ai-music/wav-url" : "/api/ai-music/mp4-url";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clip_id: clipId,
+          generation_task_id: generationTaskId,
+          provider: track.generationProvider || taskProvider || undefined,
+          title: track.title || undefined,
+        }),
+      });
+      const raw = await res.text().catch(() => "");
+      let data: { wav_url?: string; mp4_url?: string; mp4_task_id?: string; message?: string; error?: string; msg?: string } = {};
+      if (raw.trim()) {
+        try {
+          data = JSON.parse(raw) as typeof data;
+        } catch {
+          data = { message: raw.replace(/\s+/g, " ").slice(0, 300) };
+        }
+      }
+      if (!res.ok) {
+        throw new Error(data.message || data.error || data.msg || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
+      }
+      if (kind === "mp4" && data.mp4_task_id) {
+        const provider = track.generationProvider || taskProvider || "";
+        for (let attempt = 0; attempt < 90; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+          const query = provider ? `?provider=${encodeURIComponent(provider)}` : "";
+          const statusRes = await fetch(
+            `/api/ai-music/mp4-status/${encodeURIComponent(data.mp4_task_id)}${query}`,
+            { credentials: "include" },
+          );
+          const statusData = (await statusRes.json().catch(() => ({}))) as {
+            state?: string;
+            mp4_url?: string;
+            message?: string;
+          };
+          if (!statusRes.ok) {
+            throw new Error(statusData.message || t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."));
+          }
+          if (statusData.state === "succeeded" && statusData.mp4_url) return statusData.mp4_url;
+        }
+        throw new Error(t("createMusic.generatedMediaTimeout", "MP4 생성 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."));
+      }
+      const url = kind === "wav" ? data.wav_url : data.mp4_url;
+      if (!url || typeof url !== "string") {
+        throw new Error(t("createMusic.generatedMediaMissingUrl", "생성 파일 URL을 받지 못했습니다."));
+      }
+      return url;
+    },
+    [t, taskProvider],
+  );
+
+  const handleDownloadGeneratedMedia = useCallback(
+    async (track: SavedTrack, kind: "wav" | "mp4") => {
+      const effective = savedTracksRef.current.find((x) => x.id === track.id) ?? track;
+      const allowed = Boolean(aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(effective, savedTracksRef.current));
+      if (!allowed) {
+        toast({
+          title: t("createMusic.libraryDownloadBlockedTitle", "다운로드 전에 공개해 주세요"),
+          description: t(
+            "createMusic.libraryDownloadAfterPublishBody",
+            "무료 플랜에서는 생성한 곡을 사이트에 유일 공개한 뒤에만 파일을 내려받을 수 있습니다.",
+          ),
+          variant: "destructive",
+        });
+        return;
+      }
+      const setLoading = kind === "wav" ? setWavExportTrackId : setMp4ExportTrackId;
+      setLoading(effective.id);
+      try {
+        const baseName = sanitizeFilename(effective.title || t("createMusic.untitled", "제목 없음"));
+        const url = await requestGeneratedMediaUrl(effective, kind);
+        const downloadRes =
+          kind === "mp4"
+            ? await fetch("/api/ai-music/generated-file-proxy", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  kind,
+                  filename: baseName,
+                  url,
+                  registerMusicVideo: true,
+                  title: effective.title || baseName,
+                  description: effective.prompt || effective.tags || "",
+                  durationSec: typeof effective.duration === "number" ? Math.round(effective.duration) : undefined,
+                }),
+              })
+            : await fetch(
+                `/api/ai-music/generated-file-proxy?kind=${encodeURIComponent(kind)}` +
+                  `&filename=${encodeURIComponent(baseName)}` +
+                  `&url=${encodeURIComponent(url)}`,
+                { credentials: "include" },
+              );
+        await downloadResponseBlob(downloadRes, `${baseName}.${kind}`);
+        setSavedTracks((prev) => {
+          const next = prev.map((t) =>
+            t.id === effective.id
+              ? {
+                  ...t,
+                  wavDownloadCount: kind === "wav" ? (t.wavDownloadCount ?? 0) + 1 : t.wavDownloadCount,
+                  mp4DownloadCount: kind === "mp4" ? (t.mp4DownloadCount ?? 0) + 1 : t.mp4DownloadCount,
+                }
+              : t,
+          );
+          persistTracks(next, { immediate: true });
+          return next;
+        });
+        toast({
+          title: kind === "wav" ? t("createMusic.wavReady", "WAV 준비 완료") : t("createMusic.mp4Ready", "MP4 준비 완료"),
+          description:
+            kind === "mp4"
+              ? t("createMusic.mp4ReadyAndUploadedBody", "브라우저 다운로드를 시작했고 뮤직비디오에도 업로드했습니다.")
+              : t("createMusic.generatedMediaReadyBody", "브라우저에서 파일 다운로드를 시작했습니다."),
+        });
+      } catch (e) {
+        toast({
+          title: kind === "wav" ? t("createMusic.wavFailed", "WAV 생성 실패") : t("createMusic.mp4Failed", "MP4 생성 실패"),
+          description: e instanceof Error && e.message ? e.message : t("createMusic.generatedMediaFailed", "생성 파일을 준비하지 못했습니다."),
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(null);
+      }
+    },
+    [aiUsage?.isPaidTier, persistTracks, requestGeneratedMediaUrl, t, toast],
+  );
 
   useEffect(() => {
     if (!user?.id) {
@@ -2022,13 +2316,12 @@ export default function CreateMusic() {
       if (state === "preview" && Array.isArray(data.data)) {
         const userTitle = submittedTitleRef.current.trim();
         const customMode = submitModeRef.current === "custom";
-        setPreviewTracks(
-          mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
+        const incoming = mapGeneratedClipsWithResolvedTitles(data.data as GeneratedTrack[], {
             userTitle,
             customMode,
             submittedLyrics: submittedLyricsRef.current,
-          }),
-        );
+          });
+        setPreviewTracks((previous) => mergeGeneratedPreviewTracks(previous, incoming));
       }
       if (state === "succeeded" && Array.isArray(data.data)) {
         generationStartRef.current = null;
@@ -2491,8 +2784,8 @@ export default function CreateMusic() {
     e.preventDefault();
     if (!user) return;
     sessionStorage.removeItem(GUEST_CREATE_DRAFT_SESSION_KEY);
-    const promptTrim = prompt.trim();
     const customMode = mode === "custom";
+    const promptTrim = prompt.trim();
     if (mode === "custom" && !promptTrim && !instrumentalOnly) {
       toast({ title: "가사를 입력해 주세요.", variant: "destructive" });
       return;
@@ -2515,6 +2808,7 @@ export default function CreateMusic() {
     setElapsedSec(0);
     generationStartRef.current = Date.now();
     submitModeRef.current = mode;
+    submittedInstrumentalRef.current = instrumentalOnly;
     /** 커스텀·설명 공통: 제목 비움 시 가사/설명에서 제목 추론용 */
     submittedLyricsRef.current = promptTrim;
     submittedTitleRef.current = title.trim();
@@ -2620,6 +2914,16 @@ export default function CreateMusic() {
     <PageTransition>
       <div className="min-h-screen bg-transparent text-white flex flex-col md:bg-white md:text-slate-900">
         <Navigation />
+
+        <Link
+          href="/ai-music-tools-test"
+          className="group block w-full bg-gradient-to-r from-purple-600 via-fuchsia-600 to-pink-600 px-4 py-2.5 text-center text-xs font-medium text-white transition-opacity hover:opacity-90 md:text-sm"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            🎛️ 새 기능: 곡의 특정 구간만 다시 만들거나, 보컬·악기를 따로 분리해보세요
+            <span className="inline-block transition-transform group-hover:translate-x-0.5">→</span>
+          </span>
+        </Link>
 
         <section className="relative overflow-hidden px-0 py-4 md:py-10">
           <div className="absolute inset-0 hidden bg-gradient-to-b from-white via-white to-slate-50 pointer-events-none md:block" />
@@ -3588,7 +3892,7 @@ export default function CreateMusic() {
                     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 md:p-6 flex-1 flex flex-col min-h-0">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
                         <h2 className="text-lg font-bold shrink-0">
-                          {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length})
+                          {t("createMusic.resultsTitle", "생성된 곡")} ({savedTracks.length + previewSavedTracks.length})
                         </h2>
                         {savedTracks.length > 0 && totalDownloads > 0 && (
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
@@ -3612,26 +3916,67 @@ export default function CreateMusic() {
                         </div>
                       )}
 
-                      {savedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
+                      {previewSavedTracks.length > 0 ? (
+                        <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800" role="status">
+                          {t(
+                            submittedInstrumentalRef.current
+                              ? "createMusic.instrumentalPreviewReady"
+                              : "createMusic.firstTrackReadySecondGenerating",
+                            submittedInstrumentalRef.current
+                              ? "연주곡 미리듣기가 준비되었습니다. 최종 완료까지 계속 생성 중입니다."
+                              : "첫 번째 곡이 준비되었습니다. 지금 재생할 수 있으며, 두 번째 곡은 계속 생성 중입니다.",
+                          )}
+                        </p>
+                      ) : null}
+
+                      {savedTracks.length === 0 && previewSavedTracks.length === 0 && status !== "pending" && status !== "running" && status !== "preview" ? (
                         <p className="text-slate-600 text-sm">{t("createMusic.noTracksYet", "아직 생성된 곡이 없습니다. 위에서 음악을 생성해 보세요.")}</p>
-                      ) : sortedFilteredSavedTracks.length === 0 ? (
+                      ) : sortedFilteredSavedTracks.length === 0 && previewSavedTracks.length === 0 ? (
                         <p className="text-slate-600 text-sm">{t("createMusic.noSearchResults", "검색 결과가 없습니다.")}</p>
                       ) : (
                         <>
                           <div className="flex flex-col gap-4 min-w-0">
                             <div className="flex-1 min-w-0 space-y-3 pr-1">
+                              {previewSavedTracks.map((track, index) => (
+                                <TrackCard
+                                  key={track.id}
+                                  track={track}
+                                  order={index + 1}
+                                  onRemove={() => {}}
+                                  onDownload={() => {}}
+                                  onDownloadWav={() => {}}
+                                  onDownloadMp4={() => {}}
+                                  libraryDownloadAllowed={false}
+                                  onScoreExport={() => {}}
+                                  scoreExportLoading={false}
+                                  wavExportLoading={false}
+                                  mp4ExportLoading={false}
+                                  scorePdfEnabled={false}
+                                  onPlay={() => playTrackInGlobalPlayer(track)}
+                                  isNowPlaying={activeExternalTrack?.url === getSavedTrackPlayableUrl(track)}
+                                  onRequestPublish={() => {}}
+                                  isPublishing={false}
+                                  isPublished={false}
+                                  previewOnly
+                                  t={t as TTranslate}
+                                />
+                              ))}
                               {savedTracksPageSlice.map((track, index) => (
                                 <TrackCard
                                   key={track.id}
                                   track={track}
-                                  order={(savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
+                                  order={previewSavedTracks.length + (savedTracksSafePage - 1) * SAVED_TRACKS_LIST_PAGE_SIZE + index + 1}
                                   onRemove={() => removeSavedTrack(track.id)}
                                   onDownload={() => handleDownloadTrack(track)}
+                                  onDownloadWav={() => void handleDownloadGeneratedMedia(track, "wav")}
+                                  onDownloadMp4={() => void handleDownloadGeneratedMedia(track, "mp4")}
                                   libraryDownloadAllowed={Boolean(
                                     aiUsage?.isPaidTier || isFreeAiLibraryDownloadAllowed(track, savedTracks),
                                   )}
                                   onScoreExport={(fmt) => void handleScoreExport(track, fmt)}
                                   scoreExportLoading={scorePdfTrackId === track.id}
+                                  wavExportLoading={wavExportTrackId === track.id}
+                                  mp4ExportLoading={mp4ExportTrackId === track.id}
                                   scorePdfEnabled={scorePdfEnabled}
                                   onPlay={() => playTrackInGlobalPlayer(track)}
                                   isNowPlaying={activeExternalTrack?.url === getSavedTrackPlayableUrl(track)}
@@ -3934,20 +4279,7 @@ export default function CreateMusic() {
                   const payload = publishConfirm;
                   if (!payload) return;
                   const { track, publishThenDownload } = payload;
-                  /** 공개만(다운로드 결합 아님)일 때도 유료·5월이벤트는 같은 task 미공개 클립을 한 번에 배포 — 유료는 형제만 파일 받고 사이트 미배포되는 문제 방지 */
-                  const tid = (track.generationTaskId ?? "").trim();
-                  const hasUnpublishedSibling =
-                    Boolean(tid) &&
-                    savedTracksRef.current.some(
-                      (x) =>
-                        x.id !== track.id &&
-                        (x.generationTaskId ?? "").trim() === tid &&
-                        !x.publishedToSite &&
-                        Boolean((x.audio_url ?? "").trim()),
-                    );
-                  const canMultiPublishOnServer = Boolean(aiUsage?.isPaidTier || may2026EventFreeUi);
-                  const chainSiblings =
-                    publishThenDownload || (canMultiPublishOnServer && hasUnpublishedSibling);
+                  const chainSiblings = publishThenDownload;
                   const ok = await handlePublishTrack(track, { chainSiblings });
                   if (ok && publishThenDownload) {
                     const tid = (track.generationTaskId ?? "").trim();

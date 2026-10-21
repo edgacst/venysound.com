@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateMusic, useUpdateMusic } from "@/hooks/use-music";
 import { useUpload } from "@/hooks/use-upload";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { 
   Form, 
@@ -18,12 +18,13 @@ import {
   FormDescription
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, ImagePlus, DollarSign, Download, AlertCircle, Crown } from "lucide-react";
+import { Loader2, Music as MusicIcon, Image as ImageIcon, CheckCircle, ArrowLeft, CloudUpload, ImagePlus, DollarSign, Download, AlertCircle, Crown, Film } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import jsmediatags from "jsmediatags";
 import { useAuth } from "@/hooks/use-auth";
@@ -61,12 +62,115 @@ const mainGenres: Record<string, string[]> = {
   "기타": []
 };
 
+const MAX_VIDEO_FILE_SIZE = 500 * 1024 * 1024;
+
+type VideoUploadTicket = {
+  uploadURL?: string;
+  objectPath?: string;
+  localMode?: boolean;
+  uploadEndpoint?: string;
+  error?: string;
+  message?: string;
+};
+
+function uploadVideoBody(
+  url: string,
+  method: "POST" | "PUT",
+  body: XMLHttpRequestBodyInit,
+  options: { contentType?: string; withCredentials?: boolean; onProgress: (percent: number) => void },
+): Promise<VideoUploadTicket> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    xhr.withCredentials = options.withCredentials === true;
+    if (options.contentType) xhr.setRequestHeader("Content-Type", options.contentType);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        options.onProgress(Math.min(99, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    xhr.onerror = () => reject(new Error("영상 파일 전송 중 네트워크 오류가 발생했습니다."));
+    xhr.onload = () => {
+      let response: VideoUploadTicket = {};
+      try {
+        response = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+      } catch {
+        response = {};
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onProgress(100);
+        resolve(response);
+        return;
+      }
+      const message =
+        xhr.status === 413
+          ? "MP4 파일 용량이 서버 허용 범위를 초과했습니다."
+          : response.error || response.message || `영상 업로드에 실패했습니다. (HTTP ${xhr.status})`;
+      reject(new Error(message));
+    };
+    xhr.send(body);
+  });
+}
+
+async function uploadMusicVideoFile(file: File, onProgress: (percent: number) => void): Promise<VideoUploadTicket> {
+  onProgress(0);
+  const ticketRes = await fetch("/api/uploads/request-url", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: file.name,
+      size: file.size,
+      contentType: file.type || "video/mp4",
+    }),
+  });
+  const ticket = (await ticketRes.json().catch(() => ({}))) as VideoUploadTicket;
+  if (!ticketRes.ok) throw new Error(ticket.error || ticket.message || "영상 업로드 주소를 준비하지 못했습니다.");
+
+  if (ticket.localMode) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("desiredFilename", file.name);
+    const uploaded = await uploadVideoBody(ticket.uploadEndpoint || "/api/uploads/local", "POST", formData, {
+      withCredentials: true,
+      onProgress,
+    });
+    return uploaded;
+  }
+
+  if (!ticket.uploadURL || !ticket.objectPath) throw new Error("영상 업로드 주소가 올바르지 않습니다.");
+  await uploadVideoBody(ticket.uploadURL, "PUT", file, {
+    contentType: file.type || "video/mp4",
+    onProgress,
+  });
+  return ticket;
+}
+
+async function getVideoDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      const duration = Number.isFinite(video.duration) ? Math.round(video.duration) : null;
+      URL.revokeObjectURL(url);
+      resolve(duration);
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(null);
+    };
+    video.src = url;
+  });
+}
+
 export default function Upload() {
   const { t } = useTranslation();
   const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { mutate: createMusic, isPending: isCreating } = useCreateMusic();
   const { mutate: updateMusic, isPending: isUpdatingLyrics } = useUpdateMusic();
+  const queryClient = useQueryClient();
 
   const { uploadFile: uploadAudio, isUploading: isUploadingAudio } = useUpload();
   const { uploadFile: uploadImage, isUploading: isUploadingImage } = useUpload();
@@ -80,6 +184,13 @@ export default function Upload() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [unsplashUrl, setUnsplashUrl] = useState<string | null>(null);
   const [extractedCoverUrl, setExtractedCoverUrl] = useState<string | null>(null);
+  const [uploadKind, setUploadKind] = useState<"audio" | "video">("audio");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoDescription, setVideoDescription] = useState("");
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [isRegisteringVideo, setIsRegisteringVideo] = useState(false);
 
   const tryExtractMp3Cover = useCallback((file: File) => {
     setExtractedCoverUrl((prev) => {
@@ -345,6 +456,73 @@ export default function Upload() {
     }
   };
 
+  const handleVideoFileChange = (file: File | null) => {
+    if (!file) {
+      setVideoFile(null);
+      return;
+    }
+    if (!file.type.includes("mp4") && !file.name.toLowerCase().endsWith(".mp4")) {
+      setVideoFile(null);
+      toast({ title: "MP4 파일만 업로드할 수 있습니다.", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_VIDEO_FILE_SIZE) {
+      setVideoFile(null);
+      toast({ title: "MP4 파일은 최대 500MB까지 업로드할 수 있습니다.", variant: "destructive" });
+      return;
+    }
+    setVideoFile(file);
+    if (!videoTitle.trim()) setVideoTitle(file.name.replace(/\.[^.]+$/, ""));
+  };
+
+  const handleVideoUpload = async () => {
+    if (!videoFile) {
+      toast({ title: "MP4 파일을 선택해 주세요.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploadingVideo(true);
+    setVideoUploadProgress(0);
+    try {
+      const upload = await uploadMusicVideoFile(videoFile, setVideoUploadProgress);
+      if (!upload?.objectPath) throw new Error("영상 업로드에 실패했습니다.");
+
+      setIsUploadingVideo(false);
+      setIsRegisteringVideo(true);
+      const durationSec = await getVideoDuration(videoFile);
+      const res = await fetch("/api/music-videos", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: videoTitle.trim() || videoFile.name.replace(/\.[^.]+$/, ""),
+          description: videoDescription.trim(),
+          videoUrl: upload.objectPath,
+          originalFilename: videoFile.name,
+          durationSec,
+          fileSize: videoFile.size,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "뮤직비디오를 등록하지 못했습니다.");
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ["/api/music-videos"] });
+      toast({ title: "뮤직비디오가 등록되었습니다." });
+      setLocation("/music-videos");
+    } catch (error) {
+      toast({
+        title: "뮤직비디오 등록 실패",
+        description: error instanceof Error ? error.message : "다시 시도해 주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingVideo(false);
+      setIsRegisteringVideo(false);
+    }
+  };
+
   const subGenres = selectedMainGenre ? mainGenres[selectedMainGenre] || [] : [];
 
   return (
@@ -353,14 +531,35 @@ export default function Upload() {
         <Navigation />
       
         <div className="container max-w-2xl px-4 py-12">
-          <div className="mb-6">
+          <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Button
+              type="button"
+              variant={uploadKind === "audio" ? "default" : "outline"}
+              className="w-full gap-2"
+              onClick={() => setUploadKind("audio")}
+              data-testid="button-audio-upload-mode"
+            >
+              <MusicIcon size={16} />
+              음원 업로드
+            </Button>
+            <Button
+              type="button"
+              variant={uploadKind === "video" ? "default" : "outline"}
+              className="w-full gap-2"
+              onClick={() => setUploadKind("video")}
+              data-testid="button-video-upload-mode"
+            >
+              <Film size={16} />
+              MP4 업로드
+            </Button>
             <Link href="/bulk-upload" className="block">
-              <Button variant="outline" className="w-full gap-2 sm:w-auto sm:min-w-[200px]" data-testid="link-bulk-upload">
+              <Button variant="outline" className="w-full gap-2" data-testid="link-bulk-upload">
                 <CloudUpload size={16} />
                 {t("upload.bulkUpload", "대량 업로드")}
               </Button>
             </Link>
           </div>
+        {uploadKind === "audio" ? (
         <Card className="border-white/10 bg-card/50 backdrop-blur-sm">
           <CardHeader className="text-center">
             <div className="text-primary text-4xl mb-2">
@@ -729,6 +928,102 @@ export default function Upload() {
             </div>
           </CardContent>
         </Card>
+        ) : (
+          <Card className="border-white/10 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="text-center">
+              <div className="text-primary text-4xl mb-2">
+                <Film className="mx-auto h-10 w-10" />
+              </div>
+              <CardTitle className="text-2xl font-display" data-testid="text-video-upload-title">뮤직비디오 업로드</CardTitle>
+              <p className="text-muted-foreground text-sm">MP4 영상을 등록하면 뮤직비디오 페이지에 게시됩니다.</p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="video-input">MP4 영상 파일</Label>
+                <label
+                  htmlFor="video-input"
+                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors min-h-[160px] flex flex-col items-center justify-center ${
+                    videoFile ? "border-primary bg-primary/5" : "border-white/10 hover:border-white/20 hover:bg-white/5"
+                  }`}
+                  data-testid="dropzone-video"
+                >
+                  <input
+                    id="video-input"
+                    type="file"
+                    accept="video/mp4,.mp4"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      handleVideoFileChange(file);
+                      if (
+                        file &&
+                        ((!file.type.includes("mp4") && !file.name.toLowerCase().endsWith(".mp4")) || file.size > MAX_VIDEO_FILE_SIZE)
+                      ) {
+                        e.currentTarget.value = "";
+                      }
+                    }}
+                  />
+                  {videoFile ? (
+                    <div className="text-primary flex flex-col items-center">
+                      <CheckCircle className="mb-2" />
+                      <span className="max-w-full truncate text-sm">{videoFile.name}</span>
+                      <span className="mt-1 text-xs text-muted-foreground">{(videoFile.size / (1024 * 1024)).toFixed(1)}MB</span>
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground flex flex-col items-center">
+                      <Film className="mb-2 h-8 w-8 opacity-50" />
+                      <span className="text-sm">MP4 파일을 선택하세요</span>
+                      <span className="mt-1 text-xs text-muted-foreground">MP4 형식, 최대 500MB</span>
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="video-title">영상 제목</Label>
+                <Input
+                  id="video-title"
+                  value={videoTitle}
+                  onChange={(e) => setVideoTitle(e.target.value)}
+                  placeholder="영상 제목"
+                  maxLength={180}
+                  className="bg-background border-white/10"
+                  data-testid="input-video-title"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="video-description">설명 (선택사항)</Label>
+                <Textarea
+                  id="video-description"
+                  value={videoDescription}
+                  onChange={(e) => setVideoDescription(e.target.value)}
+                  placeholder="영상 설명을 입력하세요"
+                  maxLength={1200}
+                  className="min-h-[120px] bg-background border-white/10 resize-y"
+                  data-testid="input-video-description"
+                />
+              </div>
+
+              <Button
+                type="button"
+                className="w-full bg-primary text-white font-semibold"
+                disabled={!videoFile || isUploadingVideo || isRegisteringVideo}
+                onClick={() => void handleVideoUpload()}
+                data-testid="button-submit-video-upload"
+              >
+                {isUploadingVideo || isRegisteringVideo ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isUploadingVideo ? `영상 업로드 중... ${videoUploadProgress}%` : "뮤직비디오 등록 중..."}
+                  </>
+                ) : (
+                  "뮤직비디오 업로드"
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
       <Footer />
 

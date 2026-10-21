@@ -29,18 +29,21 @@ export function serveStatic(app: Express) {
   }
   let indexTemplate = fs.readFileSync(indexPath, "utf-8");
 
-  /** AdSense ads.txt — 크롤러/대시보드가 text/plain 루트 파일을 기대 */
+  /** AdSense ads.txt / AdMob app-ads.txt — 크롤러가 text/plain 루트 파일을 기대 */
   const adsTxtPath = path.resolve(distPath, "ads.txt");
-  app.get("/ads.txt", (_req, res) => {
-    if (!fs.existsSync(adsTxtPath)) {
+  const appAdsTxtPath = path.resolve(distPath, "app-ads.txt");
+  const sendAdsTxtFile = (res: Response, filePath: string, label: string) => {
+    if (!fs.existsSync(filePath)) {
       res.status(404).setHeader("Content-Type", "text/plain; charset=utf-8");
       res.setHeader("Cache-Control", "no-store");
-      return res.send("ads.txt missing — run npm run build after adding client/public/ads.txt\n");
+      return res.send(`${label} missing — run npm run build after adding client/public/${label}\n`);
     }
     res.status(200).setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Cache-Control", "public, max-age=3600");
-    return res.sendFile(adsTxtPath);
-  });
+    return res.sendFile(filePath);
+  };
+  app.get("/ads.txt", (_req, res) => sendAdsTxtFile(res, adsTxtPath, "ads.txt"));
+  app.get("/app-ads.txt", (_req, res) => sendAdsTxtFile(res, appAdsTxtPath, "app-ads.txt"));
 
   const sendSpaIndex = (req: Request, res: Response) => {
     let body = injectSpaCanonicalPlaceholders(indexTemplate, req);

@@ -158,7 +158,7 @@ export default function RadioChannel() {
       return res.json();
     },
     enabled: !!slug && !reservedTo,
-    refetchInterval: (data) => (data?.status === "live" ? 3000 : false),
+    refetchInterval: (query) => (query.state.data?.status === "live" ? 3000 : false),
     refetchIntervalInBackground: false,
   });
 

@@ -1,21 +1,31 @@
 import { useEffect, useRef } from "react";
 
+export type ResumeAudioWhenForegroundOptions = {
+  /** play() 직전 (예: AudioContext.resume) */
+  prepareResume?: () => void;
+};
+
 /**
  * 통화·다른 앱 전환 등으로 OS가 오디오를 멈춘 뒤, 다시 앱/탭이 앞으로 오면 재생을 이어갑니다.
- * `shouldResumeAfterInterruption`이 true일 때만 시도하므로(예: userStopped·스트림 없음) 사용자가 정지한 경우는 건드리지 않습니다.
- * (백그라운드에서 끊기지 않게 하는 것은 iOS/Android 정책상 항상 보장되지는 않습니다.)
+ * `shouldResumeAfterInterruption`이 true일 때만 시도하므로(예: userStopped·pauseRequested) 사용자가 정지한 경우는 건드리지 않습니다.
  */
 export function useResumeAudioWhenForeground(
   getAudio: () => HTMLAudioElement | null,
   shouldResumeAfterInterruption: () => boolean,
+  options?: ResumeAudioWhenForegroundOptions,
 ) {
   const getAudioRef = useRef(getAudio);
   const shouldRef = useRef(shouldResumeAfterInterruption);
+  const prepareRef = useRef(options?.prepareResume);
   getAudioRef.current = getAudio;
   shouldRef.current = shouldResumeAfterInterruption;
+  prepareRef.current = options?.prepareResume;
 
   useEffect(() => {
     const getEl = () => getAudioRef.current();
+    const resumeTimers = new Set<number>();
+    let interruptionRetryInterval: number | null = null;
+    let blurredWhileVisible = false;
 
     const hasPlayableSrc = (a: HTMLAudioElement) => {
       const s = a.src || "";
@@ -23,39 +33,132 @@ export function useResumeAudioWhenForeground(
       return true;
     };
 
+    /** 곡 말미 pause(ended·client-advance)와 통화 일시정지 구분 */
+    const isLikelyTrackEndPause = (a: HTMLAudioElement) => {
+      if (a.ended) return true;
+      const d = a.duration;
+      return Number.isFinite(d) && d >= 2 && a.currentTime >= d - 0.35;
+    };
+
     const attemptPlay = (el: HTMLAudioElement) => {
+      prepareRef.current?.();
       el.muted = false;
-      el.volume = Math.max(el.volume, 1);
       void el.play().catch(() => {});
     };
 
     const tryResume = () => {
       if (!shouldRef.current()) return;
+      if (blurredWhileVisible) {
+        if (document.visibilityState === "visible" && document.hasFocus()) {
+          blurredWhileVisible = false;
+        } else {
+          return;
+        }
+      }
       const run = () => {
         const a = getEl();
-        if (!a || a.ended || !hasPlayableSrc(a)) return;
-        // 통화 직후 일부 단말은 paused가 아닌데도 무음이거나, paused인데 focus가 늦게 오는 경우가 있어 항상 play() 시도
+        if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) return;
         attemptPlay(a);
-        window.setTimeout(() => {
-          if (!shouldRef.current()) return;
-          const a2 = getEl();
-          if (!a2 || a2.ended || !hasPlayableSrc(a2)) return;
-          if (a2.paused) attemptPlay(a2);
-        }, 320);
+        for (const delay of [320, 900, 2000]) {
+          const tid = window.setTimeout(() => {
+            resumeTimers.delete(tid);
+            if (!shouldRef.current()) return;
+            const a2 = getEl();
+            if (!a2 || !hasPlayableSrc(a2) || isLikelyTrackEndPause(a2)) return;
+            attemptPlay(a2);
+          }, delay);
+          resumeTimers.add(tid);
+        }
       };
       requestAnimationFrame(run);
     };
 
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") tryResume();
+    const stopInterruptionRetry = () => {
+      if (interruptionRetryInterval == null) return;
+      window.clearInterval(interruptionRetryInterval);
+      interruptionRetryInterval = null;
     };
 
-    window.addEventListener("focus", tryResume);
-    window.addEventListener("pageshow", tryResume);
+    const keepRetryingInterruptedAudio = () => {
+      if (interruptionRetryInterval != null) return;
+      interruptionRetryInterval = window.setInterval(() => {
+        if (!shouldRef.current()) {
+          stopInterruptionRetry();
+          return;
+        }
+        const a = getEl();
+        if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) {
+          stopInterruptionRetry();
+          return;
+        }
+        if (!a.paused) {
+          stopInterruptionRetry();
+          return;
+        }
+        tryResume();
+      }, 1800);
+    };
+
+    /** 통화 등 OS pause: 앱이 foreground에 남아 있어도 통화 종료 후 재개 */
+    const onElementPause = () => {
+      if (!shouldRef.current()) return;
+      const a = getEl();
+      if (!a || !hasPlayableSrc(a) || isLikelyTrackEndPause(a)) return;
+      keepRetryingInterruptedAudio();
+      for (const delay of [400, 1200, 2800]) {
+        const tid = window.setTimeout(() => {
+          resumeTimers.delete(tid);
+          tryResume();
+        }, delay);
+        resumeTimers.add(tid);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        if (document.hasFocus()) blurredWhileVisible = false;
+        tryResume();
+      }
+    };
+
+    const onFocus = () => {
+      blurredWhileVisible = false;
+      tryResume();
+    };
+
+    const onPageShow = () => {
+      blurredWhileVisible = false;
+      tryResume();
+    };
+
+    const onBlur = () => {
+      if (document.visibilityState === "visible") blurredWhileVisible = true;
+    };
+
+    let attached: HTMLAudioElement | null = null;
+    const syncPauseListener = () => {
+      const el = getEl();
+      if (el === attached) return;
+      attached?.removeEventListener("pause", onElementPause);
+      attached = el;
+      attached?.addEventListener("pause", onElementPause);
+    };
+    syncPauseListener();
+    const attachPoll = window.setInterval(syncPauseListener, 600);
+
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("pageshow", onPageShow);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.removeEventListener("focus", tryResume);
-      window.removeEventListener("pageshow", tryResume);
+      for (const tid of resumeTimers) window.clearTimeout(tid);
+      resumeTimers.clear();
+      stopInterruptionRetry();
+      window.clearInterval(attachPoll);
+      attached?.removeEventListener("pause", onElementPause);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("pageshow", onPageShow);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);

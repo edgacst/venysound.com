@@ -1,6 +1,8 @@
 param(
   # JDK만 있고 Android SDK가 없을 때: Google cmdline-tools 다운로드 후 platform-tools / API 36 / build-tools 설치 (인터넷 필요)
-  [switch]$InstallSdk
+  [switch]$InstallSdk,
+  # 같은 업로드 키로 S24에 덮어설치할 release APK도 함께 생성
+  [switch]$BuildApk
 )
 
 # Veny Sound TWA - release AAB (PowerShell)
@@ -457,14 +459,15 @@ function Get-GradleKeystorePropsPathForInteractiveSigning {
   if (-not $keyAlias) { $keyAlias = "android" }
 
   $ksInRoot = Join-Path $root "android.keystore"
-  $storeFileProp = "android.keystore"
-  if (-not (Test-Path -LiteralPath $ksInRoot)) {
-    $expanded = if ($manifestKeyPath) { [Environment]::ExpandEnvironmentVariables($manifestKeyPath) } else { "" }
-    if (-not $expanded -or -not (Test-Path -LiteralPath $expanded)) {
-      Write-Host "Keystore not found. Expected: $ksInRoot or signingKey.path in twa-manifest.json"
-      exit 1
-    }
+  $expanded = if ($manifestKeyPath) { [Environment]::ExpandEnvironmentVariables($manifestKeyPath) } else { "" }
+  if ($expanded -and (Test-Path -LiteralPath $expanded)) {
+    # 업로드 키 재설정 후에는 manifest에 지정한 새 키를 기존 android.keystore보다 우선한다.
     $storeFileProp = ($expanded -replace '\\', '/')
+  } elseif (Test-Path -LiteralPath $ksInRoot) {
+    $storeFileProp = "android.keystore"
+  } else {
+    Write-Host "Keystore not found. Expected: signingKey.path in twa-manifest.json or $ksInRoot"
+    exit 1
   }
 
   Write-Host ""
@@ -539,7 +542,9 @@ Ensure-AndroidSdk
 $tempKsp = $null
 try {
   $tempKsp = Get-GradleKeystorePropsPathForInteractiveSigning
-  $gradleArgs = @("bundleRelease", "--no-daemon")
+  $gradleTasks = @("bundleRelease")
+  if ($BuildApk) { $gradleTasks += "assembleRelease" }
+  $gradleArgs = $gradleTasks + @("--no-daemon")
   if ($tempKsp) {
     $pVal = ($tempKsp -replace '\\', '/')
     if ($pVal -match '\s') {
@@ -573,3 +578,13 @@ $ver = (Select-String -Path "app\build.gradle" -Pattern 'versionName\s+"([^"]+)"
 $dest = Join-Path $root "venysound-$ver.aab"
 Copy-Item -Force -LiteralPath $src -Destination $dest
 Write-Host "OK: $dest"
+if ($BuildApk) {
+  $apkSrc = "app\build\outputs\apk\release\app-release.apk"
+  if (-not (Test-Path -LiteralPath $apkSrc)) {
+    Write-Host "APK not found: $apkSrc"
+    exit 1
+  }
+  $apkDest = Join-Path $root "venysound-$ver-test.apk"
+  Copy-Item -Force -LiteralPath $apkSrc -Destination $apkDest
+  Write-Host "OK: $apkDest"
+}

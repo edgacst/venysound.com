@@ -2,8 +2,9 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import crypto from "crypto";
-import { execSync } from "child_process";
-import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync } from "fs";
+import { execFile, execSync } from "child_process";
+import { existsSync, readFileSync, createReadStream, mkdirSync, statSync, readdirSync, lstatSync, createWriteStream, writeFileSync, unlinkSync } from "fs";
+import { promisify } from "util";
 import archiver from "archiver";
 import { storage, getCanonicalMusicGenreLabels } from "./storage";
 import { parseAdminRevenueRangeQuery } from "./admin-revenue-range";
@@ -53,6 +54,11 @@ import {
   aiMusicGenerationLogs,
   aiMusicSavedTracks,
   aiMusicUserVoices,
+  musicVideos,
+  musicVideoCommentLikes,
+  musicVideoComments,
+  musicVideoLikes,
+  musicVideoPurchases,
 } from "../shared/models/auth";
 import { db } from "./db";
 import {
@@ -91,7 +97,10 @@ import {
 import {
   FREE_AI_MUSIC_LIMIT_PER_MONTH,
   AI_MUSIC_WON_PER_TRACK,
+  AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER,
+  isSubscriptionAiWalletDepleted,
   isUserPaidSubscriptionActive,
+  sumRemainingSubscriptionAiWallet,
   getAiMusicMonthlyUsageLimit,
   getAiMusicUsagePeriodKey,
   computeDisplayedSubscriptionFromEntitlements,
@@ -108,6 +117,7 @@ import {
   adminSetSubscriptionAiPeriodConsumedWon,
   adminRebuildSubscriptionAiWalletToPlanOnly,
 } from "./subscription-ai-wallet";
+import { appendAiWalletGrant, parseAiWallet, pruneAiWallet } from "@shared/subscription-ai-wallet";
 import {
   runSubscriptionAiBudgetExhaustionIfNeeded,
   ensurePaidUserSubscriptionAiExhaustedIfWalletDepleted,
@@ -118,6 +128,7 @@ import { signPayupDirectOrder } from "./payup/signing";
 import { payupPostJson, payupPostUrlEncodedJson } from "./payup/http";
 import { payupDirectPostPayUrl } from "./payup/direct-pay";
 import { payupPostPartCancel } from "./payup/part-cancel";
+import { payupPostCancel2 } from "./payup/cancel";
 import { revertPayupCardSubscriptionPaymentById, payupMetaTransactionIdFromPayupMeta } from "./payup/revert-payup-subscription";
 import {
   flattenPayupWebhookPayload,
@@ -126,8 +137,9 @@ import {
   payupInquiryFlatExpectOrderMatch,
   payupInquiryFlatAmountMatchesIfPresent,
   payupInquiryFlatPickTransactionId,
+  payupFlatIndicatesSuccessfulCancelOrRefund,
 } from "./payup/payup-webhook-notify";
-import { payupHttpReconcileTransactionCancelled } from "./payup/txn-reconcile-http";
+import { payupHttpReconcileTransactionCancelled, payupHttpInquireWithLookupIds, payupCollectInquiryLookupIds } from "./payup/txn-reconcile-http";
 import {
   voidExpiredPromoAiCreditsForUser,
   isUserCreatedInMay2026CampaignWindow,
@@ -165,6 +177,15 @@ function normalizeRadioHomepageUrl(input: unknown): { ok: true; value: string | 
 }
 
 /** 활성 유료 entitlement 가 하나라도 있으면 true (복수 플랜 합산 기준) */
+function saveBufferToLocalUploads(buffer: Buffer, extension: string): string {
+  const ext = extension.startsWith(".") ? extension : `.${extension}`;
+  const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
+  mkdirSync(uploadsDir, { recursive: true });
+  const filename = `${crypto.randomUUID()}${ext}`;
+  writeFileSync(path.join(uploadsDir, filename), buffer);
+  return `/objects/uploads/${filename}`;
+}
+
 function isActivePaidSubscription(
   user:
     | { subscriptionTier?: string | null; subscriptionExpiresAt?: Date | null; subscriptionEntitlements?: unknown }
@@ -228,6 +249,274 @@ async function notifyUserSubscriptionPaidInApp(input: {
 
 const PAID_PLAN_IDS_FOR_PAYMENTS = [...PAID_SUBSCRIPTION_TIER_IDS] as string[];
 
+/** [페이업] 인증결제 DANAL 다이렉트 — 주문(order) 후 결제창·auth_return·payUrl 승인 대기 */
+const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_direct";
+
+async function userHasAnyPaidSubscriptionPayment(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: payments.id })
+    .from(payments)
+    .where(
+      and(
+        eq(payments.userId, userId),
+        eq(payments.status, "paid"),
+        inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
+async function resetUserSubscriptionToFree(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      subscriptionEntitlements: sql`'{}'::jsonb`,
+      subscriptionTier: "free",
+      subscriptionExpiresAt: null,
+      subscriptionPlan: null,
+      subscriptionAiBudgetExhaustionNoticeKey: null,
+      subscriptionAiWallet: sql`'[]'::jsonb`,
+      subscriptionAiPeriodKey: null,
+      subscriptionAiPeriodConsumedWon: 0,
+      tossBillingKey: null,
+      tossCustomerKey: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, userId));
+}
+
+/** 유료 표시·지갑은 있는데 paid 구독 결제가 없으면 무료로 맞춤 (카드 취소·환불 후 DB 불일치) */
+async function ensureUserSubscriptionBackedByPaidPayment(
+  userId: string,
+  now: Date,
+): Promise<"downgraded" | "unchanged"> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user || !isUserPaidSubscriptionActive(user, now)) return "unchanged";
+  if (await userHasAnyPaidSubscriptionPayment(userId)) return "unchanged";
+  await resetUserSubscriptionToFree(userId);
+  return "downgraded";
+}
+
+/** 구독 해지·요금 조회 전 — 페이업 paid 건 PG 거래조회(설정 시)로 취소·환불 동기화 */
+async function tryReconcileLatestPaidPayupSubscriptionForUser(userId: string): Promise<boolean> {
+  const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+  if (!pathSet) return false;
+  const [latestPaidPayup] = await db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        eq(payments.userId, userId),
+        eq(payments.status, "paid"),
+        inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS),
+        or(
+          sql`${payments.paymentKey} ILIKE 'payup:%'`,
+          and(
+            sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+            sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+          ),
+        ),
+      ),
+    )
+    .orderBy(desc(payments.createdAt))
+    .limit(1);
+  if (!latestPaidPayup || !isPayupPaidSubscriptionPayment(latestPaidPayup)) return false;
+  const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
+    latestPaidPayup,
+    "payup_admin_auto_reconcile",
+  );
+  return recon.ok && recon.action === "refunded" && recon.downgradedUser === true;
+}
+
+async function subscriptionMeTierForUser(userId: string, now: Date): Promise<string> {
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user || !isUserPaidSubscriptionActive(user, now)) return "free";
+  const tier = String(user.subscriptionTier ?? "free").trim().toLowerCase();
+  return isPaidSubscriptionTierId(tier) ? tier : "free";
+}
+
+/**
+ * 규격서 CANCELURL·fail 복귀 — 결제창 이탈 기록.
+ * 구독 부여는 /complete + payUrl 승인(0000) 때만. pending 은 상태만 메타에 남김.
+ * 이미 paid 인 건은 PG 거래조회(설정 시)로 취소·환불 여부만 동기화.
+ */
+async function handlePayupCheckoutClientOutcome(
+  userId: string,
+  orderNumber: string,
+  outcome: "cancel" | "fail",
+): Promise<{ tier: string }> {
+  const orderUpper = orderNumber.trim().toUpperCase();
+  const [row] = await db.select().from(payments).where(eq(payments.orderId, orderUpper)).limit(1);
+  if (!row || row.userId !== userId) {
+    return { tier: await subscriptionMeTierForUser(userId, new Date()) };
+  }
+
+  const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
+  const st = String(row.status ?? "").trim().toLowerCase();
+  const pk = String(row.paymentKey ?? "").trim();
+
+  if (st === "pending" && pk === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
+    const notifiedAt =
+      typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10
+        ? meta.abandonNotifiedAt
+        : new Date().toISOString();
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...meta,
+          abandonOutcome: outcome,
+          abandonNotifiedAt: notifiedAt,
+          checkoutAbandonedAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(payments.id, row.id));
+  } else if (st === "paid" && isPayupPaidSubscriptionPayment(row)) {
+    await reconcilePayupCardSubscriptionPaymentStatusFromPg(row, "payup_admin_auto_reconcile");
+  }
+
+  return { tier: await subscriptionMeTierForUser(userId, new Date()) };
+}
+
+/** 관리자: cancel2(규격서) → 실패·불명확 시 PG 거래조회 → 확인된 경우에만 DB refunded·구독 무료화 */
+async function adminSyncPayupPaidSubscriptionCancelWithPg(
+  payment: typeof payments.$inferSelect,
+): Promise<
+  | { ok: true; downgradedUser: boolean; alreadyRefunded: boolean; source: "cancel2" | "reconcile" | "db_only" }
+  | { ok: false; message: string; responseCode?: string; responseMsg?: string; detail?: string; hint?: string }
+> {
+  const status = String(payment.status ?? "").trim().toLowerCase();
+  if (status === "refunded") {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false, message: out.message };
+    return { ok: true, alreadyRefunded: true, downgradedUser: out.downgradedUser, source: "db_only" };
+  }
+  if (status !== "paid") {
+    return { ok: false, message: `paid 상태의 페이업 카드 구독 건만 취소할 수 있습니다. (현재: ${payment.status ?? "?"})` };
+  }
+  if (!isPayupPaidSubscriptionPayment(payment)) {
+    return { ok: false, message: "페이업 카드 구독 결제만 취소할 수 있습니다." };
+  }
+
+  const cred = getPayupCredentials();
+  if (!cred.ok) return { ok: false, message: cred.message };
+  const transactionId = payupTransactionIdFromPayment(payment);
+  if (!transactionId) {
+    return { ok: false, message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." };
+  }
+
+  const persistCancelApiMeta = async (flat: Record<string, string>, responseCode: string, responseMsg: string) => {
+    const prevMeta =
+      payment.payupMeta && typeof payment.payupMeta === "object"
+        ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+        : {};
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...prevMeta,
+          pgCancelApiCalledAt: new Date().toISOString(),
+          pgCancelApiResponseCode: responseCode || flat.responseCode || flat.RESPONSECODE || null,
+          pgCancelApiResponseMsg: responseMsg || flat.responseMsg || flat.RESPONSEMSG || null,
+        },
+      })
+      .where(eq(payments.id, payment.id));
+  };
+
+  const revertAfterPgCancelConfirmed = async (source: "cancel2" | "reconcile") => {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false as const, message: out.message };
+    return {
+      ok: true as const,
+      downgradedUser: out.downgradedUser,
+      alreadyRefunded: out.noop === "already_refunded",
+      source,
+    };
+  };
+
+  const cancelRes = await payupPostCancel2(cred, { transactionId });
+  if (cancelRes.ok && cancelRes.data) {
+    const cancelResult = payupCancelApiResponseResult(cancelRes.data);
+    if (cancelResult.ok) {
+      await persistCancelApiMeta(cancelResult.flat, cancelResult.responseCode, cancelResult.responseMsg);
+      return revertAfterPgCancelConfirmed("cancel2");
+    }
+  }
+
+  let cancelBodyFlat: Record<string, string> = {};
+  if (cancelRes.ok && cancelRes.data) {
+    cancelBodyFlat = flattenPayupWebhookPayload(cancelRes.data);
+  } else if (!cancelRes.ok && cancelRes.bodyText) {
+    try {
+      cancelBodyFlat = flattenPayupWebhookPayload(JSON.parse(cancelRes.bodyText));
+    } catch {
+      cancelBodyFlat = {};
+    }
+  }
+  const cancelFailMsg = !cancelRes.ok ? cancelRes.message : "";
+  const cancelFailBody = !cancelRes.ok ? (cancelRes.bodyText ?? "") : "";
+  const cancelBlob = `${cancelFailMsg} ${cancelFailBody}`;
+  const alreadyCancelledAtPg =
+    payupFlatIndicatesSuccessfulCancelOrRefund(cancelBodyFlat) ||
+    /이미\s*(?:취소|환불)|already\s+(?:cancelled|canceled|refunded|voided)/i.test(cancelBlob);
+  if (alreadyCancelledAtPg) {
+    await persistCancelApiMeta(
+      cancelBodyFlat,
+      cancelBodyFlat.responseCode ?? cancelBodyFlat.RESPONSECODE ?? "",
+      cancelBodyFlat.responseMsg ?? cancelBodyFlat.RESPONSEMSG ?? "",
+    );
+    return revertAfterPgCancelConfirmed("cancel2");
+  }
+
+  const recon = await reconcilePayupCardSubscriptionPaymentStatusFromPg(
+    payment,
+    "payup_admin_auto_reconcile",
+  );
+  if (recon.ok && recon.action === "refunded") {
+    return {
+      ok: true,
+      downgradedUser: recon.downgradedUser,
+      alreadyRefunded: false,
+      source: "reconcile",
+    };
+  }
+  if (recon.ok && recon.action === "already_refunded") {
+    const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+    if (!out.ok) return { ok: false, message: out.message };
+    return {
+      ok: true,
+      downgradedUser: out.downgradedUser,
+      alreadyRefunded: true,
+      source: "reconcile",
+    };
+  }
+  if (recon.ok && recon.action === "still_paid") {
+    return {
+      ok: false,
+      message:
+        "페이업·PG 조회상 이 거래는 아직 승인 상태입니다. 카드사·페이업 관리자에서 취소·환불이 완료됐는지 확인해 주세요.",
+      hint: "취소가 PG에 반영됐다면 PAYUP_TXN_RECONCILE_PATH 거래조회 URL이 올바른지 페이업 기술지원에 확인하세요.",
+    };
+  }
+
+  const preview = cancelRes.ok ? payupJsonPreview(cancelRes.data) : cancelFailBody.slice(0, 600);
+  const reconcileHint =
+    (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0
+      ? undefined
+      : "카드사에서 이미 취소된 건은 PAYUP_TXN_RECONCILE_PATH(거래조회) 설정 후 다시 시도하거나, 페이업 관리자에서 거래 상태를 확인하세요.";
+  return {
+    ok: false,
+    message: cancelRes.ok
+      ? "페이업 cancel2 응답에서 취소·환불 완료를 확인하지 못했습니다."
+      : cancelFailMsg || "페이업 cancel2 요청에 실패했습니다.",
+    responseCode: cancelBodyFlat.responseCode ?? cancelBodyFlat.RESPONSECODE,
+    responseMsg: cancelBodyFlat.responseMsg ?? cancelBodyFlat.RESPONSEMSG,
+    detail: preview || undefined,
+    hint: reconcileHint,
+  };
+}
+
 /**
  * 계좌이체 **구독** 건 기준으로 users.subscription* 만 갱신 (payments 행은 변경하지 않음).
  * plan 은 DB 대소문자 불일치를 허용하도록 정규화한다.
@@ -243,7 +532,7 @@ async function applyBankTransferSubscriptionToUserFromPayment(
   computed: ReturnType<typeof computeDisplayedSubscriptionFromEntitlements>;
   payUser: (typeof users.$inferSelect) | undefined;
   tierPaid: PaidSubscriptionTierId;
-  expiresAt: Date;
+  expiresAt: Date | null;
 }> {
   const planNorm = String(payment.plan ?? "").trim().toLowerCase();
   if (!isPaidSubscriptionTierId(planNorm)) {
@@ -251,36 +540,17 @@ async function applyBankTransferSubscriptionToUserFromPayment(
   }
   const tierPaid = planNorm as PaidSubscriptionTierId;
   const now = new Date();
-  let expiresAt: Date;
-  if (opts?.subscriptionExpiresAtOverride) {
-    expiresAt = new Date(opts.subscriptionExpiresAtOverride);
-    if (Number.isNaN(expiresAt.getTime())) {
-      expiresAt = new Date(now);
-      if (payment.billingPeriod === "monthly") {
-        expiresAt.setMonth(expiresAt.getMonth() + 1);
-      } else {
-        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-      }
-    }
-  } else {
-    expiresAt = new Date(now);
-    if (payment.billingPeriod === "monthly") {
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
-    } else {
-      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-    }
-  }
+  const expiresAt = null;
   const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
   /** 무료·만료 후 재구독 시 이전 구독 AI 지갑이 남으면 sync 시 이월+월충전이 중복 누적될 수 있음 */
   const hadActivePaid = payUser ? isUserPaidSubscriptionActive(payUser, now) : false;
-  const view = buildEntitlementsView(
-    payUser?.subscriptionEntitlements,
-    payUser?.subscriptionTier,
-    payUser?.subscriptionExpiresAt,
-    now,
-  );
-  const merged = mergeEntitlementExpiry(view, tierPaid, expiresAt);
-  const computed = computeDisplayedSubscriptionFromEntitlements(merged, undefined, undefined, now);
+  const grantWon = AI_MUSIC_MONTHLY_WON_BUDGET_BY_TIER[tierPaid];
+  const nextWallet = appendAiWalletGrant(pruneAiWallet(parseAiWallet(payUser?.subscriptionAiWallet), now), grantWon, now);
+  const computed = {
+    subscriptionEntitlements: {},
+    subscriptionTier: tierPaid,
+    subscriptionExpiresAt: null,
+  };
   await db
     .update(users)
     .set({
@@ -289,21 +559,174 @@ async function applyBankTransferSubscriptionToUserFromPayment(
       subscriptionExpiresAt: computed.subscriptionExpiresAt,
       subscriptionPlan: payment.billingPeriod ?? null,
       subscriptionAiBudgetExhaustionNoticeKey: null,
-      ...(hadActivePaid
-        ? {}
-        : {
-            subscriptionAiWallet: sql`'[]'::jsonb`,
-            subscriptionAiPeriodKey: null,
-            subscriptionAiPeriodConsumedWon: 0,
-          }),
+      subscriptionAiWallet: nextWallet,
+      subscriptionAiPeriodKey: `wallet:${tierPaid}`,
+      subscriptionAiPeriodConsumedWon: hadActivePaid ? Math.max(0, payUser?.subscriptionAiPeriodConsumedWon ?? 0) : 0,
       updatedAt: new Date(),
     })
     .where(eq(users.id, payment.userId));
   return { computed, payUser, tierPaid, expiresAt };
 }
 
-/** [페이업] 인증결제 DANAL 다이렉트 — 주문(order) 후 결제창·auth_return·payUrl 승인 대기 */
-const PAYUP_SUBSCRIPTION_PAYMENT_KEY = "payup_direct";
+function isPayupPaidSubscriptionPayment(payment: {
+  paymentKey?: string | null;
+  payupMeta?: unknown;
+  plan?: string | null;
+}): boolean {
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (!isPaidSubscriptionTierId(planNorm)) return false;
+  const key = String(payment.paymentKey ?? "").trim().toLowerCase();
+  if (key.startsWith("payup:")) return true;
+  return payupMetaTransactionIdFromPayupMeta(payment.payupMeta).length > 0 && key !== "bank_transfer";
+}
+
+function payupTransactionIdFromPayment(payment: { paymentKey?: string | null; payupMeta?: unknown }): string {
+  const paymentKey = String(payment.paymentKey ?? "").trim();
+  const txnFromKey = /^payup:(.+)$/i.exec(paymentKey)?.[1]?.trim() ?? "";
+  return txnFromKey || payupMetaTransactionIdFromPayupMeta(payment.payupMeta);
+}
+
+async function paidSubscriptionPaymentAlreadyReflected(payment: {
+  userId: string;
+  plan: string | null;
+}): Promise<boolean> {
+  const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+  if (!payUser) return false;
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  const userTier = String(payUser.subscriptionTier ?? "free").trim().toLowerCase();
+  return (
+    userTier === planNorm &&
+    isUserPaidSubscriptionActive(payUser, new Date()) &&
+    sumRemainingSubscriptionAiWallet(payUser.subscriptionAiWallet) > 0
+  );
+}
+
+async function repairPaidSubscriptionPaymentReflectionIfNeeded(payment: typeof payments.$inferSelect): Promise<{
+  repaired: boolean;
+  alreadyApplied: boolean;
+  tier?: string;
+}> {
+  const status = String(payment.status ?? "").trim().toLowerCase();
+  const planNorm = String(payment.plan ?? "").trim().toLowerCase();
+  if (status !== "paid" || !isPaidSubscriptionTierId(planNorm)) {
+    return { repaired: false, alreadyApplied: false };
+  }
+  if (await paidSubscriptionPaymentAlreadyReflected(payment)) {
+    return { repaired: false, alreadyApplied: true, tier: planNorm };
+  }
+  const { computed } = await applyBankTransferSubscriptionToUserFromPayment(payment);
+  return { repaired: true, alreadyApplied: false, tier: computed.subscriptionTier };
+}
+
+type PayupSubscriptionReconcileResult =
+  | {
+      ok: true;
+      action: "still_paid" | "refunded" | "already_refunded";
+      alreadyRefunded?: boolean;
+      downgradedUser: boolean;
+      checkedAt?: string;
+    }
+  | { ok: false; message: string };
+
+function payupMetaLastReconcileCheckedAt(payupMeta: unknown): number {
+  const meta = payupMeta && typeof payupMeta === "object" ? (payupMeta as Record<string, unknown>) : null;
+  const raw = typeof meta?.pgReconcileCheckedAt === "string" ? meta.pgReconcileCheckedAt : "";
+  const t = raw ? Date.parse(raw) : Number.NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
+async function reconcilePayupCardSubscriptionPaymentStatusFromPg(
+  payment: typeof payments.$inferSelect,
+  notifySource: "payup_admin_reconcile" | "payup_admin_auto_reconcile",
+): Promise<PayupSubscriptionReconcileResult> {
+  const status = String(payment.status ?? "").trim().toLowerCase();
+  if (status === "refunded") {
+    return { ok: true, action: "already_refunded", alreadyRefunded: true, downgradedUser: false };
+  }
+  if (status !== "paid") {
+    return { ok: false, message: `paid 상태의 페이업 카드 구독 건만 PG 상태를 확인할 수 있습니다. (현재: ${payment.status ?? "?"})` };
+  }
+  if (!isPayupPaidSubscriptionPayment(payment)) {
+    return { ok: false, message: "페이업 카드 구독 결제만 PG 상태를 확인할 수 있습니다." };
+  }
+
+  const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+  if (!pathSet) {
+    return {
+      ok: false,
+      message:
+        "서버에 PAYUP_TXN_RECONCILE_PATH(페이업 거래조회 URL)가 없어 PG 승인/취소 상태를 받아올 수 없습니다. 페이업에서 거래조회 API 경로를 확인해 .env 에 설정해야 합니다.",
+    };
+  }
+  const cred = getPayupCredentials();
+  if (!cred.ok) return { ok: false, message: "페이업 자격 정보가 올바르지 않습니다." };
+
+  const paymentKey = String(payment.paymentKey ?? "").trim();
+  const txnFromKey = /^payup:(.+)$/i.exec(paymentKey)?.[1]?.trim() ?? "";
+  const txnId = txnFromKey || payupMetaTransactionIdFromPayupMeta(payment.payupMeta);
+  if (!txnId) {
+    return { ok: false, message: "결제 건에 페이업 거래번호(transactionId)가 없습니다." };
+  }
+
+  const pg = await payupHttpReconcileTransactionCancelled(cred, txnId);
+  const meta =
+    payment.payupMeta && typeof payment.payupMeta === "object"
+      ? ({ ...(payment.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const checkedAt = new Date().toISOString();
+  const mergedMeta: Record<string, unknown> = {
+    ...meta,
+    pgReconcileCheckedAt: checkedAt,
+  };
+  if (!pg.ok) {
+    mergedMeta.pgReconcileLastError = pg.message;
+    await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+    return { ok: false, message: pg.message };
+  }
+  if ("skipped" in pg && pg.skipped) {
+    mergedMeta.pgReconcileLastError = pg.reason;
+    await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+    return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
+  }
+
+  const flat = "flat" in pg ? (pg.flat ?? {}) : {};
+  const oidWant = String(payment.orderId ?? "").trim().toUpperCase();
+  if (!payupInquiryFlatExpectOrderMatch(flat, oidWant)) {
+    return { ok: false, message: "PG 응답의 주문번호와 이 DB 주문이 일치하지 않습니다." };
+  }
+  const amtChk = payupInquiryFlatAmountMatchesIfPresent(flat, payment.amount);
+  if (!amtChk.ok) return { ok: false, message: amtChk.message };
+
+  const cancelledAtPg = "cancelledAtPg" in pg && pg.cancelledAtPg === true;
+  mergedMeta.pgReconcileLastError = null;
+  mergedMeta.pgReconcileCancelledAtPg = cancelledAtPg;
+  await db.update(payments).set({ payupMeta: mergedMeta }).where(eq(payments.id, payment.id));
+
+  if (!cancelledAtPg) {
+    return { ok: true, action: "still_paid", downgradedUser: false, checkedAt };
+  }
+
+  const out = await revertPayupCardSubscriptionPaymentById(payment.id);
+  if (!out.ok) return { ok: false, message: out.message };
+  if (out.noop === "already_refunded") {
+    return { ok: true, action: "already_refunded", alreadyRefunded: true, downgradedUser: false, checkedAt };
+  }
+  if (out.downgradedUser) {
+    try {
+      await storage.createNotification({
+        userId: out.userId,
+        type: "system",
+        message:
+          "구독 카드 결제가 페이업에서 취소·환불로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+        payload: { subscriptionReverted: true, source: notifySource },
+        url: "/create-music",
+      });
+    } catch (e) {
+      console.error(`[${notifySource}] notify`, e);
+    }
+  }
+  return { ok: true, action: "refunded", downgradedUser: out.downgradedUser, checkedAt };
+}
 
 /** auth_return 쿼리의 PG TID 등으로 pending 구독 카드 주문 역추적 (주문 응답에서 payup_meta.pgTransactionId 등 저장 필요) */
 async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
@@ -341,6 +764,7 @@ async function findPendingPayupSubscriptionByPgRef(pgRef: string) {
  */
 async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   payment: typeof payments.$inferSelect,
+  opts?: { extraLookupIds?: string[] },
 ): Promise<
   | { ok: true; paymentId: string; orderId: string; alreadyPaid?: boolean }
   | { ok: false; message: string }
@@ -348,6 +772,7 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   const [fresh] = await db.select().from(payments).where(eq(payments.id, payment.id));
   if (!fresh) return { ok: false, message: "결제 건을 찾을 수 없습니다." };
   if (String(fresh.status ?? "").trim().toLowerCase() === "paid") {
+    await repairPaidSubscriptionPaymentReflectionIfNeeded(fresh);
     return { ok: true, paymentId: fresh.id, orderId: fresh.orderId, alreadyPaid: true };
   }
   const pk = String(fresh.paymentKey ?? "").trim();
@@ -369,19 +794,27 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   }
   const cred = getPayupCredentials();
   if (!cred.ok) return { ok: false, message: "페이업 자격 정보가 올바르지 않습니다." };
-  const tid = payupMetaTransactionIdFromPayupMeta(fresh.payupMeta);
-  if (!tid) {
-    return { ok: false, message: "주문에 저장된 PG 거래번호(pgTransactionId·pgTid·txnId)가 없습니다." };
+  const orderIdUpper = String(fresh.orderId ?? "").trim().toUpperCase();
+  const lookupIds = payupCollectInquiryLookupIds(fresh.payupMeta, orderIdUpper, opts?.extraLookupIds ?? []);
+  if (!lookupIds.length) {
+    return {
+      ok: false,
+      message:
+        "PG 거래조회에 쓸 거래번호·주문번호가 없습니다. 페이업 관리자에서 TID를 확인해「PG승인→DB반영」요청 시 transactionId 를 함께 보내 주세요.",
+    };
   }
-  const pg = await payupHttpReconcileTransactionCancelled(cred, tid);
-  if (!pg.ok) return { ok: false, message: pg.message };
+  const pg = await payupHttpInquireWithLookupIds(cred, lookupIds, { merchantOrderId: orderIdUpper });
+  if (!pg.ok) {
+    const tried = pg.tried.length ? ` (시도: ${pg.tried.join(", ")})` : "";
+    return { ok: false, message: `${pg.message}${tried}` };
+  }
   if ("skipped" in pg && pg.skipped) {
     return { ok: false, message: `PG 조회를 사용할 수 없습니다: ${pg.reason}` };
   }
-  if (pg.cancelledAtPg) {
+  if ("cancelledAtPg" in pg && pg.cancelledAtPg) {
     return { ok: false, message: "PG 조회상 이 거래는 취소·환불 상태입니다." };
   }
-  const flat = pg.flat ?? {};
+  const flat = "flat" in pg ? (pg.flat ?? {}) : {};
   if (!payupInquiryFlatIndicatesSuccessfulAuth0000(flat)) {
     return {
       ok: false,
@@ -395,7 +828,7 @@ async function finalizePayupPendingSubscriptionFromPgInquiryForRow(
   }
   const amtChk = payupInquiryFlatAmountMatchesIfPresent(flat, fresh.amount);
   if (!amtChk.ok) return { ok: false, message: amtChk.message };
-  const txnId = payupInquiryFlatPickTransactionId(flat, tid);
+  const txnId = payupInquiryFlatPickTransactionId(flat, ("lookupId" in pg ? pg.lookupId : "") || lookupIds[0] || "");
 
   const { computed, payUser, tierPaid, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(fresh);
   const now = new Date();
@@ -482,6 +915,107 @@ function pickPayupStr(obj: Record<string, unknown> | null | undefined, ...keys: 
     if (typeof v === "number" && Number.isFinite(v)) return String(v);
   }
   return undefined;
+}
+
+function pickPayupFlatStr(flat: Record<string, string>, ...keys: string[]): string {
+  const entries = Object.entries(flat);
+  for (const key of keys) {
+    const want = key.toLowerCase();
+    const direct = flat[key] ?? flat[want];
+    if (direct != null && String(direct).trim()) return String(direct).trim();
+    for (const [k, v] of entries) {
+      const lower = k.toLowerCase();
+      if ((lower === want || lower.endsWith(`.${want}`)) && String(v).trim()) {
+        return String(v).trim();
+      }
+    }
+  }
+  return "";
+}
+
+function payupJsonPreview(input: unknown, max = 800): string {
+  try {
+    return JSON.stringify(input, (key, value) => {
+      if (/signature|apikey|apiCertKey|secret|token|password/i.test(key)) return "[redacted]";
+      return value;
+    }).slice(0, max);
+  } catch {
+    return "";
+  }
+}
+
+function payupCancelApiResponseResult(data: unknown): {
+  ok: boolean;
+  responseCode: string;
+  responseMsg: string;
+  flat: Record<string, string>;
+} {
+  const flat = flattenPayupWebhookPayload(data);
+  const responseCode = pickPayupFlatStr(
+    flat,
+    "responseCode",
+    "RESPONSECODE",
+    "resultCode",
+    "RESULT_CODE",
+    "returnCode",
+    "RETURNCODE",
+    "code",
+    "CODE",
+    "resCode",
+    "RESCODE",
+  );
+  const responseMsg = pickPayupFlatStr(
+    flat,
+    "responseMsg",
+    "RESPONSEMSG",
+    "resultMsg",
+    "RESULT_MSG",
+    "returnMsg",
+    "RETURNMSG",
+    "message",
+    "MESSAGE",
+    "msg",
+    "MSG",
+  );
+  const cancelDateTime = pickPayupFlatStr(
+    flat,
+    "cancelDateTime",
+    "cancelDatetime",
+    "CANCELDATETIME",
+    "cancel_date_time",
+    "cancelAt",
+    "cancelledAt",
+    "canceledAt",
+  );
+  const statusText = [
+    responseMsg,
+    pickPayupFlatStr(flat, "dealStatus", "DEALSTATUS", "status", "STATUS", "transactionStatus", "transaction_status"),
+    pickPayupFlatStr(flat, "msgType", "MSGTYPE", "event", "EVENT", "type", "TYPE", "notificationType"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const blob = `${responseCode} ${statusText}`;
+  const hasFailureSignal = /실패|오류|에러|거절|불가|불능|FAIL|FAILED|ERROR|INVALID|DENIED|REJECT/i.test(blob);
+  const successCode = /^(?:0000|000|00|0|SUCCESS|SUCCEEDED|OK)$/i.test(responseCode);
+  const successFlag =
+    /^(?:true|1|y|yes)$/i.test(pickPayupFlatStr(flat, "success", "isSuccess", "succeeded", "SUCCESS")) ||
+    /^(?:SUCCESS|SUCCEEDED|OK|DONE)$/i.test(pickPayupFlatStr(flat, "result", "RESULT", "status", "STATUS"));
+  const alreadyCancelled =
+    /이미\s*(?:취소|환불)|기\s*(?:취소|환불)|(?:취소|환불)\s*(?:완료|됨|된)|(?:취소|환불)\s*처리\s*(?:완료|됨|된)|already\s+(?:cancelled|canceled|refunded|voided)/i.test(
+      statusText,
+    );
+  const cancelledStatus =
+    /(?:^|\b)(?:CANCELLED|CANCELED|REFUNDED|VOIDED|CANCEL_SUCCESS|REFUND_SUCCESS)(?:\b|$)|취소완료|환불완료|망취소/i.test(
+      statusText,
+    );
+  const ok =
+    payupFlatIndicatesSuccessfulCancelOrRefund(flat) ||
+    (cancelDateTime.length >= 8 && !hasFailureSignal) ||
+    (successCode && !hasFailureSignal) ||
+    (successFlag && !hasFailureSignal) ||
+    alreadyCancelled ||
+    (cancelledStatus && !hasFailureSignal);
+  return { ok, responseCode, responseMsg, flat };
 }
 
 /** 인증결제 다이렉트 주문 응답 (규격서 3.1 응답 전문) */
@@ -797,6 +1331,104 @@ export async function registerRoutes(
   const uploadsDir = path.resolve(process.cwd(), "local-uploads", "uploads");
   mkdirSync(uploadsDir, { recursive: true });
 
+  // 라디오 서버 자동 진행은 실제 파일 길이를 기준으로 해야 한다. 브라우저가 아직 메타데이터를
+  // 읽지 못해 보낸 240초 기본값은 캐시된 실제 길이로 교체하고, 백그라운드에서 큐 전체를 보정한다.
+  const execFileAsync = promisify(execFile);
+  const radioMusicDurationCache = new Map<number, number>();
+  const radioDurationProbeRetryAt = new Map<number, number>();
+  const radioDurationEnrichmentInFlight = new Map<string, Promise<void>>();
+  const RADIO_DURATION_FALLBACK_SECONDS = 240;
+  const RADIO_DURATION_PROBE_RETRY_MS = 5 * 60 * 1000;
+
+  function normalizeRadioDurationSeconds(value: unknown): number | null {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 2 || value > 6 * 60 * 60) return null;
+    return Math.ceil(value);
+  }
+
+  function resolveLocalRadioMusicPath(filename: string): string | null {
+    const raw = filename.trim();
+    if (!raw || /^https?:\/\//i.test(raw)) return null;
+    const objectMatch = raw.match(/\/objects\/uploads\/(.+)$/);
+    let fileId = objectMatch?.[1]
+      ?? (raw.startsWith("uploads/") ? raw.replace(/^uploads\//, "") : raw.includes("/") ? raw.split("/").pop() ?? "" : raw);
+    fileId = fileId.replace(/^\//, "");
+    if (!fileId || path.basename(fileId) !== fileId) return null;
+    const baseId = fileId.replace(/\.(mp3|wav|ogg)$/i, "");
+    return [
+      path.join(uploadsDir, fileId),
+      path.join(uploadsDir, `${baseId}.mp3`),
+      path.join(uploadsDir, `${baseId}.wav`),
+      path.join(uploadsDir, `${baseId}.ogg`),
+    ].find((candidate) => existsSync(candidate)) ?? null;
+  }
+
+  async function probeRadioMusicDurationSeconds(musicId: number): Promise<number | null> {
+    const cached = radioMusicDurationCache.get(musicId);
+    if (cached != null) return cached;
+    if ((radioDurationProbeRetryAt.get(musicId) ?? 0) > Date.now()) return null;
+    try {
+      const item = await storage.getMusicById(musicId);
+      const localPath = item ? resolveLocalRadioMusicPath(item.filename) : null;
+      if (!localPath) throw new Error("local audio file not found");
+      const ffprobe = process.env.FFPROBE_PATH?.trim() || "ffprobe";
+      const { stdout } = await execFileAsync(
+        ffprobe,
+        ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", localPath],
+        { encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024, windowsHide: true },
+      );
+      const duration = normalizeRadioDurationSeconds(Number(String(stdout).trim()));
+      if (duration == null) throw new Error("invalid audio duration");
+      radioMusicDurationCache.set(musicId, duration);
+      radioDurationProbeRetryAt.delete(musicId);
+      return duration;
+    } catch {
+      radioDurationProbeRetryAt.set(musicId, Date.now() + RADIO_DURATION_PROBE_RETRY_MS);
+      return null;
+    }
+  }
+
+  function scheduleRadioPlaylistDurationEnrichment(channelId: number, slug: string, musicIds: number[]): void {
+    const uniqueIds = [...new Set(musicIds.filter((id) => Number.isInteger(id) && id > 0))];
+    const now = Date.now();
+    const needsProbe = uniqueIds.some((id) => !radioMusicDurationCache.has(id) && (radioDurationProbeRetryAt.get(id) ?? 0) <= now);
+    if (uniqueIds.length === 0 || !needsProbe) return;
+    const taskKey = `${channelId}:${musicIds.join(",")}`;
+    if (radioDurationEnrichmentInFlight.has(taskKey)) return;
+
+    const task = (async () => {
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < uniqueIds.length) {
+          const id = uniqueIds[cursor++];
+          await probeRadioMusicDurationSeconds(id);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, uniqueIds.length) }, () => worker()));
+
+      const latest = await storage.getRadioChannelBySlug(slug);
+      const snapshot = latest?.playlistSnapshot;
+      if (!latest || latest.id !== channelId || !snapshot || !latest.nowPlayingStartedAt) return;
+      if (snapshot.musicIds.length !== musicIds.length || snapshot.musicIds.some((id, index) => id !== musicIds[index])) return;
+
+      const durationsSeconds = snapshot.musicIds.map((id, index) =>
+        radioMusicDurationCache.get(id)
+        ?? normalizeRadioDurationSeconds(snapshot.durationsSeconds[index])
+        ?? RADIO_DURATION_FALLBACK_SECONDS,
+      );
+      if (durationsSeconds.every((duration, index) => duration === snapshot.durationsSeconds[index])) return;
+
+      await storage.updateRadioPlaylistSnapshotIfStartedAt(
+        channelId,
+        latest.nowPlayingStartedAt,
+        { ...snapshot, durationsSeconds },
+      );
+    })()
+      .catch((error) => console.warn("[radio durations] playlist enrichment failed", error))
+      .finally(() => radioDurationEnrichmentInFlight.delete(taskKey));
+
+    radioDurationEnrichmentInFlight.set(taskKey, task);
+  }
+
   // Play Store TWA: Digital Asset Links (설정 시에만 응답, 미설정 시 404로 연동 없음)
   app.get("/.well-known/assetlinks.json", (_req, res) => {
     const packageName = process.env.TWA_PACKAGE_NAME;
@@ -808,7 +1440,10 @@ export async function registerRoutes(
     res.type("application/json").send(
       JSON.stringify([
         {
-          relation: ["delegate_permission/common.handle_all_urls"],
+          relation: [
+            "delegate_permission/common.handle_all_urls",
+            "delegate_permission/common.use_as_origin",
+          ],
           target: {
             namespace: "android_app",
             package_name: packageName,
@@ -1018,7 +1653,7 @@ export async function registerRoutes(
       try {
         const msg = JSON.parse(data.toString());
         if (msg.type === "auth" && msg.userId) {
-          wsUserId = msg.userId;
+          wsUserId = String(msg.userId);
           wsToUserId.set(ws, wsUserId);
           if (!userSockets.has(wsUserId!)) {
             userSockets.set(wsUserId!, new Set());
@@ -1353,6 +1988,12 @@ export async function registerRoutes(
     limits: { fileSize: 8 * 1024 * 1024 },
   });
 
+  /** Replace Section / Stem Separation 커스텀 오디오 업로드 (sunoapi.org 20MB 제한) */
+  const aiAudioEditUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
   /** Suno-compatible upstream (KIE · sunoapi.org) — provider별 base/key. 옛 suno task는 provider=suno로만 조회. */
   function sunoStyleUpstream(provider: string): { base: string; key: string } | null {
     const p = provider.trim().toLowerCase();
@@ -1409,6 +2050,85 @@ export async function registerRoutes(
       if (typeof v === "string" && v.trim()) return v.trim();
     }
     return undefined;
+  }
+
+  function normalizeAiTitleForMatch(value: unknown): string {
+    return typeof value === "string" ? value.trim().replace(/\s+/g, " ").toLowerCase() : "";
+  }
+
+  function sunoRecordInfoClipRaws(info: unknown): Record<string, unknown>[] {
+    const resp = (info as { data?: { response?: { sunoData?: unknown[]; suno_data?: unknown[] } } }).data?.response;
+    const merged = resp?.sunoData ?? resp?.suno_data;
+    return Array.isArray(merged) ? (merged as Record<string, unknown>[]) : [];
+  }
+
+  function parseSunoGenerateParamInstrumental(info: unknown): boolean {
+    try {
+      const paramRaw = (info as { data?: { param?: string } }).data?.param;
+      if (typeof paramRaw !== "string") return false;
+      const param = JSON.parse(paramRaw) as { instrumental?: boolean };
+      return param.instrumental === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** MP4/WAV 변환용 upstream audioId — clip_id 우선, 없으면 제목으로 보조 매칭 */
+  function resolveSunoClipAudioIdFromRaws(
+    raws: Record<string, unknown>[],
+    clipId: string,
+    titleForMatch?: string,
+  ): string {
+    const wantId = clipId.trim();
+    if (wantId) {
+      const byId = raws.find((r) => String(r.id ?? "").trim() === wantId);
+      const idFromClip = byId?.id;
+      if (typeof idFromClip === "string" && idFromClip.trim()) return idFromClip.trim();
+    }
+    const requestedTitle = normalizeAiTitleForMatch(titleForMatch);
+    if (requestedTitle) {
+      const byTitle = raws.find((r) => normalizeAiTitleForMatch(r.title) === requestedTitle);
+      const idFromTitle = byTitle?.id;
+      if (typeof idFromTitle === "string" && idFromTitle.trim()) return idFromTitle.trim();
+    }
+    return wantId;
+  }
+
+  /** MP4 자막(타임스탬프 가사) 준비 — instrumental이면 생략, 보컬 곡은 짧게 재시도 */
+  async function primeTimestampedLyricsForMp4(
+    upstream: { base: string; key: string },
+    taskId: string,
+    audioId: string,
+    instrumental: boolean,
+  ): Promise<void> {
+    if (instrumental || !taskId.trim() || !audioId.trim()) return;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const lyricsRes = await fetch(`${upstream.base}/api/v1/generate/get-timestamped-lyrics`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ taskId, audioId }),
+        });
+        const lyricsData = await lyricsRes.json().catch(() => ({}));
+        if ((lyricsData as { code?: number }).code !== 200) continue;
+        const words = (lyricsData as { data?: { alignedWords?: unknown[] } }).data?.alignedWords;
+        if (Array.isArray(words) && words.length > 0) return;
+      } catch (primeErr) {
+        console.warn("[ai-music mp4-url] timestamped lyrics prime skipped:", primeErr instanceof Error ? primeErr.message : String(primeErr));
+      }
+    }
+  }
+
+  function resolveAiCreatorDisplayName(userRow: typeof users.$inferSelect | undefined | null): string {
+    const fullName = [userRow?.firstName, userRow?.lastName].filter(Boolean).join(" ").trim();
+    const emailName = typeof userRow?.email === "string" ? userRow.email.split("@")[0]?.trim() : "";
+    return (userRow?.username?.trim() || fullName || emailName || "VenySound").slice(0, 50);
+  }
+
+  function sanitizeDownloadFileName(name: unknown, fallback: string): string {
+    const raw = typeof name === "string" && name.trim() ? name.trim() : fallback;
+    return raw.replace(/[/\\:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || fallback;
   }
 
   /** Suno/AIMusic 클립 재생 길이(초) — API 필드명 제각각 */
@@ -1761,8 +2481,101 @@ export async function registerRoutes(
     }
   });
 
-  /** Suno WAV 변환 완료 콜백 URL용 (본 서버는 폴링으로 결과를 받지만 API 스펙상 필수) */
+  /** 생성 파일을 내려받고, MP4 POST 요청은 응답 전에 뮤직비디오로 저장·등록한다. */
+  const handleGeneratedFileProxy = async (req: Request, res: Response) => {
+    const input = req.method === "POST" && req.body && typeof req.body === "object" ? req.body : req.query;
+    const rawUrl = typeof input.url === "string" ? input.url : "";
+    const kind = typeof input.kind === "string" ? input.kind.trim().toLowerCase() : "";
+    if (!rawUrl || (kind !== "wav" && kind !== "mp4")) {
+      return res.status(400).json({ message: "url and kind are required." });
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      return res.status(400).json({ message: "Invalid file URL." });
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return res.status(400).json({ message: "Only http(s) URLs are supported." });
+    }
+    const fileBase = sanitizeDownloadFileName(input.filename, kind === "wav" ? "audio" : "video");
+    const contentTypeFallback = kind === "wav" ? "audio/wav" : "video/mp4";
+    const maxBytes = kind === "wav" ? 120 * 1024 * 1024 : 260 * 1024 * 1024;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 120000);
+      const fileRes = await fetch(rawUrl, {
+        redirect: "follow",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: kind === "wav" ? "audio/*,*/*;q=0.8" : "video/*,*/*;q=0.8",
+          Referer: parsed.origin + "/",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!fileRes.ok) {
+        return res.status(502).json({ message: `${kind.toUpperCase()} file could not be fetched.` });
+      }
+      const contentLength = fileRes.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > maxBytes) {
+        return res.status(413).json({ message: `${kind.toUpperCase()} file is too large.` });
+      }
+      const buf = Buffer.from(await fileRes.arrayBuffer());
+      if (buf.byteLength > maxBytes) {
+        return res.status(413).json({ message: `${kind.toUpperCase()} file is too large.` });
+      }
+      const upstreamType = fileRes.headers.get("content-type") || contentTypeFallback;
+      const safeName = `${fileBase}.${kind}`;
+      if (kind === "mp4" && req.method === "POST" && input.registerMusicVideo === true) {
+        const title = String(input.title || fileBase).trim().slice(0, 180) || fileBase;
+        const description = String(input.description || "").trim().slice(0, 1200) || null;
+        const durationValue = Number(input.durationSec);
+        const durationSec = Number.isFinite(durationValue) ? Math.max(0, Math.floor(durationValue)) : null;
+        // @ts-ignore Replit auth
+        const userId = String(req.user?.claims?.sub || "");
+        if (!userId) {
+          return res.status(401).json({ message: "로그인이 필요합니다." });
+        }
+
+        const videoUrl = saveBufferToLocalUploads(buf, ".mp4");
+        try {
+          await db.insert(musicVideos).values({
+            userId,
+            title,
+            description,
+            videoUrl,
+            originalFilename: safeName.slice(0, 260),
+            durationSec,
+            fileSize: buf.byteLength,
+          });
+        } catch (registrationError) {
+          try {
+            const savedFile = path.resolve(process.cwd(), "local-uploads", "uploads", path.basename(videoUrl));
+            unlinkSync(savedFile);
+          } catch {}
+          console.error("[ai-music generated-file-proxy register]", registrationError);
+          return res.status(500).json({ message: "MP4 파일을 뮤직비디오에 등록하지 못했습니다." });
+        }
+      }
+      res.setHeader("Content-Type", upstreamType);
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`);
+      res.setHeader("Cache-Control", req.method === "POST" ? "private, no-store" : "private, max-age=300");
+      return res.send(buf);
+    } catch (e) {
+      console.error("[ai-music generated-file-proxy]", e);
+      return res.status(502).json({ message: `${kind.toUpperCase()} file download failed.` });
+    }
+  };
+
+  app.get("/api/ai-music/generated-file-proxy", isAuthenticated, handleGeneratedFileProxy);
+  app.post("/api/ai-music/generated-file-proxy", isAuthenticated, handleGeneratedFileProxy);
+
   app.post("/api/ai-music/suno-wav-callback", (_req, res) => {
+    res.status(200).json({ received: true });
+  });
+
+  app.post("/api/ai-music/suno-mp4-callback", (_req, res) => {
     res.status(200).json({ received: true });
   });
 
@@ -1881,6 +2694,164 @@ export async function registerRoutes(
     }
   });
 
+  /** 생성된 클립의 MP4 비디오 URL 조회 (Suno/KIE: 변환 작업 시작 후 폴링) */
+  app.post("/api/ai-music/mp4-url", isAuthenticated, async (req, res) => {
+    const body = req.body as { clip_id?: string; generation_task_id?: string; provider?: string; title?: string };
+    const clipId = typeof body.clip_id === "string" ? body.clip_id.trim() : "";
+    if (!clipId) {
+      return res.status(400).json({ message: "clip_id is required." });
+    }
+    const provider = ((body.provider as string) || AI_MUSIC_PROVIDER || "").trim();
+    const genTaskId = typeof body.generation_task_id === "string" ? body.generation_task_id.trim() : "";
+
+    try {
+      // @ts-ignore Replit auth
+      const mp4UserId = req.user?.claims?.sub as string;
+      const [mp4UserRow] = await db.select().from(users).where(eq(users.id, mp4UserId));
+      const mp4Now = new Date();
+      const mp4PaidTier = mp4UserRow?.role === "admin" || isActivePaidSubscription(mp4UserRow, mp4Now);
+      const mp4Author = resolveAiCreatorDisplayName(mp4UserRow);
+      if (!mp4PaidTier) {
+        const mp4LibWhere = and(
+          eq(aiMusicSavedTracks.userId, mp4UserId),
+          eq(aiMusicSavedTracks.clipId, clipId),
+          ...(genTaskId ? [eq(aiMusicSavedTracks.generationTaskId, genTaskId)] : []),
+        );
+        const mp4LibRows = await db
+          .select({ publishedToSite: aiMusicSavedTracks.publishedToSite })
+          .from(aiMusicSavedTracks)
+          .where(mp4LibWhere)
+          .limit(8);
+        if (mp4LibRows.length === 0 || !mp4LibRows.some((r) => r.publishedToSite)) {
+          return res.status(403).json({
+            message: "Free users can create MP4 only after publishing the generated track to the site.",
+          });
+        }
+      }
+
+      const mp4Upstream = provider === "kie" || provider === "suno" ? sunoStyleUpstream(provider) : null;
+      if (!mp4Upstream) {
+        return res.status(503).json({ message: "MP4 conversion is not supported by the current provider." });
+      }
+      if (!genTaskId) {
+        return res.status(400).json({ message: "generation_task_id is required for MP4 conversion." });
+      }
+      let resolvedClipId = clipId;
+      let generationInstrumental = false;
+      try {
+        const originalInfoRes = await fetch(`${mp4Upstream.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(genTaskId)}`, {
+          headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+        });
+        const originalInfo = await originalInfoRes.json().catch(() => ({}));
+        const raws = sunoRecordInfoClipRaws(originalInfo);
+        generationInstrumental = parseSunoGenerateParamInstrumental(originalInfo);
+        if (raws.length > 0) {
+          resolvedClipId = resolveSunoClipAudioIdFromRaws(raws, clipId, body.title);
+        }
+      } catch (matchErr) {
+        console.warn("[ai-music mp4-url] audioId resolve skipped:", matchErr instanceof Error ? matchErr.message : String(matchErr));
+      }
+
+      await primeTimestampedLyricsForMp4(mp4Upstream, genTaskId, resolvedClipId, generationInstrumental);
+
+      const genRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/generate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${mp4Upstream.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: genTaskId,
+          audioId: resolvedClipId,
+          callBackUrl: `${siteBase}/api/ai-music/suno-mp4-callback`,
+          author: mp4Author,
+          domainName: "venysound.com",
+        }),
+      });
+      const genData = await genRes.json().catch(() => ({}));
+      const bizCode = (genData as { code?: number }).code;
+      const genMsg = (genData as { msg?: string; message?: string }).msg ?? (genData as { message?: string }).message ?? "";
+      const gd = (genData as { data?: { taskId?: string; task_id?: string }; taskId?: string; task_id?: string }).data;
+      const mp4TaskId =
+        (typeof gd?.taskId === "string" ? gd.taskId : "") ||
+        (typeof gd?.task_id === "string" ? gd.task_id : "") ||
+        (typeof (genData as { taskId?: string }).taskId === "string" ? (genData as { taskId: string }).taskId : "") ||
+        (typeof (genData as { task_id?: string }).task_id === "string" ? (genData as { task_id: string }).task_id : "") ||
+        (/already exists/i.test(genMsg) ? genTaskId : "") ||
+        "";
+      if ((!genRes.ok || (typeof bizCode === "number" && bizCode !== 200)) && !/already exists/i.test(genMsg)) {
+        const msg = genMsg || "MP4 conversion failed to start.";
+        return res.status(!genRes.ok && genRes.status >= 400 && genRes.status < 500 ? genRes.status : 502).json({
+          message: String(msg),
+        });
+      }
+      if (!mp4TaskId) {
+        return res.status(502).json({ message: genMsg || "MP4 task id was not returned." });
+      }
+      return res.status(202).json({ mp4_task_id: mp4TaskId });
+    } catch (e) {
+      console.error("[ai-music mp4-url]", e);
+      return res.status(500).json({ message: "An error occurred during MP4 conversion." });
+    }
+  });
+
+  app.get("/api/ai-music/mp4-status/:taskId", isAuthenticated, async (req, res) => {
+    const taskId = String(req.params.taskId ?? "").trim();
+    const provider = (typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER || "").trim();
+    if (!taskId) return res.status(400).json({ message: "MP4 task id is required." });
+    const mp4Upstream = provider === "kie" || provider === "suno" ? sunoStyleUpstream(provider) : null;
+    if (!mp4Upstream) {
+      return res.status(503).json({ message: "MP4 conversion is not supported by the current provider." });
+    }
+    try {
+      const infoRes = await fetch(`${mp4Upstream.base}/api/v1/mp4/record-info?taskId=${encodeURIComponent(taskId)}`, {
+        headers: { Authorization: `Bearer ${mp4Upstream.key}` },
+      });
+      const infoData = await infoRes.json().catch(() => ({}));
+      if (!infoRes.ok) {
+        const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+        return res.status(infoRes.status >= 400 && infoRes.status < 500 ? infoRes.status : 502).json({
+          message: String(msg || "MP4 status lookup failed."),
+        });
+      }
+      const infoCode = (infoData as { code?: number }).code;
+      if (typeof infoCode === "number" && infoCode !== 200) {
+        const msg = (infoData as { msg?: string; message?: string }).msg ?? (infoData as { message?: string }).message;
+        return res.status(502).json({ message: String(msg || `MP4 status lookup failed (${infoCode}).`) });
+      }
+      const d = (infoData as {
+        data?: {
+          successFlag?: string;
+          success_flag?: string;
+          status?: string;
+          response?: { videoUrl?: string; video_url?: string; mp4Url?: string; mp4_url?: string };
+          videoUrl?: string;
+          video_url?: string;
+          mp4Url?: string;
+          mp4_url?: string;
+          errorMessage?: string;
+        };
+      }).data;
+      const flag = String(d?.successFlag ?? d?.success_flag ?? d?.status ?? "").trim().toUpperCase();
+      const videoUrl =
+        d?.response?.videoUrl ??
+        d?.response?.video_url ??
+        d?.response?.mp4Url ??
+        d?.response?.mp4_url ??
+        d?.videoUrl ??
+        d?.video_url ??
+        d?.mp4Url ??
+        d?.mp4_url;
+      if (flag === "SUCCESS" && typeof videoUrl === "string" && videoUrl.trim()) {
+        return res.json({ state: "succeeded", mp4_url: videoUrl.trim() });
+      }
+      if (flag && ["CREATE_TASK_FAILED", "GENERATE_MP4_FAILED", "CALLBACK_EXCEPTION"].includes(flag)) {
+        return res.status(502).json({ message: d?.errorMessage ?? "MP4 conversion failed." });
+      }
+      return res.json({ state: "pending" });
+    } catch (e) {
+      console.error("[ai-music mp4-status]", e);
+      return res.status(502).json({ message: "MP4 status lookup failed." });
+    }
+  });
+
   // 로그인 없이 API 키 유효성만 확인 (디버깅용). SUNOAPI → KIE → AIMusicAPI.
   app.get("/api/ai-music/check-key", async (_req, res) => {
     const checkSunoStyleCredits = async (label: "kie" | "suno", base: string, key: string) => {
@@ -1975,6 +2946,7 @@ export async function registerRoutes(
       tags?: string;
       prompt?: string;
       gpt_description_prompt?: string;
+      voice_record?: boolean;
     };
     /** 5월 이벤트 전용 잔액(promo)으로 생성 시, 성공 과금에 필요한 최소 무료 트랙 슬롯(보통 2, instrumental 1) */
     promoMinTracksForBilling?: number;
@@ -2096,6 +3068,10 @@ export async function registerRoutes(
     const tier = displayed.subscriptionTier ?? "free";
 
     if (isUserPaidSubscriptionActive(r, now) && tier !== "free") {
+      if (isSubscriptionAiWalletDepleted(r)) {
+        await runSubscriptionAiBudgetExhaustionIfNeeded(userIdForBill, now);
+        throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
+      }
       const ok = await deductSubscriptionAiWallet(userIdForBill, AI_MUSIC_WON_PER_TRACK, now);
       if (!ok) throw new Error("AI_SUBSCRIPTION_WALLET_DEDUCT_FAILED");
       try {
@@ -2353,6 +3329,15 @@ export async function registerRoutes(
       const now = new Date();
       /** 활성 유료 + 구독 AI 지갑: 동기화 후 잔액이 1곡 미만이면 소진 처리(과금 직후 호출 누락·탭만 열어둔 경우 보정) 후 행 재조회. */
       if (row?.role !== "admin" && isUserPaidSubscriptionActive(row, now)) {
+        if (isSubscriptionAiWalletDepleted(row)) {
+          try {
+            await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+          } catch (e) {
+            console.error("[ai-music usage] subscription ai wallet depleted", e);
+          }
+          const [rowAfterDepleted] = await db.select().from(users).where(eq(users.id, userId));
+          if (rowAfterDepleted) row = rowAfterDepleted;
+        }
         let wSub = await syncSubscriptionAiWalletForPaidUser(userId, now);
         if (wSub && wSub.walletSum <= 0) {
           try {
@@ -2480,6 +3465,8 @@ export async function registerRoutes(
         generationProvider: r.generationProvider ?? undefined,
         uploadCount: r.uploadCount ?? 0,
         downloadCount: r.downloadCount ?? 0,
+        wavDownloadCount: r.wavDownloadCount ?? 0,
+        mp4DownloadCount: r.mp4DownloadCount ?? 0,
         publishedToSite: Boolean(r.publishedToSite),
       }));
       res.json({ tracks });
@@ -2538,6 +3525,8 @@ export async function registerRoutes(
           generationProvider: clipStr(o.generationProvider ?? o.generation_provider, 32),
           uploadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.uploadCount) || 0))),
           downloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.downloadCount) || 0))),
+          wavDownloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.wavDownloadCount ?? o.wav_download_count) || 0))),
+          mp4DownloadCount: Math.max(0, Math.min(1_000_000, Math.floor(Number(o.mp4DownloadCount ?? o.mp4_download_count) || 0))),
           publishedToSite: Boolean(o.publishedToSite ?? o.published_to_site),
         });
       }
@@ -2572,6 +3561,8 @@ export async function registerRoutes(
                 /** 이전 PUT/기기 동기화로 0이 오면 기존 진행도가 사라지지 않게 보존 */
                 uploadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.uploadCount}, 0), COALESCE(excluded.upload_count, 0))`,
                 downloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.downloadCount}, 0), COALESCE(excluded.download_count, 0))`,
+                wavDownloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.wavDownloadCount}, 0), COALESCE(excluded.wav_download_count, 0))`,
+                mp4DownloadCount: sql`GREATEST(COALESCE(${aiMusicSavedTracks.mp4DownloadCount}, 0), COALESCE(excluded.mp4_download_count, 0))`,
                 publishedToSite: sql`COALESCE(${aiMusicSavedTracks.publishedToSite}, false) OR COALESCE(excluded.published_to_site, false)`,
               },
             });
@@ -2810,6 +3801,19 @@ export async function registerRoutes(
       used = usage?.count ?? 0;
       usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
     } else if (isSubWallet) {
+      if (isSubscriptionAiWalletDepleted(row)) {
+        try {
+          await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+        } catch (e) {
+          console.error("[ai-music create] budget exhaustion (depleted wallet)", e);
+        }
+        return res.status(403).json({
+          message: "구독 AI 생성 금액을 모두 사용했습니다. Free 플랜으로 전환되었습니다.",
+          code: "AI_MUSIC_LIMIT_REACHED",
+          limit: 0,
+          usedThisMonth: 0,
+        });
+      }
       const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
       if (!w) {
         return res.status(403).json({
@@ -2960,7 +3964,7 @@ export async function registerRoutes(
           userId,
           user: row,
           taskId,
-          provider: createProvider,
+          provider: createProvider as "kie" | "suno" | "aimusicapi",
           walletCreditsCharged: 0,
           chargeStatus: "pending",
           body: { title: body.title, tags: body.tags, prompt: body.prompt, gpt_description_prompt: body.gpt_description_prompt },
@@ -3421,6 +4425,19 @@ export async function registerRoutes(
         used = usage?.count ?? 0;
         usageWouldExceed = canUsePromoWallet ? false : limit >= 0 && used >= limit;
       } else if (isSubWallet) {
+        if (isSubscriptionAiWalletDepleted(row)) {
+          try {
+            await runSubscriptionAiBudgetExhaustionIfNeeded(userId, now);
+          } catch (e) {
+            console.error("[ai-music voice create] budget exhaustion (depleted wallet)", e);
+          }
+          return res.status(403).json({
+            message: "구독 AI 생성 금액을 모두 사용했습니다. Free 플랜으로 전환되었습니다.",
+            code: "AI_MUSIC_LIMIT_REACHED",
+            limit: 0,
+            usedThisMonth: 0,
+          });
+        }
         const w = await syncSubscriptionAiWalletForPaidUser(userId, now);
         if (!w) {
           return res.status(403).json({
@@ -3534,12 +4551,413 @@ export async function registerRoutes(
     },
   );
 
+  // === KIE/Suno: Replace Section + Advanced Stem Separation (2026-07-08 KIE 업데이트 대응) ===
+  // /ai-music-tools-test 페이지에서 사용. 아래 가격은 kie.ai 공식 크레딧 소모량 × 15원/크레딧(운영자 지정 환율)로 산정.
+  // (kie.ai/suno-api 가격표 기준: Replace Section 5credits, separate_vocal 10, split_stem 50, split_stem_advanced 20)
+
+  /** 지갑 잔액 부족 시에도 kie.ai 크레딧을 낭비하지 않도록, 업스트림 호출 "전"에 확인만 하고, 실제 차감은 taskId를 정상 발급받은 "후"에 한다 */
+  async function hasEnoughWalletBalance(userId: string, priceWon: number): Promise<boolean> {
+    const [row] = await db.select({ credits: users.credits }).from(users).where(eq(users.id, userId));
+    return (row?.credits ?? 0) >= priceWon;
+  }
+
+  /**
+   * taskId 발급 시점에 이미 차감된 이용료를, 나중에 폴링에서 작업이 "실패"로 확정되면 환불하기 위한 임시 장부.
+   * 서버 재시작 시 사라지지만(인메모리), 실패 확정은 보통 몇 분 내에 폴링으로 감지되므로 실사용에는 충분하다.
+   */
+  const aiMusicToolCharges = new Map<
+    string,
+    { userId: string; priceWon: number; type: string; description: string }
+  >();
+
+  /** 성공 확정 후 지갑에서 이용료 차감 + 거래내역 기록 (드문 레이스로 차감 실패해도 이미 발급된 taskId는 그대로 사용자에게 돌려줌) */
+  async function chargeAiMusicToolFee(
+    userId: string,
+    priceWon: number,
+    type: string,
+    description: string,
+    taskId: string,
+  ) {
+    if (priceWon <= 0) return;
+    try {
+      const deducted = await storage.deductCredits(userId, priceWon);
+      if (!deducted) {
+        console.warn(`[ai-music tool fee] deduct failed after balance check passed userId=${userId} priceWon=${priceWon}`);
+        return;
+      }
+      await storage.createCreditTransaction({ userId, type, amount: -priceWon, description });
+      if (taskId) aiMusicToolCharges.set(taskId, { userId, priceWon, type, description });
+    } catch (e) {
+      console.error("[ai-music tool fee] charge failed", e);
+    }
+  }
+
+  /** 작업이 최종 성공으로 확정되면 환불 장부에서 지워 메모리를 정리한다(환불 없음) */
+  function clearAiMusicToolCharge(taskId: string) {
+    aiMusicToolCharges.delete(taskId);
+  }
+
+  /** 작업이 최종 실패로 확정되면, 이미 차감했던 이용료를 지갑에 환불하고 장부에서 지운다 */
+  async function refundAiMusicToolFeeIfCharged(taskId: string, reason: string) {
+    const charge = taskId ? aiMusicToolCharges.get(taskId) : undefined;
+    if (!charge) return;
+    aiMusicToolCharges.delete(taskId);
+    try {
+      await storage.addCredits(charge.userId, charge.priceWon);
+      await storage.createCreditTransaction({
+        userId: charge.userId,
+        type: `${charge.type}_refund`,
+        amount: charge.priceWon,
+        description: `${charge.description} — 처리 실패로 환불 (${reason})`.slice(0, 500),
+      });
+    } catch (e) {
+      console.error("[ai-music tool fee] refund failed", e);
+    }
+  }
+
+  /** 업스트림 상태 문자열 추출 — 클라이언트(AiMusicToolsTest.tsx)의 extractStatusText와 동일 로직 */
+  function extractUpstreamStatusText(data: unknown): string | null {
+    if (!data || typeof data !== "object") return null;
+    const obj = data as Record<string, any>;
+    const candidates = [
+      obj.state,
+      obj.status,
+      obj.data?.status,
+      obj.data?.state,
+      obj.data?.successFlag,
+      obj.data?.response?.successFlag,
+      obj.data?.response?.status,
+    ];
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim()) return c.trim().toUpperCase();
+    }
+    return null;
+  }
+
+  const REPLACE_SECTION_PRICE_WON = 75; // kie 5 credits × 15원
+
+  const STEM_SEPARATION_PRICE_WON: Record<"separate_vocal" | "split_stem" | "split_stem_advanced", number> = {
+    separate_vocal: 150, // 10 credits × 15원
+    split_stem: 750, // 50 credits × 15원
+    split_stem_advanced: 300, // 20 credits × 15원
+  };
+
+  /** Replace Section — 결과 폴링은 기존 GET /api/ai-music/task/:taskId 를 그대로 재사용 (KIE 문서: get-music-details와 동일 엔드포인트) */
+  app.post(
+    "/api/ai-music/replace-section",
+    isAuthenticated,
+    aiAudioEditUpload.single("audio"),
+    async (req, res) => {
+      if (!AI_MUSIC_PROVIDER) {
+        return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string | undefined;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as {
+        provider?: string;
+        taskId?: string;
+        audioId?: string;
+        uploadUrl?: string;
+        mv?: string;
+        prompt?: string;
+        tags?: string;
+        title?: string;
+        negativeTags?: string;
+        fullLyrics?: string;
+        infillStartS?: string | number;
+        infillEndS?: string | number;
+      };
+
+      const providerReq =
+        typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : AI_MUSIC_PROVIDER;
+      const upstream = sunoStyleUpstream(providerReq);
+      if (!upstream) {
+        return res
+          .status(503)
+          .json({ message: "선택한 provider의 API 키(SUNOAPI_API_KEY/KIE_API_KEY)가 설정되어 있지 않습니다.", code: "PROVIDER_UNAVAILABLE" });
+      }
+
+      const prompt = String(body.prompt ?? "").trim();
+      if (!prompt) return res.status(400).json({ message: "교체할 구간의 프롬프트(가사/설명)를 입력해 주세요." });
+
+      const infillStartS = Number(body.infillStartS);
+      const infillEndS = Number(body.infillEndS);
+      if (!Number.isFinite(infillStartS) || !Number.isFinite(infillEndS)) {
+        return res.status(400).json({ message: "infillStartS/infillEndS는 숫자여야 합니다." });
+      }
+      if (infillStartS < 0 || infillEndS <= infillStartS) {
+        return res.status(400).json({ message: "infillEndS는 infillStartS보다 커야 합니다." });
+      }
+      if (infillEndS - infillStartS < 10) {
+        return res.status(400).json({ message: "교체 구간은 최소 10초 이상이어야 합니다." });
+      }
+
+      const file = req.file;
+      const bodyUploadUrl = String(body.uploadUrl ?? "").trim();
+      const hasUpload = Boolean(file?.buffer?.length) || Boolean(bodyUploadUrl);
+      const hasExisting = Boolean(String(body.taskId ?? "").trim()) && Boolean(String(body.audioId ?? "").trim());
+      if (!hasUpload && !hasExisting) {
+        return res.status(400).json({ message: "기존 곡(taskId+audioId) 또는 업로드 오디오(uploadUrl) 중 하나가 필요합니다." });
+      }
+
+      if (!(await hasEnoughWalletBalance(userId, REPLACE_SECTION_PRICE_WON))) {
+        return res.status(402).json({
+          message: `지갑 잔액이 부족합니다. 구간 교체는 ${REPLACE_SECTION_PRICE_WON}원이 필요해요. 충전 후 다시 시도해 주세요.`,
+          insufficientCredits: true,
+          priceWon: REPLACE_SECTION_PRICE_WON,
+        });
+      }
+
+      const callBackUrl = `${siteBase}/api/ai-music/suno-callback`;
+      const payload: Record<string, unknown> = {
+        prompt: prompt.slice(0, 5000),
+        infillStartS: Math.round(infillStartS * 100) / 100,
+        infillEndS: Math.round(infillEndS * 100) / 100,
+        callBackUrl,
+      };
+      if (body.tags?.trim()) payload.tags = body.tags.trim().slice(0, 1000);
+      if (body.title?.trim()) payload.title = body.title.trim().slice(0, 200);
+      if (body.negativeTags?.trim()) payload.negativeTags = body.negativeTags.trim().slice(0, 500);
+      if (body.fullLyrics?.trim()) payload.fullLyrics = body.fullLyrics.trim().slice(0, 8000);
+
+      try {
+        if (hasUpload) {
+          let uploadUrl = bodyUploadUrl;
+          if (!uploadUrl && file?.buffer?.length) {
+            const ext = file.mimetype?.includes("wav")
+              ? ".wav"
+              : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3")
+                ? ".mp3"
+                : ".webm";
+            uploadUrl = await kieUploadAudioBuffer({
+              apiKey: upstream.key,
+              buffer: file.buffer,
+              fileName: `replace-section-${crypto.randomUUID()}${ext}`,
+              mimeType: file.mimetype || "audio/mpeg",
+              fileUploadBase: resolveSunoStyleFileUploadBase(providerReq === "kie" ? "kie" : "suno"),
+            });
+          }
+          if (!uploadUrl) return res.status(400).json({ message: "오디오 업로드에 실패했습니다." });
+          payload.uploadUrl = uploadUrl;
+          payload.model = resolveSunoGenerateModel(body.mv) || "V5";
+        } else {
+          payload.taskId = String(body.taskId).trim();
+          payload.audioId = String(body.audioId).trim();
+        }
+
+        const apiRes = await fetch(`${upstream.base}/api/v1/generate/replace-section`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const bizCode = (data as { code?: number }).code;
+        if (typeof bizCode === "number" && bizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "구간 교체 API 오류";
+          return res.status(502).json({
+            message:
+              formatKieApiUserMessage(String(msg), { creditsProvider: providerReq === "kie" ? "kie" : "suno" }) ||
+              String(msg),
+          });
+        }
+        const d = data as { data?: { taskId?: string }; taskId?: string };
+        const taskId = d?.data?.taskId ?? d?.taskId ?? "";
+        if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+
+        await chargeAiMusicToolFee(userId, REPLACE_SECTION_PRICE_WON, "ai_music_replace_section", "AI 음악 — 구간 교체", taskId);
+        return res.json({
+          task_id: taskId,
+          provider: providerReq,
+          mode: hasUpload ? "upload" : "existing",
+          priceWon: REPLACE_SECTION_PRICE_WON,
+        });
+      } catch (e) {
+        console.error("[ai-music replace-section]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        return res.status(500).json({
+          message: "구간 교체 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_REPLACE_SECTION_ERROR",
+          ...(process.env.NODE_ENV === "development" ? { detail: errMsg.slice(0, 500) } : {}),
+        });
+      }
+    },
+  );
+
+  /** Advanced Stem Separation — 보컬/악기 분리 (separate_vocal | split_stem | split_stem_advanced) */
+  app.post(
+    "/api/ai-music/stem-separation",
+    isAuthenticated,
+    aiAudioEditUpload.single("audio"),
+    async (req, res) => {
+      if (!AI_MUSIC_PROVIDER) {
+        return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+      }
+      // @ts-ignore
+      const userId = req.user?.claims?.sub as string | undefined;
+      if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+      const body = req.body as {
+        provider?: string;
+        taskId?: string;
+        audioId?: string;
+        audioUrl?: string;
+        type?: string;
+        stemName?: string;
+      };
+      const providerReq =
+        typeof body.provider === "string" && body.provider.trim() ? body.provider.trim() : AI_MUSIC_PROVIDER;
+      const upstream = sunoStyleUpstream(providerReq);
+      if (!upstream) {
+        return res
+          .status(503)
+          .json({ message: "선택한 provider의 API 키(SUNOAPI_API_KEY/KIE_API_KEY)가 설정되어 있지 않습니다.", code: "PROVIDER_UNAVAILABLE" });
+      }
+
+      const file = req.file;
+      const bodyAudioUrl = String(body.audioUrl ?? "").trim();
+      const hasUpload = Boolean(file?.buffer?.length) || Boolean(bodyAudioUrl);
+      const hasExisting = Boolean(String(body.taskId ?? "").trim()) && Boolean(String(body.audioId ?? "").trim());
+      if (!hasUpload && !hasExisting) {
+        return res.status(400).json({ message: "기존 곡(taskId+audioId) 또는 오디오(audioUrl/파일) 중 하나가 필요합니다." });
+      }
+
+      const type =
+        body.type === "split_stem" || body.type === "split_stem_advanced" ? body.type : "separate_vocal";
+      if (type === "split_stem_advanced" && !body.stemName?.trim()) {
+        return res.status(400).json({ message: "split_stem_advanced 모드는 stemName이 필요합니다." });
+      }
+
+      const priceWon = STEM_SEPARATION_PRICE_WON[type];
+      if (!(await hasEnoughWalletBalance(userId, priceWon))) {
+        return res.status(402).json({
+          message: `지갑 잔액이 부족합니다. 이 기능은 ${priceWon}원이 필요해요. 충전 후 다시 시도해 주세요.`,
+          insufficientCredits: true,
+          priceWon,
+        });
+      }
+
+      const callBackUrl = `${siteBase}/api/ai-music/stem-separation-callback`;
+      const payload: Record<string, unknown> = { type, callBackUrl };
+      if (type === "split_stem_advanced") payload.stemName = body.stemName!.trim().slice(0, 100);
+
+      try {
+        if (hasExisting) {
+          payload.taskId = String(body.taskId).trim();
+          payload.audioId = String(body.audioId).trim();
+        } else {
+          let audioUrl = bodyAudioUrl;
+          if (!audioUrl && file?.buffer?.length) {
+            const ext = file.mimetype?.includes("wav")
+              ? ".wav"
+              : file.mimetype?.includes("mpeg") || file.mimetype?.includes("mp3")
+                ? ".mp3"
+                : ".webm";
+            audioUrl = await kieUploadAudioBuffer({
+              apiKey: upstream.key,
+              buffer: file.buffer,
+              fileName: `stem-separation-${crypto.randomUUID()}${ext}`,
+              mimeType: file.mimetype || "audio/mpeg",
+              fileUploadBase: resolveSunoStyleFileUploadBase(providerReq === "kie" ? "kie" : "suno"),
+            });
+          }
+          if (!audioUrl) return res.status(400).json({ message: "오디오 업로드에 실패했습니다." });
+          payload.audioUrl = audioUrl;
+        }
+
+        const apiRes = await fetch(`${upstream.base}/api/v1/vocal-removal/generate`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${upstream.key}`, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await apiRes.json().catch(() => ({}));
+        if (!apiRes.ok) {
+          const msg = (data as { msg?: string }).msg ?? "API 요청 실패";
+          return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+        }
+        const bizCode = (data as { code?: number }).code;
+        if (typeof bizCode === "number" && bizCode !== 200) {
+          const msg = (data as { msg?: string }).msg ?? "스템 분리 API 오류";
+          return res.status(502).json({ message: String(msg) });
+        }
+        const d = data as { data?: { taskId?: string }; taskId?: string };
+        const taskId = d?.data?.taskId ?? d?.taskId ?? "";
+        if (!taskId) return res.status(502).json({ message: "API 응답에 taskId가 없습니다." });
+
+        await chargeAiMusicToolFee(userId, priceWon, "ai_music_stem_separation", `AI 음악 — 스템 분리 (${type})`, taskId);
+        return res.json({ task_id: taskId, provider: providerReq, type, priceWon });
+      } catch (e) {
+        console.error("[ai-music stem-separation]", e);
+        const errMsg = e instanceof Error ? e.message : String(e);
+        return res.status(500).json({
+          message: "스템 분리 요청 중 오류가 발생했습니다.",
+          code: "AI_MUSIC_STEM_SEPARATION_ERROR",
+          ...(process.env.NODE_ENV === "development" ? { detail: errMsg.slice(0, 500) } : {}),
+        });
+      }
+    },
+  );
+
+  /** Stem Separation 상태 조회 (vocal-removal/record-info) */
+  app.get("/api/ai-music/stem-separation/:taskId", isAuthenticated, async (req, res) => {
+    res.set("Cache-Control", "no-store"); // 폴링용 — 브라우저가 이전 상태를 재사용(304)하지 않도록
+    if (!AI_MUSIC_PROVIDER) {
+      return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
+    }
+    const taskId = String(req.params.taskId ?? "").trim();
+    if (!taskId) return res.status(400).json({ message: "taskId가 필요합니다." });
+    const providerReq = typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER;
+    const upstream = sunoStyleUpstream(providerReq);
+    if (!upstream) {
+      return res.status(503).json({ message: "선택한 provider의 API 키가 설정되어 있지 않습니다." });
+    }
+    try {
+      const q = new URLSearchParams({ taskId });
+      const apiRes = await fetch(`${upstream.base}/api/v1/vocal-removal/record-info?${q}`, {
+        headers: { Authorization: `Bearer ${upstream.key}` },
+      });
+      const data = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok) {
+        const msg = (data as { msg?: string }).msg ?? "조회 실패";
+        await refundAiMusicToolFeeIfCharged(taskId, String(msg));
+        return res.status(apiRes.status >= 400 && apiRes.status < 500 ? apiRes.status : 502).json({ message: String(msg) });
+      }
+      // 이용료 환불/정리: 클라이언트(extractStatusText/statusToPhase)와 동일 기준으로 최종 성공/실패를 판정
+      const statusText = extractUpstreamStatusText(data);
+      if (statusText) {
+        if (/SUCCESS|COMPLETE|DONE|FIRST_SUCCESS/.test(statusText)) {
+          clearAiMusicToolCharge(taskId);
+        } else if (/FAIL|ERROR/.test(statusText)) {
+          const d = data as { msg?: string; message?: string; data?: { errorMessage?: string } };
+          const failMsg = d?.msg ?? d?.message ?? d?.data?.errorMessage ?? "스템 분리에 실패했습니다.";
+          await refundAiMusicToolFeeIfCharged(taskId, String(failMsg));
+        }
+      }
+      return res.json(data);
+    } catch (e) {
+      console.error("[ai-music stem-separation record-info]", e);
+      return res.status(500).json({ message: "스템 분리 상태 조회 중 오류가 발생했습니다." });
+    }
+  });
+
+  /** Stem Separation 완료 콜백 — 로컬 테스트에서는 폴링만 사용, 수신만 확인 */
+  app.post("/api/ai-music/stem-separation-callback", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
+  // === [/LOCAL TEST ONLY] ===
+
   app.get("/api/ai-music/task/:taskId", isAuthenticated, async (req, res) => {
     if (!AI_MUSIC_PROVIDER) {
       return res.status(503).json({ message: "AI 음악 생성 API가 설정되지 않았습니다." });
     }
-    const taskId = req.params.taskId;
-    const provider = (req.query.provider as string) || AI_MUSIC_PROVIDER;
+    const taskId = String(req.params.taskId ?? "").trim();
+    const provider = typeof req.query.provider === "string" ? req.query.provider : AI_MUSIC_PROVIDER;
     if (!taskId) return res.status(400).json({ message: "task_id가 필요합니다." });
     // @ts-ignore
     const pollUserId = req.user?.claims?.sub as string | undefined;
@@ -3550,7 +4968,9 @@ export async function registerRoutes(
         const cached = sunoCallbackResults.get(taskId);
         if (cached) {
           if (cached.state === "succeeded" && pollUserId) {
-            const clipN = Array.isArray(cached.data) ? cached.data.length : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
+            const clipN = Array.isArray(cached.data)
+              ? cached.data.length
+              : MAY_2026_EVENT_PROMO_TRACKS_PER_GENERATION;
             const billing = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: clipN });
             sunoCallbackResults.delete(taskId);
             return res.json({
@@ -3568,7 +4988,7 @@ export async function registerRoutes(
         }
         const upstreamCtrl = new AbortController();
         const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-        let apiRes: Response;
+        let apiRes: globalThis.Response;
         try {
           apiRes = await fetch(`${taskSunoStyle.base}/api/v1/generate/record-info?taskId=${encodeURIComponent(taskId)}`, {
             headers: { Authorization: `Bearer ${taskSunoStyle.key}` },
@@ -3591,6 +5011,7 @@ export async function registerRoutes(
         if (typeof bizCode === "number" && bizCode !== 200) {
           const msg = (data as { msg?: string }).msg ?? `Suno API code ${bizCode}`;
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, String(msg));
+          await refundAiMusicToolFeeIfCharged(taskId, String(msg));
           return res.json({ state: "failed", message: String(msg), data: null });
         }
         const d = (data as { data?: { status?: string; response?: { sunoData?: unknown[]; suno_data?: unknown[] }; errorMessage?: string; param?: string } }).data;
@@ -3627,10 +5048,12 @@ export async function registerRoutes(
           if (sunoList.length === 0) {
             return res.json({ state: "running", data: null });
           }
-          const list = mapSunoRawsToClips(sunoList as Record<string, unknown>[]);
+          const list = mapSunoRawsToClips((sunoList as Record<string, unknown>[]).slice(0, expectedClipCount));
           let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
           if (pollUserId) {
-            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: list.length });
+            const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, {
+              promoOutputTracks: list.length > 0 ? list.length : expectedClipCount,
+            });
             billing = {
               applied: b.applied,
               won_charged: b.wonCharged,
@@ -3638,6 +5061,7 @@ export async function registerRoutes(
               credits_balance: b.balanceWon,
             };
           }
+          clearAiMusicToolCharge(taskId);
           return res.json({ state: "succeeded", data: list, billing });
         }
         const raws = sunoList as Record<string, unknown>[];
@@ -3647,18 +5071,20 @@ export async function registerRoutes(
          * 기대 클립 수만큼 결과가 있고, 각각 재생 가능 오디오·최소 길이(초)가 있으면 완료로 간주.
          */
         if (status === "FIRST_SUCCESS" && raws.length >= expectedClipCount) {
-          const listEarly = listFromRaws();
+          const listEarly = mapSunoRawsToClips(raws.slice(0, expectedClipCount));
           const minDur = 8;
           const ok =
             listEarly.length >= expectedClipCount &&
             listEarly.every((c) => (c.audio_url ?? "").trim().length > 12) &&
-            raws.every(
+            raws.slice(0, expectedClipCount).every(
               (r) => (pickClipDurationSec(r) ?? 0) >= minDur || sunoClipHasFinalSourceAudio(r),
             );
           if (ok) {
             let billing = { applied: false, won_charged: 0, promo_tracks_deducted: 0, credits_balance: 0 };
             if (pollUserId) {
-              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, { promoOutputTracks: listEarly.length });
+              const b = await tryFinalizeAiMusicSuccessBilling(pollUserId, taskId, {
+                promoOutputTracks: listEarly.length > 0 ? listEarly.length : expectedClipCount,
+              });
               billing = {
                 applied: b.applied,
                 won_charged: b.wonCharged,
@@ -3666,6 +5092,7 @@ export async function registerRoutes(
                 credits_balance: b.balanceWon,
               };
             }
+            clearAiMusicToolCharge(taskId);
             return res.json({ state: "succeeded", data: listEarly, billing });
           }
         }
@@ -3680,6 +5107,7 @@ export async function registerRoutes(
         if (["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"].includes(status)) {
           const failMsg = formatKieApiUserMessage(d?.errorMessage) || "생성에 실패했습니다.";
           if (pollUserId) await markAiMusicGenerationFailedOnUpstream(pollUserId, taskId, failMsg);
+          await refundAiMusicToolFeeIfCharged(taskId, failMsg);
           return res.json({ state: "failed", message: failMsg, data: null });
         }
         return res.json({ state: status === "TEXT_SUCCESS" || status === "FIRST_SUCCESS" ? "running" : "pending", data: null });
@@ -3698,7 +5126,7 @@ export async function registerRoutes(
     try {
       const upstreamCtrl = new AbortController();
       const upstreamTimer = setTimeout(() => upstreamCtrl.abort(), AI_MUSIC_UPSTREAM_FETCH_MS);
-      let apiRes: Response;
+      let apiRes: globalThis.Response;
       try {
         apiRes = await fetch(`${AIMUSICAPI_BASE}/api/v1/sonic/task/${encodeURIComponent(taskId)}`, {
           headers: { Authorization: `Bearer ${AIMUSICAPI_KEY}` },
@@ -3827,7 +5255,7 @@ export async function registerRoutes(
       const audioFilename = `${audioId}.mp3`;
       const audioLocalPath = path.join(localUploadsDir, audioFilename);
 
-      let audioRes: Response;
+      let audioRes: globalThis.Response;
       try {
         audioRes = await fetch(audioUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
       } catch (e) {
@@ -4533,6 +5961,513 @@ export async function registerRoutes(
       res.json({ limited: count >= 10, current: count, limit: 10 });
     } catch (error) {
       res.json({ limited: false, current: 0, limit: 10 });
+    }
+  });
+
+  const MUSIC_VIDEO_DOWNLOAD_PRICE_WON = 300;
+
+  function resolveUploadedVideoPath(videoUrl: string): { localPath: string | null; safeId: string } {
+    const raw = String(videoUrl || "").trim();
+    const match = raw.match(/\/objects\/uploads\/([^/?#]+)/i);
+    const safeId = decodeURIComponent(match?.[1] || raw.split("/").pop() || "").replace(/^\//, "");
+    if (!safeId) return { localPath: null, safeId: "" };
+    const baseId = safeId.replace(/\.(mp4|webm|mov)$/i, "");
+    const candidates = [
+      path.join(uploadsDir, safeId),
+      path.join(uploadsDir, `${baseId}.mp4`),
+      path.join(uploadsDir, `${baseId}.webm`),
+      path.join(uploadsDir, `${baseId}.mov`),
+    ];
+    return { localPath: candidates.find((p) => existsSync(p)) ?? null, safeId };
+  }
+
+  function serveMusicVideoInlineStream(localPath: string, req: any, res: any): void {
+    const ext = path.extname(localPath).toLowerCase() || ".mp4";
+    const mime: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };
+    const contentType = mime[ext] || "video/mp4";
+    const stat = statSync(localPath);
+    const fileSize = stat.size;
+    const rangeHeader = req.headers.range;
+
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Type", contentType);
+    res.set("Content-Disposition", "inline");
+    res.set("Cache-Control", "private, no-store");
+
+    if (rangeHeader) {
+      const m = /^bytes=(\d*)-(\d*)$/i.exec(String(rangeHeader).trim());
+      if (!m) {
+        res.status(416);
+        res.set("Content-Range", `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+      const startStr = m[1];
+      const endStr = m[2];
+      let start: number | null = startStr ? parseInt(startStr, 10) : null;
+      let end: number | null = endStr ? parseInt(endStr, 10) : null;
+      if (start != null && Number.isNaN(start)) start = null;
+      if (end != null && Number.isNaN(end)) end = null;
+      if (start == null && end != null) {
+        const suffixLen = Math.max(0, end);
+        start = Math.max(0, fileSize - suffixLen);
+        end = fileSize - 1;
+      } else {
+        if (start == null) start = 0;
+        if (end == null || end >= fileSize) end = fileSize - 1;
+      }
+      if (start >= fileSize || start < 0 || end < 0 || start > end) {
+        res.status(416);
+        res.set("Content-Range", `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+      const chunkSize = end - start + 1;
+      res.status(206);
+      res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+      res.set("Content-Length", String(chunkSize));
+      const stream = createReadStream(localPath, { start, end });
+      res.on("close", () => stream.destroy());
+      stream.on("error", () => {
+        if (!res.headersSent) res.status(500).end();
+        else res.destroy();
+      });
+      stream.pipe(res);
+      return;
+    }
+
+    res.set("Content-Length", String(fileSize));
+    const stream = createReadStream(localPath);
+    res.on("close", () => stream.destroy());
+    stream.on("error", () => {
+      if (!res.headersSent) res.status(500).end();
+      else res.destroy();
+    });
+    stream.pipe(res);
+  }
+
+  app.get("/api/music-videos", async (req, res) => {
+    try {
+      const viewerId = (req as any).user?.claims?.sub ? String((req as any).user.claims.sub) : "";
+      const rows = await db
+        .select({
+          id: musicVideos.id,
+          userId: musicVideos.userId,
+          title: musicVideos.title,
+          creatorName: musicVideos.creatorName,
+          description: musicVideos.description,
+          videoUrl: musicVideos.videoUrl,
+          originalFilename: musicVideos.originalFilename,
+          durationSec: musicVideos.durationSec,
+          fileSize: musicVideos.fileSize,
+          playCount: musicVideos.playCount,
+          createdAt: musicVideos.createdAt,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          likeCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_likes mvl WHERE mvl.video_id = ${musicVideos.id}
+          )`,
+          commentCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_comments mvc WHERE mvc.video_id = ${musicVideos.id}
+          )`,
+          likedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_likes mvl WHERE mvl.video_id = ${musicVideos.id} AND mvl.user_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
+          purchasedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_purchases mvp WHERE mvp.video_id = ${musicVideos.id} AND mvp.buyer_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
+        })
+        .from(musicVideos)
+        .leftJoin(users, eq(musicVideos.userId, users.id))
+        .orderBy(desc(musicVideos.createdAt))
+        .limit(80);
+      res.json(
+        rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          description: row.description,
+          videoUrl: row.videoUrl,
+          originalFilename: row.originalFilename,
+          durationSec: row.durationSec,
+          fileSize: row.fileSize,
+          playCount: row.playCount,
+          likeCount: row.likeCount ?? 0,
+          commentCount: row.commentCount ?? 0,
+          likedByMe: Boolean(row.likedByMe),
+          purchasedByMe: Boolean(row.purchasedByMe),
+          downloadPrice: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+          createdAt: row.createdAt,
+          creator: {
+            id: row.userId,
+            name: row.creatorName || row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
+            profileImageUrl: row.profileImageUrl,
+          },
+        })),
+      );
+    } catch (e) {
+      console.error("[music-videos GET]", e);
+      res.status(500).json({ message: "뮤직비디오 목록을 불러오지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/play", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ message: "Invalid music video id." });
+      }
+      const [row] = await db
+        .update(musicVideos)
+        .set({
+          playCount: sql`${musicVideos.playCount} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(musicVideos.id, id))
+        .returning({ playCount: musicVideos.playCount });
+      if (!row) return res.status(404).json({ message: "Music video not found." });
+      res.json({ playCount: row.playCount });
+    } catch (e) {
+      console.error("[music-videos play]", e);
+      res.status(500).json({ message: "뮤직비디오 재생 수를 반영하지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/like", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select({ id: musicVideos.id }).from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const [existing] = await db
+        .select({ id: musicVideoLikes.id })
+        .from(musicVideoLikes)
+        .where(and(eq(musicVideoLikes.videoId, id), eq(musicVideoLikes.userId, userId)))
+        .limit(1);
+      let liked = false;
+      if (existing) {
+        await db.delete(musicVideoLikes).where(eq(musicVideoLikes.id, existing.id));
+      } else {
+        await db.insert(musicVideoLikes).values({ videoId: id, userId }).onConflictDoNothing();
+        liked = true;
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoLikes)
+        .where(eq(musicVideoLikes.videoId, id));
+      res.json({ liked, likeCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos like]", e);
+      res.status(500).json({ message: "좋아요 반영에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/comments", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const viewerId = (req as any).user?.claims?.sub ? String((req as any).user.claims.sub) : "";
+      const rows = await db
+        .select({
+          id: musicVideoComments.id,
+          parentId: musicVideoComments.parentId,
+          content: musicVideoComments.content,
+          createdAt: musicVideoComments.createdAt,
+          userId: musicVideoComments.userId,
+          username: users.username,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profileImageUrl: users.profileImageUrl,
+          likeCount: sql<number>`(
+            SELECT COUNT(*)::int FROM music_video_comment_likes mvcl WHERE mvcl.comment_id = ${musicVideoComments.id}
+          )`,
+          likedByMe: viewerId
+            ? sql<boolean>`EXISTS (
+                SELECT 1 FROM music_video_comment_likes mvcl WHERE mvcl.comment_id = ${musicVideoComments.id} AND mvcl.user_id = ${viewerId}
+              )`
+            : sql<boolean>`false`,
+        })
+        .from(musicVideoComments)
+        .leftJoin(users, eq(musicVideoComments.userId, users.id))
+        .where(eq(musicVideoComments.videoId, id))
+        .orderBy(asc(musicVideoComments.createdAt))
+        .limit(200);
+      res.json(
+        rows.map((row) => ({
+          id: row.id,
+          parentId: row.parentId,
+          content: row.content,
+          createdAt: row.createdAt,
+          likeCount: row.likeCount ?? 0,
+          likedByMe: Boolean(row.likedByMe),
+          user: {
+            id: row.userId,
+            name: row.username || [row.firstName, row.lastName].filter(Boolean).join(" ").trim() || "VenySound",
+            profileImageUrl: row.profileImageUrl,
+          },
+        })),
+      );
+    } catch (e) {
+      console.error("[music-videos comments GET]", e);
+      res.status(500).json({ message: "댓글을 불러오지 못했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/:id/comments", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const body = req.body as { content?: string; parentId?: number | null };
+      const content = String(body?.content || "").trim().slice(0, 1000);
+      if (!content) return res.status(400).json({ message: "댓글을 입력해 주세요." });
+      const parentId = body.parentId == null || body.parentId === 0 ? null : Number(body.parentId);
+      if (parentId != null && (!Number.isInteger(parentId) || parentId <= 0)) {
+        return res.status(400).json({ message: "Invalid parent comment id." });
+      }
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select({ id: musicVideos.id }).from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      if (parentId != null) {
+        const [parent] = await db
+          .select({ id: musicVideoComments.id })
+          .from(musicVideoComments)
+          .where(and(eq(musicVideoComments.id, parentId), eq(musicVideoComments.videoId, id)))
+          .limit(1);
+        if (!parent) return res.status(404).json({ message: "Parent comment not found." });
+      }
+      const [comment] = await db.insert(musicVideoComments).values({ videoId: id, parentId, userId, content }).returning();
+      res.status(201).json(comment);
+    } catch (e) {
+      console.error("[music-videos comments POST]", e);
+      res.status(500).json({ message: "댓글 작성에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos/comments/:commentId/like", isAuthenticated, async (req, res) => {
+    try {
+      const commentId = Number(req.params.commentId);
+      if (!Number.isInteger(commentId) || commentId <= 0) return res.status(400).json({ message: "Invalid comment id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [comment] = await db.select({ id: musicVideoComments.id }).from(musicVideoComments).where(eq(musicVideoComments.id, commentId)).limit(1);
+      if (!comment) return res.status(404).json({ message: "Comment not found." });
+      const [existing] = await db
+        .select({ id: musicVideoCommentLikes.id })
+        .from(musicVideoCommentLikes)
+        .where(and(eq(musicVideoCommentLikes.commentId, commentId), eq(musicVideoCommentLikes.userId, userId)))
+        .limit(1);
+      let liked = false;
+      if (existing) {
+        await db.delete(musicVideoCommentLikes).where(eq(musicVideoCommentLikes.id, existing.id));
+      } else {
+        await db.insert(musicVideoCommentLikes).values({ commentId, userId }).onConflictDoNothing();
+        liked = true;
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoCommentLikes)
+        .where(eq(musicVideoCommentLikes.commentId, commentId));
+      res.json({ liked, likeCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos comment like]", e);
+      res.status(500).json({ message: "댓글 좋아요 반영에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/music-videos/comments/:commentId", isAuthenticated, async (req, res) => {
+    try {
+      const commentId = Number(req.params.commentId);
+      if (!Number.isInteger(commentId) || commentId <= 0) return res.status(400).json({ message: "Invalid comment id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [comment] = await db
+        .select({ id: musicVideoComments.id, userId: musicVideoComments.userId, videoId: musicVideoComments.videoId, parentId: musicVideoComments.parentId })
+        .from(musicVideoComments)
+        .where(eq(musicVideoComments.id, commentId))
+        .limit(1);
+      if (!comment) return res.status(404).json({ message: "Comment not found." });
+      if (String(comment.userId) !== userId) return res.status(403).json({ message: "본인이 작성한 댓글만 삭제할 수 있습니다." });
+      if (comment.parentId == null) {
+        await db.delete(musicVideoComments).where(or(eq(musicVideoComments.id, commentId), eq(musicVideoComments.parentId, commentId)));
+      } else {
+        await db.delete(musicVideoComments).where(eq(musicVideoComments.id, commentId));
+      }
+      const [countRow] = await db
+        .select({ count: sql<number>`COUNT(*)::int` })
+        .from(musicVideoComments)
+        .where(eq(musicVideoComments.videoId, comment.videoId));
+      res.json({ deleted: true, commentCount: countRow?.count ?? 0 });
+    } catch (e) {
+      console.error("[music-videos comments DELETE]", e);
+      res.status(500).json({ message: "댓글 삭제에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/stream", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const [video] = await db
+        .select({ videoUrl: musicVideos.videoUrl })
+        .from(musicVideos)
+        .where(eq(musicVideos.id, id))
+        .limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const { localPath } = resolveUploadedVideoPath(video.videoUrl);
+      if (!localPath) return res.status(404).json({ message: "MP4 파일을 찾을 수 없습니다." });
+      serveMusicVideoInlineStream(localPath, req, res);
+    } catch (e) {
+      console.error("[music-videos stream]", e);
+      if (!res.headersSent) res.status(500).json({ message: "뮤직비디오 스트림에 실패했습니다." });
+    }
+  });
+
+  app.get("/api/music-videos/:id/download", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const [video] = await db.select().from(musicVideos).where(eq(musicVideos.id, id)).limit(1);
+      if (!video) return res.status(404).json({ message: "Music video not found." });
+      const isOwnerDownload = String(video.userId) === userId;
+      if (!isOwnerDownload) {
+        const [purchased] = await db
+          .select({ id: musicVideoPurchases.id })
+          .from(musicVideoPurchases)
+          .where(and(eq(musicVideoPurchases.videoId, id), eq(musicVideoPurchases.buyerId, userId)))
+          .limit(1);
+        if (!purchased) {
+          const deducted = await storage.deductCredits(userId, MUSIC_VIDEO_DOWNLOAD_PRICE_WON);
+          if (!deducted) {
+            return res.status(402).json({
+              message: "지갑 잔액이 부족합니다. 충전 후 다시 시도해 주세요.",
+              insufficientCredits: true,
+            });
+          }
+          const [purchase] = await db
+            .insert(musicVideoPurchases)
+            .values({
+              buyerId: userId,
+              videoId: id,
+              sellerId: video.userId,
+              amount: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+            })
+            .onConflictDoNothing()
+            .returning({ id: musicVideoPurchases.id });
+          if (purchase) {
+            await storage.addToBalance(video.userId, MUSIC_VIDEO_DOWNLOAD_PRICE_WON);
+            await storage.createCreditTransaction({
+              userId,
+              type: "music_video_purchase",
+              amount: -MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+              description: `"${video.title}" MP4 다운로드`,
+              relatedId: purchase.id,
+            });
+            await storage.createCreditTransaction({
+              userId: video.userId,
+              type: "music_video_sale",
+              amount: MUSIC_VIDEO_DOWNLOAD_PRICE_WON,
+              description: `"${video.title}" MP4 다운로드 수익`,
+              relatedId: purchase.id,
+            });
+          }
+        }
+      }
+      const { localPath, safeId } = resolveUploadedVideoPath(video.videoUrl);
+      if (!localPath) return res.status(404).json({ message: "MP4 파일을 찾을 수 없습니다." });
+      const ext = path.extname(localPath).toLowerCase() || ".mp4";
+      const mime: Record<string, string> = { ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime" };
+      const safeTitle = sanitizeDownloadFileName(video.title, safeId.replace(/\.[^.]+$/, "") || "music-video");
+      res.set("Content-Type", mime[ext] || "video/mp4");
+      res.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(safeTitle + ext)}`);
+      res.set("Content-Length", String(statSync(localPath).size));
+      createReadStream(localPath).pipe(res);
+    } catch (e) {
+      console.error("[music-videos download]", e);
+      res.status(500).json({ message: "MP4 다운로드에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/music-videos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const role = await storage.getUserRole(userId);
+      if (role !== "admin") return res.status(403).json({ message: "관리자 권한이 필요합니다." });
+      const [deleted] = await db
+        .delete(musicVideos)
+        .where(eq(musicVideos.id, id))
+        .returning({ id: musicVideos.id });
+      if (!deleted) return res.status(404).json({ message: "Music video not found." });
+      res.json({ deleted: true, id: deleted.id });
+    } catch (e) {
+      console.error("[music-videos DELETE]", e);
+      res.status(500).json({ message: "뮤직비디오 삭제에 실패했습니다." });
+    }
+  });
+
+  app.patch("/api/music-videos/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid music video id." });
+      const userId = String((req as any).user?.claims?.sub || "");
+      const title = String(req.body?.title || "").trim().slice(0, 180);
+      const creatorName = String(req.body?.creatorName || "").trim().slice(0, 120);
+      const description = String(req.body?.description || "").trim().slice(0, 1200);
+      if (!title) return res.status(400).json({ message: "제목을 입력해 주세요." });
+      if (!creatorName) return res.status(400).json({ message: "만든이를 입력해 주세요." });
+      const [updated] = await db
+        .update(musicVideos)
+        .set({ title, creatorName, description: description || null, updatedAt: new Date() })
+        .where(and(eq(musicVideos.id, id), eq(musicVideos.userId, userId)))
+        .returning({ id: musicVideos.id, title: musicVideos.title, creatorName: musicVideos.creatorName, description: musicVideos.description });
+      if (!updated) return res.status(403).json({ message: "본인이 올린 뮤직비디오만 수정할 수 있습니다." });
+      res.json(updated);
+    } catch (e) {
+      console.error("[music-videos PATCH]", e);
+      res.status(500).json({ message: "뮤직비디오 수정에 실패했습니다." });
+    }
+  });
+
+  app.post("/api/music-videos", isAuthenticated, async (req, res) => {
+    try {
+      const body = req.body as {
+        title?: string;
+        description?: string;
+        videoUrl?: string;
+        originalFilename?: string;
+        durationSec?: number;
+        fileSize?: number;
+      };
+      const title = String(body.title || "").trim().slice(0, 180);
+      const videoUrl = String(body.videoUrl || "").trim();
+      if (!title) return res.status(400).json({ message: "제목을 입력해 주세요." });
+      if (!videoUrl || !/^\/objects\/uploads\/[^/?#]+/i.test(videoUrl)) {
+        return res.status(400).json({ message: "업로드된 MP4 파일 경로가 필요합니다." });
+      }
+      // @ts-ignore
+      const userId = req.user.claims.sub;
+      const [row] = await db
+        .insert(musicVideos)
+        .values({
+          userId,
+          title,
+          description: String(body.description || "").trim().slice(0, 1200) || null,
+          videoUrl,
+          originalFilename: String(body.originalFilename || "").trim().slice(0, 260) || null,
+          durationSec: Number.isFinite(body.durationSec) ? Math.max(0, Math.floor(Number(body.durationSec))) : null,
+          fileSize: Number.isFinite(body.fileSize) ? Math.max(0, Math.floor(Number(body.fileSize))) : null,
+        })
+        .returning();
+      res.status(201).json(row);
+    } catch (e) {
+      console.error("[music-videos POST]", e);
+      res.status(500).json({ message: "뮤직비디오를 등록하지 못했습니다." });
     }
   });
 
@@ -5860,7 +7795,7 @@ export async function registerRoutes(
   // === Distribution package export (metadata.json + metadata.csv + zip) ===
   app.get("/api/distribution/releases/:id/package-download", isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const distributorRaw = typeof req.query?.distributor === "string" ? req.query.distributor : "generic";
@@ -7065,7 +9000,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const adminUserId = req.user.claims.sub as string;
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const updated = await storage.runDistributionQc({ adminUserId, releaseId });
@@ -7084,7 +9019,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const adminUserId = req.user.claims.sub as string;
-      const releaseId = parsePositiveIntParam(req.params.id);
+      const releaseId = parsePositiveIntParam(String(req.params.id ?? ""));
       if (!releaseId) return res.status(400).json({ message: "유효한 release id가 필요합니다." });
 
       const externalReleaseRefRaw = typeof req.body?.externalReleaseRef === "string" ? req.body.externalReleaseRef : "";
@@ -7456,6 +9391,11 @@ export async function registerRoutes(
       } catch (e) {
         console.error("[subscription/me] subscription AI budget exhaustion check", e);
       }
+      try {
+        await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+      } catch (e) {
+        console.error("[subscription/me] payup PG reconcile", e);
+      }
       const [user] = await db.select().from(users).where(eq(users.id, userId));
       if (!user) {
         return res.json({ subscription: null, tier: "free" });
@@ -7479,13 +9419,34 @@ export async function registerRoutes(
       }
       const [fresh] = await db.select().from(users).where(eq(users.id, userId));
       const row = fresh ?? user;
-      const paid = isUserPaidSubscriptionActive(row, now);
-      if (paid && row.subscriptionTier && row.subscriptionTier !== "free") {
-        return res.json({
-          tier: row.subscriptionTier,
-          plan: row.subscriptionPlan,
-          expiresAt: row.subscriptionExpiresAt,
-        });
+      if (isPaidSubscriptionTierId(String(row.subscriptionTier ?? "").trim().toLowerCase())) {
+        const [latestSubPayment] = await db
+          .select({ id: payments.id, status: payments.status })
+          .from(payments)
+          .where(and(eq(payments.userId, userId), inArray(payments.plan, PAID_PLAN_IDS_FOR_PAYMENTS)))
+          .orderBy(desc(payments.createdAt))
+          .limit(1);
+        const latestSt = String(latestSubPayment?.status ?? "").trim().toLowerCase();
+        const hasPaid = await userHasAnyPaidSubscriptionPayment(userId);
+        if (latestSt === "refunded" || (isUserPaidSubscriptionActive(row, now) && !hasPaid)) {
+          await resetUserSubscriptionToFree(userId);
+          return res.json({ tier: "free" });
+        }
+      }
+      if (isUserPaidSubscriptionActive(row, now)) {
+        const aligned = await ensureUserSubscriptionBackedByPaidPayment(userId, now);
+        if (aligned === "downgraded") {
+          return res.json({ tier: "free" });
+        }
+        const [after] = await db.select().from(users).where(eq(users.id, userId));
+        const live = after ?? row;
+        if (isUserPaidSubscriptionActive(live, now) && live.subscriptionTier && live.subscriptionTier !== "free") {
+          return res.json({
+            tier: live.subscriptionTier,
+            plan: live.subscriptionPlan,
+            expiresAt: live.subscriptionExpiresAt,
+          });
+        }
       }
 
       res.json({ tier: "free" });
@@ -7507,6 +9468,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "현재 이용 중인 유료 구독이 없습니다." });
       }
 
+      try {
+        const pgCancelled = await tryReconcileLatestPaidPayupSubscriptionForUser(userId);
+        if (pgCancelled) {
+          return res.json({
+            success: true,
+            pgPaymentReverted: true,
+            message:
+              "카드 결제가 페이업·PG에서 취소·환불된 것으로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+          });
+        }
+      } catch (e) {
+        console.error("[subscription/cancel] payup PG reconcile", e);
+      }
+
       const displayed = computeDisplayedSubscriptionFromEntitlements(
         user.subscriptionEntitlements,
         user.subscriptionTier,
@@ -7525,7 +9500,7 @@ export async function registerRoutes(
 
       /**
        * 회원「구독 해지」= **다음 자동 갱신(결제)만 중지**. 만료일·entitlements·구독 AI 지갑은 유지.
-       * 카드사/PG에서 결제가 취소·환불된 경우는 별도(웹훅·관리자 PG취소 반영)로 DB를 되돌려 즉시 무료화.
+       * 카드사/PG에서 결제가 취소·환불된 경우는 별도(웹훅·관리자 PG상태 확인)로 DB를 되돌려 즉시 무료화.
        */
       await db
         .update(users)
@@ -7546,7 +9521,7 @@ export async function registerRoutes(
       res.json({
         success: true,
         message:
-          "다음 결제(갱신)는 중지되었습니다. 표시된 만료일까지는 유료 혜택(음악 생성 한도 등)이 그대로 유지됩니다.",
+          "다음 자동 결제(갱신)만 중지되었습니다. 지갑 잔액이 남아 있는 동안 유료 혜택이 계속됩니다. 카드사에서 결제를 취소하셨다면 요금 페이지를 새로고침하거나 고객센터로 문의해 주세요.",
       });
     } catch (err) {
       console.error("Cancel subscription error:", err);
@@ -7897,6 +9872,60 @@ export async function registerRoutes(
   });
 
   /** 규격서 3.3·3.4 — auth_return 수신 후 payUrl 로 RETURNPARAMS(JSON) 승인. 일부 PG는 브라우저 GET 리다이렉트로 복귀 → GET·POST 모두 수신 */
+  function pickPayupQueryFlat(src: Record<string, unknown>, k: string): string {
+    const v = src[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (Array.isArray(v) && typeof v[0] === "string" && v[0].trim()) return v[0].trim();
+    return "";
+  }
+
+  async function persistPayupAuthReturnRefsToPayment(
+    paymentId: string,
+    metaIn: Record<string, unknown> | null | undefined,
+    q: Record<string, unknown>,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const pgRef =
+      pickPayupQueryFlat(q, "transactionId") ||
+      pickPayupQueryFlat(q, "TRANSACTIONID") ||
+      pickPayupQueryFlat(q, "TID") ||
+      pickPayupQueryFlat(q, "tid") ||
+      pickPayupQueryFlat(body, "transactionId") ||
+      pickPayupQueryFlat(body, "TRANSACTIONID") ||
+      pickPayupQueryFlat(body, "TID") ||
+      pickPayupQueryFlat(body, "tid");
+    if (!pgRef || looksLikeVenysoundPayupMerchantOrderId(pgRef)) return;
+    const meta = metaIn && typeof metaIn === "object" ? ({ ...metaIn } as Record<string, unknown>) : {};
+    if (payupMetaTransactionIdFromPayupMeta(meta)) return;
+    await db
+      .update(payments)
+      .set({
+        payupMeta: {
+          ...meta,
+          pgTransactionId: pgRef,
+          authReturnPgRefAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(payments.id, paymentId));
+  }
+
+  async function tryCompletePayupPendingViaPgInquiry(
+    payment: typeof payments.$inferSelect,
+    res: Response,
+  ): Promise<boolean> {
+    const pathSet = (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0;
+    if (!pathSet) return false;
+    const [fresh] = await db.select().from(payments).where(eq(payments.id, payment.id));
+    if (!fresh) return false;
+    const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(fresh);
+    if (!out.ok) {
+      console.warn("[payup] complete: PG inquiry finalize fallback failed", fresh.orderId, out.message);
+      return false;
+    }
+    redirectPricingPayupOutcome(res, "success");
+    return true;
+  }
+
   const handlePayupSubscriptionComplete = async (req: Request, res: Response): Promise<void> => {
     try {
       const cred = getPayupCredentials();
@@ -7997,9 +10026,17 @@ export async function registerRoutes(
       }
 
       const meta = payment.payupMeta as Record<string, unknown> | null | undefined;
-      const payUrlRaw = meta && typeof meta.payUrl === "string" ? meta.payUrl.trim() : "";
+      await persistPayupAuthReturnRefsToPayment(payment.id, meta, q, body);
+      const [paymentLiveRow] = await db.select().from(payments).where(eq(payments.id, payment.id));
+      const paymentLive = paymentLiveRow ?? payment;
+      const metaLive =
+        paymentLive.payupMeta && typeof paymentLive.payupMeta === "object"
+          ? (paymentLive.payupMeta as Record<string, unknown>)
+          : meta;
+      const payUrlRaw = metaLive && typeof metaLive.payUrl === "string" ? metaLive.payUrl.trim() : "";
       if (!payUrlRaw || !blob.trim()) {
         console.error("[payup] complete: payUrl 또는 RETURNPARAMS 없음", orderNumber);
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8007,7 +10044,9 @@ export async function registerRoutes(
       const payRes = await payupDirectPostPayUrl(cred, payUrlRaw, blob.trim());
       if (!payRes.ok || !payRes.data || typeof payRes.data !== "object") {
         const bt = "bodyText" in payRes ? String((payRes as { bodyText?: string }).bodyText ?? "") : "";
-        console.error("[payup] payUrl 승인 실패", payRes.message, orderNumber, "http", payRes.status, bt.slice(0, 500));
+        const payResMessage = "message" in payRes ? payRes.message : undefined;
+        console.error("[payup] payUrl 승인 실패", payResMessage, orderNumber, "http", payRes.status, bt.slice(0, 500));
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8019,6 +10058,7 @@ export async function registerRoutes(
           pickPayupStr(payData, "responseCode", "RESPONSECODE"),
           pickPayupStr(payData, "responseMsg", "RESPONSEMSG"),
         );
+        if (await tryCompletePayupPendingViaPgInquiry(paymentLive, res)) return;
         redirectPricingPayupOutcome(res, "fail");
         return;
       }
@@ -8097,7 +10137,8 @@ export async function registerRoutes(
         return res.json({ status: "none" as const });
       }
       if (row.status === "paid") {
-        return res.json({ status: "paid" as const });
+        const repair = await repairPaidSubscriptionPaymentReflectionIfNeeded(row);
+        return res.json({ status: "paid" as const, repaired: repair.repaired });
       }
       if (row.status === "pending" && row.paymentKey === PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
         return res.json({ status: "pending" as const });
@@ -8141,7 +10182,7 @@ export async function registerRoutes(
       let lastMsg = "";
       for (const row of rows) {
         const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(row);
-        if (out.ok) return res.json({ ok: true, ...out });
+        if (out.ok) return res.json({ ...out, ok: true });
         lastMsg = out.message;
       }
       return res.status(400).json({ ok: false, message: lastMsg || "PG 승인 반영에 실패했습니다." });
@@ -8158,7 +10199,27 @@ export async function registerRoutes(
       if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
       const [p] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!p) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
-      const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(p);
+      const manualTid = String((req.body as { transactionId?: unknown })?.transactionId ?? "").trim();
+      if (manualTid) {
+        const prevMeta =
+          p.payupMeta && typeof p.payupMeta === "object"
+            ? ({ ...(p.payupMeta as Record<string, unknown>) } as Record<string, unknown>)
+            : {};
+        await db
+          .update(payments)
+          .set({
+            payupMeta: {
+              ...prevMeta,
+              pgTransactionId: manualTid.replace(/^payup:/i, "").trim(),
+              adminInquiryTidAt: new Date().toISOString(),
+            },
+          })
+          .where(eq(payments.id, paymentId));
+      }
+      const [fresh] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      const out = await finalizePayupPendingSubscriptionFromPgInquiryForRow(fresh ?? p, {
+        extraLookupIds: manualTid ? [manualTid] : undefined,
+      });
       if (!out.ok) return res.status(400).json({ message: out.message });
       res.json({ success: true, orderId: out.orderId, alreadyPaid: out.alreadyPaid === true });
     } catch (err) {
@@ -8307,7 +10368,7 @@ export async function registerRoutes(
       if ("skipped" in pg && pg.skipped) {
         return res.json({ ok: true, action: "http_skipped" as const, reason: pg.reason });
       }
-      if (!pg.cancelledAtPg) {
+      if (!("cancelledAtPg" in pg) || !pg.cancelledAtPg) {
         return res.json({ ok: true, action: "still_paid_at_pg" as const });
       }
       const out = await revertPayupCardSubscriptionPaymentById(latest.id);
@@ -8361,41 +10422,43 @@ export async function registerRoutes(
       const userId = req.user.claims.sub as string;
       const [row] = await db.select().from(payments).where(eq(payments.orderId, orderNumber)).limit(1);
       if (!row || row.userId !== userId) {
-        return res.json({ ok: true as const });
+        return res.json({ ok: true as const, tier: await subscriptionMeTierForUser(userId, new Date()) });
       }
-      if (row.status !== "pending" || row.paymentKey !== PAYUP_SUBSCRIPTION_PAYMENT_KEY) {
-        return res.json({ ok: true as const });
+      const rowSt = String(row.status ?? "").trim().toLowerCase();
+      const rowPk = String(row.paymentKey ?? "").trim();
+      const isPendingPayupCheckout = rowSt === "pending" && rowPk === PAYUP_SUBSCRIPTION_PAYMENT_KEY;
+      const isPaidPayup = rowSt === "paid" && isPayupPaidSubscriptionPayment(row);
+      if (!isPendingPayupCheckout && !isPaidPayup) {
+        return res.json({ ok: true as const, tier: await subscriptionMeTierForUser(userId, new Date()) });
       }
+
       const meta = (row.payupMeta && typeof row.payupMeta === "object" ? row.payupMeta : {}) as Record<string, unknown>;
-      if (typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10) {
-        return res.json({ ok: true as const, skipped: true as const });
+      const alreadyNotified =
+        typeof meta.abandonNotifiedAt === "string" && meta.abandonNotifiedAt.length >= 10;
+      if (!alreadyNotified) {
+        const message =
+          outcome === "cancel"
+            ? "카드 구독 결제를 취소하셨습니다. 청구·승인 여부는 카드사·페이업 내역에서 확인할 수 있습니다."
+            : "카드 구독 결제가 승인 단계에서 완료되지 않았습니다. 잠시 후 다시 시도하거나 계좌이체를 이용해 주세요.";
+        try {
+          await storage.createNotification({
+            userId,
+            type: "system",
+            message,
+            payload: { payupAbandon: true, orderId: orderNumber, outcome },
+            url: "/pricing",
+          });
+        } catch (e) {
+          console.error("[payup] client-outcome notification", e);
+        }
       }
-      const message =
-        outcome === "cancel"
-          ? "카드 구독 결제를 취소하셨습니다. 청구·승인 여부는 카드사·페이업 내역에서 확인할 수 있습니다."
-          : "카드 구독 결제가 승인 단계에서 완료되지 않았습니다. 잠시 후 다시 시도하거나 계좌이체를 이용해 주세요.";
-      try {
-        await storage.createNotification({
-          userId,
-          type: "system",
-          message,
-          payload: { payupAbandon: true, orderId: orderNumber, outcome },
-          url: "/pricing",
-        });
-      } catch (e) {
-        console.error("[payup] client-outcome notification", e);
-      }
-      await db
-        .update(payments)
-        .set({
-          payupMeta: {
-            ...meta,
-            abandonNotifiedAt: new Date().toISOString(),
-            abandonOutcome: outcome,
-          },
-        })
-        .where(eq(payments.id, row.id));
-      return res.json({ ok: true as const });
+
+      const handled = await handlePayupCheckoutClientOutcome(userId, orderNumber, outcome);
+      return res.json({
+        ok: true as const,
+        tier: handled.tier,
+        skipped: alreadyNotified ? (true as const) : undefined,
+      });
     } catch (err) {
       console.error("[payup] client-outcome", err);
       return res.status(500).json({ message: "처리하지 못했습니다." });
@@ -8427,6 +10490,54 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("[admin payup part-cancel]", err);
       res.status(500).json({ message: err?.message || "부분취소 요청에 실패했습니다" });
+    }
+  });
+
+  /** 관리자: cancel2(규격서) → 불명확 시 PG 거래조회 → 확인 시에만 DB refunded·구독 무료화 */
+  app.post("/api/admin/payments/:id/cancel-payup-subscription", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = String(req.params.id ?? "").trim();
+      if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
+
+      const out = await adminSyncPayupPaidSubscriptionCancelWithPg(payment);
+      if (!out.ok) {
+        return res.status(502).json({
+          message: out.message,
+          responseCode: out.responseCode,
+          responseMsg: out.responseMsg,
+          detail: out.detail,
+          hint: out.hint,
+        });
+      }
+
+      if (out.downgradedUser) {
+        try {
+          const [payUser] = await db.select().from(users).where(eq(users.id, payment.userId));
+          await storage.createNotification({
+            userId: payment.userId,
+            type: "system",
+            message:
+              out.source === "reconcile"
+                ? "구독 카드 결제가 페이업에서 취소·환불로 확인되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다."
+                : "구독 카드 결제가 취소 처리되어 무료 플랜으로 조정되었습니다. AI 생성 한도가 갱신됩니다.",
+            payload: { subscriptionReverted: true, source: `payup_admin_${out.source}` },
+            url: "/create-music",
+          });
+          void payUser;
+        } catch (e) {
+          console.error("[admin cancel-payup-subscription] notify", e);
+        }
+      }
+
+      if (out.alreadyRefunded) {
+        return res.json({ success: true, alreadyRefunded: true, downgradedUser: out.downgradedUser, source: out.source });
+      }
+      res.json({ success: true, downgradedUser: out.downgradedUser, source: out.source });
+    } catch (err: any) {
+      console.error("[admin cancel-payup-subscription]", err);
+      res.status(500).json({ message: err?.message || "페이업 취소 처리에 실패했습니다." });
     }
   });
 
@@ -8505,8 +10616,11 @@ export async function registerRoutes(
       const paymentId = req.params.id as string;
       const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
       if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다" });
-      if (payment.paymentKey !== "bank_transfer") {
-        return res.status(400).json({ message: "계좌이체 건만 처리할 수 있습니다" });
+      const paymentKey = String(payment.paymentKey ?? "").trim();
+      const canRepairSubscriptionPayment =
+        paymentKey === "bank_transfer" || isPayupPaidSubscriptionPayment(payment);
+      if (!canRepairSubscriptionPayment) {
+        return res.status(400).json({ message: "구독 결제 반영 복구가 가능한 건이 아닙니다" });
       }
       if (payment.status !== "paid") {
         return res.status(400).json({ message: "완료(paid)된 결제만 구독 반영 복구가 가능합니다" });
@@ -8535,6 +10649,10 @@ export async function registerRoutes(
         prevPaidExpiry && prevPaidExpiry > now && !Number.isNaN(prevPaidExpiry.getTime())
           ? { subscriptionExpiresAtOverride: prevPaidExpiry }
           : undefined;
+
+      if (await paidSubscriptionPaymentAlreadyReflected(payment)) {
+        return res.json({ success: true, alreadyApplied: true, tier: planNorm, expiresAt: null });
+      }
 
       const { computed, expiresAt } = await applyBankTransferSubscriptionToUserFromPayment(payment, applyOpts);
       // 복구 시에는 메일을 보내지 않음 (과거 입금 확인 메일과 중복 방지)
@@ -8577,6 +10695,28 @@ export async function registerRoutes(
       res.json({ success: true, downgradedUser: out.downgradedUser });
     } catch (err: any) {
       console.error("[admin revoke-payup-subscription]", err);
+      res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
+    }
+  });
+
+  /**
+   * 페이업 거래조회로 카드 구독 결제의 현재 PG 상태를 확인한다.
+   * 승인 상태면 DB를 유지하고, 취소·환불 상태가 확인될 때만 refunded + 필요 시 회원 무료화.
+   */
+  app.post("/api/admin/payments/:id/reconcile-payup-subscription-status", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const paymentId = String(req.params.id ?? "").trim();
+      if (!paymentId) return res.status(400).json({ message: "id 가 필요합니다." });
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId));
+      if (!payment) return res.status(404).json({ message: "결제 건을 찾을 수 없습니다." });
+
+      const out = await reconcilePayupCardSubscriptionPaymentStatusFromPg(payment, "payup_admin_reconcile");
+      if (!out.ok) {
+        return res.status(400).json({ message: out.message });
+      }
+      res.json({ success: true, ...out });
+    } catch (err: any) {
+      console.error("[admin reconcile-payup-subscription-status]", err);
       res.status(500).json({ message: err?.message || "처리에 실패했습니다." });
     }
   });
@@ -8699,8 +10839,8 @@ export async function registerRoutes(
   });
 
   /**
-   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid — 최근 paidDays 일(기본 365).
-   * 승인 분은 **페이업 관리자 화면이 아니라 DB** 기준: `paid` 이고 (`payment_key` 가 payup: 로 시작하거나 `payup_meta.txnId` 가 있는 구독 건).
+   * 페이업 카드 구독 내역: (1) 미승인 pending·payup_direct 전체 (2) 승인 완료 paid / 취소·환불 refunded — 최근 paidDays 일(기본 365).
+   * 승인·취소 분은 **페이업 관리자 화면이 아니라 DB** 기준: `paid/refunded` 이고 (`payment_key` 가 payup: 로 시작하거나 `payup_meta.txnId` 가 있는 구독 건).
    * 페이업에만 승인이 있고 DB가 아직 `pending`이면 미승인으로만 보이며, `/complete`·관리자「PG승인→DB반영」으로 맞춘 뒤 승인완료로 잡힌다.
    */
   app.get("/api/admin/pending-payup-subscription-payments", isAuthenticated, isAdmin, async (req, res) => {
@@ -8710,6 +10850,45 @@ export async function registerRoutes(
       const paidSince = new Date(Date.now() - paidDays * 86_400_000);
       /** DB plan 대소문자·공백 차이로 inArray 가 빗나가는 경우 방지 (유료 구독 티어 ID 고정 집합) */
       const paidPlanTierInListSql = sql`lower(trim(coalesce(${payments.plan}, ''))) in ('starter', 'basic', 'pro', 'premium')`;
+      const autoReconcileDisabled =
+        String((req.query as { autoReconcile?: string }).autoReconcile ?? "").trim().toLowerCase() === "false" ||
+        String((req.query as { autoReconcile?: string }).autoReconcile ?? "").trim() === "0";
+
+      if (!autoReconcileDisabled && (process.env.PAYUP_TXN_RECONCILE_PATH ?? "").trim().length > 0) {
+        const nowMs = Date.now();
+        const throttleMs = 5 * 60_000;
+        const autoCandidates = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              sql`lower(trim(coalesce(${payments.status}, ''))) = 'paid'`,
+              or(
+                sql`${payments.paymentKey} ILIKE 'payup:%'`,
+                and(
+                  sql`coalesce(trim(${payments.payupMeta}->>'txnId'), '') <> ''`,
+                  sql`coalesce(${payments.paymentKey}, '') <> 'bank_transfer'`,
+                ),
+              ),
+              paidPlanTierInListSql,
+              gte(payments.createdAt, paidSince),
+            ),
+          )
+          .orderBy(desc(payments.createdAt))
+          .limit(50);
+
+        for (const candidate of autoCandidates) {
+          if (nowMs - payupMetaLastReconcileCheckedAt(candidate.payupMeta) < throttleMs) continue;
+          try {
+            const out = await reconcilePayupCardSubscriptionPaymentStatusFromPg(candidate, "payup_admin_auto_reconcile");
+            if (!out.ok) {
+              console.warn("[payup auto reconcile] skipped", candidate.orderId, out.message);
+            }
+          } catch (e) {
+            console.error("[payup auto reconcile]", candidate.orderId, e);
+          }
+        }
+      }
 
       const baseCols = {
         id: payments.id,
@@ -8733,13 +10912,13 @@ export async function registerRoutes(
         .where(and(eq(payments.status, "pending"), eq(payments.paymentKey, PAYUP_SUBSCRIPTION_PAYMENT_KEY)))
         .orderBy(desc(payments.createdAt));
 
-      const paidList = await db
+      const finalizedList = await db
         .select(baseCols)
         .from(payments)
         .leftJoin(users, eq(payments.userId, users.id))
         .where(
           and(
-            sql`lower(trim(coalesce(${payments.status}, ''))) = 'paid'`,
+            sql`lower(trim(coalesce(${payments.status}, ''))) in ('paid', 'refunded')`,
             or(
               sql`${payments.paymentKey} ILIKE 'payup:%'`,
               and(
@@ -8755,22 +10934,26 @@ export async function registerRoutes(
         .limit(800);
 
       const seen = new Set<string>();
-      const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" }> = [];
+      const rows: Array<(typeof pendingList)[number] & { cardApprovalStatus: "pending" | "approved" | "refunded" }> = [];
       for (const r of pendingList) {
         const id = String(r.id);
         if (seen.has(id)) continue;
         seen.add(id);
         rows.push({ ...r, cardApprovalStatus: "pending" });
       }
-      for (const r of paidList) {
+      for (const r of finalizedList) {
         const id = String(r.id);
         if (seen.has(id)) continue;
         seen.add(id);
-        rows.push({ ...r, cardApprovalStatus: "approved" });
+        rows.push({
+          ...r,
+          cardApprovalStatus: String(r.paymentStatus ?? "").trim().toLowerCase() === "refunded" ? "refunded" : "approved",
+        });
       }
       rows.sort((a, b) => {
         if (a.cardApprovalStatus !== b.cardApprovalStatus) {
-          return a.cardApprovalStatus === "pending" ? -1 : 1;
+          const rank = { pending: 0, approved: 1, refunded: 2 } as const;
+          return rank[a.cardApprovalStatus] - rank[b.cardApprovalStatus];
         }
         const ta = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(String(a.createdAt)).getTime();
         const tb = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(String(b.createdAt)).getTime();
@@ -9560,7 +11743,7 @@ export async function registerRoutes(
   app.delete("/api/radio/channels/:slug/staff/:userId", isAuthenticated, async (req, res) => {
     try {
       const slug = String(req.params.slug || "").trim().toLowerCase();
-      const targetUserId = req.params.userId;
+      const targetUserId = String(req.params.userId ?? "");
       if (!slug || !targetUserId) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
@@ -9798,6 +11981,7 @@ export async function registerRoutes(
 
       const { status, nowPlayingMusicId, nowPlayingStartedAt, nowPlayingObjectPath: bodyNowPlayingObjectPath, nowPlayingLocalTitle: bodyNowPlayingLocalTitle, afterTempNextSnapshotIndex: bodyAfterTempNextSnapshotIndex, currentHostId: bodyCurrentHostId, scheduledStartAt: bodyScheduledStartAt, scheduledEndAt: bodyScheduledEndAt, notice: bodyNotice, homepageUrl: bodyHomepageUrl, homeTickerText: bodyHomeTickerText, queueMusicIds: bodyQueueMusicIds, currentTrackDurationSeconds: bodyCurrentTrackDurationSeconds, queueDurationsSeconds: bodyQueueDurationsSeconds, advanceToNextTrack: bodyAdvanceToNextTrack, currentTrackId: bodyCurrentTrackId } = req.body || {};
       const updates: { status?: string; nowPlayingMusicId?: number | null; nowPlayingStartedAt?: Date | null; nowPlayingObjectPath?: string | null; nowPlayingTempDurationSeconds?: number | null; nowPlayingTempNextSnapshotIndex?: number | null; currentHostId?: string | null; scheduledStartAt?: Date | null; scheduledEndAt?: Date | null; notice?: string | null; playlistSnapshot?: { musicIds: number[]; durationsSeconds: number[]; currentIndex: number } | null } = {};
+      let queueMusicIdsForDurationEnrichment: number[] | null = null;
 
       if (bodyCurrentHostId !== undefined) {
         if (!isOwner) return res.status(403).json({ message: "채널 소유자만 인수인계할 수 있습니다." });
@@ -9908,16 +12092,30 @@ export async function registerRoutes(
         if (queueMusicIds && queueMusicIds.length > 0 && updates.nowPlayingMusicId != null) {
           const currentIndex = queueMusicIds.indexOf(updates.nowPlayingMusicId);
           if (currentIndex >= 0) {
-            const durationsSeconds = (queueDurationsSeconds && queueDurationsSeconds.length === queueMusicIds.length)
-              ? queueDurationsSeconds.slice(0, queueMusicIds.length)
-              : queueMusicIds.map(() => 240);
-            const durationForCurrent = currentTrackDuration ?? durationsSeconds[currentIndex] ?? 240;
-            if (currentTrackDuration != null && durationsSeconds[currentIndex] === 240) {
-              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
-            } else if (currentTrackDuration != null) {
-              durationsSeconds[currentIndex] = Math.ceil(durationForCurrent);
+            const previousDurationsByMusicId = new Map<number, number>();
+            channel.playlistSnapshot?.musicIds.forEach((id, index) => {
+              const duration = normalizeRadioDurationSeconds(channel.playlistSnapshot?.durationsSeconds[index]);
+              if (duration != null) previousDurationsByMusicId.set(id, duration);
+            });
+            const durationsSeconds = queueMusicIds.map((id, index) => {
+              const measured = radioMusicDurationCache.get(id);
+              if (measured != null) return measured;
+              const supplied = normalizeRadioDurationSeconds(
+                queueDurationsSeconds && queueDurationsSeconds.length === queueMusicIds.length
+                  ? queueDurationsSeconds[index]
+                  : null,
+              );
+              // 240은 송출 브라우저의 미확정 기본값이므로 이미 확인된 길이를 덮어쓰지 않는다.
+              if (supplied != null && supplied !== RADIO_DURATION_FALLBACK_SECONDS) return supplied;
+              return previousDurationsByMusicId.get(id) ?? supplied ?? RADIO_DURATION_FALLBACK_SECONDS;
+            });
+            const normalizedCurrentDuration = normalizeRadioDurationSeconds(currentTrackDuration);
+            if (normalizedCurrentDuration != null) {
+              durationsSeconds[currentIndex] = normalizedCurrentDuration;
+              radioMusicDurationCache.set(updates.nowPlayingMusicId, normalizedCurrentDuration);
             }
             updates.playlistSnapshot = { musicIds: queueMusicIds, durationsSeconds, currentIndex };
+            queueMusicIdsForDurationEnrichment = queueMusicIds;
           }
         } else if (
           currentTrackDuration != null &&
@@ -9929,8 +12127,13 @@ export async function registerRoutes(
           const idx = snap.currentIndex;
           const newDurations = [...snap.durationsSeconds];
           if (idx >= 0 && idx < newDurations.length) {
-            newDurations[idx] = Math.ceil(currentTrackDuration);
-            updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
+            const normalizedCurrentDuration = normalizeRadioDurationSeconds(currentTrackDuration);
+            if (normalizedCurrentDuration != null) {
+              newDurations[idx] = normalizedCurrentDuration;
+              const currentMusicId = snap.musicIds[idx];
+              if (currentMusicId != null) radioMusicDurationCache.set(currentMusicId, normalizedCurrentDuration);
+              updates.playlistSnapshot = { ...snap, durationsSeconds: newDurations };
+            }
           }
         }
         // 로컬 파일(object path) 송출: play 직후 duration 미확정이면 기본 240초로 잡혀 곡이 끝나기 전에 서버가 넘길 수 있음 → 메타데이터 로드 후 보정
@@ -9985,6 +12188,9 @@ export async function registerRoutes(
 
       if (Object.keys(updates).length > 0) {
         await storage.updateRadioChannel(channel.id, updates);
+      }
+      if (queueMusicIdsForDurationEnrichment) {
+        scheduleRadioPlaylistDurationEnrichment(channel.id, slug, queueMusicIdsForDurationEnrichment);
       }
       const updated = await storage.getRadioChannelBySlug(slug);
       if ((updates.nowPlayingMusicId !== undefined || updates.nowPlayingObjectPath !== undefined) && updated) {
@@ -10044,14 +12250,17 @@ export async function registerRoutes(
           : snap.currentIndex;
       const nextIndex = curIdx >= 0 ? (curIdx + 1) % snap.musicIds.length : 0;
       const nextId = snap.musicIds[nextIndex];
-      await storage.updateRadioChannel(channel.id, {
+      if (!channel.nowPlayingStartedAt) return res.json({ ok: false, reason: "already_advanced" });
+      const nextStartedAt = new Date();
+      const advanced = await storage.advanceRadioChannelIfStartedAt(channel.id, channel.nowPlayingStartedAt, {
         nowPlayingMusicId: nextId,
-        nowPlayingStartedAt: new Date(),
+        nowPlayingStartedAt: nextStartedAt,
         nowPlayingObjectPath: null,
         nowPlayingTempDurationSeconds: null,
         nowPlayingTempNextSnapshotIndex: null,
         playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
       });
+      if (!advanced) return res.json({ ok: false, reason: "already_advanced" });
       radioLocalTitles.delete(slug);
       broadcastToRadioChannel(slug, {
         type: "radio_now_playing",
@@ -10059,7 +12268,7 @@ export async function registerRoutes(
         musicId: nextId,
         nowPlayingObjectPath: null,
         nowPlayingLocalTitle: null,
-        startedAt: new Date().toISOString(),
+        startedAt: nextStartedAt.toISOString(),
         elapsedSeconds: 0,
       });
       return res.json({ ok: true, nextMusicId: nextId });
@@ -10078,27 +12287,46 @@ export async function registerRoutes(
       for (const ch of channels) {
         // 송출실(DJ)이 활성화된 경우 서버 자동 진행 건너뜀 (DJ가 직접 제어)
         if ((ch as any).currentHostId) continue;
+        if (ch.playlistSnapshot) {
+          scheduleRadioPlaylistDurationEnrichment(ch.id, ch.slug, ch.playlistSnapshot.musicIds);
+        }
         const started = (ch.nowPlayingStartedAt as Date).getTime();
         const snap = ch.playlistSnapshot;
         if (!snap || snap.musicIds.length === 0) continue;
 
         let durationMs: number;
+        let hasMeasuredDuration = false;
         if (ch.nowPlayingObjectPath != null && ch.nowPlayingTempDurationSeconds != null) {
           durationMs = ch.nowPlayingTempDurationSeconds * 1000;
+          const normalizedTempDuration = normalizeRadioDurationSeconds(ch.nowPlayingTempDurationSeconds);
+          hasMeasuredDuration = normalizedTempDuration != null && normalizedTempDuration !== RADIO_DURATION_FALLBACK_SECONDS;
         } else if (ch.nowPlayingMusicId != null) {
           // 동일 musicId가 큐에 여러 번 있으면 indexOf는 첫 번째만 보므로, currentIndex와 일치할 때는 스냅샷 인덱스를 우선한다.
           const idxPreferred =
             snap.musicIds[snap.currentIndex] === ch.nowPlayingMusicId ? snap.currentIndex : snap.musicIds.indexOf(ch.nowPlayingMusicId);
           const idx = idxPreferred >= 0 ? idxPreferred : snap.currentIndex;
           const rawDur = idx >= 0 && idx < snap.durationsSeconds.length ? snap.durationsSeconds[idx] : 0;
-          const dur = typeof rawDur === "number" && rawDur > 0 ? rawDur : 240;
+          const measuredDuration = radioMusicDurationCache.get(ch.nowPlayingMusicId);
+          const snapshotDuration = normalizeRadioDurationSeconds(rawDur);
+          // 미확정 240초인 동안에는 먼저 실제 길이 측정을 끝내 조기 전환 가능성을 없앤다.
+          if (
+            measuredDuration == null
+            && snapshotDuration === RADIO_DURATION_FALLBACK_SECONDS
+            && (radioDurationProbeRetryAt.get(ch.nowPlayingMusicId) ?? 0) <= now
+          ) {
+            continue;
+          }
+          const dur = measuredDuration ?? snapshotDuration ?? RADIO_DURATION_FALLBACK_SECONDS;
+          hasMeasuredDuration = measuredDuration != null || (snapshotDuration != null && snapshotDuration !== RADIO_DURATION_FALLBACK_SECONDS);
           durationMs = dur * 1000;
         } else {
           continue;
         }
 
-        // 스냅샷 길이가 실제보다 짧을 때 곡 중간에 넘어가는 것 방지: 고정 4.5초보다 곡 길이 비례 여유(상한 있음)
-        const AUTO_ADVANCE_END_SLACK_MS = Math.min(22_000, Math.max(8_000, Math.floor(durationMs * 0.12)));
+        // 실제 길이가 확인된 곡은 짧은 오차만 허용하고, 240초 미확정 값만 기존 안전 여유를 유지한다.
+        const AUTO_ADVANCE_END_SLACK_MS = hasMeasuredDuration
+          ? 1_500
+          : Math.min(22_000, Math.max(8_000, Math.floor(durationMs * 0.12)));
         if (now - started < durationMs + AUTO_ADVANCE_END_SLACK_MS) continue;
 
         // 다음 곡 결정
@@ -10118,14 +12346,16 @@ export async function registerRoutes(
         if (nextIndex >= snap.musicIds.length) nextIndex = 0;
         const nextId = snap.musicIds[nextIndex];
 
-        await storage.updateRadioChannel(ch.id, {
+        const nextStartedAt = new Date();
+        const advanced = await storage.advanceRadioChannelIfStartedAt(ch.id, ch.nowPlayingStartedAt, {
           nowPlayingMusicId: nextId,
-          nowPlayingStartedAt: new Date(),
+          nowPlayingStartedAt: nextStartedAt,
           nowPlayingObjectPath: null,
           nowPlayingTempDurationSeconds: null,
           nowPlayingTempNextSnapshotIndex: null,
           playlistSnapshot: { musicIds: snap.musicIds, durationsSeconds: snap.durationsSeconds, currentIndex: nextIndex },
         });
+        if (!advanced) continue;
         radioLocalTitles.delete(ch.slug);
         broadcastToRadioChannel(ch.slug, {
           type: "radio_now_playing",
@@ -10133,7 +12363,7 @@ export async function registerRoutes(
           musicId: nextId,
           nowPlayingObjectPath: null,
           nowPlayingLocalTitle: null,
-          startedAt: new Date().toISOString(),
+          startedAt: nextStartedAt.toISOString(),
           elapsedSeconds: 0,
         });
       }
@@ -10260,7 +12490,8 @@ export async function registerRoutes(
 
   app.patch("/api/radio/channels/:slug/requests/:id", isAuthenticated, async (req, res) => {
     try {
-      const { slug, id } = req.params;
+      const slug = String(req.params.slug ?? "");
+      const id = String(req.params.id ?? "");
       const channel = await storage.getRadioChannelBySlug(slug);
       if (!channel) return res.status(404).json({ message: "채널을 찾을 수 없습니다" });
       // @ts-ignore
@@ -11147,7 +13378,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const blockerId = req.user.claims.sub;
-      const blockedId = req.params.userId;
+      const blockedId = String(req.params.userId ?? "");
       if (!blockedId || blockedId === blockerId) {
         return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       }
@@ -11162,7 +13393,7 @@ export async function registerRoutes(
     try {
       // @ts-ignore
       const blockerId = req.user.claims.sub;
-      const blockedId = req.params.userId;
+      const blockedId = String(req.params.userId ?? "");
       if (!blockedId) return res.status(400).json({ message: "유효하지 않은 사용자입니다." });
       await storage.unblockUser(blockerId, blockedId);
       res.json({ success: true });

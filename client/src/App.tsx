@@ -432,6 +432,9 @@ import GlobalDistributionGuide from "@/pages/GlobalDistributionGuide";
 import May2026Event from "@/pages/May2026Event";
 import PlaylistStudio from "@/pages/PlaylistStudio";
 import AiSingerGuide from "@/pages/AiSingerGuide";
+import MusicVideos from "@/pages/MusicVideos";
+import AudioDebug from "@/pages/AudioDebug";
+import AiMusicToolsTest from "@/pages/AiMusicToolsTest";
 
 function Routes() {
   return (
@@ -443,6 +446,7 @@ function Routes() {
       <Route path="/radio/:slug" component={RadioChannel} />
       <Route path="/radio" component={Radio} />
       <Route path="/music/:id" component={MusicDetail} />
+      <Route path="/music-videos" component={MusicVideos} />
       <Route path="/music" component={Explore} />
       <Route path="/curated/:slug" component={CuratedPlaylist} />
       <Route path="/explore" component={Explore} />
@@ -491,6 +495,8 @@ function Routes() {
       <Route path="/create-music" component={CreateMusic} />
       <Route path="/playlist-studio" component={PlaylistStudio} />
       <Route path="/ai-singer-guide" component={AiSingerGuide} />
+      <Route path="/audio-debug" component={AudioDebug} />
+      <Route path="/ai-music-tools-test" component={AiMusicToolsTest} />
       <Route path="/notices" component={Notices} />
       <Route component={NotFound} />
     </Switch>

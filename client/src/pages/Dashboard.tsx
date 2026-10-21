@@ -59,7 +59,7 @@ export default function Dashboard() {
     };
 
     let cancelled = false;
-    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
+    const timeoutIds: number[] = [];
 
     const scheduleAttempts = () => {
       if (statsLoading) return;

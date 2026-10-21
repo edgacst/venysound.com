@@ -160,10 +160,103 @@ export const aiMusicSavedTracks = pgTable(
     generationProvider: varchar("generation_provider", { length: 32 }),
     uploadCount: integer("upload_count").default(0).notNull(),
     downloadCount: integer("download_count").default(0).notNull(),
+    wavDownloadCount: integer("wav_download_count").default(0).notNull(),
+    mp4DownloadCount: integer("mp4_download_count").default(0).notNull(),
     publishedToSite: boolean("published_to_site").default(false).notNull(),
   },
   (table) => [
     uniqueIndex("ai_music_saved_tracks_user_client").on(table.userId, table.clientId),
     index("idx_ai_music_saved_user_created").on(table.userId, table.createdAt),
+  ]
+);
+
+export const musicVideos = pgTable(
+  "music_videos",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    title: varchar("title", { length: 180 }).notNull(),
+    creatorName: varchar("creator_name", { length: 120 }),
+    description: text("description"),
+    videoUrl: text("video_url").notNull(),
+    originalFilename: varchar("original_filename", { length: 260 }),
+    durationSec: integer("duration_sec"),
+    fileSize: integer("file_size"),
+    playCount: integer("play_count").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_music_videos_created").on(table.createdAt),
+    index("idx_music_videos_user_created").on(table.userId, table.createdAt),
+  ]
+);
+
+export const musicVideoLikes = pgTable(
+  "music_video_likes",
+  {
+    id: serial("id").primaryKey(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_likes_video_user_unique").on(table.videoId, table.userId),
+    index("idx_music_video_likes_video").on(table.videoId),
+  ]
+);
+
+export const musicVideoComments = pgTable(
+  "music_video_comments",
+  {
+    id: serial("id").primaryKey(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    parentId: integer("parent_id"),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_music_video_comments_video_created").on(table.videoId, table.createdAt),
+    index("idx_music_video_comments_parent").on(table.parentId),
+  ]
+);
+
+export const musicVideoCommentLikes = pgTable(
+  "music_video_comment_likes",
+  {
+    id: serial("id").primaryKey(),
+    commentId: integer("comment_id")
+      .notNull()
+      .references(() => musicVideoComments.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_comment_likes_comment_user_unique").on(table.commentId, table.userId),
+    index("idx_music_video_comment_likes_comment").on(table.commentId),
+  ]
+);
+
+export const musicVideoPurchases = pgTable(
+  "music_video_purchases",
+  {
+    id: serial("id").primaryKey(),
+    buyerId: varchar("buyer_id", { length: 128 }).notNull(),
+    videoId: integer("video_id")
+      .notNull()
+      .references(() => musicVideos.id, { onDelete: "cascade" }),
+    sellerId: varchar("seller_id", { length: 128 }).notNull(),
+    amount: integer("amount").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("music_video_purchases_buyer_video_unique").on(table.buyerId, table.videoId),
+    index("idx_music_video_purchases_buyer").on(table.buyerId),
+    index("idx_music_video_purchases_seller").on(table.sellerId),
   ]
 );

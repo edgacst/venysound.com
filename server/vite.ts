@@ -35,15 +35,17 @@ export async function setupVite(server: Server, app: Express) {
     appType: "custom",
   });
 
-  // Vite dev는 public의 ads.txt를 /ads.txt로 자동 노출하지 않을 수 있어 명시적으로 서빙
-  app.get("/ads.txt", (_req, res, next) => {
-    const filePath = path.resolve(import.meta.dirname, "..", "client", "public", "ads.txt");
+  // Vite dev는 public의 ads.txt / app-ads.txt를 자동 노출하지 않을 수 있어 명시적으로 서빙
+  const servePublicTextFile = (relativePath: string) => (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const filePath = path.resolve(import.meta.dirname, "..", "client", "public", relativePath);
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
     res.sendFile(filePath, (err) => {
       if (err) next(err);
     });
-  });
+  };
+  app.get("/ads.txt", servePublicTextFile("ads.txt"));
+  app.get("/app-ads.txt", servePublicTextFile("app-ads.txt"));
 
   // DJ 스튜디오 목업 HTML은 Vite catch-all 전에 직접 서빙 (그렇지 않으면 SPA index.html이 반환됨)
   app.get("/radio-dj-ui-mockup.html", (_req, res, next) => {
