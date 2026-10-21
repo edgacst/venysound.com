@@ -18,14 +18,13 @@ export function usePushSubscription() {
   const tried = useRef(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     if (tried.current) return;
-    tried.current = true;
-
     // 브라우저 지원 확인
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    // 이미 허용/거부된 경우 재요청 안 함
+    // 이미 거부된 경우 재요청 안 함
     if (Notification.permission === "denied") return;
+    tried.current = true;
 
     async function subscribe() {
       try {
