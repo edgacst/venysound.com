@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/use-auth";
+import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { useRadioPlayerStore } from "@/stores/radio-player";
 import { Router, Switch, Route, useLocation, Redirect } from "wouter";
 import { LOGIN_PATH, REGISTER_PATH, ADMIN_PATH } from "@/lib/site-paths";
@@ -54,6 +55,7 @@ const DWELL_FIRST_PING_MS = 3_000;
 
 function WsProviderWithAuth({ children }: { children: React.ReactNode }) {
   const { user, isLoading: authLoading } = useAuth();
+  usePushSubscription();
   useEffect(() => {
     syncGuestListenAuthState({ loggedIn: !!user?.id, authLoading });
   }, [user?.id, authLoading]);
