@@ -606,7 +606,6 @@ async function downloadResponseBlob(res: Response, fallbackName: string): Promis
   URL.revokeObjectURL(url);
   return { blob, fileName };
 }
-}
 
 function isLikelyBadAiMusicAudioUrl(u: string): boolean {
   const s = u.trim();
