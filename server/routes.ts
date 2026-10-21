@@ -6533,21 +6533,19 @@ export async function registerRoutes(
               });
             }
           }
-          const pushUserIds = recipients.filter((r) => r.notifyNewMusicPush).map((r) => r.userId);
-          if (pushUserIds.length > 0) {
-            const subs = await storage.getPushSubscriptionsByUserIds(pushUserIds);
-            for (const sub of subs) {
-              const u = await storage.getUserById(sub.userId);
-              const name = u?.firstName || "회원";
-              await sendPushNotification(
-                { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-                {
-                  title: "신곡 알림",
-                  body: `${name}님이 좋아할 만한 음악이 등록되었어요: ${music.title} - ${music.artist}`,
-                  url: musicUrl,
-                }
-              );
-            }
+          // 업로더 프로필 URL (클릭 시 업로더 프로필로 이동)
+          const uploaderProfileUrl = `${baseUrl}/profile/${userId}`;
+          // 모든 구독자(업로더 본인 제외)에게 푸시 알림
+          const allSubs = await storage.getAllPushSubscriptionsExcept(userId);
+          for (const sub of allSubs) {
+            await sendPushNotification(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              {
+                title: "🎵 새 음악이 등록되었어요!",
+                body: `${music.title} - ${music.artist}`,
+                url: uploaderProfileUrl,
+              }
+            );
           }
         } catch (e) {
           console.error("[new-music-notify]", e);
