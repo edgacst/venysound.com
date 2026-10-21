@@ -28,7 +28,10 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const ITEMS_PER_PAGE = 30;
 
-const FALLBACK_GENRES = ["전체", "팝뮤직", "국내가요", "월드뮤직", "경음악", "힐링", "케이팝", "발라드", "트로트", "재즈", "클래식", "찬양", "기타"];
+const DISPLAY_GENRES = [
+  "전체", "케이팝", "팝", "발라드", "힙합", "R&B", "록", "재즈",
+  "클래식", "EDM", "트로트", "국내가요", "OST", "힐링", "찬양", "기타",
+];
 
 export default function Explore() {
   const { t } = useTranslation();
@@ -173,16 +176,7 @@ export default function Explore() {
     return popularTracks.map((m) => m.id);
   }, [popularTracks]);
 
-  const { data: genreList } = useQuery<string[]>({
-    queryKey: ["/api/music/genres"],
-    queryFn: async () => {
-      const res = await fetch("/api/music/genres");
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const genres = genreList && genreList.length > 0 ? ["전체", ...genreList] : FALLBACK_GENRES;
+  const genres = DISPLAY_GENRES;
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
