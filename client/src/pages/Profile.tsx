@@ -987,7 +987,6 @@ export default function Profile() {
   const [followingOpen, setFollowingOpen] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
   const [editFirstName, setEditFirstName] = useState("");
-  const [editLastName, setEditLastName] = useState("");
   const [editProfileImageUrl, setEditProfileImageUrl] = useState("");
   const [profileImageUploading, setProfileImageUploading] = useState(false);
   const [streamingStatsOpen, setStreamingStatsOpen] = useState(false);
@@ -1112,7 +1111,6 @@ export default function Profile() {
                     data-testid="button-edit-profile"
                     onClick={() => {
                       setEditFirstName(user.firstName || "");
-                      setEditLastName(user.lastName || "");
                       setEditProfileImageUrl(user.profileImageUrl || "");
                       setProfileEditOpen(true);
                     }}
@@ -1134,25 +1132,16 @@ export default function Profile() {
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
                   <DialogTitle>{t('profile.editProfile', '프로필 수정')}</DialogTitle>
-                  <DialogDescription>{t('profile.editProfileDesc', '이름과 프로필 이미지를 수정할 수 있습니다.')}</DialogDescription>
+                  <DialogDescription>{t('profile.editProfileDesc', '닉네임과 프로필 이미지를 수정할 수 있습니다.')}</DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <label className="text-sm font-medium">{t('profile.firstName', '이름')}</label>
+                    <label className="text-sm font-medium">{t('profile.nickname', '닉네임')}</label>
                     <Input
                       value={editFirstName}
                       onChange={(e) => setEditFirstName(e.target.value)}
-                      placeholder={t('profile.firstNamePlaceholder', '이름')}
+                      placeholder={t('profile.nicknamePlaceholder', '닉네임')}
                       data-testid="input-edit-first-name"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <label className="text-sm font-medium">{t('profile.lastName', '성')}</label>
-                    <Input
-                      value={editLastName}
-                      onChange={(e) => setEditLastName(e.target.value)}
-                      placeholder={t('profile.lastNamePlaceholder', '성')}
-                      data-testid="input-edit-last-name"
                     />
                   </div>
                   <div className="grid gap-2">
@@ -1160,7 +1149,7 @@ export default function Profile() {
                     <div className="flex items-center gap-4">
                       <Avatar className="h-16 w-16 shrink-0">
                         <AvatarImage src={editProfileImageUrl ? (editProfileImageUrl.startsWith("http") ? editProfileImageUrl : `${window.location.origin}${editProfileImageUrl}`) : undefined} />
-                        <AvatarFallback>{editFirstName?.[0] || editLastName?.[0] || "?"}</AvatarFallback>
+                        <AvatarFallback>{editFirstName?.[0] || "?"}</AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col gap-2 flex-1 min-w-0">
                         <input
@@ -1224,10 +1213,10 @@ export default function Profile() {
                   <Button variant="outline" onClick={() => setProfileEditOpen(false)}>{t('profile.cancel', '취소')}</Button>
                   <Button
                     data-testid="button-save-profile"
-                    disabled={updateProfileMutation.isPending}
+                    disabled={updateProfileMutation.isPending || !editFirstName.trim()}
                     onClick={() => updateProfileMutation.mutate({
                       firstName: editFirstName.trim(),
-                      lastName: editLastName.trim(),
+                      lastName: "",
                       profileImageUrl: editProfileImageUrl.trim(),
                     })}
                   >

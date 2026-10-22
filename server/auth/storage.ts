@@ -57,11 +57,12 @@ class AuthStorage implements IAuthStorage {
     if (userData.email) {
       const existingByEmail = await this.getUserByEmail(userData.email);
       if (existingByEmail && existingByEmail.id !== userData.id) {
+        const preserveGoogleDisplayName = userData.registerSource === "google" && Boolean(existingByEmail.firstName?.trim());
         const [updated] = await db
           .update(users)
           .set({
-            firstName: userData.firstName,
-            lastName: userData.lastName,
+            firstName: preserveGoogleDisplayName ? existingByEmail.firstName : userData.firstName,
+            lastName: preserveGoogleDisplayName ? existingByEmail.lastName : userData.lastName,
             profileImageUrl: userData.profileImageUrl,
             updatedAt: new Date(),
             ...(isAdmin ? { role: "admin" } : {}),

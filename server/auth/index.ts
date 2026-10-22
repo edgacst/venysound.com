@@ -226,7 +226,7 @@ export async function setupAuth(app: Express) {
               void createSignupWelcomeNotification(user.id, user.firstName || firstName || "회원");
               recordSignupSuccessAfterNewOauth(req, "google");
             }
-            done(null, buildUserSession(user.id, user.email || email, user.firstName || firstName, user.lastName || lastName, user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
+            done(null, buildUserSession(user.id, user.email || email, user.firstName ?? firstName, user.lastName ?? "", user.profileImageUrl || profileImageUrl, accessToken, refreshToken));
           } catch (error) {
             done(error as Error);
           }
