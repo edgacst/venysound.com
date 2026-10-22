@@ -20,6 +20,7 @@ self.addEventListener("push", (event) => {
     badge: "/favicon.png",
     data: { url: data.url || "/" },
     requireInteraction: true,
+    ...(Array.isArray(data.actions) && data.actions.length ? { actions: data.actions } : {}),
   };
   event.waitUntil(
     self.registration.showNotification(data.title || "Venysound", opts)
