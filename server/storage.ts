@@ -1822,7 +1822,8 @@ export class DatabaseStorage implements IStorage {
   async getAllPushSubscriptionsExcept(excludeUserId: string): Promise<{ userId: string; endpoint: string; p256dh: string; auth: string }[]> {
     const rows = await db.select({ userId: pushSubscriptions.userId, endpoint: pushSubscriptions.endpoint, p256dh: pushSubscriptions.p256dh, auth: pushSubscriptions.auth })
       .from(pushSubscriptions)
-      .where(ne(pushSubscriptions.userId, excludeUserId));
+      .innerJoin(users, eq(pushSubscriptions.userId, users.id))
+      .where(and(ne(pushSubscriptions.userId, excludeUserId), eq(users.notifyNewMusicPush, true)));
     return rows;
   }
 

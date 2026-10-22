@@ -127,9 +127,25 @@ export default function Notifications() {
               >
                 <div className="flex items-center gap-2">
                   <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${notif.isRead ? 'bg-muted' : 'bg-primary'}`} />
-                  <p className="flex-1 min-w-0 text-xs truncate" data-testid={`text-notification-message-${notif.id}`}>
-                    {getNotificationMessage(notif, t)}
-                  </p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs truncate" data-testid={`text-notification-message-${notif.id}`}>
+                      {getNotificationMessage(notif, t)}
+                    </p>
+                    {notif.type === "new_music_for_you" && notif.url && (
+                      <button
+                        type="button"
+                        className="mt-1 text-xs font-medium text-primary hover:underline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!notif.isRead) markRead(notif.id);
+                          setLocation(notif.url);
+                        }}
+                        data-testid={`button-listen-now-${notif.id}`}
+                      >
+                        {t("notificationsPage.listenNow", "지금 듣기")}
+                      </button>
+                    )}
+                  </div>
                   <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">
                     {notif.createdAt
                       ? new Intl.DateTimeFormat(i18n.language === "ko" ? "ko-KR" : i18n.language === "ja" ? "ja-JP" : i18n.language === "zh" ? "zh-CN" : "en-US", {

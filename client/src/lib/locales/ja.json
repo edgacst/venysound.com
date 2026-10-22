@@ -939,7 +939,8 @@
     "loginRequired": "ログインが必要です。",
     "markAllRead": "すべて既読にする",
     "limitNotice": "通知は直近20件まで表示されます。",
-    "empty": "通知はありません。"
+    "empty": "通知はありません。",
+    "listenNow": "今すぐ聴く"
   },
   "notification": {
     "follow": "{{fromName}}がフォローしました",

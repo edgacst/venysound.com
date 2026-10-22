@@ -1055,7 +1055,8 @@
     "loginRequired": "Please log in.",
     "markAllRead": "Mark all as read",
     "limitNotice": "Only the 20 most recent notifications are shown.",
-    "empty": "No notifications."
+    "empty": "No notifications.",
+    "listenNow": "Listen now"
   },
   "notification": {
     "follow": "{{fromName}} started following you",

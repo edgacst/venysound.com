@@ -937,7 +937,8 @@
     "loginRequired": "请先登录。",
     "markAllRead": "全部标为已读",
     "limitNotice": "仅显示最近20条通知。",
-    "empty": "暂无通知。"
+    "empty": "暂无通知。",
+    "listenNow": "立即收听"
   },
   "notification": {
     "follow": "{{fromName}} 开始关注了你",

@@ -6522,7 +6522,7 @@ export async function registerRoutes(
               type: "new_music_for_you",
               message: `${displayName}님이 좋아할 만한 음악이 신곡으로 등록되었습니다`,
               payload: { fromName: displayName, musicTitle: music.title, artist: music.artist, musicId: music.id },
-              url: `/music/${music.id}`,
+              url: `/profile/${userId}`,
             });
             if (r.notifyNewMusicEmail && r.email) {
               await sendNewMusicNotificationEmail(r.email, {
@@ -6544,6 +6544,7 @@ export async function registerRoutes(
                 title: "🎵 새 음악이 등록되었어요!",
                 body: `${music.title} - ${music.artist}`,
                 url: uploaderProfileUrl,
+                actions: [{ action: "listen", title: "지금 듣기" }],
               }
             );
           }

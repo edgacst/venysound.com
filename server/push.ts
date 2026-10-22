@@ -62,7 +62,7 @@ export function isPushConfigured(): boolean {
 
 export async function sendPushNotification(
   subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
-  payload: { title: string; body: string; url: string }
+  payload: { title: string; body: string; url: string; actions?: { action: string; title: string }[] }
 ): Promise<void> {
   const projectId = process.env.FCM_PROJECT_ID;
   if (!projectId) return;
@@ -109,6 +109,8 @@ export async function sendPushNotification(
                 body: payload.body,
                 icon: "/favicon.png",
                 requireInteraction: true,
+                data: { url: payload.url },
+                ...(payload.actions?.length ? { actions: payload.actions } : {}),
               },
               fcm_options: {
                 link: payload.url,

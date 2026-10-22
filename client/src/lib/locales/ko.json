@@ -1085,7 +1085,8 @@
     "loginRequired": "로그인이 필요합니다.",
     "markAllRead": "모두 읽음",
     "limitNotice": "알림 목록은 최근 20개까지 표시됩니다.",
-    "empty": "알림이 없습니다."
+    "empty": "알림이 없습니다.",
+    "listenNow": "지금 듣기"
   },
   "notification": {
     "follow": "{{fromName}}님이 팔로우하기 시작했습니다",
