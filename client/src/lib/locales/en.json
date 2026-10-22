@@ -1419,6 +1419,7 @@
     "markAllRead": "Mark all read",
     "notifyNewMusicEmail": "Email me about new music for me",
     "notifyNewMusicPush": "Push notifications for new music",
+    "iosHomeScreenPushHint": "On iPhone, add this site to your Home Screen from Safari's Share menu, then open the Home Screen icon to enable notifications.",
     "notifyActivityEmail": "Activity emails",
     "notifyActivityEmailDesc": "Email for comments, follows, DMs, likes, etc. (when SMTP is configured)",
     "noNotifications": "No notifications",

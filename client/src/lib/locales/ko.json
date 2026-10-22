@@ -1453,6 +1453,7 @@
     "markAllRead": "모두 읽음",
     "notifyNewMusicEmail": "이메일로 신곡 알림 받기",
     "notifyNewMusicPush": "푸시로 신곡 알림 받기",
+    "iosHomeScreenPushHint": "아이폰에서는 Safari 공유 메뉴에서 이 사이트를 홈 화면에 추가한 후, 홈 화면 아이콘으로 열어 알림을 켜 주세요.",
     "notifyActivityEmail": "활동 알림 이메일",
     "notifyActivityEmailDesc": "댓글·팔로우·쪽지·좋아요 등이 있을 때 이메일로 알림 (SMTP 설정 시)",
     "noNotifications": "알림이 없습니다",

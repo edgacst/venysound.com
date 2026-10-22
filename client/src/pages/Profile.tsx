@@ -362,7 +362,7 @@ function NotificationsSection() {
       const { publicKey } = await res.json();
       if (!publicKey) throw new Error("Push not configured");
       const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
+      const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey),
       });
@@ -379,6 +379,47 @@ function NotificationsSection() {
     onSuccess: () => toast({ title: t("profile.pushEnabled", "푸시 알림이 켜졌습니다") }),
     onError: (e) => toast({ title: t("profile.pushEnableFailed", "푸시 켜기 실패"), description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
+  const handleEnablePush = () => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const navWithStandalone = navigator as Navigator & { standalone?: boolean };
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches || navWithStandalone.standalone === true;
+
+    if (isIOS && !isStandalone) {
+      toast({
+        title: t("profile.pushEnableFailed", "푸시 켜기 실패"),
+        description: t("profile.iosHomeScreenPushHint", "아이폰은 Safari 공유 메뉴에서 홈 화면에 추가한 뒤, 홈 화면 아이콘으로 열어 알림을 켜 주세요."),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!("Notification" in window)) {
+      toast({
+        title: t("profile.pushEnableFailed", "푸시 켜기 실패"),
+        description: t("profile.enablePushHint", "브라우저에서 푸시 권한을 허용하면 이 기기로 알림을 받을 수 있습니다."),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Call the permission prompt directly from the button's click handler for iOS.
+    const permissionRequest = Notification.permission === "granted"
+      ? Promise.resolve<NotificationPermission>("granted")
+      : Notification.requestPermission();
+    void permissionRequest.then((permission) => {
+      if (permission !== "granted") {
+        toast({
+          title: t("profile.pushEnableFailed", "푸시 켜기 실패"),
+          description: t("profile.enablePushHint", "브라우저에서 푸시 권한을 허용하면 이 기기로 알림을 받을 수 있습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      subscribePush.mutate();
+    }).catch(() => {
+      toast({ title: t("profile.pushEnableFailed", "푸시 켜기 실패"), variant: "destructive" });
+    });
+  };
   const { data: notifications, isLoading } = useQuery({
     queryKey: [api.notifications.list.path],
     queryFn: async () => {
@@ -458,7 +499,7 @@ function NotificationsSection() {
                 variant="outline"
                 size="sm"
                 disabled={subscribePush.isPending || !("PushManager" in window) || !("serviceWorker" in navigator)}
-                onClick={() => subscribePush.mutate()}
+                onClick={handleEnablePush}
               >
                 {subscribePush.isPending ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
                 {t("profile.enablePushNotifications", "푸시 알림 켜기")}

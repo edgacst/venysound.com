@@ -1204,6 +1204,7 @@
     "countUnit": " 条",
     "markAllRead": "全部标为已读",
     "noNotifications": "暂无通知",
+    "iosHomeScreenPushHint": "在 iPhone 上，请从 Safari 的分享菜单将此网站添加到主屏幕，然后从主屏幕图标打开并启用通知。",
     "read": "已读",
     "noReports": "暂无版权举报",
     "deletedMusic": "已删除音乐",

@@ -21,10 +21,15 @@ export function usePushSubscription() {
     if (!user?.id) return;
     if (tried.current) return;
     // 브라우저 지원 확인
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
     // 이미 거부된 경우 재요청 안 함
     if (Notification.permission === "denied") return;
     tried.current = true;
+
+    // iOS requires notification permission to be requested by a user gesture.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if (isIOS && Notification.permission !== "granted") return;
 
     async function subscribe() {
       try {
@@ -40,7 +45,9 @@ export function usePushSubscription() {
         let sub = await reg.pushManager.getSubscription();
         if (!sub) {
           // 알림 허용 요청 (브라우저 팝업)
-          const permission = await Notification.requestPermission();
+          const permission = Notification.permission === "granted"
+            ? "granted"
+            : await Notification.requestPermission();
           if (permission !== "granted") return;
           sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
